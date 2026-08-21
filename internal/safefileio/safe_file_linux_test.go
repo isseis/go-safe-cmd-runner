@@ -4,6 +4,7 @@ package safefileio
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,8 @@ func TestMoveFileAnchored_RegressionSuccessfulMove(t *testing.T) {
 
 	srcDev, srcIno := inodeOf(t, srcPath)
 
-	require.NoError(t, moveFileAnchored(srcFile, srcPath, dstPath))
+	dirFd := dirFdForTest(t, fs, dir)
+	require.NoError(t, moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst.txt"))
 
 	got, err := os.ReadFile(dstPath)
 	require.NoError(t, err)
@@ -84,6 +86,7 @@ func TestMoveFileAnchored_SourceReplacementFailsClosed(t *testing.T) {
 	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
+	dirFd := dirFdForTest(t, fs, dir)
 
 	// Simulate an attacker replacing the source path with a different inode
 	// after the fd was obtained but before the move happens. This drops the
@@ -92,7 +95,7 @@ func TestMoveFileAnchored_SourceReplacementFailsClosed(t *testing.T) {
 	replacedContent := []byte("attacker-controlled content")
 	require.NoError(t, os.WriteFile(srcPath, replacedContent, 0o600))
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	err = moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst.txt")
 	require.Error(t, err, "move must fail closed when the source was replaced after verification")
 
 	_, statErr := os.Stat(dstPath)
@@ -118,13 +121,14 @@ func TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
 
-	// Use a destination that is itself a non-empty directory so os.Rename
-	// (temp name -> dstPath) fails deterministically.
+	// Use a destination that is itself a non-empty directory so the rename
+	// (temp name -> destination) fails deterministically.
 	dstPath := filepath.Join(dir, "dst_is_dir")
 	require.NoError(t, os.Mkdir(dstPath, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dstPath, "keep.txt"), []byte("x"), 0o600))
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	dirFd := dirFdForTest(t, fs, dir)
+	err = moveFileAnchored(srcFile, dirFd, "src.txt", dirFd, "dst_is_dir")
 	require.Error(t, err)
 
 	// No leaked temporary link should remain in the destination directory.
@@ -143,28 +147,76 @@ func TestMoveFileAnchored_RenameFailureCleansUpTemporaryLink(t *testing.T) {
 // entry point (osFS.AtomicMoveFile -> atomicMoveFileCore), not just the lower
 // level moveFileAnchored, so that fchmod/permission validation and the final
 // destination validation that wrap the fd-anchored move are also covered.
+//
+// It runs on both routes because the fd acquisition differs between them:
+// openDirNoSymlinks and openFileAt reach openat2 on one and the openat-based
+// fallback on the other, and the fallback is production code wherever openat2 is
+// missing (Linux 5.5 and older, restrictive seccomp profiles, every non-Linux
+// platform).
 func TestAtomicMoveFileCore_EndToEndUsesFDAnchoredMove(t *testing.T) {
-	dir := tu.SafeTempDir(t)
-	srcPath := filepath.Join(dir, "src.txt")
-	dstPath := filepath.Join(dir, "dst.txt")
-	content := []byte("full pipeline content")
-	require.NoError(t, os.WriteFile(srcPath, content, 0o644))
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			srcPath := filepath.Join(dir, "src.txt")
+			dstPath := filepath.Join(dir, "dst.txt")
+			content := []byte("full pipeline content")
+			require.NoError(t, os.WriteFile(srcPath, content, 0o644))
 
-	srcDev, srcIno := inodeOf(t, srcPath)
+			srcDev, srcIno := inodeOf(t, srcPath)
 
-	fs := NewFileSystem(FileSystemConfig{})
-	require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o644))
+			fs := newFileSystemForRoute(t, route)
+			require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o644))
 
-	got, err := os.ReadFile(dstPath)
-	require.NoError(t, err)
-	assert.Equal(t, content, got)
+			got, err := os.ReadFile(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, got)
 
-	dstDev, dstIno := inodeOf(t, dstPath)
-	assert.Equal(t, srcDev, dstDev)
-	assert.Equal(t, srcIno, dstIno, "destination must be the same inode fchmod/validation ran against")
+			dstDev, dstIno := inodeOf(t, dstPath)
+			assert.Equal(t, srcDev, dstDev)
+			assert.Equal(t, srcIno, dstIno, "destination must be the same inode fchmod/validation ran against")
 
-	_, err = os.Stat(srcPath)
-	assert.True(t, os.IsNotExist(err), "source path should be removed after a successful move")
+			_, err = os.Stat(srcPath)
+			assert.True(t, os.IsNotExist(err), "source path should be removed after a successful move")
+		})
+	}
+}
+
+// TestAtomicMoveFile_MovesIntoUnreadableDirectory pins the permission a
+// directory fd costs. The path-based code this replaced only ever needed search
+// permission on the parent directories, so a write-only drop directory worked;
+// anchoring the move to an fd must not quietly turn that into a read
+// requirement. On Linux that is what O_PATH buys.
+func TestAtomicMoveFile_MovesIntoUnreadableDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses directory permission checks, so this cannot fail here")
+	}
+
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			srcPath := filepath.Join(dir, "src.txt")
+			content := []byte("dropped content")
+			require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+
+			// Write and search, no read: entries can be created and looked up by
+			// name, but the directory cannot be listed or opened for reading.
+			dropDir := filepath.Join(dir, "drop")
+			require.NoError(t, os.Mkdir(dropDir, 0o700))
+			require.NoError(t, os.Chmod(dropDir, 0o300))
+			t.Cleanup(func() { _ = os.Chmod(dropDir, 0o700) })
+
+			fs := newFileSystemForRoute(t, route)
+			dstPath := filepath.Join(dropDir, "dst.txt")
+			require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o600))
+
+			// Reading back needs the permission the move did not: restore it
+			// first, so this assertion cannot be confused with the one above.
+			require.NoError(t, os.Chmod(dropDir, 0o700))
+			got, err := os.ReadFile(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, got)
+		})
+	}
 }
 
 // TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename
@@ -189,14 +241,18 @@ func TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename(t
 	srcFile, err := fs.SafeOpenFile(srcPath, os.O_RDONLY, 0)
 	require.NoError(t, err)
 	defer func() { _ = srcFile.Close() }()
+	srcDirFd := dirFdForTest(t, fs, srcParent)
+	dstDirFd := dirFdForTest(t, fs, dir)
 
-	// Remove write+execute permission on srcPath's parent directory so the
-	// trailing os.Remove(absSrc) fails with EACCES, after linkat and rename
-	// have already succeeded.
+	// Remove write permission on srcPath's parent directory so the trailing
+	// unlink of the source fails with EACCES, after linkat and rename have
+	// already succeeded. The directory fd was opened before this, exactly as the
+	// production path opens it up front; a held fd does not exempt the unlink
+	// from the permission check.
 	require.NoError(t, os.Chmod(srcParent, 0o555))
 	t.Cleanup(func() { _ = os.Chmod(srcParent, 0o755) })
 
-	err = moveFileAnchored(srcFile, srcPath, dstPath)
+	err = moveFileAnchored(srcFile, srcDirFd, "src.txt", dstDirFd, "dst.txt")
 	require.Error(t, err, "unlink(absSrc) failure must be surfaced as an error, not a silent success")
 
 	// The destination is already populated with the moved content: rename
@@ -240,14 +296,16 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	}
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
-	tmpPath, err := linkFileToTempName(osFile, dir)
+	tmpName, err := linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(dir, names[1]), tmpPath)
+	assert.Equal(t, names[1], tmpName)
 	assert.Equal(t, 2, call, "expected exactly one retry after the collision")
 	assert.Equal(t, []string{tempLinkNamePrefix, tempLinkNamePrefix}, gotPrefixes)
 
-	// Clean up the created hard link.
-	_ = os.Remove(tmpPath)
+	// Removing it also asserts where it was created: the link must be an entry
+	// of the directory the fd names, which is the whole point of passing a
+	// directory fd rather than a path.
+	require.NoError(t, os.Remove(filepath.Join(dir, tmpName)))
 }
 
 // TestLinkFileToTempName_ExhaustsAttempts verifies that persistent name
@@ -271,7 +329,7 @@ func TestLinkFileToTempName_ExhaustsAttempts(t *testing.T) {
 	generateTempLinkName = func(_ string) (string, error) { return collidingName, nil }
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
-	_, err = linkFileToTempName(osFile, dir)
+	_, err = linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.ErrorIs(t, err, ErrTempNameExhausted)
 }
 
@@ -301,7 +359,7 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	}
 	t.Cleanup(func() { linkatFunc = origLinkat })
 
-	_, err = linkFileToTempName(osFile, dir)
+	_, err = linkFileToTempName(osFile, dirFdForTest(t, fs, dir))
 	require.Error(t, err)
 	assert.ErrorIs(t, err, unix.EPERM)
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
@@ -386,6 +444,82 @@ func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 				"the descriptor opened before the failed check must not be left open")
 		})
 	}
+}
+
+func assertCloseOnExec(t *testing.T, fd int, what string) {
+	t.Helper()
+	flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+	require.NoError(t, err)
+	assert.NotZero(t, flags&unix.FD_CLOEXEC, "%s must be opened close-on-exec", what)
+}
+
+// TestOpenPrimitives_SetCloseOnExec covers every descriptor this package hands
+// out, on both routes, because the flag is set in a different place on each:
+// openat2's how.flags, the fallback's unix.Open/unix.Openat, and os.OpenFile,
+// which supplies it on its own.
+//
+// The runner forks and execs commands, so a descriptor of a file the runner
+// validated -- or of a directory it holds only to anchor a move -- that survives
+// into a child hands that child access nothing gave it.
+func TestOpenPrimitives_SetCloseOnExec(t *testing.T) {
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			fs := newFileSystemForRoute(t, route)
+			dir := tu.SafeTempDir(t)
+			filePath := filepath.Join(dir, "target.txt")
+			require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o600))
+
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = file.Close() })
+			osFile, ok := file.(*os.File)
+			require.True(t, ok, "SafeOpenFile must return an *os.File")
+			assertCloseOnExec(t, int(osFile.Fd()), "SafeOpenFile")
+
+			dirFd := dirFdForTest(t, fs, dir)
+			assertCloseOnExec(t, dirFd, "openDirNoSymlinks")
+
+			osfs, ok := fs.(*osFS)
+			require.True(t, ok, "NewFileSystem must return *osFS")
+			atFile, err := osfs.openFileAt(dirFd, "target.txt", os.O_RDONLY, 0)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = atFile.Close() })
+			assertCloseOnExec(t, int(atFile.Fd()), "openFileAt")
+		})
+	}
+}
+
+// TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails is the directory
+// counterpart of the test above, and lives here for the same reason: it observes
+// descriptors through /proc/self/fd, while the function it covers is portable
+// and is reached here by calling it directly.
+//
+// A directory fd that outlived its failed check would be worse than a leak. The
+// move path anchors renameat and openat to it, so a descriptor handed on after
+// the check said the directory had changed would defeat the check entirely.
+//
+// It also covers the case where the second walk refuses the path outright,
+// which is why it asserts the warning as well; the cases where the walk accepts
+// the path are in TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges.
+func TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
+	parent := tu.SafeTempDir(t)
+	dir := filepath.Join(parent, "target")
+	require.NoError(t, os.Mkdir(dir, 0o750))
+
+	before := openFDTargetsUnder(t, parent)
+	recorder := captureWarnings(t)
+
+	stubEnsureDirAfterOpen(t, func(string) (string, error) { return "", errPostCheckFailed })
+
+	fd, err := openDirNoSymlinksFallback(dir)
+	require.ErrorIs(t, err, errPostCheckFailed)
+	assert.Equal(t, -1, fd, "no descriptor may be returned alongside an error")
+
+	assert.Equal(t, before, openFDTargetsUnder(t, parent),
+		"the directory descriptor opened before the failed check must not be left open")
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, dirPostOpenCheckFailedMsg)
+	record.AssertAttrs(t, map[string]any{"dir": dir})
 }
 
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)

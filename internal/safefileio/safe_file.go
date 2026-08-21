@@ -19,6 +19,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"golang.org/x/sys/unix"
 )
 
 // FileSystemConfig holds configuration for the file system operations
@@ -126,8 +127,7 @@ func (fs *osFS) Remove(name string) error {
 // AtomicMoveFile atomically moves a file from source to destination with secure permissions.
 // Path resolution is intentionally limited to filepath.Abs (no EvalSymlinks) so that symlinks
 // in srcPath and dstPath's parent remain visible to the security checks in atomicMoveFileCore
-// (SafeOpenFile via openat2 RESOLVE_NO_SYMLINKS for the source, ensureParentDirsNoSymlinks
-// for the destination parent).
+// (openDirNoSymlinks for each parent directory, openFileAt for the source leaf).
 func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
 	absSrc, err := filepath.Abs(srcPath)
 	if err != nil {
@@ -161,18 +161,39 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 }
 
 // atomicMoveFileCore is the shared implementation for osFS.AtomicMoveFile.
-// absSrc and absDst must be absolute paths. Symlinks in the paths are detected and
-// rejected here by SafeOpenFile (openat2 RESOLVE_NO_SYMLINKS) and ensureParentDirsNoSymlinks.
-func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs FileSystem) error {
+// absSrc and absDst must be absolute paths. Symlinks in the paths are detected
+// and rejected here by openDirNoSymlinks, which pins each parent directory to an
+// inode, and by openFileAt, which rejects a symlink at the leaf.
+//
+// Once both directory fds are held, the move itself resolves no path a second
+// time: it works from the fds and a single name on each side. The post-move
+// destination validation below is the one exception, and Phase 4a of the design
+// document replaces it with an fd-anchored identity check.
+func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
 	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
 		return err
 	}
 
-	// Open the source file safely BEFORE changing permissions.
-	// SafeOpenFile uses openat2(RESOLVE_NO_SYMLINKS) which rejects symlinks,
-	// ensuring we have a handle to the real file and not a symlink target.
-	srcFile, err := fs.SafeOpenFile(absSrc, os.O_RDONLY, 0)
+	srcDir, srcName := filepath.Dir(absSrc), filepath.Base(absSrc)
+	dstDir, dstName := filepath.Dir(absDst), filepath.Base(absDst)
+
+	srcDirFd, err := fs.openDirNoSymlinks(srcDir)
+	if err != nil {
+		return fmt.Errorf("source parent directory unsafe: %w", err)
+	}
+	defer closeDirFd(srcDirFd, srcDir)
+
+	dstDirFd, err := fs.openDirNoSymlinks(dstDir)
+	if err != nil {
+		return fmt.Errorf("destination parent directory unsafe: %w", err)
+	}
+	defer closeDirFd(dstDirFd, dstDir)
+
+	// Open the source file safely BEFORE changing permissions, relative to the
+	// directory fd just verified, so that neither the parent nor the leaf can be
+	// substituted by a symlink.
+	srcFile, err := fs.openFileAt(srcDirFd, srcName, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open source file safely: %w", err)
 	}
@@ -194,16 +215,12 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs File
 		return fmt.Errorf("source file validation failed: %w", err)
 	}
 
-	// Ensure destination parent directories are safe
-	if err := ensureParentDirsNoSymlinks(absDst); err != nil {
-		return fmt.Errorf("destination parent directory unsafe: %w", err)
-	}
-
 	// Move the verified source inode into place. moveFileAnchored anchors the
-	// move to srcFile's fd (on Linux) rather than re-resolving absSrc by path
-	// name, so a replacement of absSrc between SafeOpenFile above and this
-	// call cannot cause a different inode to be moved (see safe_file_linux.go).
-	if err := moveFileAnchored(srcFile, absSrc, absDst); err != nil {
+	// move to srcFile's fd (on Linux) rather than re-resolving the source by
+	// path name, so a replacement of the source entry between the open above and
+	// this call cannot cause a different inode to be moved (see
+	// safe_file_linux.go).
+	if err := moveFileAnchored(srcFile, srcDirFd, srcName, dstDirFd, dstName); err != nil {
 		return fmt.Errorf("atomic move failed: %w", err)
 	}
 
@@ -272,18 +289,28 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 	return nil
 }
 
-// ensureParentDirsNoSymlinks checks if any component of the path is a symlink
-// by traversing the directory hierarchy step-by-step using opendir(2) equivalent.
+// ensureParentDirsNoSymlinks checks that no component of absPath's parent
+// directory is a symlink. It is the form used by callers that only need the
+// verdict; see ensureDirNoSymlinks for the walk itself.
+func ensureParentDirsNoSymlinks(absPath string) error {
+	_, err := ensureDirNoSymlinks(filepath.Dir(absPath))
+	return err
+}
+
+// ensureDirNoSymlinks checks if any component of dir is a symlink by
+// traversing the directory hierarchy step-by-step using opendir(2) equivalent,
+// and returns dir with any component it did follow replaced by its target.
 //
 // Exception: OS-managed symlinks on an explicit allowlist (e.g. /tmp ->
 // /private/tmp on macOS) are followed after verifying the target matches the
 // expected destination. All other symlinks are rejected to prevent
 // symlink-redirect attacks where an attacker substitutes a directory component
 // with a symlink to an arbitrary target.
-func ensureParentDirsNoSymlinks(absPath string) error {
-	// Get the directory of the file
-	dir := filepath.Dir(absPath)
-
+//
+// The returned path is what a caller must open: opening dir itself with
+// O_NOFOLLOW fails whenever dir's own last component is one of those
+// allowlisted symlinks, which would turn a supported layout into an error.
+func ensureDirNoSymlinks(dir string) (string, error) {
 	components := splitPathComponents(dir)
 
 	// Start from the root and traverse step by step
@@ -302,22 +329,22 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 				// Directory doesn't exist yet, which is fine for creation
 				continue
 			}
-			return fmt.Errorf("failed to stat %s: %w", currentPath, err)
+			return "", fmt.Errorf("failed to stat %s: %w", currentPath, err)
 		}
 
 		// Check if it's a symlink
 		if fi.Mode()&os.ModeSymlink != 0 {
 			// Allow only well-known OS-managed symlinks whose target matches the
 			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
-			// All other symlinks — including unexpected root-owned ones — are rejected.
-			if !common.IsAllowedOSManagedSymlink(currentPath) {
-				return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+			// All other symlinks -- including unexpected root-owned ones -- are rejected.
+			if !isAllowedOSManagedSymlink(currentPath) {
+				return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
 			}
 			// Resolve the OS-managed symlink so subsequent components are
 			// evaluated against the real path.
 			resolved, err := filepath.EvalSymlinks(currentPath)
 			if err != nil {
-				return fmt.Errorf("failed to resolve OS symlink %s: %w", currentPath, err)
+				return "", fmt.Errorf("failed to resolve OS symlink %s: %w", currentPath, err)
 			}
 			currentPath = resolved
 			continue
@@ -325,11 +352,186 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 
 		// Ensure it's a directory (except for the last component which might not exist yet)
 		if !fi.IsDir() {
-			return fmt.Errorf("%w: not a directory: %s", ErrInvalidFilePath, currentPath)
+			return "", fmt.Errorf("%w: not a directory: %s", ErrInvalidFilePath, currentPath)
 		}
 	}
 
+	return currentPath, nil
+}
+
+// openDirNoSymlinksFallback opens dir as a directory fd without following a
+// symlink, for platforms and configurations without openat2.
+//
+// It opens the path ensureDirNoSymlinks resolved rather than dir itself: dir's
+// own last component may be an allowlisted OS-managed symlink, which O_NOFOLLOW
+// would reject.
+//
+// The check and the open are two steps, so a component can still be replaced in
+// between; see the design document's residual-risk table. That window cannot be
+// closed without openat2, but it can be detected: verifyDirAfterOpen re-runs the
+// walk once the fd is held and abandons the open when the directory it landed on
+// is not the one the first walk verified. This is the same two-phase shape
+// safeOpenFileFallback uses for a file. Everything done relative to a returned
+// fd is free of the window, the parent being pinned to an inode from here on.
+func openDirNoSymlinksFallback(dir string) (int, error) {
+	resolvedDir, err := ensureDirNoSymlinks(dir)
+	if err != nil {
+		return -1, err
+	}
+
+	fd, err := unix.Open(resolvedDir, unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC|dirAccessFlag, 0)
+	if err != nil {
+		return -1, fmt.Errorf("failed to open directory %s: %w", resolvedDir, mapDirOpenErrno(err, resolvedDir))
+	}
+
+	if err := verifyDirAfterOpen(fd, dir, resolvedDir); err != nil {
+		slog.Warn(dirPostOpenCheckFailedMsg,
+			slog.String("dir", dir),
+			slog.Any("error", err))
+		closeDirFd(fd, resolvedDir)
+		return -1, err
+	}
+	return fd, nil
+}
+
+// dirPostOpenCheckFailedMsg marks the event that must be recorded whenever the
+// second directory check fails, whether or not the close that follows succeeds.
+const dirPostOpenCheckFailedMsg = "directory check failed after opening it; abandoning the open"
+
+// verifyDirAfterOpen is the second phase of openDirNoSymlinksFallback: it
+// confirms that the directory fd refers to what the first walk verified.
+//
+// Two things must hold. The walk must still find no symlink and resolve dir to
+// the same path -- an intermediate component turned into a symlink is followed
+// by unix.Open, which only refuses one at the leaf, so nothing else would notice
+// it. And that path must still name the inode the fd holds, since the entry
+// could have been replaced by another real directory, which no walk can see.
+func verifyDirAfterOpen(fd int, dir, resolvedDir string) error {
+	recheckedDir, err := ensureDirAfterOpen(dir)
+	if err != nil {
+		return err
+	}
+	if recheckedDir != resolvedDir {
+		return fmt.Errorf("%w: %s resolved to %s, now to %s", ErrDirChangedDuringOpen, dir, resolvedDir, recheckedDir)
+	}
+
+	var fdStat unix.Stat_t
+	if err := unix.Fstat(fd, &fdStat); err != nil {
+		return fmt.Errorf("failed to fstat directory file descriptor for %s: %w", resolvedDir, err)
+	}
+	var pathStat unix.Stat_t
+	if err := unix.Lstat(resolvedDir, &pathStat); err != nil {
+		return fmt.Errorf("failed to lstat %s: %w", resolvedDir, err)
+	}
+	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
+		return fmt.Errorf("%w: %s no longer refers to the opened directory", ErrDirChangedDuringOpen, resolvedDir)
+	}
 	return nil
+}
+
+// mapDirOpenErrno is mapOpenErrno for a directory open. O_DIRECTORY changes what
+// the kernel reports for a symlink -- ENOTDIR on Linux, where the leaf being a
+// symlink means it is not the directory that was asked for -- so that case is
+// re-examined here rather than passed through as a bare errno, keeping the
+// sentinel the same as on the openat2 route.
+func mapDirOpenErrno(err error, dir string) error {
+	if errors.Is(err, unix.ENOTDIR) {
+		if fi, statErr := os.Lstat(dir); statErr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s", ErrIsSymlink, dir)
+		}
+	}
+	return mapOpenErrno(err)
+}
+
+// openFileAtFallback opens a single name relative to an already-open directory
+// fd, for platforms and configurations without openat2. O_NOFOLLOW keeps a
+// symlink at the leaf rejected rather than followed, and the name is a single
+// component, so no path resolution beyond it takes place.
+func openFileAtFallback(dirFd int, name string, flag int, perm os.FileMode) (*os.File, error) {
+	if err := validateOpenAtName(name); err != nil {
+		return nil, err
+	}
+	if err := validateOpenPerm(perm); err != nil {
+		return nil, err
+	}
+
+	// #nosec G115 - openPermBits returns nine permission bits at most
+	mode := uint32(openPermBits(flag, perm))
+	fd, err := unix.Openat(dirFd, name, flag|unix.O_NOFOLLOW|unix.O_CLOEXEC, mode)
+	if err != nil {
+		return nil, mapOpenErrno(err)
+	}
+	return os.NewFile(uintptr(fd), name), nil //nolint:gosec // G115: fd is a valid file descriptor returned by the kernel
+}
+
+// openPermBits returns the mode to hand open(2), applying the same rule on
+// every route: a mode only for an open that can bring an inode into existence,
+// zero otherwise. Its callers reject a perm outside os.ModePerm first, so
+// perm.Perm() here is a plain copy rather than a lossy narrowing.
+func openPermBits(flag int, perm os.FileMode) os.FileMode {
+	if !mayCreateFile(flag) {
+		return 0
+	}
+	return perm.Perm()
+}
+
+// validateOpenAtName rejects anything that is not a single path component.
+// Every operation anchored to a directory fd depends on the name naming an
+// entry in that directory and nowhere else; a name carrying a separator, or
+// "..", would resolve a path the caller never had checked, and an absolute name
+// makes the *at family ignore the directory fd altogether.
+//
+// filepath.Base is not sufficient on its own: it maps "/" to itself.
+func validateOpenAtName(name string) error {
+	if name == "" || name == "." || name == ".." || filepath.IsAbs(name) || name != filepath.Base(name) {
+		return fmt.Errorf("%w: %q is not a plain file name", ErrInvalidFilePath, name)
+	}
+	return nil
+}
+
+// mapOpenErrno translates the errno values an open can fail with into this
+// package's sentinels, so that a caller sees the same error whichever route
+// opened the file.
+//
+// The symlink case is decided by isNoFollowErrno rather than by testing ELOOP
+// directly, because O_NOFOLLOW reports a symlink as EFTYPE on NetBSD.
+func mapOpenErrno(err error) error {
+	switch {
+	case errors.Is(err, unix.EEXIST):
+		return ErrFileExists
+	case errors.Is(err, unix.ENOENT):
+		return os.ErrNotExist
+	case isNoFollowErrno(err):
+		return ErrIsSymlink
+	}
+	return err
+}
+
+// mapRenameErrno keeps one rename failure reading the way it did when this
+// package moved files with os.Rename: the destination already existing as a
+// directory.
+//
+// The kernel reports that as EISDIR, but os.Rename lstats the destination first
+// and substitutes EEXIST (see os.rename), which is what callers match on --
+// internal/runner/base/output asks whether the final path is already taken.
+// Both are kept in the chain, EEXIST for the question callers ask and EISDIR
+// for the operator reading the message.
+func mapRenameErrno(err error) error {
+	if errors.Is(err, unix.EISDIR) {
+		return fmt.Errorf("%w: destination exists as a directory: %w", unix.EEXIST, err)
+	}
+	return err
+}
+
+// closeDirFd releases a directory fd, recording a failure rather than
+// reporting it: by the time this runs the caller's outcome is already decided,
+// and a close failure on a directory opened read-only says nothing about it.
+func closeDirFd(fd int, dir string) {
+	if err := unix.Close(fd); err != nil {
+		slog.Warn("failed to close directory file descriptor",
+			slog.String("dir", dir),
+			slog.Any("error", err))
+	}
 }
 
 // maxTempNameAttempts bounds retries when a randomly generated temporary name
@@ -380,24 +582,61 @@ func randomTempName(prefix string) (string, error) {
 // the wrapped command runs), so this is the only defense operating at the
 // moment of the operation itself.
 func verifySameFile(file File, path string) error {
-	fdInfo, err := file.Stat()
+	fdStat, err := fdStatOf(file)
 	if err != nil {
-		return fmt.Errorf("failed to fstat open file descriptor: %w", err)
-	}
-	fdStat, ok := fdInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: unsupported file info type for fd", ErrUnsupportedFileHandle)
+		return err
 	}
 
-	var pathStat syscall.Stat_t
-	if err := syscall.Lstat(path, &pathStat); err != nil {
+	var pathStat unix.Stat_t
+	if err := unix.Lstat(path, &pathStat); err != nil {
 		return fmt.Errorf("failed to lstat path %q: %w", path, err)
 	}
 
-	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
-		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrSourceIdentityMismatch, path)
+	return compareInode(fdStat, &pathStat, path)
+}
+
+// verifySameFileAt is verifySameFile for a caller that names its target as an
+// entry of an already-open directory, using fstatat with AT_SYMLINK_NOFOLLOW in
+// place of lstat. Only the final name can be swapped under such a caller, the
+// parent being pinned to an inode by the fd.
+func verifySameFileAt(file File, dirFd int, name string) error {
+	if err := validateOpenAtName(name); err != nil {
+		return err
 	}
 
+	fdStat, err := fdStatOf(file)
+	if err != nil {
+		return err
+	}
+
+	var entryStat unix.Stat_t
+	if err := unix.Fstatat(dirFd, name, &entryStat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("failed to fstatat entry %q: %w", name, err)
+	}
+
+	return compareInode(fdStat, &entryStat, name)
+}
+
+func fdStatOf(file File) (*syscall.Stat_t, error) {
+	fdInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fstat open file descriptor: %w", err)
+	}
+	fdStat, ok := fdInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, fmt.Errorf("%w: unsupported file info type for fd", ErrUnsupportedFileHandle)
+	}
+	return fdStat, nil
+}
+
+// compareInode is the single comparison behind both verifySameFile forms.
+// target names the entry in the message only; the comparison itself is on
+// (dev, ino). The two Stat_t types agree field by field on every platform this
+// package builds for, so no conversion is involved.
+func compareInode(fdStat *syscall.Stat_t, entryStat *unix.Stat_t, target string) error {
+	if fdStat.Dev != entryStat.Dev || fdStat.Ino != entryStat.Ino {
+		return fmt.Errorf("%w: %q no longer refers to the expected inode", ErrSourceIdentityMismatch, target)
+	}
 	return nil
 }
 
@@ -641,11 +880,7 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		return nil, err
 	}
 
-	// Detect symlink attack after ensureParentDirNoSymlinks call above.
 	if err := ensureParentDirsAfterOpen(absPath); err != nil {
-		// Recorded independently of how the cleanup below turns out: a
-		// component of the path changed while the file was being opened, which
-		// is the signature of an attack in progress.
 		slog.Warn(postOpenCheckFailedMsg,
 			slog.String("path", absPath),
 			slog.Any("error", err))

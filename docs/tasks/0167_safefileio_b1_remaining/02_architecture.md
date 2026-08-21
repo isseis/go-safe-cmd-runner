@@ -314,8 +314,17 @@ var (
 
 | 関数 | 責務 |
 |---|---|
-| `openDirNoSymlinks` | ディレクトリをシンボリックリンクを辿らずに開いて fd を返す。openat2 が使える場合は `openat2(AT_FDCWD, dir, O_DIRECTORY, RESOLVE_NO_SYMLINKS)` の 1 回の呼び出しで済み、パスの走査そのものが無い。それ以外では `ensureDirNoSymlinks` で構成要素を確認し、**そこで返る解決済みのパス**を `O_DIRECTORY` と `O_NOFOLLOW` で開く |
+| `openDirNoSymlinks` | ディレクトリをシンボリックリンクを辿らずに開いて fd を返す。openat2 が使える場合は `openat2(AT_FDCWD, dir, O_DIRECTORY, RESOLVE_NO_SYMLINKS)` の 1 回の呼び出しで済み、パスの走査そのものが無い。それ以外では `ensureDirNoSymlinks` で構成要素を確認し、**そこで返る解決済みのパス**を `O_DIRECTORY` と `O_NOFOLLOW` で開き、開いた後にもう一度確認する（`verifyDirAfterOpen`。§ 5.3 の R1 を参照） |
 | `openFileAt` | 開いたディレクトリ fd を起点に、単一のファイル名でファイルを開く。openat2 経路では `openat2(dirfd, name, …)`、フォールバック経路では `unix.Openat(dirfd, name, …, O_NOFOLLOW)` を使う |
+
+**ディレクトリ fd を開くときのアクセスモードは Linux では `O_PATH` とする。** `O_RDONLY` で開くと、以降の
+`openat`／`renameat`／`linkat`／`unlinkat`／`fstatat` には要らない**読み取り権限**をディレクトリに要求する
+ことになり、書き込みと検索だけを許す投函用ディレクトリ（`0o733` など）への移動が、本タスクの前は通っていた
+のに拒否されるようになる。`O_PATH` は中身へのアクセスを一切求めないため、パス名で操作していたときと同じ
+権限で足りる。非 Linux には `O_PATH` に相当する手段が無いので `O_RDONLY` のままとし、読み取り権限を要する
+制限が残る（非 Linux は開発・限定用途に限るという F-2 と同じ判断による）。
+
+どちらの経路を採るかは `osFS.openat2Available` にしか無いため、この 2 つは `*osFS` のメソッドとして実装し、フォールバック版だけを自由関数（`openDirNoSymlinksFallback`・`openFileAtFallback`）として共通ファイルに置く。これに伴い `atomicMoveFileCore` は `FileSystem` ではなく `*osFS` を受け取る（呼び出し元は `(*osFS).AtomicMoveFile` の 1 か所だけであり、モックは渡らない）。単一の構成要素であることの確認は `validateOpenAtName` に 1 か所化し、ディレクトリ fd 相対に名前を扱うすべての関数（`openFileAt`・`verifySameFileAt`・`moveFileAnchored`・`linkFileToTempName`）が自分で呼ぶ。
 
 `openFileAt` は、両経路とも既存の `SafeOpenFile` と同じ sentinel エラーへ対応付ける。`ELOOP`（フォールバック経路では `isNoFollowError` が判定するもの）は `ErrIsSymlink`、`EEXIST` は `ErrFileExists`、`ENOENT` は `os.ErrNotExist` である。§ 3.6.2 の分岐はこの対応付けに依存する。
 
@@ -378,6 +387,8 @@ var (
 
 - **Linux**: 手順は 0155 のままである。`/proc/self/fd` 経由の `linkat` で inode をハードリンクし、`rename` で宛先へ被せ、移動元を削除する。変えるのは、リンクと rename の対象を宛先ディレクトリ fd 相対にすること、移動元の削除を `unlinkat(srcDirFd, srcName, 0)` にすることの 2 点である。inode に固定するという 0155 の不変条件はそのまま保たれ、そこにディレクトリの固定が加わる。
 - **非 Linux**: 現在の `os.Rename(absSrc, absDst)` を `unix.Renameat(srcDirFd, srcName, dstDirFd, dstName)` に置き換える。`renameat` はディレクトリ fd 相対なので、パスの再解決が無くなる。ただし inode への固定は依然としてできない（`/proc/self/fd` に相当する仕組みが無いため）。直前に `fstatat(srcDirFd, srcName, AT_SYMLINK_NOFOLLOW)` で開いている fd との同一性を確認して隙を狭めるにとどまる（§ 5.3 の R4）。
+
+`os.Rename` から生の `renameat` へ移ることで、宛先が既存のディレクトリである場合に呼び出し元が受け取る errno が変わる。`os.Rename` は宛先を `lstat` してからカーネルの `EISDIR` を `EEXIST` に差し替えており（Go の `os.rename`）、`internal/runner/base/output` はその `fs.ErrExist` を見て「最終パスが既に使われている」と判断する。両経路とも `EISDIR` の場合だけ `EEXIST` と元の errno の両方を包んで返し、この契約を保つ。
 
 書き込み経路では移動元と移動先が同じディレクトリになるため、両方の引数に同じ fd を渡す。Linux 経路ではそのぶん一時ハードリンクを 1 つ余計に作ることになるが、同一ディレクトリを特別扱いして分岐を増やすより、inode に固定するという不変条件を 1 つの手順で保つ方を採る。
 
@@ -498,7 +509,7 @@ classDiagram
 
 | ファイル | 区分 | 責務と変更内容 |
 |---|---|---|
-| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。移動そのものの成否は `moveFileAnchored` から返る）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinks`・`openFileAt`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts` を追加。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
+| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。移動そのものの成否は `moveFileAnchored` から返る）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinksFallback`・`openFileAtFallback`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts` を追加。併せて経路をまたいで共有する補助を追加する（`verifySameFileAt`・`fdStatOf`・`compareInode`・`validateOpenAtName`・`openPermBits`・`mapOpenErrno`・`mapDirOpenErrno`・`mapRenameErrno`・`closeDirFd`）。`openDirNoSymlinks`・`openFileAt` 自体は経路の選択を持つため `*osFS` のメソッドとしてプラットフォーム別ファイルに置く。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
 | `internal/safefileio/safe_file_linux.go` | 変更 | `openat2` を `EINTR` 再試行ラッパにし、システムコール発行を `rawOpenat2` へ切り出して差し替え点 `openat2Syscall`（ビルドタグで排他的に定義する 2 ファイル方式）経由で呼ぶ。`openat2Mode` を追加し `safeOpenFileInternal` から使う。`moveFileAnchored` をディレクトリ fd と名前を受け取る形へ変え、`linkat` と `rename` を宛先ディレクトリ fd 相対に、`unlinkat` を移動元ディレクトリ fd 相対にする（§ 3.4.5）。`verifySameFile` も `fstatat` によるディレクトリ fd 相対の参照に対応させる。`openDirNoSymlinks`・`openFileAt` の openat2 版を実装する。`rename` 到達後の失敗に `ErrDestinationCommitted` を付ける。`verifySameFile`・`randomTempName`・`maxLinkatAttempts` の移動と改名に伴う参照の更新 |
 | `internal/safefileio/safe_file_nonlinux.go` | 変更 | package コメントのフォールバック経路の限界に関する記述を共通の表現に揃える。`moveFileAnchored` を `unix.Renameat` によるディレクトリ fd 相対の移動へ変え、直前に `fstatat` で同一性を確認する（§ 3.4.5）。`openDirNoSymlinks`・`openFileAt` のフォールバック版を実装する |
 | `internal/safefileio/overrides_linux.go` | 新規 | 本番ビルド（`//go:build linux && !test`）の `openat2Syscall`。`rawOpenat2` を直接呼ぶだけの関数で、差し替え可能な値を持たない |
@@ -645,7 +656,7 @@ flowchart TD
 
 | # | 隙 | 内容 | 判断 |
 |---|---|---|---|
-| R1 | フォールバック経路のディレクトリ確認 | `openat2` が使えない環境では、`openDirNoSymlinks` が「`ensureDirNoSymlinks` による構成要素の確認」と「`O_DIRECTORY` での open」の 2 段階に分かれるため、そのあいだに構成要素を差し替えられる隙が残る。同じ理由で `safeOpenFileFallback` の二段階検証にも隙が残る | 本番ターゲットは Linux 5.6+ であり、そこでは `openat2` の 1 回の呼び出しでディレクトリを開くのでこの隙は無い。フォールバック経路は開発・限定用途に限る。契約として明記して close する（F-2）。なお **fd を得た後の操作にはこの隙は無い**。以降はディレクトリ fd 相対で行われ、パスの再解決が起きないためである |
+| R1 | フォールバック経路のディレクトリ確認 | `openat2` が使えない環境では、`openDirNoSymlinks` が「`ensureDirNoSymlinks` による構成要素の確認」と「`O_DIRECTORY` での open」の 2 段階に分かれるため、そのあいだに構成要素を差し替えられる隙が残る。同じ理由で `safeOpenFileFallback` の二段階検証にも隙が残る | 隙そのものは閉じられないが、`safeOpenFileFallback` と同じく**検知はする**。`verifyDirAfterOpen` が fd を得た後にもう一度ウォークし、解決先のパスが同じであること、およびそのパスの `Dev`・`Ino` が fd のものと一致することを確かめる（後者は、シンボリックリンクを介さずディレクトリごと別の実ディレクトリへ差し替えられた場合に、ウォークだけでは分からないためである）。一致しなければ fd を閉じて open を破棄し、警告を記録する。そのうえで、本番ターゲットは Linux 5.6+ であり、そこでは `openat2` の 1 回の呼び出しでディレクトリを開くのでこの隙は無い。フォールバック経路は開発・限定用途に限る。契約として明記して close する（F-2）。なお **fd を得た後の操作にはこの隙は無い**。以降はディレクトリ fd 相対で行われ、パスの再解決が起きないためである |
 | R2 | 宛先プローブから `rename` まで | プローブの後にリーフがシンボリックリンクへ差し替えられると、`rename` はそれを黙って置き換える。拒否されるはずのものが置き換えられる | リンク先への書き込みには至らない（`rename` はシンボリックリンク自体を置き換える）ので、機密性・完全性の侵害には至らない。失われるのは拒否という通知だけである。「リーフがシンボリックリンクでなければ rename する」という操作はシステムコールとして存在しないため、この隙は原理的に閉じられない。攻撃には宛先ディレクトリへの書き込み権限が必要で、その状態は `internal/security` のディレクトリ権限監査が別途拒否する |
 | R3 | 同一性確認から削除まで | 確認と削除は別の操作なので、そのあいだに名前を差し替えられると無関係なファイルを削除しうる。書き込み経路（`removeVerifiedFileAt`）ではディレクトリ fd 相対に行うため、差し替えられるのは名前だけで親の構成要素は関係しない。フォールバック経路（`removeVerifiedFileByPath`）はディレクトリ fd を持たないためパス名で行い、その `Lstat` と `os.Remove` は、すでに信用できないと判明した親ディレクトリを通る | どちらの場合も影響は限定される。差し替えが成功するには、こちらが握っている inode と `Dev`・`Ino` が一致するエントリを用意する必要があり、それはこちらの inode へのハードリンクに限られる。fd をアンカーにした削除はシステムコールとして存在しない。フォールバック経路の親構成要素の分は R1 と同じ性質であり、同じ判断による |
 | R4 | 非 Linux の移動 | `moveFileAnchored` は非 Linux では `renameat` による移動であり、inode ではなく名前を指定する。したがってディレクトリは固定されるが、移動元の名前が直前に差し替えられた場合、`fstatat` による同一性確認と `renameat` のあいだの隙は残る | 非 Linux は開発・限定用途に限るという F-2 と同じ判断による。inode へ固定する手段（`/proc/self/fd` 経由の `linkat`）が Linux にしか無いため、この隙は当該環境では閉じられない。0155 の時点では非 Linux はパス名による `os.Rename` でディレクトリの固定すら無かったので、本タスクで狭まる方向の変化である |

@@ -15,6 +15,7 @@ import (
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // mustResolvedPath converts a string path to common.ResolvedPath using NewResolvedPathParentOnly.
@@ -55,6 +56,16 @@ func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
 		}
 	}
 	return fs
+}
+
+func dirFdForTest(t *testing.T, fs FileSystem, dir string) int {
+	t.Helper()
+	osfs, ok := fs.(*osFS)
+	require.True(t, ok, "NewFileSystem must return *osFS")
+	fd, err := osfs.openDirNoSymlinks(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = unix.Close(fd) })
+	return fd
 }
 
 // TestSafeOpenFile_RejectsNonPermissionModeBits also asserts that nothing was
@@ -853,6 +864,279 @@ func TestResolvedPathModeEnforcement(t *testing.T) {
 		assert.ErrorIs(t, err, ErrInvalidFilePath,
 			"SafeWriteFileOverwrite must reject ResolvedPath created with NewResolvedPath")
 	})
+}
+
+// TestValidateOpenAtName covers the guard every directory-fd-anchored operation
+// depends on. Anything but a single component either escapes the directory the
+// caller checked or, when absolute, makes the *at call ignore the fd entirely.
+func TestValidateOpenAtName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "plain name", input: "file.txt"},
+		{name: "dotfile", input: ".safefileio-move-abc"},
+		{name: "empty", input: "", wantErr: true},
+		{name: "dot", input: ".", wantErr: true},
+		{name: "dotdot", input: "..", wantErr: true},
+		{name: "root", input: "/", wantErr: true},
+		{name: "absolute path", input: "/etc/passwd", wantErr: true},
+		{name: "relative path", input: "sub/file.txt", wantErr: true},
+		{name: "parent traversal", input: "../file.txt", wantErr: true},
+		{name: "trailing separator", input: "sub/", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateOpenAtName(tt.input)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidFilePath)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// TestVerifySameFileAt covers the check that stands between a name and the
+// operation about to be applied to it -- on Linux the removal of the source
+// after a move, and on other platforms the rename itself, which is the only
+// thing keeping a substituted source from being moved there.
+func TestVerifySameFileAt(t *testing.T) {
+	setup := func(t *testing.T) (dirFd int, file File, dir string) {
+		t.Helper()
+		dir = tu.SafeTempDir(t)
+		path := filepath.Join(dir, "target.txt")
+		require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
+
+		fs := NewFileSystem(FileSystemConfig{})
+		file, err := fs.SafeOpenFile(path, os.O_RDONLY, 0)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = file.Close() })
+
+		return dirFdForTest(t, fs, dir), file, dir
+	}
+
+	t.Run("accepts the entry the fd was opened from", func(t *testing.T) {
+		dirFd, file, _ := setup(t)
+		assert.NoError(t, verifySameFileAt(file, dirFd, "target.txt"))
+	})
+
+	t.Run("rejects an entry replaced by another file", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		path := filepath.Join(dir, "target.txt")
+		require.NoError(t, os.Remove(path))
+		require.NoError(t, os.WriteFile(path, []byte("replacement"), 0o600))
+
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "target.txt"), ErrSourceIdentityMismatch)
+	})
+
+	t.Run("rejects an entry replaced by a symlink to it", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		path := filepath.Join(dir, "target.txt")
+		moved := filepath.Join(dir, "moved.txt")
+		require.NoError(t, os.Rename(path, moved))
+		// The symlink resolves to the very inode the fd holds, so only a stat
+		// that refuses to follow it reports a mismatch.
+		require.NoError(t, os.Symlink(moved, path))
+
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "target.txt"), ErrSourceIdentityMismatch)
+	})
+
+	t.Run("rejects an entry that is not a plain name", func(t *testing.T) {
+		dirFd, file, _ := setup(t)
+		assert.ErrorIs(t, verifySameFileAt(file, dirFd, "sub/target.txt"), ErrInvalidFilePath)
+	})
+
+	t.Run("reports a missing entry as an error, not a match", func(t *testing.T) {
+		dirFd, file, dir := setup(t)
+		require.NoError(t, os.Remove(filepath.Join(dir, "target.txt")))
+
+		err := verifySameFileAt(file, dirFd, "target.txt")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
+// allowOSManagedSymlink adds path to the OS-managed symlink allowlist for the
+// duration of the test.
+//
+// Without it these tests could not run anywhere but macOS:
+// common.IsAllowedOSManagedSymlink returns false unconditionally on every other
+// platform, so the branch that follows a symlink -- and with it the obligation
+// on ensureDirNoSymlinks to report where it led -- would be unreachable on the
+// platform this project targets.
+func allowOSManagedSymlink(t *testing.T, path string) {
+	t.Helper()
+	orig := isAllowedOSManagedSymlinkOverride
+	isAllowedOSManagedSymlinkOverride = func(candidate string) bool {
+		return candidate == path || orig(candidate)
+	}
+	t.Cleanup(func() { isAllowedOSManagedSymlinkOverride = orig })
+}
+
+// symlinkedDirFixture builds <tmp>/real/sub, plus <tmp>/link -> <tmp>/real, and
+// returns the link and the real directory.
+func symlinkedDirFixture(t *testing.T) (linkDir, realDir string) {
+	t.Helper()
+	tmpDir := tu.SafeTempDir(t)
+	realDir = filepath.Join(tmpDir, "real")
+	require.NoError(t, os.MkdirAll(filepath.Join(realDir, "sub"), 0o750))
+	linkDir = filepath.Join(tmpDir, "link")
+	require.NoError(t, os.Symlink(realDir, linkDir))
+	return linkDir, realDir
+}
+
+// TestEnsureDirNoSymlinks_ReturnsResolvedPath pins the return value itself, not
+// just the accept/reject verdict: a caller that opens the path it was given
+// rather than the one that comes back would fail on exactly the layout the
+// allowlist exists to support. The symlink here is mid-path, which the
+// fallback-route test below cannot reach -- it can only place one at the leaf.
+//
+// Rejection of a symlink that is not on the allowlist is covered by
+// TestEnsureParentDirsNoSymlinks.
+func TestEnsureDirNoSymlinks_ReturnsResolvedPath(t *testing.T) {
+	linkDir, realDir := symlinkedDirFixture(t)
+	allowOSManagedSymlink(t, linkDir)
+
+	resolved, err := ensureDirNoSymlinks(filepath.Join(linkDir, "sub"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(realDir, "sub"), resolved,
+		"the followed symlink must be replaced by its target in the returned path")
+}
+
+// TestOpenDirNoSymlinksFallback_OpensResolvedPath covers the consequence of the
+// above for the fallback route: when the directory being opened is itself an
+// allowlisted symlink, opening the path as given would fail, so the resolved
+// path is what must reach open(2).
+func TestOpenDirNoSymlinksFallback_OpensResolvedPath(t *testing.T) {
+	linkDir, realDir := symlinkedDirFixture(t)
+	allowOSManagedSymlink(t, linkDir)
+
+	// The premise: opening linkDir as given, the way a naive implementation
+	// would, fails. Without this the test could pass on an implementation that
+	// never resolved anything.
+	// Which errno that is depends on the platform -- Linux reports ENOTDIR when
+	// O_DIRECTORY and O_NOFOLLOW meet a symlink, others report ELOOP -- so only
+	// the failure itself is asserted.
+	rawFd, rawErr := unix.Open(linkDir, unix.O_DIRECTORY|unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if rawErr == nil {
+		_ = unix.Close(rawFd)
+		t.Fatal("opening the unresolved path was expected to fail with O_NOFOLLOW")
+	}
+
+	fd, err := openDirNoSymlinksFallback(linkDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = unix.Close(fd) })
+
+	// The fd is the target directory, not merely some directory.
+	var fdStat, realStat unix.Stat_t
+	require.NoError(t, unix.Fstat(fd, &fdStat))
+	require.NoError(t, unix.Stat(realDir, &realStat))
+	assert.Equal(t, realStat.Ino, fdStat.Ino)
+	assert.Equal(t, realStat.Dev, fdStat.Dev)
+}
+
+// stubEnsureDirAfterOpen replaces the second directory check for the duration of
+// the test. Only that second call goes through the override, so the walk and the
+// open that precede it still run unmodified against the real path.
+func stubEnsureDirAfterOpen(t *testing.T, stub func(dir string) (string, error)) {
+	t.Helper()
+	orig := ensureDirAfterOpenOverride
+	t.Cleanup(func() { ensureDirAfterOpenOverride = orig })
+	ensureDirAfterOpenOverride = stub
+}
+
+// TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges covers the second
+// phase of the fallback directory open, which is what keeps this route as
+// symlink-safe as the file open next to it: the walk and the open are separate
+// system calls, and unix.Open refuses a symlink only at the leaf, so a component
+// replaced in between is invisible to everything else here.
+//
+// The two subtests are the two ways that shows up once the re-walk itself
+// accepts the path: it resolves somewhere else, or it is perfectly happy because
+// the directory was replaced by another real directory -- which only the inode
+// comparison can see. The third way, the re-walk refusing the path outright, is
+// covered by TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails.
+func TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges(t *testing.T) {
+	t.Run("second walk resolves elsewhere", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		dir := filepath.Join(tmpDir, "target")
+		elsewhere := filepath.Join(tmpDir, "elsewhere")
+		require.NoError(t, os.Mkdir(dir, 0o750))
+		require.NoError(t, os.Mkdir(elsewhere, 0o750))
+
+		// A component of dir turned into an allowlisted symlink after the first
+		// walk: the path is still accepted, but it now leads somewhere else.
+		stubEnsureDirAfterOpen(t, func(string) (string, error) { return elsewhere, nil })
+
+		fd, err := openDirNoSymlinksFallback(dir)
+		require.ErrorIs(t, err, ErrDirChangedDuringOpen)
+		assert.Equal(t, -1, fd)
+	})
+
+	t.Run("directory replaced by another directory", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		dir := filepath.Join(tmpDir, "target")
+		attacker := filepath.Join(tmpDir, "attacker")
+		require.NoError(t, os.Mkdir(dir, 0o750))
+		require.NoError(t, os.Mkdir(attacker, 0o750))
+
+		// Swap a different real directory into the path between the open and the
+		// check, then run the genuine walk over it. No symlink is involved at any
+		// point, so the walk has nothing to report and the path it returns is
+		// unchanged: the mismatch is only visible in the inode.
+		var walkResult string
+		var walkErr error
+		stubEnsureDirAfterOpen(t, func(d string) (string, error) {
+			require.NoError(t, os.Rename(dir, filepath.Join(tmpDir, "displaced")))
+			require.NoError(t, os.Rename(attacker, dir))
+			walkResult, walkErr = ensureDirNoSymlinks(d)
+			return walkResult, walkErr
+		})
+
+		fd, err := openDirNoSymlinksFallback(dir)
+		require.ErrorIs(t, err, ErrDirChangedDuringOpen)
+		assert.Equal(t, -1, fd)
+
+		// The negative control for the assertion above: the walk alone accepted
+		// the swapped-in directory, so the failure came from the inode comparison
+		// and from nothing else.
+		require.NoError(t, walkErr)
+		assert.Equal(t, dir, walkResult)
+	})
+}
+
+// TestAtomicMoveFile_WritesUnderOSManagedSymlink is the same obligation seen
+// from the public API, on a real OS-managed symlink rather than an allowlisted
+// stand-in. It runs only where /tmp is one, which is decided by asking the
+// allowlist rather than by testing runtime.GOOS.
+func TestAtomicMoveFile_WritesUnderOSManagedSymlink(t *testing.T) {
+	if !common.IsAllowedOSManagedSymlink("/tmp") {
+		t.Skip("/tmp is not an OS-managed symlink here, so this layout does not exist")
+	}
+
+	srcDir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(srcDir, "src.txt")
+	content := []byte("moved under an OS-managed symlink")
+	require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+
+	// The destination is directly under /tmp, which t.TempDir cannot produce:
+	// it hands back an already-resolved path, and it is the unresolved parent
+	// that this test is about. The name is unique per run and removed
+	// afterwards, /tmp being shared.
+	name, err := randomTempName(".safefileio-test-")
+	require.NoError(t, err)
+	dstPath := filepath.Join("/tmp", name)
+	t.Cleanup(func() { _ = os.Remove(dstPath) })
+
+	fs := NewFileSystem(FileSystemConfig{})
+	require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, 0o600))
+
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
 }
 
 // TestEnsureParentDirsNoSymlinks exercises the symlink policy in

@@ -572,10 +572,9 @@ func TestSafeFileManager_MoveToFinal_WithMock(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Verify AtomicMoveFile was called with the original (unresolved) paths.
+			// AtomicMoveFile must receive the original (unresolved) paths:
 			// OS-managed symlinks in parent directories (e.g. /tmp -> /private/tmp
-			// on macOS) are now handled inside ensureParentDirsNoSymlinks rather
-			// than being pre-resolved by the caller.
+			// on macOS) are its own to handle, not the caller's to pre-resolve.
 			if tt.wantAtomicMoveCalled {
 				require.Len(t, mockSafeFS.AtomicMoveFileCalls, 1)
 				call := mockSafeFS.AtomicMoveFileCalls[0]
