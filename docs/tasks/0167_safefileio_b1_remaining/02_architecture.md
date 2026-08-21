@@ -270,7 +270,7 @@ var (
 
 `openat2` は `syscall.Syscall6` の直呼びで、`errno` をそのまま返している。Go ランタイムの非同期プリエンプション（SIGURG）などでシグナルが届くと `EINTR` が呼び出し元へ抜ける。
 
-`openat2` を再試行するラッパにし、実際のシステムコール発行を差し替え可能なパッケージ変数へ切り出す。テストはこの変数を差し替えて `EINTR` を返させることで再試行を検証する（AC-28）。この「パッケージ変数でシステムコールを差し替える」形は、同じファイルの `linkatFunc`・`generateTempLinkName` が既に採っている方式であり、それに合わせる。同ファイルの既存コメントどおり、このパッケージのテストは `t.Parallel()` を使わない。
+`openat2` を再試行するラッパにし、実際のシステムコール発行を `rawOpenat2` へ切り出したうえで、その呼び出しを差し替え点 `openat2Syscall` 経由にする。テストはこの差し替え点を差し替えて `EINTR` を返させることで再試行を検証する（AC-28）。差し替え点は `//go:build !test` と `//go:build test` の 2 ファイルで同名の関数を排他的に定義する形で用意し、本番ビルドには差し替え可能な値を一切残さない（`internal/security` の `getwd` と同じ形。2026-08-21 承認。`03_implementation_plan.md` § 1「本タスクで新規に必要になる差し替え点」）。既存の `linkatFunc`・`generateTempLinkName` は素のパッケージ変数のままだが、セキュリティ上重要な open 経路に本番でも書き換えうる値を増やさないため、新設分はこの形に倣わない。同ファイルの既存コメントどおり、このパッケージのテストは `t.Parallel()` を使わない。
 
 再試行の回数に上限は設けない。`EINTR` は処理が始まる前の中断を意味するので、再試行はやり直しであって重複実行にはならない。Go 標準ライブラリの `os` パッケージも同じ扱いをしている。`EINTR` 以外の `errno` は現在と同じ形でそのまま返し、`ELOOP`・`EEXIST`・`ENOENT` の既存の対応付け（`ErrIsSymlink`・`ErrFileExists`・`os.ErrNotExist`）は変わらない（AC-27）。
 
@@ -499,8 +499,10 @@ classDiagram
 | ファイル | 区分 | 責務と変更内容 |
 |---|---|---|
 | `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。移動そのものの成否は `moveFileAnchored` から返る）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinks`・`openFileAt`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts` を追加。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
-| `internal/safefileio/safe_file_linux.go` | 変更 | `openat2` を `EINTR` 再試行ラッパにし、システムコール発行を差し替え可能なパッケージ変数へ切り出す。`openat2Mode` を追加し `safeOpenFileInternal` から使う。`moveFileAnchored` をディレクトリ fd と名前を受け取る形へ変え、`linkat` と `rename` を宛先ディレクトリ fd 相対に、`unlinkat` を移動元ディレクトリ fd 相対にする（§ 3.4.5）。`verifySameFile` も `fstatat` によるディレクトリ fd 相対の参照に対応させる。`openDirNoSymlinks`・`openFileAt` の openat2 版を実装する。`rename` 到達後の失敗に `ErrDestinationCommitted` を付ける。`verifySameFile`・`randomTempName`・`maxLinkatAttempts` の移動と改名に伴う参照の更新 |
+| `internal/safefileio/safe_file_linux.go` | 変更 | `openat2` を `EINTR` 再試行ラッパにし、システムコール発行を `rawOpenat2` へ切り出して差し替え点 `openat2Syscall`（ビルドタグで排他的に定義する 2 ファイル方式）経由で呼ぶ。`openat2Mode` を追加し `safeOpenFileInternal` から使う。`moveFileAnchored` をディレクトリ fd と名前を受け取る形へ変え、`linkat` と `rename` を宛先ディレクトリ fd 相対に、`unlinkat` を移動元ディレクトリ fd 相対にする（§ 3.4.5）。`verifySameFile` も `fstatat` によるディレクトリ fd 相対の参照に対応させる。`openDirNoSymlinks`・`openFileAt` の openat2 版を実装する。`rename` 到達後の失敗に `ErrDestinationCommitted` を付ける。`verifySameFile`・`randomTempName`・`maxLinkatAttempts` の移動と改名に伴う参照の更新 |
 | `internal/safefileio/safe_file_nonlinux.go` | 変更 | package コメントのフォールバック経路の限界に関する記述を共通の表現に揃える。`moveFileAnchored` を `unix.Renameat` によるディレクトリ fd 相対の移動へ変え、直前に `fstatat` で同一性を確認する（§ 3.4.5）。`openDirNoSymlinks`・`openFileAt` のフォールバック版を実装する |
+| `internal/safefileio/overrides_linux.go` | 新規 | 本番ビルド（`//go:build linux && !test`）の `openat2Syscall`。`rawOpenat2` を直接呼ぶだけの関数で、差し替え可能な値を持たない |
+| `internal/safefileio/test_helpers_overrides_linux.go` | 新規 | テストビルド（`//go:build linux && test`）の `openat2Syscall` と、その差し替え用のパッケージ変数 `openat2SyscallOverride` |
 | `internal/safefileio/errors.go` | 変更 | `ErrUnsupportedFileMode`・`ErrDestinationCommitted` を追加。`ErrTempLinkNameExhausted` を `ErrTempNameExhausted` へ改名 |
 | `internal/safefileio/testutil/mock.go` | 変更 | 公開されている `MockFileSystem` から `Remove`・`RemoveFunc`・`RemoveCalls` を削除。`internal/runner/base/output`・`internal/verification`・`internal/dynlib/elfdynlib`・`internal/dynlib/machodylib` のテストが利用するが、いずれも `RemoveCalls` を検証していないため呼び出し側の修正は不要 |
 | `internal/security/machoanalyzer/analyzer_test.go` | 変更 | `largeFakeFile` に `Sync` を追加し、`largeFakeFS` から `Remove` を削除（インターフェースの形の変更に追従するだけで、検証内容は変えない） |
@@ -787,7 +789,7 @@ flowchart TD
 ### 7.1 ユニットテスト
 
 - **mode の検証と正規化（AC-14〜17）**: `perm` に setuid・setgid・sticky を含めた `SafeOpenFile` が両経路で `ErrUnsupportedFileMode` を返すこと。`O_CREATE` を伴わない呼び出しの成否が両経路で一致すること。`O_CREATE` を伴う呼び出しで作成されるファイルの権限が本タスクの前後で変わらないこと。経路の切り替えは `FileSystemConfig.DisableOpenat2` で行う。
-- **`EINTR` 再試行（AC-26〜28）**: システムコール発行のパッケージ変数を差し替えて、1 回目に `EINTR`、2 回目に成功を返させる。`EINTR` 以外の `errno` の対応付けが変わらないことも併せて確認する。
+- **`EINTR` 再試行（AC-26〜28）**: システムコール発行の差し替え点を差し替えて、1 回目に `EINTR`、2 回目に成功を返させる。`EINTR` 以外の `errno` の対応付けが変わらないことも併せて確認する。
 - **フォールバック経路の後始末（AC-01〜05）**: 実ファイルシステム上で 2 回目の親ディレクトリ確認を失敗させ、fd が Close されていること、`O_CREATE` で作成した場合はファイルが残らないこと、既存ファイルを開いただけの場合は削除されないことを分岐ごとに確認する。inode が一致しない分岐は、`removeVerifiedFile` にモックの `File` を渡す形でも検証できる。モックの `Stat` が返す `syscall.Stat_t` は `Dev`・`Ino` を持たないため実在のパスとは決して一致せず、モック経由では一致する分岐を作れない。この制約を踏まえ、削除が実際に行われることの検証は § 7.2 に置く。
 - **OS 管理シンボリックリンクの直下への書き込み**: `openDirNoSymlinks` が解決前のパスを開いていないことを確認する。`SafeTempDir` は `EvalSymlinks` でパスを解決してから返すため、既存のテストはこの条件を作れない。テストは allowlist に載るディレクトリ（macOS の `/tmp`）の直下へ直接書き、成功することを確かめる。実行するかどうかは `runtime.GOOS` ではなく `common.IsAllowedOSManagedSymlink("/tmp")` が true かどうかで判定し、前提が成り立たない環境では自動的に skip する。CI が Linux だけであってもこのテストは無害であり、macOS で開発する場合にだけ意味を持つ。
 - **モックによる差し替え点について**: `atomicMoveFileCore` のソース open が `fs.SafeOpenFile` からパッケージ内の `openFileAt` へ変わるため、`FileSystem` のモックでソースの open を差し替えることができなくなる。移動経路のテストは実ファイルシステム上で行う（§ 7.2）。`FileSystem` インターフェースにディレクトリ操作を足してモック可能性を保つ案は採らない。読み取り専用の 10 パッケージに、実装する必要のないメソッドを増やすことになるためである。

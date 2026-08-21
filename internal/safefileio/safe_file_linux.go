@@ -70,8 +70,49 @@ func isOpenat2Available() bool {
 	return err == nil
 }
 
-// openat2 wraps the openat2 system call
+// openat2Mode returns the value to place in openHow.mode for the given open
+// flags. Contract: the mode is zero unless the call may create a file, and
+// otherwise carries exactly the nine POSIX permission bits of perm.
+//
+// open(2) only defines mode for calls that can create a file, and openat2(2)
+// enforces that by returning EINVAL when mode is non-zero without O_CREAT or
+// O_TMPFILE. os.OpenFile, which the fallback path uses, ignores the mode in
+// the same situation, so zeroing it here is what makes the two paths agree.
+// Callers have already passed validateOpenPerm, so nothing outside os.ModePerm
+// can reach this point and the conversion is a plain copy. O_TMPFILE is not
+// used anywhere in this repository; should that change, the kernel surfaces it
+// as EINVAL rather than silently creating a file with mode 0.
+func openat2Mode(flag int, perm os.FileMode) uint64 {
+	if flag&os.O_CREATE == 0 {
+		return 0
+	}
+	return uint64(perm.Perm())
+}
+
+// openat2 wraps the openat2 system call, retrying while the kernel reports
+// EINTR. Contract: EINTR never reaches the caller; every other errno is
+// returned exactly as the raw system call produced it, so the ELOOP, EEXIST
+// and ENOENT mapping in safeOpenFileInternal is unaffected.
+//
+// The retry count is deliberately unbounded. EINTR means the open was
+// interrupted before it took effect, so retrying is a redo rather than a
+// repeated operation; the Go standard library retries open the same way. In
+// this package the interruption comes from the runtime's asynchronous
+// preemption signal (SIGURG) rather than from anything an attacker controls.
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
+	for {
+		fd, err := openat2Syscall(dirfd, pathname, how)
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		return fd, err
+	}
+}
+
+// rawOpenat2 issues exactly one openat2 system call, with no retry handling.
+// It confines the unsafe.Pointer handling required by the syscall interface to
+// a single function.
+func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
 	pathBytes, err := syscall.BytePtrFromString(pathname)
 	if err != nil {
 		return -1, err
@@ -275,7 +316,7 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 	how := openHow{
 		// #nosec G115 - flag conversion is intentional and safe within valid flag range
 		flags:   uint64(flag),
-		mode:    uint64(perm),
+		mode:    openat2Mode(flag, perm),
 		resolve: ResolveNoSymlinks,
 	}
 

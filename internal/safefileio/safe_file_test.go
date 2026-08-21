@@ -3,8 +3,10 @@ package safefileio
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -21,6 +23,123 @@ func mustResolvedPath(t *testing.T, path string) common.ResolvedPath {
 	rp, err := common.NewResolvedPathParentOnly(path)
 	require.NoError(t, err, "mustResolvedPath: failed to create ResolvedPath for %s", path)
 	return rp
+}
+
+// openRoute names one of the two paths SafeOpenFile can take. Tests that must
+// hold on both run their table once per route.
+type openRoute struct {
+	name           string
+	config         FileSystemConfig
+	requireOpenat2 bool
+}
+
+var openRoutes = []openRoute{
+	{name: "openat2", config: FileSystemConfig{}, requireOpenat2: true},
+	{name: "fallback", config: FileSystemConfig{DisableOpenat2: true}},
+}
+
+// newFileSystemForRoute builds the FileSystem for a route. For the openat2
+// route it insists that openat2 really is available, because NewFileSystem
+// falls back silently when it is not (Linux 5.5 and older, non-Linux, or a
+// container seccomp profile that blocks the call). Without this check a table
+// claiming to cover both routes would run the fallback path twice.
+func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
+	t.Helper()
+	fs := NewFileSystem(route.config)
+	if route.requireOpenat2 {
+		osfs, ok := fs.(*osFS)
+		require.True(t, ok, "NewFileSystem must return *osFS")
+		if !osfs.IsOpenat2Available() {
+			t.Skip("openat2 is unavailable here, so the openat2 route cannot be exercised")
+		}
+	}
+	return fs
+}
+
+// TestSafeOpenFile_RejectsNonPermissionModeBits verifies that a perm carrying
+// any bit outside os.ModePerm is rejected with the same sentinel on both
+// routes, before anything is created.
+func TestSafeOpenFile_RejectsNonPermissionModeBits(t *testing.T) {
+	perms := []struct {
+		name string
+		perm os.FileMode
+	}{
+		{name: "setuid", perm: os.ModeSetuid | 0o644},
+		{name: "setgid", perm: os.ModeSetgid | 0o644},
+		{name: "sticky", perm: os.ModeSticky | 0o644},
+		{name: "dir", perm: os.ModeDir | 0o644},
+		{name: "append", perm: os.ModeAppend | 0o644},
+	}
+
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			fs := newFileSystemForRoute(t, route)
+			for _, p := range perms {
+				t.Run(p.name, func(t *testing.T) {
+					filePath := filepath.Join(tu.SafeTempDir(t), "created.txt")
+					_, err := fs.SafeOpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, p.perm)
+					require.ErrorIs(t, err, ErrUnsupportedFileMode)
+					assert.NoFileExists(t, filePath, "rejection must happen before the file is created")
+				})
+			}
+		})
+	}
+}
+
+// TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths verifies that a non-zero
+// perm on an open without O_CREATE is ignored rather than rejected, and that
+// both routes agree. Before this task the openat2 route failed such a call
+// with EINVAL while the fallback route succeeded.
+func TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths(t *testing.T) {
+	const content = "read-open-content"
+
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			fs := newFileSystemForRoute(t, route)
+			filePath := filepath.Join(tu.SafeTempDir(t), "existing.txt")
+			require.NoError(t, os.WriteFile(filePath, []byte(content), 0o600))
+
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0o644)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = file.Close() })
+
+			got, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Equal(t, content, string(got))
+		})
+	}
+}
+
+// TestSafeOpenFile_CreatePermUnchanged verifies that a creating open still
+// applies perm as the kernel always did, i.e. reduced by the process umask.
+// The umask is chosen so that it actually removes a bit of the requested
+// perm; an implementation that applied perm verbatim would fail here.
+func TestSafeOpenFile_CreatePermUnchanged(t *testing.T) {
+	// 0o047 drops the group-read bit that 0o640 asks for, so the expected
+	// result differs from the requested perm.
+	const fixedUmask = 0o047
+	const requestedPerm = os.FileMode(0o640)
+	wantPerm := requestedPerm &^ os.FileMode(fixedUmask)
+
+	// Umask is process-wide and this package's tests never call t.Parallel();
+	// failing to restore it would quietly break later tests.
+	previousUmask := syscall.Umask(fixedUmask)
+	t.Cleanup(func() { syscall.Umask(previousUmask) })
+
+	for _, route := range openRoutes {
+		t.Run(route.name, func(t *testing.T) {
+			fs := newFileSystemForRoute(t, route)
+			filePath := filepath.Join(tu.SafeTempDir(t), "created.txt")
+
+			file, err := fs.SafeOpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, requestedPerm)
+			require.NoError(t, err)
+			require.NoError(t, file.Close())
+
+			info, err := os.Lstat(filePath)
+			require.NoError(t, err)
+			assert.Equal(t, wantPerm, info.Mode().Perm())
+		})
+	}
 }
 
 func TestSafeReadFile(t *testing.T) {
