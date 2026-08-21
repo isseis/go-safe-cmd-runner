@@ -303,6 +303,13 @@ func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T)
 		// Swap a different inode into the path between the creation and the
 		// failing check, i.e. exactly the situation in which deleting by path
 		// name would destroy a file of someone else's choosing.
+		//
+		// What makes the swap stick is that safeOpenFileFallback still holds
+		// the fd here: the original inode is not free, so the replacement
+		// cannot be given its inode number. Were the handle closed before this
+		// check, the kernel could reuse it, verifySameFile would match, and
+		// this test would quietly start asserting that the substituted file IS
+		// removed.
 		stubEnsureParentDirsAfterOpen(t, func(absPath string) error {
 			require.NoError(t, os.Remove(absPath))
 			require.NoError(t, os.WriteFile(absPath, replacement, 0o600))
@@ -320,7 +327,7 @@ func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T)
 		assert.Equal(t, replacement, got, "the substituted file must not be removed")
 
 		record := recorder.RequireRecord(t, slog.LevelWarn,
-			"left a file in place after a failed open: it no longer refers to the opened inode")
+			"left a file in place after a failed open: could not confirm it still refers to the opened inode")
 		record.AssertAttrs(t, map[string]any{"path": filePath})
 	})
 }

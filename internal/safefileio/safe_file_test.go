@@ -194,6 +194,21 @@ func TestSafeOpenFileFallback_CreationProbe(t *testing.T) {
 		require.ErrorIs(t, err, ErrFileExists)
 	})
 
+	t.Run("reopen_failure_other_than_enoent_is_not_retried", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("root opens a 0000 file regardless of its mode, so the reopen would not fail")
+		}
+		dir := tu.SafeTempDir(t)
+		filePath := filepath.Join(dir, "unreadable.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte(existingContent), 0o600))
+		require.NoError(t, os.Chmod(filePath, 0o000))
+
+		// Only ENOENT means "it was deleted under us, try again"; every other
+		// reopen failure is the answer and must come straight back.
+		_, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, os.ErrPermission)
+	})
+
 	t.Run("rejects_leaf_symlink", func(t *testing.T) {
 		dir := tu.SafeTempDir(t)
 		targetPath := filepath.Join(dir, "target.txt")

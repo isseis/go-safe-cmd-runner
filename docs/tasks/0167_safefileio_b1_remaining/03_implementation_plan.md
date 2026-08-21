@@ -395,6 +395,14 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       再試行の上限には `maxTempNameAttempts` を使う。
 - [x] 内部由来の `EEXIST` を `ErrFileExists` へ変換しないようにする。`ErrFileExists` を返すのは、呼び出し元
       自身が `O_EXCL` を指定していた場合だけである。
+- [x] **開き直しの `ENOENT` が上限に達したときの戻り値を、非 nil であることが構造上保証される形にする
+      （レビュー指摘による実装時の追加）。** 最後の `ENOENT` を `fmt.Errorf` で包んで返し、併せて
+      `slog.Warn` に対象パスと試行回数を記録する。上限到達そのものを踏むテストは置かない。踏むには
+      「プローブと開き直しのあいだで対象を消す」差し替え点が要り、§ 1 が「差し替え点は 3 つに限る」と
+      定めているためである。代わりに、(a) 包むことで「nil エラー＋nil ファイル」を返す形自体を作れなく
+      し、(b) `ENOENT` **以外**の開き直し失敗が再試行されずそのまま返ることを
+      `TestSafeOpenFileFallback_CreationProbe/reopen_failure_other_than_enoent_is_not_retried` で
+      押さえる。
 - [x] 2 回目の親ディレクトリ確認が失敗した場合の後始末を実装する。作成していない場合は `Close` して元の
       エラーを返す。作成していた場合は `removeVerifiedFileByPath` を呼ぶ。いずれの場合も 2 回目の確認の失敗
       そのものを `slog.Warn` に記録する（[02_architecture.md](02_architecture.md) § 5.4）。**呼び出し元へ

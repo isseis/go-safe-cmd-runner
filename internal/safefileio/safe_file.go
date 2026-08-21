@@ -401,6 +401,16 @@ func verifySameFile(file File, path string) error {
 	return nil
 }
 
+// withCloseError appends a close failure to a warning's attributes, and only a
+// failure: an operator reading these records to decide whether a destination
+// needs quarantining learns nothing from a close_error that is nil every time.
+func withCloseError(closeErr error, attrs ...any) []any {
+	if closeErr == nil {
+		return attrs
+	}
+	return append(attrs, slog.Any("close_error", closeErr))
+}
+
 // removeVerifiedFileByPath closes file and then removes path, but only once it
 // has established that path still names the inode file refers to. If it does
 // not, or if that cannot be determined, the entry is left alone: at the point
@@ -409,27 +419,31 @@ func verifySameFile(file File, path string) error {
 //
 // file is always closed, whether or not the removal happens.
 //
-// The returned error describes why the removal was skipped or failed, for a
-// caller that wants to assert on it. Callers in a failure path must not return
-// it in place of the failure that brought them here (see the design document's
-// error handling section); this function records the reason itself.
+// The returned error describes why the removal was skipped or failed -- or, if
+// it did happen, why the close failed -- for a caller that wants to assert on
+// it. Callers in a failure path must not return it in place of the failure that
+// brought them here (see the design document's error handling section); this
+// function records the reason itself.
 func removeVerifiedFileByPath(file File, path string) error {
 	verifyErr := verifySameFile(file, path)
 	closeErr := file.Close()
 
 	if verifyErr != nil {
-		slog.Warn("left a file in place after a failed open: it no longer refers to the opened inode",
-			slog.String("path", path),
-			slog.Any("error", verifyErr),
-			slog.Any("close_error", closeErr))
+		// The wording covers both reasons this branch is reached: the entry is
+		// known to be a different inode, and the comparison could not be made
+		// at all. Both leave the entry alone.
+		slog.Warn("left a file in place after a failed open: could not confirm it still refers to the opened inode",
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", verifyErr))...)
 		return verifyErr
 	}
 
 	if err := os.Remove(path); err != nil {
 		slog.Warn("failed to remove the file created by a failed open",
-			slog.String("path", path),
-			slog.Any("error", err),
-			slog.Any("close_error", closeErr))
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", err))...)
 		return err
 	}
 
@@ -703,7 +717,18 @@ func openNoFollowTrackingCreation(absPath string, flag int, perm os.FileMode) (*
 		lastErr = err
 	}
 
-	return nil, false, lastErr
+	// The entry kept disappearing between the probe and the reopen, which is
+	// what a counterparty deleting and recreating it looks like from here.
+	slog.Warn("gave up opening the file: it kept disappearing between the creation probe and the reopen",
+		slog.String("path", absPath),
+		slog.Int("attempts", maxTempNameAttempts),
+		slog.Any("error", lastErr))
+
+	// Wrapped rather than returned bare, so that this return is non-nil by
+	// construction: handing back a nil error with a nil file would have every
+	// caller dereference it. The last ENOENT is preserved, since a caller
+	// distinguishing "not there" is right either way.
+	return nil, false, fmt.Errorf("gave up opening %s after %d attempts: %w", absPath, maxTempNameAttempts, lastErr)
 }
 
 // openNoFollow opens absPath with O_NOFOLLOW added and maps the errno values

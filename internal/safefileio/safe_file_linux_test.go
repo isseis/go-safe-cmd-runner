@@ -227,8 +227,13 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 
 	names := []string{collidingName, "safefileio-move-free-test"}
 	call := 0
+	// The prefix is passed in rather than baked into randomTempName, so the
+	// stub also pins the call site: an entry left behind is only recognizable
+	// as this package's if the move path asks for the prefix it documents.
+	var gotPrefixes []string
 	origFunc := generateTempLinkName
-	generateTempLinkName = func(_ string) (string, error) {
+	generateTempLinkName = func(prefix string) (string, error) {
+		gotPrefixes = append(gotPrefixes, prefix)
 		name := names[call]
 		call++
 		return name, nil
@@ -239,6 +244,7 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(dir, names[1]), tmpPath)
 	assert.Equal(t, 2, call, "expected exactly one retry after the collision")
+	assert.Equal(t, []string{tempLinkNamePrefix, tempLinkNamePrefix}, gotPrefixes)
 
 	// Clean up the created hard link.
 	_ = os.Remove(tmpPath)
