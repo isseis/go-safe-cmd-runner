@@ -666,6 +666,12 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 	return file, nil
 }
 
+// giveUpOpeningMsg marks the one outcome of the creation probe that a caller
+// cannot tell from the returned error: the loop having run to exhaustion,
+// rather than a single failure being handed straight back. Naming it lets a
+// test tell those apart too.
+const giveUpOpeningMsg = "gave up opening the file: it kept disappearing between the creation probe and the reopen"
+
 // openNoFollowTrackingCreation opens absPath without following a symlink at the
 // leaf, and reports whether this call is what brought the file into existence.
 //
@@ -719,7 +725,7 @@ func openNoFollowTrackingCreation(absPath string, flag int, perm os.FileMode) (*
 
 	// The entry kept disappearing between the probe and the reopen, which is
 	// what a counterparty deleting and recreating it looks like from here.
-	slog.Warn("gave up opening the file: it kept disappearing between the creation probe and the reopen",
+	slog.Warn(giveUpOpeningMsg,
 		slog.String("path", absPath),
 		slog.Int("attempts", maxTempNameAttempts),
 		slog.Any("error", lastErr))

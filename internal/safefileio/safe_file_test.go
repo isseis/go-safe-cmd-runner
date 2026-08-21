@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -205,8 +206,16 @@ func TestSafeOpenFileFallback_CreationProbe(t *testing.T) {
 
 		// Only ENOENT means "it was deleted under us, try again"; every other
 		// reopen failure is the answer and must come straight back.
+		//
+		// The returned error alone cannot say that: a loop that retried EACCES
+		// to exhaustion would hand back the same EACCES wrapped. What separates
+		// the two is the give-up warning, which only the exhausted loop emits.
+		recorder := captureWarnings(t)
+
 		_, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
 		require.ErrorIs(t, err, os.ErrPermission)
+		assert.Empty(t, recorder.FindRecords(slog.LevelWarn, giveUpOpeningMsg),
+			"a non-ENOENT reopen failure must be returned at once, not retried to exhaustion")
 	})
 
 	t.Run("rejects_leaf_symlink", func(t *testing.T) {
