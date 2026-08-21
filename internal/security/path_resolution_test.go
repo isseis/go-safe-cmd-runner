@@ -127,7 +127,7 @@ func TestResolvePathForCheck_RelativePathUsesWorkingDirectory(t *testing.T) {
 }
 
 // TestResolvePathForCheck_AbsConversionFailure covers the branch taken when the
-// working directory cannot be read, which is reachable only through the test seam.
+// working directory cannot be read, which is reachable only through the test override.
 func TestResolvePathForCheck_AbsConversionFailure(t *testing.T) {
 	original := getwdOverride
 	getwdOverride = func() (string, error) { return "", errGetwdFailed }
