@@ -97,19 +97,17 @@ func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, err
 }
 
 // validateOpenPerm rejects a permission value that carries bits outside
-// os.ModePerm. Contract: every mode SafeOpenFile hands to open(2) consists of
-// the nine POSIX permission bits and nothing else, on both routes.
+// os.ModePerm, so that every mode SafeOpenFile hands to open(2) is nine POSIX
+// permission bits and nothing else, on both routes.
 //
 // Go's os.FileMode encodes setuid, setgid, sticky and the file-type bits in
-// its own high bits (1<<19 and above) rather than at the POSIX ones. Passing
-// such a value straight to the kernel delivers a mode the caller did not mean,
-// and silently discarding those bits with perm.Perm() would hide the caller's
-// mistake, so they are rejected here instead.
+// its own high bits (1<<19 and above) rather than at the POSIX ones, so such a
+// value delivers a mode the caller did not mean. Discarding those bits with
+// perm.Perm() would hide the caller's mistake instead of surfacing it.
 //
 // This does not contradict groupmembership.MaxAllowedReadPerms permitting
-// setuid and setgid: that limit constrains the POSIX permissions of a file
-// already on disk, whereas this check constrains the os.FileMode value handed
-// to open(2). The two describe different values.
+// setuid and setgid: that limit constrains a file already on disk, this one
+// constrains the value handed to open(2).
 func validateOpenPerm(perm os.FileMode) error {
 	if perm&^os.ModePerm != 0 {
 		return fmt.Errorf("%w: %v", ErrUnsupportedFileMode, perm)

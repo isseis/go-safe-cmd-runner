@@ -300,13 +300,11 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
 }
 
-// openat2SyscallFunc is the shape of the raw openat2 system call, used to type
-// the test stubs installed below.
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)
 
-// stubOpenat2 installs an openat2 stub and restores the previous value when
-// the test ends. It returns the value it displaced so a stub can delegate the
-// opens it does not care about to the real system call.
+// stubOpenat2 installs an openat2 stub for the duration of the test. The stub
+// is built from the value it displaces, so it can delegate the opens it does
+// not care about instead of reimplementing them.
 func stubOpenat2(t *testing.T, stub func(realCall openat2SyscallFunc) openat2SyscallFunc) {
 	t.Helper()
 	realCall := openat2SyscallFunc(openat2SyscallOverride)
@@ -314,12 +312,11 @@ func stubOpenat2(t *testing.T, stub func(realCall openat2SyscallFunc) openat2Sys
 	openat2SyscallOverride = stub(realCall)
 }
 
-// TestOpenat2_RetriesOnEINTR verifies that EINTR from the kernel is retried
-// until the call goes through, rather than surfacing to the caller. EINTR
-// arrives from the Go runtime's asynchronous preemption signal, which a test
-// cannot provoke on demand, so the raw system call is stubbed to produce it.
+// TestOpenat2_RetriesOnEINTR stubs the raw system call because EINTR arrives
+// from the Go runtime's preemption signal, which a test cannot provoke on
+// demand.
 //
-// The stub returns EINTR more than once on purpose: a "retry exactly once"
+// The stub interrupts more than once on purpose: a "retry exactly once"
 // implementation would satisfy a single-EINTR test while still leaking EINTR
 // under the repeated signals the unbounded loop exists to absorb.
 func TestOpenat2_RetriesOnEINTR(t *testing.T) {
@@ -358,9 +355,8 @@ func TestOpenat2_RetriesOnEINTR(t *testing.T) {
 	assert.Equal(t, interruptions+1, calls, "every EINTR must be retried, not just the first")
 }
 
-// TestOpenat2_NonEINTRErrnoMapping verifies that adding the EINTR retry left
-// the existing errno mapping intact: every other errno is still translated to
-// the sentinel it was translated to before.
+// TestOpenat2_NonEINTRErrnoMapping guards the errno mapping that predates the
+// EINTR retry, including that these errnos are not swept into the retry loop.
 func TestOpenat2_NonEINTRErrnoMapping(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -399,11 +395,9 @@ func TestOpenat2_NonEINTRErrnoMapping(t *testing.T) {
 	}
 }
 
-// TestOpenat2Mode pins the rule that decides openHow.mode. The O_DIRECTORY row
-// is the one a caller-level test cannot reach cheaply: O_TMPFILE's constant
-// includes O_DIRECTORY, so an intersection test rather than an equality test
-// would misread a plain directory open as creating and leak perm into a mode
-// the kernel would reject.
+// TestOpenat2Mode pins the rule that decides openHow.mode. The directory row
+// is here because a caller-level test cannot reach it cheaply; see
+// mayCreateFile for why a directory open is at risk of being misread.
 func TestOpenat2Mode(t *testing.T) {
 	const perm = os.FileMode(0o640)
 
@@ -427,13 +421,9 @@ func TestOpenat2Mode(t *testing.T) {
 	}
 }
 
-// TestOpenat2_PassesModeOnlyForCreatingOpens verifies the kernel-side half of
-// the mode contract by reading openHow.mode as it is handed to the system
-// call: zero unless the open may create a file.
-//
-// The O_TMPFILE row matters because the kernel does NOT reject a zero mode
-// there -- it creates a mode 0000 file -- so a wrong rule would diverge from
-// the fallback path silently rather than failing.
+// TestOpenat2_PassesModeOnlyForCreatingOpens reads openHow.mode as it is
+// handed to the system call, so the rule is checked against the kernel
+// interface rather than only against openat2Mode's return value.
 func TestOpenat2_PassesModeOnlyForCreatingOpens(t *testing.T) {
 	const perm = os.FileMode(0o640)
 
@@ -467,9 +457,9 @@ func TestOpenat2_PassesModeOnlyForCreatingOpens(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tmpFile.Close())
 
-	// Assert the stub actually saw each open before asserting its mode: a
-	// missing key would otherwise read back as the zero value and let the
-	// "mode is 0" assertions pass without observing anything.
+	// Assert the recorded call sequence, not just the mode: an absent key
+	// would read back as the zero value and let "mode is 0" pass without the
+	// stub having observed anything.
 	require.Equal(t, []uint64{0}, modes[existingPath], "an open without O_CREATE must pass mode 0")
 	require.Equal(t, []uint64{uint64(perm)}, modes[createdPath], "a creating open must pass the requested permission bits")
 	require.Equal(t, []uint64{uint64(perm)}, modes[dir], "an O_TMPFILE open creates a file and must pass the requested permission bits")

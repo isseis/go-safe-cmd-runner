@@ -80,24 +80,20 @@ func mayCreateFile(flag int) bool {
 	return flag&os.O_CREATE != 0 || flag&unix.O_TMPFILE == unix.O_TMPFILE
 }
 
-// openat2Mode returns the value to place in openHow.mode for the given open
-// flags. Contract: the mode is zero unless the call may create a file, and
-// otherwise carries exactly the nine POSIX permission bits of perm.
+// openat2Mode returns the value to place in openHow.mode. It exists to keep
+// the openat2 and fallback paths in agreement, in both directions:
 //
-// open(2) reads the mode only for a call that can create a file, and openat2(2)
-// enforces that by returning EINVAL when mode is non-zero and neither O_CREAT
-// nor O_TMPFILE is set. On the fallback path os.OpenFile always hands the mode
-// to the kernel, which then ignores it in that same situation, so zeroing it
-// here is what makes the two paths agree on a non-creating open.
+// For a non-creating open, openat2(2) rejects a non-zero mode with EINVAL,
+// while os.OpenFile hands the same value to a kernel that ignores it. Zeroing
+// it here is what removes that divergence.
 //
-// The converse matters just as much: for a creating open the kernel does apply
-// the mode, O_TMPFILE included. Zeroing it for O_TMPFILE would not raise EINVAL
-// -- it would quietly create a mode 0000 file while the fallback path created
-// one with perm, reintroducing the very divergence this function exists to
-// remove. Verified against Linux 6.12.
+// For a creating open the kernel does apply the mode, O_TMPFILE included -- it
+// does not reject a zero mode there, it creates a 0000 file, so treating
+// O_TMPFILE as non-creating would silently reintroduce the divergence from the
+// other side. Verified against Linux 6.12.
 //
-// Callers have already passed validateOpenPerm, so nothing outside os.ModePerm
-// can reach this point and the conversion is a plain copy.
+// Callers have already passed validateOpenPerm, so perm.Perm() is a plain copy
+// rather than a lossy narrowing.
 func openat2Mode(flag int, perm os.FileMode) uint64 {
 	if !mayCreateFile(flag) {
 		return 0
@@ -106,9 +102,8 @@ func openat2Mode(flag int, perm os.FileMode) uint64 {
 }
 
 // openat2 wraps the openat2 system call, retrying while the kernel reports
-// EINTR. Contract: EINTR never reaches the caller; every other errno is
-// returned exactly as the raw system call produced it, so the ELOOP, EEXIST
-// and ENOENT mapping in safeOpenFileInternal is unaffected.
+// EINTR. Every other errno is passed through untouched, leaving the mapping in
+// safeOpenFileInternal to interpret it.
 //
 // The retry count is deliberately unbounded. EINTR means the open was
 // interrupted before it took effect, so retrying is a redo rather than a
@@ -126,8 +121,6 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 }
 
 // rawOpenat2 issues exactly one openat2 system call, with no retry handling.
-// It confines the unsafe.Pointer handling required by the syscall interface to
-// a single function.
 func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
 	pathBytes, err := syscall.BytePtrFromString(pathname)
 	if err != nil {
@@ -338,8 +331,8 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 
 	fd, err := openat2(AtFdcwd, absPath, &how)
 	if err != nil {
-		// Check for specific errors. Unwrap rather than type-assert, so the
-		// mapping stays correct for any error the retry wrapper hands back.
+		// Unwrap rather than type-assert, so the mapping stays correct for
+		// any error the retry wrapper hands back.
 		if errno, ok := errors.AsType[syscall.Errno](err); ok {
 			switch errno {
 			case syscall.ELOOP:

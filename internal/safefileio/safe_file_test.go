@@ -38,11 +38,11 @@ var openRoutes = []openRoute{
 	{name: "fallback", config: FileSystemConfig{DisableOpenat2: true}},
 }
 
-// newFileSystemForRoute builds the FileSystem for a route. For the openat2
-// route it insists that openat2 really is available, because NewFileSystem
-// falls back silently when it is not (Linux 5.5 and older, non-Linux, or a
-// container seccomp profile that blocks the call). Without this check a table
-// claiming to cover both routes would run the fallback path twice.
+// newFileSystemForRoute builds the FileSystem for a route. The openat2 route
+// insists that openat2 really is available, because NewFileSystem falls back
+// silently when it is not (Linux 5.5 and older, non-Linux, or a container
+// seccomp profile that blocks the call), which would leave a table claiming to
+// cover both routes running the fallback path twice.
 func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
 	t.Helper()
 	fs := NewFileSystem(route.config)
@@ -56,9 +56,9 @@ func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
 	return fs
 }
 
-// TestSafeOpenFile_RejectsNonPermissionModeBits verifies that a perm carrying
-// any bit outside os.ModePerm is rejected with the same sentinel on both
-// routes, before anything is created.
+// TestSafeOpenFile_RejectsNonPermissionModeBits also asserts that nothing was
+// created, since rejecting only after the side effect would be no better than
+// accepting.
 func TestSafeOpenFile_RejectsNonPermissionModeBits(t *testing.T) {
 	perms := []struct {
 		name string
@@ -86,14 +86,11 @@ func TestSafeOpenFile_RejectsNonPermissionModeBits(t *testing.T) {
 	}
 }
 
-// TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits verifies that the
-// public write entry point rejects the same mode bits SafeOpenFile does.
-//
-// It reaches validateOpenPerm through SafeOpenFile today, and the existing
-// ValidateRequestedPermissions cannot stand in for it: that check masks with
-// 0o7777, so os.ModeSetuid (1<<23) is invisible to it and 0o600 is all it
-// sees. This test therefore fails loudly if a later change reroutes the write
-// path around SafeOpenFile without carrying the check across.
+// TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits is a tripwire: the
+// write path reaches validateOpenPerm only by going through SafeOpenFile, so
+// this fails loudly if a later change reroutes it without carrying the check
+// across. ValidateRequestedPermissions cannot stand in, because it masks with
+// 0o7777 and so sees plain 0o600 where os.ModeSetuid (1<<23) was requested.
 func TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits(t *testing.T) {
 	filePath := filepath.Join(tu.SafeTempDir(t), "target.txt")
 
@@ -102,10 +99,9 @@ func TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits(t *testing.T) {
 	assert.NoFileExists(t, filePath, "rejection must happen before anything is written")
 }
 
-// TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths verifies that a non-zero
-// perm on an open without O_CREATE is ignored rather than rejected, and that
-// both routes agree. Before this task the openat2 route failed such a call
-// with EINVAL while the fallback route succeeded.
+// TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths covers the divergence this
+// task removed: the openat2 route used to fail a non-creating open carrying a
+// non-zero perm with EINVAL, while the fallback route succeeded.
 func TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths(t *testing.T) {
 	const content = "read-open-content"
 
@@ -126,10 +122,8 @@ func TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths(t *testing.T) {
 	}
 }
 
-// TestSafeOpenFile_CreatePermUnchanged verifies that a creating open still
-// applies perm as the kernel always did, i.e. reduced by the process umask.
-// The umask is chosen so that it actually removes a bit of the requested
-// perm; an implementation that applied perm verbatim would fail here.
+// TestSafeOpenFile_CreatePermUnchanged holds the creating open to what the
+// kernel always did: perm reduced by the process umask.
 func TestSafeOpenFile_CreatePermUnchanged(t *testing.T) {
 	// The umask must actually remove a bit of the requested perm, and the
 	// expected result must not be a value the package uses as a default
