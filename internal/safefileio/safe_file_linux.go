@@ -68,39 +68,28 @@ func isOpenat2Available() bool {
 	return err == nil
 }
 
-// mayCreateFile reports whether an open with these flags can bring a new inode
-// into existence, which is exactly when open(2) reads the mode argument.
+// mayCreateFile reports whether these flags can bring a new inode into
+// existence, which is the only case in which openPermBits passes a mode on.
 //
-// O_TMPFILE must be tested for equality, not for a non-zero intersection: the
-// constant is a bit pattern that includes O_DIRECTORY, so a plain directory
-// open would match an intersection test and be misread as creating.
+// O_TMPFILE is tested for equality because its bit pattern includes
+// O_DIRECTORY, which an intersection test would misread as creating.
 func mayCreateFile(flag int) bool {
 	return flag&os.O_CREATE != 0 || flag&unix.O_TMPFILE == unix.O_TMPFILE
 }
 
-// openat2Mode returns the value to place in openHow.mode. The rule openPermBits
-// applies is what keeps the openat2 and fallback paths in agreement, and it
-// matters in both directions:
-//
-// For a non-creating open, openat2(2) rejects a non-zero mode with EINVAL,
-// while os.OpenFile hands the same value to a kernel that ignores it. Zeroing
-// it here is what removes that divergence.
-//
-// For a creating open the kernel does apply the mode, O_TMPFILE included -- it
-// does not reject a zero mode there, it creates a 0000 file, so treating
-// O_TMPFILE as non-creating would silently reintroduce the divergence from the
-// other side. Verified against Linux 6.12.
+// openat2Mode returns the value to place in openHow.mode, applying openPermBits
+// so that this route and the fallback agree in both directions: openat2 rejects
+// a non-zero mode on a non-creating open where os.OpenFile hands it to a kernel
+// that ignores it, and on a creating O_TMPFILE open the kernel does apply the
+// mode, so treating O_TMPFILE as non-creating would create a 0000 file on this
+// route and a 0600 one on the other. Verified against Linux 6.12.
 func openat2Mode(flag int, perm os.FileMode) uint64 {
 	return uint64(openPermBits(flag, perm))
 }
 
-// dirAccessFlag is the access mode this package opens a directory with when it
-// only means to anchor later operations to it.
-//
-// O_PATH asks for no access to the directory's contents, which is what the
-// openat/renameat/linkat/unlinkat/fstatat calls anchored to the fd need. Opening
-// it O_RDONLY instead would demand read permission and so refuse a write-only
-// drop directory (mode 0733 and the like) that the path-based code this replaces
+// dirAccessFlag opens a directory only to anchor later operations to it, so it
+// must not demand read permission: O_RDONLY here would refuse a write-only drop
+// directory (mode 0733 and the like) that the path-based code this replaces
 // moved into without complaint.
 const dirAccessFlag = unix.O_PATH
 
@@ -153,14 +142,13 @@ func (fs *osFS) openFileAt(dirFd int, name string, flag int, perm os.FileMode) (
 }
 
 // openat2 wraps the openat2 system call, retrying while the kernel reports
-// EINTR. Every other errno is passed through untouched, leaving the mapping in
-// safeOpenFileInternal to interpret it.
+// EINTR and passing every other errno through untouched for mapOpenErrno to
+// interpret.
 //
-// The retry count is deliberately unbounded. EINTR means the open was
-// interrupted before it took effect, so retrying is a redo rather than a
-// repeated operation; the Go standard library retries open the same way. In
-// this package the interruption comes from the runtime's asynchronous
-// preemption signal (SIGURG) rather than from anything an attacker controls.
+// The retry is deliberately unbounded: EINTR means the open never took effect,
+// so retrying redoes it rather than repeating it, and the interruption here is
+// the Go runtime's preemption signal (SIGURG) rather than anything an attacker
+// controls.
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 	for {
 		fd, err := openat2Syscall(dirfd, pathname, how)
@@ -222,35 +210,18 @@ var linkatFunc = unix.Linkat
 // identity cannot be established, the function fails closed instead of moving
 // anything.
 //
-// Neither side is named by a path here. Each directory is pinned to an inode by
-// its fd and each file by a single name within it, so nothing this function does
-// re-resolves a path the caller had checked. The source additionally never
-// depends on its name: the move goes through the fd's own inode.
+// That holds even when the source entry is replaced between the open and this
+// call, though nothing here checks for it: the kernel refuses to give a new name
+// via /proc/self/fd to a regular (non-O_TMPFILE) file once its last directory
+// entry is gone -- see may_linkat -- and replacing the entry drops the verified
+// inode's nlink to 0, so linkFileToTempName fails with ENOENT before anything is
+// renamed. The pre-replacement content is not recovered either; the move errors
+// out. See the design document's rationale on this kernel constraint.
 //
-// It hard-links that inode (via /proc/self/fd, which requires
-// AT_SYMLINK_FOLLOW to dereference the magic symlink to the real inode) into
-// the destination directory under a random temporary name, renames the
-// temporary name to dstName within that same directory (atomic replace), and
-// then unlinks the source entry.
-//
-// Note on what happens if the source entry is replaced between the open and
-// this call: the Linux kernel refuses to give a new name via /proc/self/fd to a
-// regular (non-O_TMPFILE) file once its last directory entry has been
-// removed (nlink reaches 0) -- see may_linkat in the kernel. Replacing the
-// source's directory entry (unlink+recreate, or renaming another file over
-// it) drops the originally verified inode's nlink to 0, so the hard-link
-// step below fails with ENOENT before any rename or unlink runs. The
-// practical effect is fail-closed by construction: a replaced source can
-// never reach the destination, but the mechanism does not recover the
-// pre-replacement content either -- it errors out. See the design document's
-// rationale on this kernel constraint for the full explanation.
-//
-// On any failure before the rename below succeeds, no file is left at the
-// destination and any temporary hard link created along the way is removed
-// (fail-closed, no partial move). Once the rename has succeeded, a
-// subsequent failure (verifySameFileAt mismatch, or source removal failure)
-// intentionally leaves the destination populated with the moved content rather
-// than undoing the rename.
+// A failure before the rename leaves nothing at the destination and removes the
+// temporary hard link, so there is no partial move. A failure after it -- a
+// verifySameFileAt mismatch, or the source removal -- intentionally leaves the
+// moved content in place rather than undoing the rename.
 func moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, dstName string) (err error) {
 	osFile, ok := srcFile.(*os.File)
 	if !ok || osFile == nil {

@@ -19,22 +19,18 @@ func isOpenat2Available() bool {
 	return false
 }
 
-// mayCreateFile reports whether an open with these flags can bring a new inode
-// into existence, which is exactly when open(2) reads the mode argument.
-// O_TMPFILE, which the Linux counterpart of this function also accounts for,
-// does not exist on these platforms.
+// mayCreateFile reports whether these flags can bring a new inode into
+// existence, which is the only case in which openPermBits passes a mode on.
+// O_TMPFILE, which the Linux counterpart also accounts for, does not exist on
+// these platforms.
 func mayCreateFile(flag int) bool {
 	return flag&os.O_CREATE != 0
 }
 
-// dirAccessFlag is the access mode this package opens a directory with when it
-// only means to anchor later operations to it.
-//
-// The Linux counterpart uses O_PATH, which asks for no access at all. These
-// platforms have no equivalent, so a directory must be readable to be anchored
-// to -- a write-only drop directory (mode 0733 and the like) is refused here
-// where Linux accepts it. Non-Linux is a development and limited-use
-// configuration; see the design document's residual-risk table.
+// dirAccessFlag has no O_PATH equivalent here, so a directory must be readable
+// to be anchored to: the write-only drop directory Linux accepts is refused on
+// these platforms. Non-Linux is a development and limited-use configuration;
+// see the design document's residual-risk table.
 const dirAccessFlag = unix.O_RDONLY
 
 // openDirNoSymlinks opens dir as a directory fd, refusing to follow a symlink
