@@ -165,10 +165,10 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 // and rejected here by openDirNoSymlinks, which pins each parent directory to an
 // inode, and by openFileAt, which rejects a symlink at the leaf.
 //
-// Once both directory fds are held, the move itself resolves no path a second
-// time: it works from the fds and a single name on each side. The post-move
-// destination validation below is the one exception, and Phase 4a of the design
-// document replaces it with an fd-anchored identity check.
+// It opens and validates the source; moveOpenFileCore does everything from the
+// first side effect onwards. Once both directory fds are held no path is
+// resolved a second time: the move works from the fds and a single name on each
+// side.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
 	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
@@ -203,44 +203,90 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 		}
 	}()
 
-	// Set secure permissions via the opened file handle (fchmod).
-	// This avoids the TOCTOU race where os.Chmod follows symlinks and could
-	// modify permissions on an unintended target before symlink checks run.
-	if err := srcFile.Chmod(requiredPerm); err != nil {
-		return fmt.Errorf("failed to set secure permissions on source: %w", err)
-	}
-
-	// Validate source file properties
+	// Validate the source before anything is changed about it: the mode this
+	// check reads must be the caller's, not one this function has already
+	// narrowed. A source it refuses is left exactly as it was found.
 	if err := canSafelyAccessFile(srcFile, absSrc, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("source file validation failed: %w", err)
 	}
 
-	// Move the verified source inode into place. moveFileAnchored anchors the
-	// move to srcFile's fd (on Linux) rather than re-resolving the source by
-	// path name, so a replacement of the source entry between the open above and
-	// this call cannot cause a different inode to be moved (see
-	// safe_file_linux.go).
-	if err := moveFileAnchored(srcFile, srcDirFd, srcName, dstDirFd, dstName); err != nil {
-		return fmt.Errorf("atomic move failed: %w", err)
+	return moveOpenFileCore(srcFile, srcDirFd, srcName, dstDirFd, dstName, absDst, requiredPerm, fs.GetGroupMembership())
+}
+
+// destinationCommittedMsg marks the one outcome an operator has to be able to
+// find after the fact: the rename went through and the operation failed anyway,
+// so what sits at the destination now is the moved content, chosen by whoever
+// won the race for the name rather than by this process. It is the difference
+// between "run it again" and "quarantine what is there".
+const destinationCommittedMsg = "destination was replaced before the failure; it now holds the moved file"
+
+// moveOpenFileCore moves the inode behind file to dstName under dstDirFd. The
+// caller opens the source and validates it for reading; from here on everything
+// that changes anything happens, in the order the design document fixes.
+//
+// file must be the source's own fd, not a handle reopened by name: the read
+// validation the caller ran does not look at the owner, so an attacker's file
+// substituted at the source name would pass it just as well.
+//
+// srcDirFd and srcName name the source entry to remove once the move is done;
+// dstDirFd and dstName the destination. dstPath is the destination's absolute
+// path, carried for messages only -- nothing here resolves it.
+//
+// A failure once the rename has replaced the destination is wrapped in
+// ErrDestinationCommitted, so a caller can tell "nothing happened" from "the
+// destination is the new content and something still went wrong" with
+// errors.Is. Nothing is rolled back in that case: the destination's previous
+// content is already gone and cannot be put back.
+func moveOpenFileCore(file File, srcDirFd int, srcName string, dstDirFd int, dstName, dstPath string, requiredPerm os.FileMode, gm *groupmembership.GroupMembership) error {
+	// fchmod rather than os.Chmod: the fd cannot be redirected by a symlink
+	// swapped in at the source name, and the inode whose mode is set here is
+	// the one that arrives at the destination.
+	if err := file.Chmod(requiredPerm); err != nil {
+		return fmt.Errorf("failed to set secure permissions on source: %w", err)
 	}
 
-	// Validate destination file after move
-	dstFile, err := fs.SafeOpenFile(absDst, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open destination file safely: %w", err)
-	}
-	defer func() {
-		if closeErr := dstFile.Close(); closeErr != nil {
-			slog.Warn("error closing destination file", slog.Any("error", closeErr))
-		}
-	}()
-
-	// Final validation of destination file
-	if err := canSafelyAccessFile(dstFile, absDst, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
+	// The destination write policy is applied here, to this fd, rather than to
+	// the destination after the move. The inode is the same either way, so the
+	// verdict is the same; what changes is the cost of a refusal, which used to
+	// be an error reported over a destination that had already been replaced.
+	// This is reached in ordinary use, not only under attack:
+	// ValidateRequestedPermissions admits modes CanCurrentUserSafelyWriteFile
+	// refuses, a group-writable mode in a shared group among them.
+	if err := canSafelyAccessFile(file, dstPath, groupmembership.FileOpWrite, gm); err != nil {
 		return fmt.Errorf("destination file validation failed: %w", err)
 	}
 
+	if err := moveFileAnchored(file, srcDirFd, srcName, dstDirFd, dstName); err != nil {
+		// moveFileAnchored can fail on either side of the rename -- it removes
+		// the source entry afterwards -- and its error does not say which.
+		// Whether the destination is now this inode does say, and it is the
+		// same question the post-move check below asks.
+		if verifySameFileAt(file, dstDirFd, dstName) == nil {
+			return commitFailure(fmt.Errorf("atomic move failed after the destination was replaced: %w", err), dstPath)
+		}
+		return fmt.Errorf("atomic move failed: %w", err)
+	}
+
+	// What is left to establish after the move is identity, not permissions:
+	// the permissions were checked on this fd, and asking again about the same
+	// inode under its new name would answer the same question. A mismatch here
+	// means the destination name was taken over between the rename and this
+	// check.
+	if err := verifyMovedFile(file, dstDirFd, dstName); err != nil {
+		return commitFailure(fmt.Errorf("destination identity check failed after the move: %w", err), dstPath)
+	}
+
 	return nil
+}
+
+// commitFailure marks a failure that happened after the rename had already
+// replaced the destination, and records it: an operator deciding what to do
+// with the destination has nothing else to go on.
+func commitFailure(err error, dstPath string) error {
+	slog.Warn(destinationCommittedMsg,
+		slog.String("destination", dstPath),
+		slog.Any("error", err))
+	return fmt.Errorf("%w: %w", ErrDestinationCommitted, err)
 }
 
 // safeWriteFileCommon contains the common logic for safe file writing operations
@@ -809,30 +855,76 @@ func canSafelyAccessFile(file File, filePath string, operation groupmembership.F
 	}
 
 	// Use unified permission and ownership check based on operation type
+	var (
+		allowed   bool
+		policyErr error
+		opName    string
+		verb      string
+	)
 	switch operation {
 	case groupmembership.FileOpRead:
-		canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
-		if err != nil {
-			return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
-		}
-		if !canSafelyRead {
-			return fmt.Errorf("%w: %s - current user cannot safely read from this file",
-				ErrInvalidFilePermissions, filePath)
-		}
+		opName, verb = "read", "read from"
+		allowed, policyErr = groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
 	case groupmembership.FileOpWrite:
-		canSafelyWrite, err := groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
-		if err != nil {
-			return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
-		}
-		if !canSafelyWrite {
-			return fmt.Errorf("%w: %s - current user cannot safely write to this file",
-				ErrInvalidFilePermissions, filePath)
-		}
+		opName, verb = "write", "write to"
+		allowed, policyErr = groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
 	default:
 		return fmt.Errorf("%w: unknown operation type", ErrInvalidFileOperation)
 	}
 
+	if policyErr != nil {
+		logPermissionRejection(filePath, opName, fileInfo, stat, policyErr)
+		return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, policyErr)
+	}
+	if !allowed {
+		logPermissionRejection(filePath, opName, fileInfo, stat, nil)
+		return fmt.Errorf("%w: %s - current user cannot safely %s this file",
+			ErrInvalidFilePermissions, filePath, verb)
+	}
+
 	return nil
+}
+
+// permissionRejectionMsg marks a file refused on its permissions. Reordering
+// the move path's checks makes this reachable for sources that used to be
+// narrowed and then accepted, so an operator meeting it for the first time
+// needs the record to say which file and which rule, not only that something
+// was refused.
+const permissionRejectionMsg = "refused a file on its permissions"
+
+// logPermissionRejection records what an operator needs to act on a refusal:
+// the file, the mode, owner and group it was refused for, and the rule that
+// refused it.
+func logPermissionRejection(filePath, opName string, fileInfo os.FileInfo, stat *syscall.Stat_t, cause error) {
+	slog.Warn(permissionRejectionMsg,
+		slog.String("path", filePath),
+		slog.String("operation", opName),
+		slog.String("mode", fmt.Sprintf("%04o", fileInfo.Mode().Perm())),
+		slog.Uint64("uid", uint64(stat.Uid)),
+		slog.Uint64("gid", uint64(stat.Gid)),
+		slog.String("rule", rejectionRule(cause)),
+		slog.Any("error", cause))
+}
+
+// rejectionRule names the policy that refused a file, so that the records can
+// be told apart without reading the message the policy happened to produce.
+// The names come from the sentinels groupmembership returns; anything without
+// one is reported as unknown rather than guessed at.
+func rejectionRule(cause error) string {
+	switch {
+	case errors.Is(cause, groupmembership.ErrFileWorldWritable):
+		return "world-writable"
+	case errors.Is(cause, groupmembership.ErrGroupWritableNonMember):
+		return "group-writable-non-member"
+	case errors.Is(cause, groupmembership.ErrPermissionsExceedMaximum):
+		return "permissions-exceed-maximum"
+	case errors.Is(cause, groupmembership.ErrFileNotOwner):
+		return "not-owner"
+	case errors.Is(cause, groupmembership.ErrFileNotWritable):
+		return "not-writable"
+	default:
+		return "unknown"
+	}
 }
 
 // canSafelyReadFromFile checks if the current user can safely read from a file with

@@ -262,6 +262,51 @@ func TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename(t
 	assert.Equal(t, content, got)
 }
 
+// TestMoveOpenFileCore_MoveFailureAfterRenameIsDestinationCommitted covers the
+// second way a call can fail with the destination already replaced: the move
+// removes the source entry after the rename, so its own error can arrive once
+// the destination is committed. That error does not say which side of the
+// rename it came from, so moveOpenFileCore asks the destination instead -- and
+// a failure it reports as ordinary would tell the caller nothing happened when
+// the previous content is in fact gone.
+//
+// It is Linux-only for the same reason as the moveFileAnchored-level test it
+// mirrors: only there does the move remove the source as a separate step after
+// the rename.
+func TestMoveOpenFileCore_MoveFailureAfterRenameIsDestinationCommitted(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root is exempt from the directory permission check that makes the source unlink fail")
+	}
+	dir := tu.SafeTempDir(t)
+	srcParent := filepath.Join(dir, "srcparent")
+	require.NoError(t, os.Mkdir(srcParent, 0o755))
+	srcPath := filepath.Join(srcParent, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	content := []byte("moved content")
+	require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+	require.NoError(t, os.WriteFile(dstPath, []byte("previous content"), 0o600))
+
+	fs := NewFileSystem(FileSystemConfig{})
+	srcDirFd, srcFile := openSourceForMove(t, fs, srcParent, "src.txt")
+	dstDirFd := dirFdForTest(t, fs, dir)
+
+	// Take away write permission on the source's parent so the trailing unlink
+	// fails with EACCES, after the rename has already put the inode in place.
+	require.NoError(t, os.Chmod(srcParent, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(srcParent, 0o755) })
+
+	recorder := captureWarnings(t)
+	err := moveOpenFileCore(srcFile, srcDirFd, "src.txt", dstDirFd, "dst.txt", dstPath, 0o600, fs.GetGroupMembership())
+	require.ErrorIs(t, err, ErrDestinationCommitted)
+
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got, "the rename went through, so the destination holds the moved content")
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, destinationCommittedMsg)
+	record.AssertAttrs(t, map[string]any{"destination": dstPath})
+}
+
 // TestLinkFileToTempName_RetriesOnNameCollision forces generateTempLinkName to
 // return a colliding name first, then a free one, and verifies
 // linkFileToTempName retries rather than failing on the first EEXIST.

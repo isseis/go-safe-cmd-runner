@@ -38,6 +38,11 @@ var (
 	// the kernel.
 	ErrUnsupportedFileMode = errors.New("unsupported file mode bits")
 
+	// ErrDestinationCommitted indicates that a move or overwrite already
+	// replaced the destination before the failure being reported occurred,
+	// so the destination now holds the new content.
+	ErrDestinationCommitted = errors.New("destination already replaced before failure")
+
 	// ErrUnsupportedFileHandle indicates that the provided File implementation
 	// does not support the operation being requested (e.g. it is not backed by
 	// an *os.File and therefore cannot be used for fd-anchored operations).

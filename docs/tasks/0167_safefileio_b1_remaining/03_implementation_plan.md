@@ -685,60 +685,85 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 4-1. 移動経路の分割と順序の変更
 
-- [ ] `errors.go` に `ErrDestinationCommitted` を追加する（宣言と doc コメントは
+- [x] `errors.go` に `ErrDestinationCommitted` を追加する（宣言と doc コメントは
       [02_architecture.md](02_architecture.md) § 3.1 のコードブロックのとおり）。
-- [ ] `atomicMoveFileCore` から `moveOpenFileCore` を切り出す。責務の分担は
+- [x] `atomicMoveFileCore` から `moveOpenFileCore` を切り出す。責務の分担は
       [02_architecture.md](02_architecture.md) § 3.4.1 の表のとおりとする。
-- [ ] `moveOpenFileCore` の中で、fchmod を `canSafelyAccessFile(FileOpRead)` によるソース検証の**後**に置く
-      （AC-06）。
-- [ ] fchmod の直後・`rename` の前に、同じ fd に対して `canSafelyAccessFile(FileOpWrite)` を実行する
+- [x] `moveOpenFileCore` の中で、fchmod を `canSafelyAccessFile(FileOpRead)` によるソース検証の**後**に置く
+      （AC-06）。ソース検証は `atomicMoveFileCore` 側に残るため、`moveOpenFileCore` は「最初の副作用から
+      後」だけを担う形になった。
+- [x] fchmod の直後・`rename` の前に、同じ fd に対して `canSafelyAccessFile(FileOpWrite)` を実行する
       （[02_architecture.md](02_architecture.md) § 3.4.3）。移動後の宛先を開き直す検査（現行
       `safe_file.go:185-198`）はここへ移す。
-- [ ] 移動後に残す検証を、宛先ディレクトリ fd と宛先名に対する `verifySameFile` による同一性確認へ変える。
+- [x] 移動後に残す検証を、宛先ディレクトリ fd と宛先名に対する `verifySameFile` による同一性確認へ変える。
       呼び出しは差し替え点 `verifyMovedFile` を経由させ、宛先をパス名で開き直さない。差し替え点は § 1 の 2 ファイル
       方式で用意する。`overrides.go`（`//go:build !test`）に `verifySameFile` を fstatat 経由で呼ぶだけの関数を、
       `test_helpers_overrides.go`（`//go:build test`）に `var verifyMovedFileOverride = …` と、それを呼ぶ同名の
       関数を置く。
-- [ ] `rename` に到達した後のすべての失敗を `ErrDestinationCommitted` で包む。包む場所は `moveOpenFileCore`
-      とし、移動そのものの成否は `moveFileAnchored` の戻り値で判断する
-      （[02_architecture.md](02_architecture.md) § 3.9 の責務表）。
-- [ ] `slog.Warn` に、宛先が置き換わったうえで失敗した事象を記録する。宛先のパスと失敗した検証の内容を
+- [x] `rename` に到達した後のすべての失敗を `ErrDestinationCommitted` で包む。包む場所は `moveOpenFileCore`
+      とする。**`rename` に到達したかどうかの判定は、`moveFileAnchored` の戻り値ではなく宛先の同一性で行う
+      （実装時の決定。[02_architecture.md](02_architecture.md) § 3.4.4 に追記した）。** `moveFileAnchored` は
+      `rename` の後に移動元の削除を行うため、戻り値のエラーだけでは前後を区別できず、それを「未到達」と
+      みなすと § 5.2 が `ErrDestinationCommitted` の対象として挙げる「移動元の削除失敗」が漏れる。
+      `moveFileAnchored` が失敗した場合に `verifySameFileAt`（宛先ディレクトリ fd と宛先名）を行い、
+      一致したときだけ包む。包む位置は `moveOpenFileCore` のままなので、`moveFileAnchored` を直接呼ぶ
+      既存テストの前提は変わらない。
+- [x] `slog.Warn` に、宛先が置き換わったうえで失敗した事象を記録する。宛先のパスと失敗した検証の内容を
       含める（[02_architecture.md](02_architecture.md) § 5.4 の最重要項目）。
-- [ ] 権限検査による拒否の記録に、対象の `mode`・`uid`・`gid` と、判定を下した規則（world-writable・
-      グループ非所属・上限超過のいずれか）を含める（同 § 5.4）。
+- [x] 権限検査による拒否の記録に、対象の `mode`・`uid`・`gid` と、判定を下した規則（world-writable・
+      グループ非所属・上限超過のいずれか）を含める（同 § 5.4）。規則の名前は `groupmembership` の
+      sentinel から決める（`rejectionRule`）。記録は `canSafelyAccessFile` の 1 か所に置いたため、
+      読み取り・書き込みの両方の拒否が同じ形で残る。
 
 #### 4-2. 移動経路のテストの追加
 
-- [ ] `safe_file_test.go` に `TestAtomicMoveFile_ValidatesSourceBeforeChmod` を追加する。ソース検証を
-      失敗させ（作成後に `os.Chmod` で `0o1644` を明示的に設定したソースを使う。`MaxAllowedReadPerms`
-      `0o6775` を超えるため読み取り検査が拒否する）、`AtomicMoveFile` がエラーを返すこと、およびソースの
-      権限が呼び出し前の `0o1644` のままであることを確認する（AC-06・07）。
-- [ ] `safe_file_test.go` に `TestAtomicMoveFile_RejectsUnsafeSourcePermissions` を追加する（AC-07a）。
+- [x] `safe_file_test.go` に `TestAtomicMoveFile_ValidatesSourceBeforeChmod` を追加する。ソース検証を
+      失敗させ、`AtomicMoveFile` がエラーを返すこと、およびソースの権限が呼び出し前のままであることを
+      確認する（AC-06・07）。**検証を失敗させる手段を `0o1644` から `0o666`（world-writable）へ変えた
+      （実装時の訂正）。** 本書の当初の記述は「sticky が `MaxAllowedReadPerms=0o6775` を超える」という
+      前提だったが、実ファイルではこの分岐に到達しない（根拠は
+      [02_architecture.md](02_architecture.md) § 3.4.2 に追記した）。`0o666` は `requiredPerm=0o600` に
+      狭めれば通ってしまうため、順序の入れ替えを元に戻すとこのテストが落ちるという性質は変わらない。
+- [x] `safe_file_test.go` に `TestAtomicMoveFile_RejectsUnsafeSourcePermissions` を追加する（AC-07a）。
       権限は**いずれも作成後に `os.Chmod` で明示的に設定する**（`os.WriteFile` の perm は umask に削られ、
       `0o666` が `0o644` になって拒否条件が成立しなくなる。既存の `TestValidateFilePermissions`
-      〈`safe_file_test.go:325-330`〉と同じ手順）。サブテストは 3 つとする。
+      〈`safe_file_test.go:325-330`〉と同じ手順）。**サブテストは 2 つとした（実装時の訂正）。**
       - `world_writable`: `0o666` のソース。`requiredPerm=0o600` でも拒否されること。
-      - `perms_exceed_maximum`: `0o1644`（sticky。`MaxAllowedReadPerms=0o6775` を超える）のソース。
       - `group_writable_non_member`: `os.Getgroups()` に含まれない GID へ `os.Chown(path, -1, gid)` した
-        `0o660` のソース。`chown` が `EPERM` で失敗する環境では理由を明記して `t.Skip` する。他の 2 つの
-        サブテストは権限を要さず常に実行されるため、拒否経路そのものは無条件に踏まれる。
-- [ ] `safe_file_test.go` に `TestAtomicMoveFile_SafeSourceStillMoves` を追加する。`0600` のソースを
+        `0o660` のソース。`chown` が `EPERM` で失敗する環境では理由を明記して `t.Skip` する。
+      - `perms_exceed_maximum` は**置かない**。実ファイルの mode ではこの規則に到達できないためである
+        （[02_architecture.md](02_architecture.md) § 3.4.2）。`world_writable` は権限を要さず常に実行
+        されるため、拒否経路そのものは無条件に踏まれる。
+- [x] `safe_file_test.go` に `TestAtomicMoveFile_SafeSourceStillMoves` を追加する。`0600` のソースを
       `requiredPerm=0o644` で移動し、成功すること・宛先の権限が `0o644` になること・内容が保たれることを
       確認する（AC-07b）。実行者が属するグループから書き込み可能なソース（`0o660`、グループは
       `os.Getgid()`）が従来どおり受け入れられるサブテストも併せて置く。
-- [ ] `safe_file_test.go` に `TestMoveOpenFileCore_RejectsRequiredPermBeforeRename` を追加する
+- [x] `safe_file_test.go` に `TestMoveOpenFileCore_RejectsRequiredPermBeforeRename` を追加する
       （[02_architecture.md](02_architecture.md) § 3.4.3）。`moveOpenFileCore` は可搬なので Linux 専用
-      ファイルには置かない。入力は次のとおり具体化する。`requiredPerm=0o660`（`MaxAllowedWritePerms=0o664`
-      以下なので入口の `ValidateRequestedPermissions` は通る）とし、ソースの GID を、実行者が属していて
-      **かつ他にも構成員がいる**グループへ `os.Chgrp` 相当（`os.Chown(path, -1, gid)`）で設定する。
-      `CanCurrentUserSafelyWriteFile` は group 書き込み可のファイルに「所有者本人かつそのグループの唯一の
-      構成員であること」を求めるため（`internal/groupmembership/manager.go:243-251`）、この条件で
-      `rename` の前に拒否される。該当するグループが `os.Getgroups()` の中に見つからない場合は理由を
-      明記して `t.Skip` する。エラーが `ErrDestinationCommitted` を含まないこと、宛先が変化していないことを
-      確認する。
-- [ ] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_MoveToFinal`・
+      ファイルには置かない。エラーが `ErrInvalidFilePermissions` を含み `ErrDestinationCommitted` を
+      含まないこと、宛先が変化していないこと、および `requiredPerm` が入口の
+      `ValidateRequestedPermissions` を通ること（＝拒否したのが後段の検査であること）を確認する。
+      サブテストは 2 つとした。
+      - `required_perm_not_writable_by_owner`: `requiredPerm=0o444`。`MaxAllowedWritePerms=0o664` 以下
+        なので入口は通るが、`CanUserSafelyWriteFile` は所有者書き込みビットの無い mode を拒否する。
+        **権限の準備を要さないため常に実行される（実装時の追加）。** これが無いと、この段の拒否を踏む
+        テストが構成に依存して 1 つも走らない環境が生じる。
+      - `required_perm_group_writable_in_shared_group`: `requiredPerm=0o660` とし、ソースの GID を、
+        実行者が属していて**かつ他にも構成員がいる**グループへ `os.Chown(path, -1, gid)` で設定する
+        （`internal/groupmembership/manager.go:243-251`）。該当するグループが無い場合は理由を明記して
+        `t.Skip` する。
+- [x] **`ErrDestinationCommitted` を返す 2 つの分岐のテストを追加する（実装時の追加）。** 4-1 で新設した
+      契約であり、書き込み経路のテスト（Phase 4b）まで無検証で置くと、包む境界が誤っていても気づけない。
+      - `safe_file_test.go::TestMoveOpenFileCore_PostMoveIdentityFailureIsDestinationCommitted`:
+        `verifyMovedFileOverride` を差し替えて移動後の同一性確認を失敗させ、`ErrDestinationCommitted` が
+        返ること・宛先が移動後の内容であること・宛先のパスを含む警告が記録されることを確認する。
+      - `safe_file_linux_test.go::TestMoveOpenFileCore_MoveFailureAfterRenameIsDestinationCommitted`:
+        移動元の親ディレクトリから書き込み権限を落として `rename` 後の unlink を失敗させ、
+        `moveFileAnchored` 由来の失敗も同じく包まれることを確認する（Linux 専用。移動元の削除が
+        `rename` と別の段になるのが Linux の経路だけであるため）。
+- [x] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_MoveToFinal`・
       `TestSafeFileManager_MoveToFinal_WithMock`）が無変更で通ることを確認する（AC-07b）。
-- [ ] 検査順序の入れ替えを元に戻すと `TestAtomicMoveFile_ValidatesSourceBeforeChmod` が落ちることを
+- [x] 検査順序の入れ替えを元に戻すと `TestAtomicMoveFile_ValidatesSourceBeforeChmod` が落ちることを
       確認し、戻し方をコミットメッセージに記す（AC-07）。
 
 **Phase 4a の完了条件**: `make fmt` → `make test` → `make lint` が通る。
@@ -1174,7 +1199,7 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 | AC-05 | test + manual | AC-01〜03 の 3 テストが `test` の主体である。加えて Phase 2 の最終ステップで後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外し、`GOGC=off` の下でそれらが落ちることを確認してコミットメッセージに記す |
 | AC-06 | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_ValidatesSourceBeforeChmod` |
 | AC-07 | test + manual | 同上のテストがソースの権限の不変を検証する。加えて Phase 4-2 の最終ステップで順序を元に戻すと落ちることを確認し、コミットメッセージに記す |
-| AC-07a | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_RejectsUnsafeSourcePermissions`（`world_writable`・`perms_exceed_maximum`・`group_writable_non_member` の 3 サブテスト。3 番目は `os.Chown` が `EPERM` の環境で `t.Skip`） |
+| AC-07a | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_RejectsUnsafeSourcePermissions`（`world_writable`・`group_writable_non_member` の 2 サブテスト。2 番目は `os.Chown` が `EPERM` の環境で `t.Skip`。`perms_exceed_maximum` は実ファイルの mode では到達できないため置かない。§ 2 Phase 4-2） |
 | AC-07b | test | `internal/safefileio/safe_file_test.go::TestAtomicMoveFile_SafeSourceStillMoves`、および `internal/runner/base/output/file_test.go::TestSafeFileManager_MoveToFinal` が無変更で通る |
 | AC-08 | static | `rg -n -B 30 "func \(fs \*osFS\) AtomicMoveFile" internal/safefileio/safe_file.go`（doc コメントはシグネチャの手前にあるため後方向に見る）の出力に `ErrDestinationCommitted`、宛先にファイルが残る旨、移動前の内容が復元されない旨の 3 点が現れる |
 | AC-09 | static | 同じ出力を `rg -i "rollback"` に通して 1 件以上ヒットし、その文がロールバックしない理由（上書き時に元の内容を復元できないこと）を述べている |
