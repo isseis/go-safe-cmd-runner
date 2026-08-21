@@ -28,9 +28,10 @@ var (
 	// This is an alias to the common error definition to maintain API compatibility.
 	ErrInvalidFileOperation = common.ErrInvalidFileOperation
 
-	// ErrTempLinkNameExhausted indicates that a unique temporary hard-link name
-	// could not be allocated after repeated EEXIST collisions.
-	ErrTempLinkNameExhausted = errors.New("failed to allocate a unique temporary link name")
+	// ErrTempNameExhausted indicates that a unique temporary name -- for a hard
+	// link or for a temporary file -- could not be allocated after repeated
+	// EEXIST collisions.
+	ErrTempNameExhausted = errors.New("failed to allocate a unique temporary name")
 
 	// ErrUnsupportedFileMode indicates that the requested file mode contains
 	// bits outside os.ModePerm, which this package does not pass through to

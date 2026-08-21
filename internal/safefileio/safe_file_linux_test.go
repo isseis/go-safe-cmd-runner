@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -226,8 +227,13 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 
 	names := []string{collidingName, "safefileio-move-free-test"}
 	call := 0
+	// The prefix is passed in rather than baked into randomTempName, so the
+	// stub also pins the call site: an entry left behind is only recognizable
+	// as this package's if the move path asks for the prefix it documents.
+	var gotPrefixes []string
 	origFunc := generateTempLinkName
-	generateTempLinkName = func() (string, error) {
+	generateTempLinkName = func(prefix string) (string, error) {
+		gotPrefixes = append(gotPrefixes, prefix)
 		name := names[call]
 		call++
 		return name, nil
@@ -238,6 +244,7 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(dir, names[1]), tmpPath)
 	assert.Equal(t, 2, call, "expected exactly one retry after the collision")
+	assert.Equal(t, []string{tempLinkNamePrefix, tempLinkNamePrefix}, gotPrefixes)
 
 	// Clean up the created hard link.
 	_ = os.Remove(tmpPath)
@@ -261,11 +268,11 @@ func TestLinkFileToTempName_ExhaustsAttempts(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, collidingName), []byte("existing"), 0o600))
 
 	origFunc := generateTempLinkName
-	generateTempLinkName = func() (string, error) { return collidingName, nil }
+	generateTempLinkName = func(_ string) (string, error) { return collidingName, nil }
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
 	_, err = linkFileToTempName(osFile, dir)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrTempNameExhausted)
 }
 
 // TestLinkFileToTempName_NonEEXISTErrorIsNotRetried verifies that a linkat
@@ -298,6 +305,87 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, unix.EPERM)
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
+}
+
+// openFDTargetsUnder returns the set of paths under dir that this process
+// currently holds open, read from /proc/self/fd.
+//
+// It is a set of link targets rather than a count of entries: the Go runtime
+// opens and closes descriptors of its own, and os.ReadDir occupies one while it
+// runs, so a difference in the number of entries says nothing about the file
+// under test.
+func openFDTargetsUnder(t *testing.T, dir string) map[string]struct{} {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+
+	prefix := dir + string(os.PathSeparator)
+	targets := map[string]struct{}{}
+	for _, entry := range entries {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", entry.Name()))
+		if err != nil {
+			// The descriptor was closed between the ReadDir and this readlink
+			// (the ReadDir's own is the usual one).
+			continue
+		}
+		if strings.HasPrefix(target, prefix) {
+			targets[target] = struct{}{}
+		}
+	}
+	return targets
+}
+
+// TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails lives in the Linux-only
+// file because it observes descriptors through /proc/self/fd; the function it
+// covers is portable and is reached here by calling it directly.
+//
+// The negative control -- deleting the Close and watching this fail -- must be
+// run with GOGC=off. Otherwise a garbage collection can run *os.File's
+// finalizer, closing the leaked descriptor before the test looks, and the test
+// passes over a real leak.
+//
+// Both subtests are needed because the two branches release the descriptor
+// through different code: the not-created branch closes it inline, the created
+// branch hands it to removeVerifiedFileByPath.
+func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
+	cases := []struct {
+		name  string
+		flag  int
+		setup func(t *testing.T, path string)
+	}{
+		{
+			name: "not_created",
+			flag: os.O_RDONLY,
+			setup: func(t *testing.T, path string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
+			},
+		},
+		{
+			name:  "created",
+			flag:  os.O_CREATE | os.O_WRONLY,
+			setup: func(*testing.T, string) {},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			filePath := filepath.Join(dir, "target.txt")
+			tc.setup(t, filePath)
+
+			before := openFDTargetsUnder(t, dir)
+
+			stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
+
+			file, err := safeOpenFileFallback(filePath, tc.flag, 0o600)
+			require.ErrorIs(t, err, errPostCheckFailed)
+			assert.Nil(t, file, "no handle may be returned alongside an error")
+
+			assert.Equal(t, before, openFDTargetsUnder(t, dir),
+				"the descriptor opened before the failed check must not be left open")
+		})
+	}
 }
 
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)

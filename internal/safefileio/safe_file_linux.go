@@ -8,8 +8,6 @@
 package safefileio
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -145,15 +143,9 @@ func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
 	return int(fd), nil //nolint:gosec // G115: fd is a valid file descriptor returned by the kernel, conversion is safe
 }
 
-// maxLinkatAttempts bounds retries when a randomly generated temporary link
-// name collides with an existing entry (EEXIST). With tmpNameRandBytes of
-// entropy, a real collision is astronomically unlikely; this only guards
-// against pathological environments and keeps the loop from running forever.
-const maxLinkatAttempts = 10
-
-// tmpNameRandBytes is the number of random bytes used to build a temporary
-// link name (see randomTempName).
-const tmpNameRandBytes = 12
+// tempLinkNamePrefix marks the temporary hard link moveFileAnchored creates in
+// the destination directory.
+const tempLinkNamePrefix = ".safefileio-move-"
 
 // generateTempLinkName produces the name used for the temporary hard link in
 // moveFileAnchored. It is a package variable (rather than a direct call to
@@ -234,41 +226,6 @@ func moveFileAnchored(srcFile File, absSrc, absDst string) (err error) {
 	return nil
 }
 
-// verifySameFile checks that the directory entry currently at path still
-// refers to the same inode as the already-open fd. It uses Lstat (rather
-// than Stat) on path so that a symlink swapped in at path is detected as a
-// mismatch instead of being followed. This narrows (but, being a path-based
-// check followed by a separate path-based unlink, cannot fully close) the
-// TOCTOU window in which an attacker could replace absSrc's directory entry
-// between the rename above and the unlink below and cause it to delete an
-// unrelated file. This check is not redundant with directory-level
-// protections elsewhere in the codebase (e.g. the world-writable-directory
-// rejection in internal/security/toctou.go): moveFileAnchored's callers
-// perform such checks, if at all, well before this point (e.g. before the
-// wrapped command runs), so this is the only defense operating at the
-// moment of the unlink itself.
-func verifySameFile(fd *os.File, path string) error {
-	fdInfo, err := fd.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to fstat open file descriptor: %w", err)
-	}
-	fdStat, ok := fdInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: unsupported file info type for fd", ErrUnsupportedFileHandle)
-	}
-
-	var pathStat syscall.Stat_t
-	if err := syscall.Lstat(path, &pathStat); err != nil {
-		return fmt.Errorf("failed to lstat path %q: %w", path, err)
-	}
-
-	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
-		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrSourceIdentityMismatch, path)
-	}
-
-	return nil
-}
-
 // linkFileToTempName hard-links the inode referenced by srcFile into dstDir
 // under a random, previously-unused name and returns the full path of the new
 // link. Using /proc/self/fd/<n> as the link source (with AT_SYMLINK_FOLLOW)
@@ -276,8 +233,8 @@ func verifySameFile(fd *os.File, path string) error {
 func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
 	procPath := fmt.Sprintf("/proc/self/fd/%d", srcFile.Fd())
 
-	for range maxLinkatAttempts {
-		name, err := generateTempLinkName()
+	for range maxTempNameAttempts {
+		name, err := generateTempLinkName(tempLinkNamePrefix)
 		if err != nil {
 			return "", err
 		}
@@ -297,18 +254,7 @@ func linkFileToTempName(srcFile *os.File, dstDir string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("%w: after %d attempts", ErrTempLinkNameExhausted, maxLinkatAttempts)
-}
-
-// randomTempName returns a name unlikely to collide with an existing
-// directory entry, prefixed so it is recognizable as safefileio-internal
-// state if ever left behind.
-func randomTempName() (string, error) {
-	var b [tmpNameRandBytes]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("failed to generate random temporary name: %w", err)
-	}
-	return ".safefileio-move-" + hex.EncodeToString(b[:]), nil
+	return "", fmt.Errorf("%w: after %d attempts", ErrTempNameExhausted, maxTempNameAttempts)
 }
 
 // safeOpenFileInternal implements Linux-specific file opening with openat2 support.

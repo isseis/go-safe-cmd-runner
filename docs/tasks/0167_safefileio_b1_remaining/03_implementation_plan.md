@@ -203,6 +203,8 @@
 | `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/overrides.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides.go`（`//go:build test`） |
 | `openat2Syscall` | `internal/safefileio/overrides_linux.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides_linux.go`（`//go:build test`） |
 
+**本番側（`//go:build !test`）のファイルは `make lint` の対象外である。** `make lint` は `golangci-lint run --build-tags test` を実行するため、`overrides.go`・`overrides_linux.go` は コンパイル対象にならない。コンパイル自体は `make build`／`go build`（タグ無し）が確認するため、各 Phase の完了条件に `go build ./internal/safefileio/` を入れてある。既存の `internal/security/getwd.go` も同じ状態であり、リンタ設定の見直しは本タスクの対象外とする。
+
 `_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。ただし同じ
 パッケージの `safe_file_linux.go` が冗長に `//go:build linux` を書いており、実装ではそれに合わせて
 `//go:build linux && !test`・`//go:build linux && test` と書いた（Phase 1 の step 1-2 の記述どおり）。
@@ -338,8 +340,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 共通ヘルパの整理とフォールバック経路の後始末（F-001 / AC-01〜05）
 
@@ -350,55 +352,67 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 2-1. 共通ヘルパの移動と改名
 
-- [ ] `verifySameFile` を `safe_file_linux.go:200-220` から `safe_file.go` へ移す。第 1 引数の型を
+- [x] `verifySameFile` を `safe_file_linux.go:200-220` から `safe_file.go` へ移す。第 1 引数の型を
       `*os.File` から `File` インターフェースへ広げ、fd 側の `syscall.Stat_t` は `getFileStatInfo` と同じく
       `Stat().Sys()` から取り出す。
-- [ ] `verifySameFile` の doc コメント（現 :186-199）を書き換える。現在の文面は「パス名による確認とパス名に
+- [x] `verifySameFile` の doc コメント（現 :186-199）を書き換える。現在の文面は「パス名による確認とパス名に
       よる unlink のあいだの隙」「`rename` と unlink のあいだに `absSrc` を差し替えられる」という
       `moveFileAnchored` 専用の説明になっている。Phase 3 で Linux 経路が `fstatat`／`unlinkat` に変わり、
       さらにフォールバック経路の後始末という第 2 の呼び出し元が加わるため、そのまま持っていくと実装と
       食い違う。新しい文面は、（a）確認と操作が別のシステムコールである以上どちらの呼び出し元でも隙は
       狭まるだけで閉じないこと、（b）ディレクトリ fd 相対の呼び出し元では差し替えの対象が名前だけに
       限られること、の 2 点を英語で書く（[02_architecture.md](02_architecture.md) § 5.3 の R3）。
-- [ ] `randomTempName` を `safe_file_linux.go:256-262` から `safe_file.go` へ移し、接頭辞を引数に取る
+- [x] `randomTempName` を `safe_file_linux.go:256-262` から `safe_file.go` へ移し、接頭辞を引数に取る
       `randomTempName(prefix string) (string, error)` にする。`tmpNameRandBytes` も併せて移す。
-- [ ] `generateTempLinkName`（`safe_file_linux.go:112`）を、接頭辞を受け取る形の差し替え点として維持する
+- [x] `generateTempLinkName`（`safe_file_linux.go:112`）を、接頭辞を受け取る形の差し替え点として維持する
       （`var generateTempLinkName = randomTempName`）。`linkFileToTempName`（:230）の呼び出しを
       `generateTempLinkName(".safefileio-move-")` に直す。
-- [ ] `maxLinkatAttempts`（`safe_file_linux.go:102`）を `maxTempNameAttempts` へ改名して `safe_file.go` へ
+- [x] `maxLinkatAttempts`（`safe_file_linux.go:102`）を `maxTempNameAttempts` へ改名して `safe_file.go` へ
       移す。doc コメントを、ハードリンク名と一時ファイル名の双方に使う旨へ書き換える。
-- [ ] `errors.go` の `ErrTempLinkNameExhausted` を `ErrTempNameExhausted` へ改名する。エラー文字列を
+- [x] `errors.go` の `ErrTempLinkNameExhausted` を `ErrTempNameExhausted` へ改名する。エラー文字列を
       `"failed to allocate a unique temporary link name"` から
       `"failed to allocate a unique temporary name"` へ変える。doc コメントも「ハードリンク名・一時ファイル名の
       いずれか」を指す表現へ書き換える。
-- [ ] `safe_file_linux_test.go::TestLinkFileToTempName_ExhaustsAttempts`（:247-270）の
+- [x] `safe_file_linux_test.go::TestLinkFileToTempName_ExhaustsAttempts`（:247-270）の
       `require.Error(t, err)` を `require.ErrorIs(t, err, ErrTempNameExhausted)` へ強める。現状この sentinel を
       名指しするテストは 1 つも無く、改名が無検証のまま入ってしまうため。CLAUDE.md の
       「`errors.Is` で判定し、文字列一致に頼らない」にも沿う。
 #### 2-2. フォールバック経路の作成プローブと後始末
 
-- [ ] `safe_file.go` に `removeVerifiedFileByPath(file File, path string) error` を追加する。
-      `verifySameFile` で同一性を確認し、一致した場合のみ `Close` → `os.Remove` の順に実行する。一致しない、
+- [x] `safe_file.go` に `removeVerifiedFileByPath(file File, path string) error` を追加する。
+      `verifySameFile` で同一性を確認し、一致した場合だけ `os.Remove` する。一致しない、
       または確認自体が失敗した場合は削除せず、`slog.Warn` に対象パスと理由を記録する
       （[02_architecture.md](02_architecture.md) § 5.4）。`Close` の失敗も同じ警告に含める。
-- [ ] 2 回目の親ディレクトリ確認のための差し替え点 `ensureParentDirsAfterOpen` を § 1 の 2 ファイル方式で
+      **`Close` は同一性の一致・不一致にかかわらずこの関数が行う**（実装時の確定。
+      [02_architecture.md](02_architecture.md) § 6.2 の判断フローが D5・D6 の両分岐で Close を求めており、
+      呼び出し元に任せると不一致の分岐で fd が漏れるため）。順序は `verifySameFile` → `Close` →
+      `os.Remove` で、§ 3.3 が求める「fd を握ったままの削除をしない」形を保つ。
+- [x] 2 回目の親ディレクトリ確認のための差し替え点 `ensureParentDirsAfterOpen` を § 1 の 2 ファイル方式で
       用意する。`overrides.go`（`//go:build !test`）に `ensureParentDirsNoSymlinks` を直接呼ぶだけの関数を、
       `test_helpers_overrides.go`（`//go:build test`）に `var ensureParentDirsAfterOpenOverride =
       ensureParentDirsNoSymlinks` と、それを呼ぶ同名の関数を置く。`safeOpenFileFallback:494` の呼び出しを
       `ensureParentDirsAfterOpen` に差し替える。
-- [ ] `safeOpenFileFallback`（`safe_file.go:475-499`）に作成プローブを実装する。分岐は
+- [x] `safeOpenFileFallback`（`safe_file.go:475-499`）に作成プローブを実装する。分岐は
       [02_architecture.md](02_architecture.md) § 6.2 の判断フロー図が正であり、そのとおりに実装する。
       再試行の上限には `maxTempNameAttempts` を使う。
-- [ ] 内部由来の `EEXIST` を `ErrFileExists` へ変換しないようにする。`ErrFileExists` を返すのは、呼び出し元
+- [x] 内部由来の `EEXIST` を `ErrFileExists` へ変換しないようにする。`ErrFileExists` を返すのは、呼び出し元
       自身が `O_EXCL` を指定していた場合だけである。
-- [ ] 2 回目の親ディレクトリ確認が失敗した場合の後始末を実装する。作成していない場合は `Close` して元の
+- [x] **開き直しの `ENOENT` が上限に達したときの戻り値を、非 nil であることが構造上保証される形にする
+      （レビュー指摘による実装時の追加）。** 最後の `ENOENT` を `fmt.Errorf` で包んで返し、併せて
+      `slog.Warn` に対象パスと試行回数を記録する。上限到達そのものを踏むテストは置かない。踏むには
+      「プローブと開き直しのあいだで対象を消す」差し替え点が要り、§ 1 が「差し替え点は 3 つに限る」と
+      定めているためである。代わりに、(a) 包むことで「nil エラー＋nil ファイル」を返す形自体を作れなく
+      し、(b) `ENOENT` **以外**の開き直し失敗が再試行されずそのまま返ることを
+      `TestSafeOpenFileFallback_CreationProbe/reopen_failure_other_than_enoent_is_not_retried` で
+      押さえる。
+- [x] 2 回目の親ディレクトリ確認が失敗した場合の後始末を実装する。作成していない場合は `Close` して元の
       エラーを返す。作成していた場合は `removeVerifiedFileByPath` を呼ぶ。いずれの場合も 2 回目の確認の失敗
       そのものを `slog.Warn` に記録する（[02_architecture.md](02_architecture.md) § 5.4）。**呼び出し元へ
       返るのは常に 2 回目の確認が返したエラーであり、後始末の失敗（同一性の不一致を含む）を返さない**
       （§ 4.2）。
 #### 2-3. 後始末のテスト
 
-- [ ] `safe_file_linux_test.go` に `TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails` を追加する
+- [x] `safe_file_linux_test.go` に `TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails` を追加する
       （fd の観察に `/proc/self/fd` を使うため Linux 専用ファイルに置く。対象の
       `safeOpenFileFallback` 自体は `DisableOpenat2: true` で Linux からも通る）。
       `ensureParentDirsAfterOpen` を差し替えて 2 回目だけ失敗させ、エラーが返ること・戻り値の `File` が
@@ -407,7 +421,7 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       開閉する fd や `os.ReadDir` 自身の fd が混ざって不安定になるため使わない。負の対照（後始末を外すと
       落ちること）を確認するときは `GOGC=off` で実行し、`os.File` のファイナライザが漏れた fd を閉じて
       しまってテストが誤って通ることを防ぐ。この点をコミットメッセージにも記す。
-- [ ] `safe_file_cleanup_test.go` に `TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` を
+- [x] `safe_file_cleanup_test.go` に `TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` を
       追加する。サブテストを 3 つ置く。
       - `created`: `O_CREATE` で新規作成した場合にファイルが残らないこと。
       - `pre_existing`: 既存ファイルを開いただけの場合は削除されず内容が保たれること。
@@ -415,14 +429,25 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
         ファイルが削除されないこと、返るエラーが 2 回目の確認のエラーであり
         `ErrSourceIdentityMismatch` **ではない**こと、および `slog.Warn` に対象パスを含む記録が
         残ることを確認する（AC-03 の「削除せず、警告し、元のエラーを返す」の 3 点すべて）。
-- [ ] `safe_file_cleanup_test.go` に `TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` を追加する。
+- [x] `safe_file_cleanup_test.go` に `TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` を追加する。
       ヘルパ単体の検証として、実在するファイルのパスと `mockFile`（`Stat()` が返す `syscall.Stat_t` の
       `Dev`・`Ino` が 0 で実在のパスとは決して一致しない）を渡し、`ErrSourceIdentityMismatch` が返ること、
       対象ファイルが残っていることを確認する。
-- [ ] `safe_file_linux_test.go` の `generateTempLinkName` 差し替え（:228-234・:262-264）を、接頭辞つきの
+- [x] `safe_file_linux_test.go` の `generateTempLinkName` 差し替え（:228-234・:262-264）を、接頭辞つきの
       新しいシグネチャへ追従させる。
-- [ ] 後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外すと上記のテストが落ちることを
+- [x] 後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外すと上記のテストが落ちることを
       確認し、外し方をコミットメッセージに記す（AC-05）。
+- [x] **`safe_file_test.go` に `TestSafeOpenFileFallback_CreationProbe` を追加する（実装時の追加）。**
+      2-2 の作成プローブは open そのものを 2 回のシステムコールへ分けるため、後始末の 3 テストとは別に、
+      呼び出し元から見た open の結果が変わらないことを押さえる必要がある。サブテストは 4 つとする。
+      - `creates_when_absent`: 対象が無い場合に作成して開けること。
+      - `opens_existing_without_reporting_it_exists`: 既存ファイルを `O_EXCL` なしの `O_CREATE` で開くと、
+        内部の `EEXIST` が `ErrFileExists` として外へ出ず、開き直しが既存の内容に当たること。
+      - `reports_exists_when_caller_asked_for_o_excl`: 呼び出し元自身が `O_EXCL` を指定した場合は
+        従来どおり `ErrFileExists` が返ること。
+      - `rejects_leaf_symlink`: リーフがシンボリックリンクの場合に `ErrIsSymlink` が返り、リンク先の
+        内容が変わらないこと（開き直しが `O_NOFOLLOW` を保つことの検証。開き直しから `O_NOFOLLOW` を
+        外すとこのサブテストが落ちることを確認済み）。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通る。
 `GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。この Phase は `overrides.go` を追加するため、
@@ -443,8 +468,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 **判定理由**: 2-2 が失敗時の復旧処理（fd の Close・作成済みファイルの削除・同一性不一致時の保持）そのものであり、`mkplan2.md` step 4 の「isolated high-risk/complex step（recovery flows）」に該当する。作成プローブが `internal/runner/bootstrap/logger.go` へ `ENOENT` を新たに返しうる点（§ 5 の R-1〜R-7 のうち R-5）は「拒否の追加と削除の同時実施」に見えるが、この変化はフォールバック経路にのみ生じ、本番ターゲット（Linux 5.6+）では `openat2` 経路が使われてプローブが動かないため、`frontier-required` のトリガとしては数えない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1051](https://github.com/isseis/go-safe-cmd-runner/pull/1051)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1029,7 +1054,7 @@ Phase の区切りをそのまま PR の区切りにする。§ 8 の Phase 4 �
 
 Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。本節は PR 単位のマージ進捗だけを追う。
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）
+- [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3。[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
 - [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3）
 - [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4）
 - [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
@@ -1062,8 +1087,8 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 
 | AC | 種別 | 検証方法 |
 |---|---|---|
-| AC-01 | test | `internal/safefileio/safe_file_linux_test.go::TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails`（一時ディレクトリ配下を指す `/proc/self/fd` エントリの集合が呼び出しの前後で不変であること） |
-| AC-02 | test | `internal/safefileio/safe_file_cleanup_test.go::TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` の `created`／`pre_existing` サブテスト |
+| AC-01 | test | `internal/safefileio/safe_file_linux_test.go::TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails` の `not_created`／`created` サブテスト（一時ディレクトリ配下を指す `/proc/self/fd` エントリの集合が呼び出しの前後で不変で あること）。2 つに分けるのは、fd を解放する経路が分岐ごとに違うためである（作成していない場合はその場の `Close`、作成していた場合は `removeVerifiedFileByPath` 経由） |
+| AC-02 | test | `internal/safefileio/safe_file_cleanup_test.go::TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` の `created`／`pre_existing` サブテスト。両者が分かれる前提である「作成したか既にあったか」の判定そのものは `internal/safefileio/safe_file_test.go::TestSafeOpenFileFallback_CreationProbe`（5 サブテスト）が押さえる。うち `rejects_leaf_symlink` は、作成プローブの開き直しが `O_NOFOLLOW` を保ち、リーフ symlink を拒否するという ADR の前提を崩していないことの検証である |
 | AC-03 | test | 同テストの `identity_mismatch` サブテスト（差し替えたファイルが削除されないこと、返るエラーが 2 回目の確認のエラーで `ErrSourceIdentityMismatch` ではないこと、警告が記録されること）。ヘルパ単体は `internal/safefileio/safe_file_cleanup_test.go::TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` |
 | AC-04 | test | AC-01〜AC-03 の各テストが、それぞれ「2 回目の確認の失敗 → Close のみ」「同 → 作成済みファイルの削除」「同 → 既存ファイルの保持」「同 → 同一性不一致で削除せず警告」の 4 分岐を 1 つずつ踏む。`go test -tags test -run 'TestSafeOpenFileFallback_|TestRemoveVerifiedFileByPath_' -v ./internal/safefileio/` の出力で各分岐名の PASS を確認する |
 | AC-05 | test + manual | AC-01〜03 の 3 テストが `test` の主体である。加えて Phase 2 の最終ステップで後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外し、`GOGC=off` の下でそれらが落ちることを確認してコミットメッセージに記す |

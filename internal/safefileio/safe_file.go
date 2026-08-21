@@ -7,6 +7,9 @@
 package safefileio
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -329,6 +332,131 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 	return nil
 }
 
+// maxTempNameAttempts bounds retries when a randomly generated temporary name
+// -- a hard link name in moveFileAnchored, or a temporary file name in the
+// write path -- collides with an existing entry (EEXIST). With tmpNameRandBytes
+// of entropy, a real collision is astronomically unlikely; this only guards
+// against pathological environments and keeps the loop from running forever.
+//
+// The fallback creation probe reuses the same bound for the same reason: there,
+// what it survives is a counterparty repeatedly deleting and recreating the
+// target between the probe and the reopen.
+const maxTempNameAttempts = 10
+
+// tmpNameRandBytes is the number of random bytes used to build a temporary
+// name (see randomTempName).
+const tmpNameRandBytes = 12
+
+// randomTempName returns a name unlikely to collide with an existing directory
+// entry. The caller supplies the prefix, which marks the entry as
+// safefileio-internal state if it is ever left behind and says which operation
+// left it.
+func randomTempName(prefix string) (string, error) {
+	var b [tmpNameRandBytes]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("failed to generate random temporary name: %w", err)
+	}
+	return prefix + hex.EncodeToString(b[:]), nil
+}
+
+// verifySameFile checks that the directory entry currently at path still refers
+// to the same inode as the already-open file. It uses Lstat (rather than Stat)
+// on path so that a symlink swapped in at path is detected as a mismatch
+// instead of being followed.
+//
+// This narrows the window in which a caller acts on the wrong inode, but it
+// cannot close it: the check and the operation that follows it (an unlink, a
+// rename) are separate system calls, so the entry can still be replaced in
+// between. How much is at stake in that window depends on how the caller names
+// its target. A caller working relative to an already-open directory fd can
+// only have the final name swapped, the parent being pinned to an inode; a
+// caller working from a path name is additionally exposed to its parent
+// components being replaced -- which, on the fallback path, is the very thing
+// that has just been found untrustworthy.
+//
+// This check is not redundant with directory-level protections elsewhere in the
+// codebase (e.g. the world-writable-directory rejection in
+// internal/security/toctou.go): those run well before this point (e.g. before
+// the wrapped command runs), so this is the only defense operating at the
+// moment of the operation itself.
+func verifySameFile(file File, path string) error {
+	fdInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to fstat open file descriptor: %w", err)
+	}
+	fdStat, ok := fdInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: unsupported file info type for fd", ErrUnsupportedFileHandle)
+	}
+
+	var pathStat syscall.Stat_t
+	if err := syscall.Lstat(path, &pathStat); err != nil {
+		return fmt.Errorf("failed to lstat path %q: %w", path, err)
+	}
+
+	if fdStat.Dev != pathStat.Dev || fdStat.Ino != pathStat.Ino {
+		return fmt.Errorf("%w: path %q no longer refers to the expected inode", ErrSourceIdentityMismatch, path)
+	}
+
+	return nil
+}
+
+// withCloseError appends a close failure to a warning's attributes, and only a
+// failure: an operator reading these records to decide whether a destination
+// needs quarantining learns nothing from a close_error that is nil every time.
+func withCloseError(closeErr error, attrs ...any) []any {
+	if closeErr == nil {
+		return attrs
+	}
+	return append(attrs, slog.Any("close_error", closeErr))
+}
+
+// removeVerifiedFileByPath closes file and then removes path, but only once it
+// has established that path still names the inode file refers to. If it does
+// not, or if that cannot be determined, the entry is left alone: at the point
+// this runs the path is already suspect, and deleting whatever happens to sit
+// there now would turn a detected attack into a deletion the attacker chose.
+//
+// file is always closed, whether or not the removal happens.
+//
+// The returned error describes why the removal was skipped or failed -- or, if
+// it did happen, why the close failed -- for a caller that wants to assert on
+// it. Callers in a failure path must not return it in place of the failure that
+// brought them here (see the design document's error handling section); this
+// function records the reason itself.
+func removeVerifiedFileByPath(file File, path string) error {
+	verifyErr := verifySameFile(file, path)
+	closeErr := file.Close()
+
+	if verifyErr != nil {
+		// The wording covers both reasons this branch is reached: the entry is
+		// known to be a different inode, and the comparison could not be made
+		// at all. Both leave the entry alone.
+		slog.Warn("left a file in place after a failed open: could not confirm it still refers to the opened inode",
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", verifyErr))...)
+		return verifyErr
+	}
+
+	if err := os.Remove(path); err != nil {
+		slog.Warn("failed to remove the file created by a failed open",
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", err))...)
+		return err
+	}
+
+	if closeErr != nil {
+		slog.Warn("failed to close the file created by a failed open",
+			slog.String("path", path),
+			slog.Any("error", closeErr))
+		return closeErr
+	}
+
+	return nil
+}
+
 // splitPathComponents splits the given directory path into its components from root to target directory
 // and returns them as a slice of strings in order.
 // Example: "/home/user/docs" becomes ["home", "user", "docs"].
@@ -495,13 +623,129 @@ func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmem
 // This method performs two-phase verification to detect symlink attacks:
 // 1. Verify parent directories are not symlinks before opening
 // 2. Verify again after opening to detect TOCTOU race conditions
+//
+// When the second verification fails the open is abandoned: the caller receives
+// that failure and nothing else, and this function leaves behind neither the
+// open fd nor a file it created along the way. What it must not do is delete
+// whatever the path names at that moment -- the path has just been found
+// untrustworthy -- so a file is removed only after removeVerifiedFileByPath has
+// confirmed it is still the inode that was opened.
 func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File, error) {
 	// Prevent symlink attacks by ensuring parent directories are not symlinks.
 	if err := ensureParentDirsNoSymlinks(absPath); err != nil {
 		return nil, err
 	}
 
-	// #nosec G304 - absPath is properly validated above
+	file, created, err := openNoFollowTrackingCreation(absPath, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+
+	// Detect symlink attack after ensureParentDirNoSymlinks call above.
+	if err := ensureParentDirsAfterOpen(absPath); err != nil {
+		// Recorded independently of how the cleanup below turns out: a
+		// component of the path changed while the file was being opened, which
+		// is the signature of an attack in progress.
+		slog.Warn(postOpenCheckFailedMsg,
+			slog.String("path", absPath),
+			slog.Any("error", err))
+
+		if created {
+			// Any failure here is already recorded by the helper. Reporting it
+			// instead of err would replace the attack signal with a detail of
+			// the cleanup.
+			_ = removeVerifiedFileByPath(file, absPath)
+		} else if closeErr := file.Close(); closeErr != nil {
+			slog.Warn("failed to close the file after abandoning the open",
+				slog.String("path", absPath),
+				slog.Any("error", closeErr))
+		}
+		return nil, err
+	}
+
+	return file, nil
+}
+
+// giveUpOpeningMsg marks the one outcome of the creation probe that a caller
+// cannot tell from the returned error: the loop having run to exhaustion,
+// rather than a single failure being handed straight back. Naming it lets a
+// test tell those apart too.
+const giveUpOpeningMsg = "gave up opening the file: it kept disappearing between the creation probe and the reopen"
+
+// postOpenCheckFailedMsg marks the event that must be recorded whether or not
+// the cleanup that follows it succeeds: a path component changed while the file
+// was being opened, which is what an attack in progress looks like from here.
+const postOpenCheckFailedMsg = "path check failed after opening the file; abandoning the open"
+
+// openNoFollowTrackingCreation opens absPath without following a symlink at the
+// leaf, and reports whether this call is what brought the file into existence.
+//
+// O_CREATE alone does not say which happened, and the fd cannot be asked
+// afterwards. So when the caller passes O_CREATE without O_EXCL, the open is
+// split: first a probe with O_EXCL added, which succeeds only if the file was
+// created here, and on EEXIST a reopen with O_CREATE dropped, which by
+// definition did not create it. The reopen keeps O_NOFOLLOW, so a symlink at
+// the leaf -- which is what EEXIST means when one is present -- is still
+// rejected with ErrIsSymlink rather than read as "a regular file was already
+// there".
+//
+// The EEXIST that drives that decision is internal to this function and is
+// never returned: ErrFileExists is the answer to a caller that asked for
+// O_EXCL itself.
+//
+// A counterparty deleting the file between the probe and the reopen turns the
+// reopen into ENOENT. That is retried from the probe, up to
+// maxTempNameAttempts, after which the ENOENT is returned; a caller is never
+// told the open succeeded when it did not.
+func openNoFollowTrackingCreation(absPath string, flag int, perm os.FileMode) (*os.File, bool, error) {
+	if flag&os.O_CREATE == 0 || flag&os.O_EXCL != 0 {
+		file, err := openNoFollow(absPath, flag, perm)
+		if err != nil {
+			return nil, false, err
+		}
+		// An O_CREATE|O_EXCL open that succeeded created the file; an open
+		// without O_CREATE never does.
+		return file, flag&os.O_CREATE != 0, nil
+	}
+
+	var lastErr error
+	for range maxTempNameAttempts {
+		file, err := openNoFollow(absPath, flag|os.O_EXCL, perm)
+		if err == nil {
+			return file, true, nil
+		}
+		if !errors.Is(err, ErrFileExists) {
+			return nil, false, err
+		}
+
+		file, err = openNoFollow(absPath, flag&^os.O_CREATE, perm)
+		if err == nil {
+			return file, false, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, false, err
+		}
+		lastErr = err
+	}
+
+	// The entry kept disappearing between the probe and the reopen, which is
+	// what a counterparty deleting and recreating it looks like from here.
+	slog.Warn(giveUpOpeningMsg,
+		slog.String("path", absPath),
+		slog.Int("attempts", maxTempNameAttempts),
+		slog.Any("error", lastErr))
+
+	// Wrapped rather than returned bare, so that this return is non-nil by
+	// construction: handing back a nil error with a nil file would have every
+	// caller dereference it. The last ENOENT is preserved, since a caller
+	// distinguishing "not there" is right either way.
+	return nil, false, fmt.Errorf("gave up opening %s after %d attempts: %w", absPath, maxTempNameAttempts, lastErr)
+}
+
+// openNoFollow opens absPath with O_NOFOLLOW added and maps the errno values
+// this package gives sentinels to.
+func openNoFollow(absPath string, flag int, perm os.FileMode) (*os.File, error) {
+	// #nosec G304 - absPath is validated by the caller
 	file, err := os.OpenFile(absPath, flag|syscall.O_NOFOLLOW, perm)
 	if err != nil {
 		if os.IsExist(err) {
@@ -512,11 +756,5 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		}
 		return nil, err
 	}
-
-	// Detect symlink attack after ensureParentDirNoSymlinks call above.
-	if err := ensureParentDirsNoSymlinks(absPath); err != nil {
-		return nil, err
-	}
-
 	return file, nil
 }
