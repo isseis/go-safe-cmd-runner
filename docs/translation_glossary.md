@@ -491,6 +491,7 @@
 | 送信キュー | send queue | Slack 送信要求を貯めるバッファ付きチャネル。`SlackHandler.Handle` が投入し、ワーカー goroutine が取り出す（Task 0163） |
 | 送信機構 | sender | Slack 通知の送信キューとワーカー goroutine を所有する内部構造（`slackSender`）。直訳の「送信器」は使わない（Task 0163） |
 | 関心の分離 | separation of concerns | 設計パターンの文脈 |
+| 差し替え点 | seam | テストから実装を差し替えられるようにコード側が用意した箇所（例: 本番では素の関数、テストビルドではパッケージ変数経由に切り替える `getwd`）。「注入点」は用語集の「注入 = inject / injection」（セキュリティ文脈）と紛らわしいため使わない。0143 が同じ英語 seam に当てた「接合点」（構成要素どうしの境界）とは別の意味（Task 0167） |
 | 受付停止 | stop accepting | `Flush` または `Close` の呼び出しにより、送信機構が新しい通知の受け入れをやめた状態。以降に到着した通知は破棄される（Task 0163） |
 | 終了要求 | shutdown request | 待機中のワーカーを起こして終了させるために送る制御メッセージ。終了モード（`drain` / `abandon`）と flush 期限を運ぶ（Task 0163） |
 | 終了要求チャネル | shutdown request channel | 待機中のワーカーに終了モード（drain / abandon）と flush 期限を伝える制御チャネル（Task 0163） |
@@ -654,6 +655,7 @@
 | 作業ディレクトリ | working directory | |
 | 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |
 | ワークスペース | workspace | |
+| 隙 | window | 攻撃・競合の文脈（競合の隙、TOCTOU の隙）。検査から使用までのあいだに攻撃が入り込める時間差を指す。「窓」「ウィンドウ」は使わない。信号処理・走査範囲の window（後方スキャン窓など）は別概念で、この項の対象外 |
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
 
@@ -788,6 +790,7 @@
 | 2026-08-07 | run ID 検証・特権降格・TOCTOU fail-closed 化（Task 0162）関連の用語を追加 (startup privilege drop, accepted format, root of trust, defense in depth) |
 | 2026-08-13 | redaction カバレッジ拡張と Slack 送信の非同期化（Task 0163 Phase 6）関連の用語を追加 (key-name-based redaction, value-format detection, separator, leading boundary, send queue, worker, stop accepting, drop, flush deadline, shutdown request, drain / abandon) |
 | 2026-08-19 | entrypoints の残 Low/Info 所見（Task 0164）関連の用語を追加 (identification token, directory permission audit) |
+| 2026-08-21 | safefileio の残所見（Task 0167）関連の用語を追加 (seam)。テスト用の差し替え箇所を指す訳語を「差し替え点」に定め、「注入点」を使わないことを明記 |
 
 ---
 
