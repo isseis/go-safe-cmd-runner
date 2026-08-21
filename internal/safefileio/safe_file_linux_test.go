@@ -343,21 +343,49 @@ func openFDTargetsUnder(t *testing.T, dir string) map[string]struct{} {
 // run with GOGC=off. Otherwise a garbage collection can run *os.File's
 // finalizer, closing the leaked descriptor before the test looks, and the test
 // passes over a real leak.
+//
+// Both subtests are needed because the two branches release the descriptor
+// through different code: the not-created branch closes it inline, the created
+// branch hands it to removeVerifiedFileByPath.
 func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
-	dir := tu.SafeTempDir(t)
-	filePath := filepath.Join(dir, "target.txt")
-	require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o600))
+	cases := []struct {
+		name  string
+		flag  int
+		setup func(t *testing.T, path string)
+	}{
+		{
+			name: "not_created",
+			flag: os.O_RDONLY,
+			setup: func(t *testing.T, path string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
+			},
+		},
+		{
+			name:  "created",
+			flag:  os.O_CREATE | os.O_WRONLY,
+			setup: func(*testing.T, string) {},
+		},
+	}
 
-	before := openFDTargetsUnder(t, dir)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			filePath := filepath.Join(dir, "target.txt")
+			tc.setup(t, filePath)
 
-	stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
+			before := openFDTargetsUnder(t, dir)
 
-	file, err := safeOpenFileFallback(filePath, os.O_RDONLY, 0)
-	require.ErrorIs(t, err, errPostCheckFailed)
-	assert.Nil(t, file, "no handle may be returned alongside an error")
+			stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
 
-	assert.Equal(t, before, openFDTargetsUnder(t, dir),
-		"the descriptor opened before the failed check must not be left open")
+			file, err := safeOpenFileFallback(filePath, tc.flag, 0o600)
+			require.ErrorIs(t, err, errPostCheckFailed)
+			assert.Nil(t, file, "no handle may be returned alongside an error")
+
+			assert.Equal(t, before, openFDTargetsUnder(t, dir),
+				"the descriptor opened before the failed check must not be left open")
+		})
+	}
 }
 
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)

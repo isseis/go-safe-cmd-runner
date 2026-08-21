@@ -646,7 +646,7 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 		// Recorded independently of how the cleanup below turns out: a
 		// component of the path changed while the file was being opened, which
 		// is the signature of an attack in progress.
-		slog.Warn("path check failed after opening the file; abandoning the open",
+		slog.Warn(postOpenCheckFailedMsg,
 			slog.String("path", absPath),
 			slog.Any("error", err))
 
@@ -671,6 +671,11 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 // rather than a single failure being handed straight back. Naming it lets a
 // test tell those apart too.
 const giveUpOpeningMsg = "gave up opening the file: it kept disappearing between the creation probe and the reopen"
+
+// postOpenCheckFailedMsg marks the event that must be recorded whether or not
+// the cleanup that follows it succeeds: a path component changed while the file
+// was being opened, which is what an attack in progress looks like from here.
+const postOpenCheckFailedMsg = "path check failed after opening the file; abandoning the open"
 
 // openNoFollowTrackingCreation opens absPath without following a symlink at the
 // leaf, and reports whether this call is what brought the file into existence.

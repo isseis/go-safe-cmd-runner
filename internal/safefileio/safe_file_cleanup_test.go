@@ -283,6 +283,8 @@ func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T)
 		content := []byte("pre-existing content")
 		require.NoError(t, os.WriteFile(filePath, content, 0o600))
 
+		recorder := captureWarnings(t)
+
 		stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
 
 		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
@@ -292,6 +294,12 @@ func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T)
 		got, readErr := os.ReadFile(filePath)
 		require.NoError(t, readErr)
 		assert.Equal(t, content, got, "a file this call did not create must be left untouched")
+
+		// The check failing at all says a path component changed under us, so it
+		// is recorded whatever the cleanup then does. This branch is where that
+		// can be asserted on its own: no cleanup warning competes with it here.
+		record := recorder.RequireRecord(t, slog.LevelWarn, postOpenCheckFailedMsg)
+		record.AssertAttrs(t, map[string]any{"path": filePath})
 	})
 
 	t.Run("identity_mismatch", func(t *testing.T) {
@@ -329,6 +337,8 @@ func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T)
 		record := recorder.RequireRecord(t, slog.LevelWarn,
 			"left a file in place after a failed open: could not confirm it still refers to the opened inode")
 		record.AssertAttrs(t, map[string]any{"path": filePath})
+		assert.NotContains(t, record.Attrs, "close_error",
+			"a close that succeeded must not be reported as an error attribute")
 	})
 }
 

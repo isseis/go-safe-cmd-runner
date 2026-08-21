@@ -203,6 +203,8 @@
 | `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/overrides.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides.go`（`//go:build test`） |
 | `openat2Syscall` | `internal/safefileio/overrides_linux.go`（`//go:build !test`） | `internal/safefileio/test_helpers_overrides_linux.go`（`//go:build test`） |
 
+**本番側（`//go:build !test`）のファイルは `make lint` の対象外である。** `make lint` は `golangci-lint run --build-tags test` を実行するため、`overrides.go`・`overrides_linux.go` は コンパイル対象にならない。コンパイル自体は `make build`／`go build`（タグ無し）が確認するため、各 Phase の完了条件に `go build ./internal/safefileio/` を入れてある。既存の `internal/security/getwd.go` も同じ状態であり、リンタ設定の見直しは本タスクの対象外とする。
+
 `_linux.go` の接尾辞が GOOS を表すため、Linux 用の 2 ファイルのビルドタグに `linux` を書く必要はない。ただし同じ
 パッケージの `safe_file_linux.go` が冗長に `//go:build linux` を書いており、実装ではそれに合わせて
 `//go:build linux && !test`・`//go:build linux && test` と書いた（Phase 1 の step 1-2 の記述どおり）。
@@ -1052,7 +1054,7 @@ Phase の区切りをそのまま PR の区切りにする。§ 8 の Phase 4 �
 
 Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。本節は PR 単位のマージ進捗だけを追う。
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3）
+- [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3。[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
 - [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3）
 - [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4）
 - [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
@@ -1085,8 +1087,8 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 
 | AC | 種別 | 検証方法 |
 |---|---|---|
-| AC-01 | test | `internal/safefileio/safe_file_linux_test.go::TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails`（一時ディレクトリ配下を指す `/proc/self/fd` エントリの集合が呼び出しの前後で不変であること） |
-| AC-02 | test | `internal/safefileio/safe_file_cleanup_test.go::TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` の `created`／`pre_existing` サブテスト |
+| AC-01 | test | `internal/safefileio/safe_file_linux_test.go::TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails` の `not_created`／`created` サブテスト（一時ディレクトリ配下を指す `/proc/self/fd` エントリの集合が呼び出しの前後で不変で あること）。2 つに分けるのは、fd を解放する経路が分岐ごとに違うためである（作成していない場合はその場の `Close`、作成していた場合は `removeVerifiedFileByPath` 経由） |
+| AC-02 | test | `internal/safefileio/safe_file_cleanup_test.go::TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails` の `created`／`pre_existing` サブテスト。両者が分かれる前提である「作成したか既にあったか」の判定そのものは `internal/safefileio/safe_file_test.go::TestSafeOpenFileFallback_CreationProbe`（5 サブテスト）が押さえる。うち `rejects_leaf_symlink` は、作成プローブの開き直しが `O_NOFOLLOW` を保ち、リーフ symlink を拒否するという ADR の前提を崩していないことの検証である |
 | AC-03 | test | 同テストの `identity_mismatch` サブテスト（差し替えたファイルが削除されないこと、返るエラーが 2 回目の確認のエラーで `ErrSourceIdentityMismatch` ではないこと、警告が記録されること）。ヘルパ単体は `internal/safefileio/safe_file_cleanup_test.go::TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch` |
 | AC-04 | test | AC-01〜AC-03 の各テストが、それぞれ「2 回目の確認の失敗 → Close のみ」「同 → 作成済みファイルの削除」「同 → 既存ファイルの保持」「同 → 同一性不一致で削除せず警告」の 4 分岐を 1 つずつ踏む。`go test -tags test -run 'TestSafeOpenFileFallback_|TestRemoveVerifiedFileByPath_' -v ./internal/safefileio/` の出力で各分岐名の PASS を確認する |
 | AC-05 | test + manual | AC-01〜03 の 3 テストが `test` の主体である。加えて Phase 2 の最終ステップで後始末（`Close` と `removeVerifiedFileByPath` の呼び出し）を外し、`GOGC=off` の下でそれらが落ちることを確認してコミットメッセージに記す |
