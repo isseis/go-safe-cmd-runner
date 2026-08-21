@@ -337,7 +337,7 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 **判定理由**: 1-1 が `open` というセキュリティゲート上で拒否の追加と削除を同時に行う（`validateOpenPerm` が `os.ModePerm` 外のビットを新たに拒否する一方、`openat2Mode` により `O_CREATE` を伴わない非ゼロ `perm` の open が Linux 経路で `EINVAL` にならなくなる）。これは `mkplan.md` step 8 のパネルモード・トリガ「simultaneous behavior raises and lowers」そのものである。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
