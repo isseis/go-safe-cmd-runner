@@ -8,7 +8,7 @@
 | Created | 2026-08-20 |
 | Review date | 2026-08-20 |
 | Reviewer | isseis |
-| Comments | 2026-08-20: `02_architecture.md` § 10 の指摘を受け、AC-07a・AC-18・AC-19・AC-21・F-7 の性能見積もり・Success Criteria を実装可能な記述へ修正（挙動の方針は変更なし）。同日、スコープ対象 6 にディレクトリ fd 起点への変更を追加（`02_architecture.md` § 10.1） |
+| Comments | 2026-08-21: Success Criteria の挙動の変化を 6 つから 7 つへ改めた。Phase 3 でディレクトリ fd 起点へ変えるのに伴い、非 Linux の移動に同一性確認が加わって `ErrSourceIdentityMismatch` が新たに返りうるため（`03_implementation_plan.md` § 2 Phase 3）。2026-08-20: `02_architecture.md` § 10 の指摘を受け、AC-07a・AC-18・AC-19・AC-21・F-7 の性能見積もり・Success Criteria を実装可能な記述へ修正（挙動の方針は変更なし）。同日、スコープ対象 6 にディレクトリ fd 起点への変更を追加（`02_architecture.md` § 10.1） |
 
 ## 関連 Issue
 
@@ -232,12 +232,13 @@ Linux 経路は `openHow.mode` に `uint64(perm)` をそのまま渡す（[safe_
 
 - 上記すべての Acceptance Criteria が実装され、対応するテストが `make test` で成功する。
 - `make lint` が警告なく通過する。
-- 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが変わらない。挙動の変化は次の 6 つに限られ、いずれも意図したものである。
+- 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが変わらない。挙動の変化は次の 7 つに限られ、いずれも意図したものである。
   - 失敗したときに何が残るか（fd・作成済みファイル・一時ファイルを残さなくなる）。
   - 安全でない権限のソースを `AtomicMoveFile` に渡したときの結果（権限を狭めて受け入れるのをやめ、拒否する。AC-07a）。
   - `SafeWriteFileOverwrite` の宛先の権限が `perm` と一致するようになる（AC-19）。
   - `SafeWriteFileOverwrite` の宛先が既存かつ読み取り不可の場合に失敗する。宛先の存在確認が読み取りで開くようになるため。
   - `requiredPerm` が移動後の宛先検査を通らない場合、`AtomicMoveFile` が宛先を置き換える前に失敗する。副作用が減る方向の変化である。
   - フォールバック経路で `O_CREATE` を `O_EXCL` なしに使う `SafeOpenFile` が、対象が同時に削除されると `ENOENT` で失敗しうる。
+  - 非 Linux で `AtomicMoveFile` が `ErrSourceIdentityMismatch` を返しうる。`moveFileAnchored` が `renameat` の直前に `fstatat` で同一性を確認するようになるため（`02_architecture.md` § 3.4.5・§ 5.3 の R4）。現在の非 Linux 実装は `os.Rename` 一発で確認を持たない。隙が狭まる方向の変化である。2026-08-21 承認。
 - リーフ symlink を検知して拒否するという ADR の設計前提が、すべての公開 API について維持されている。
 - #978 が挙げる 8 件それぞれについて、解消したのか、所見の推奨とは異なる形で close したのかが、コードと監査文書の双方から追える。

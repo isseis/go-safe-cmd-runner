@@ -33,9 +33,10 @@
   述べ直さない。
 - **段階の区切りで挙動を確かめる。** [02_architecture.md](02_architecture.md) § 8 の Phase 1〜5 をそのまま
   用いる。各 Phase の終わりで `make fmt` → `make test` → `make lint` を通す。
-- **既存のテスト seam を踏襲する。** `openat2` の生の呼び出しと、フォールバック経路の 2 回目の親ディレクトリ
-  確認は、`linkatFunc`・`generateTempLinkName` と同じ「差し替え可能なパッケージ変数」の形にする。新しい
-  種類の注入機構は作らない。
+- **テスト seam を本番ビルドへ持ち込まない。** 新設する 3 つの seam は、本番ビルドには差し替え可能な値を
+  残さないよう、`//go:build !test` と `//go:build test` の 2 ファイルで同名の関数を排他的に定義する形に
+  する（§ 1「本タスクで新規に必要になる seam」）。`internal/security` の `getwd` が既に採っている形であり、
+  新しい種類の注入機構は作らない。
 - **モックではなく実ファイルシステムで検証する。** 書き込み・移動の経路はディレクトリ fd を起点にするため、
   `FileSystem` のモックからは届かなくなる（[02_architecture.md](02_architecture.md) § 7.1）。後始末と
   アトミック性の検証は `t.TempDir` 系の実ディレクトリ上で行う。
@@ -69,7 +70,7 @@
 - **`File.Truncate` の本番の呼び出し元は `safe_file.go:238` の 1 か所だけ**である
   （`rg -n "\.Truncate\(" --glob '*.go' internal/ cmd/` から `_test.go` を除いた結果が 1 件）。この 1 行は
   Phase 4-2 で消えるため、`Truncate` は `Remove` と同じ「本番の呼び出し元を持たないインターフェース
-  メソッド」になる。扱いは Phase 4-3 で明示的に決める。
+  メソッド」になる。同じ基準で削除する（Phase 4-3。2026-08-21 決定）。
 
 #### `internal/safefileio/safe_file_linux.go`（298 行・変更）
 
@@ -141,8 +142,8 @@
 `failingWriteFS` からのみ参照されており、両 FS 型を消すと未参照になる。`.golangci.yml` の `_test.go` 向け
 除外リスト（gocyclo・errcheck・err113・dupl・gosec・goconst）に `unused` は含まれないため、消し残すと
 `make lint` が落ちる。`safe_file_cleanup_test.go` からは `errDiskFull`・`errTruncateFailed`（:81-82）と、
-`mockFile` の `writeErr`・`statErr`・`closeErr` フィールドを消す。`truncateErr` は `TestMockFileTruncate`
-（:389 以降）が使い続けるため残す。
+`mockFile` の `writeErr`・`statErr`・`closeErr` フィールドを消す。`truncateErr` と `TestMockFileTruncate`
+（:389-460）も、`File.Truncate` の削除（Phase 4-3）に伴って消える。
 
 `safe_file_test.go` の `TestValidateFilePermissions`・`TestCanSafelyWriteToFile`・
 `TestValidateFileOperationDifferences`・`TestResolvedPathModeEnforcement`・`TestEnsureParentDirsNoSymlinks` は
@@ -173,20 +174,38 @@
 #### 本タスクで新規に必要になる seam
 
 設計（[02_architecture.md](02_architecture.md) § 3.2・§ 7.1）が求める検証を実ファイルシステム上で決定的に
-行うには、既存の seam だけでは足りない。次の 3 つを `linkatFunc` と同じ様式（doc コメントに用途と
-`t.Parallel()` 禁止の理由を英語で書く）で追加する。他の注入点は増やさない。
+行うには、既存の seam だけでは足りない。次の 3 つを追加する。他の注入点は増やさない。
 
-| 追加する変数 | 置き場所 | シグネチャ | 必要な理由 |
+| seam | 差し替える対象 | シグネチャ | 必要な理由 |
 |---|---|---|---|
-| `openat2Syscall` | `safe_file_linux.go` | `func(dirfd int, pathname string, how *openHow) (int, error)` | `EINTR` を返す状況を実環境で再現できない（AC-26・28）。`*openHow` を受け取る位置で切ることで、カーネルへ渡る `mode` をテストから読める（AC-15） |
-| `ensureParentDirsAfterOpen` | `safe_file.go` | `func(absPath string) error` | `safeOpenFileFallback` の 1 回目と 2 回目のあいだに介入する手段が他に無く、2 回目だけを失敗させられない（AC-01〜05） |
-| `verifyMovedFile` | `safe_file.go` | `func(file File, dirFd int, name string) error` | `rename` 成功**後**の失敗を作る手段が書き込み経路に無い。移動元と移動先が同じディレクトリのため、既存のテストが使う「親ディレクトリの権限を落とす」手法では `rename` 自体が失敗してしまう（AC-18・21 の `ErrDestinationCommitted` 側） |
+| `openat2Syscall` | `openat2` が発行する生のシステムコール | `func(dirfd int, pathname string, how *openHow) (int, error)` | `EINTR` を返す状況を実環境で再現できない（AC-26・28）。`*openHow` を受け取る位置で切ることで、カーネルへ渡る `mode` をテストから読める（AC-15） |
+| `ensureParentDirsAfterOpen` | `safeOpenFileFallback` の 2 回目の親ディレクトリ確認 | `func(absPath string) error` | 1 回目と 2 回目のあいだに介入する手段が他に無く、2 回目だけを失敗させられない（AC-01〜05） |
+| `verifyMovedFile` | `moveOpenFileCore` の `rename` 後の同一性確認 | `func(file File, dirFd int, name string) error` | `rename` 成功**後**の失敗を作る手段が書き込み経路に無い。移動元と移動先が同じディレクトリのため、既存のテストが使う「親ディレクトリの権限を落とす」手法では `rename` 自体が失敗してしまう（AC-18・21 の `ErrDestinationCommitted` 側） |
 
-**`ensureParentDirsAfterOpen` と `verifyMovedFile` は、承認済みの
-[02_architecture.md](02_architecture.md) が明示していない本番コードの追加である。** § 3.2 が
-`openat2` について認めた seam の考え方をそのまま適用したものであり、§ 7.1 が求める検証を成立させるために
-必要だが、セキュリティ上重要な経路に可変のパッケージ変数を 2 つ増やすことになる。本書の承認をもって
-この追加の承認とするか、先に `02_architecture.md` § 7.1 へ追記するかを、レビューで判断していただきたい。
+**3 つとも、本番ビルドには差し替え可能な値を一切残さない形で実装する（2026-08-21 承認）。**
+`linkatFunc`・`generateTempLinkName` のような素のパッケージ変数にはしない。本番ビルドに可変の
+パッケージ変数を置くと、セキュリティ上重要な経路に本番でも書き換えうる値が増えるためである。
+実装は `internal/security` が `getwd` で既に採っている形をそのまま使う。
+
+- **本番側**（`//go:build !test`）: 差し替えの余地がない普通の関数として定義する。
+  例: `internal/security/getwd.go` の `getwd()`。
+- **テスト側**（`//go:build test`）: 同名の関数を、パッケージ変数を経由して呼ぶ形で定義する。
+  例: `internal/security/test_helpers_getwd.go` の `getwdHook` と `getwd()`。
+
+同名の識別子をビルドタグで排他的に定義するため、呼び出し側のコードはどちらのビルドでも変わらない。
+配置するファイルは次のとおりとする。テスト側は
+[test_organization.md](../../dev/developer_guide/test_organization.md) の Classification B
+（パッケージ内部のヘルパは `test_helpers_<category>.go` に置き `//go:build test` を付ける）に従う。
+
+| seam | 本番側（`!test`） | テスト側（`test`） |
+|---|---|---|
+| `ensureParentDirsAfterOpen`・`verifyMovedFile` | `internal/safefileio/hooks.go`（`//go:build !test`） | `internal/safefileio/test_helpers_hooks.go`（`//go:build test`） |
+| `openat2Syscall` | `internal/safefileio/hooks_linux.go`（`//go:build linux && !test`） | `internal/safefileio/test_helpers_hooks_linux.go`（`//go:build linux && test`） |
+
+doc コメントは両側に置き、本番側には「本番ビルドには差し替えられる値を置かない」理由を、テスト側には
+seam の用途と、このパッケージのテストが `t.Parallel()` を使えない理由を、いずれも英語で書く
+（`getwd.go` と `test_helpers_getwd.go` が同じ書き分けをしている）。既存の `linkatFunc`・
+`generateTempLinkName` は本タスクの対象外であり、素のパッケージ変数のまま残す。
 
 #### 文書側の調査結果
 
@@ -244,11 +263,15 @@
 - [ ] `safeOpenFileInternal`（`safe_file_linux.go:275-280`）の `mode: uint64(perm)` を
       `mode: openat2Mode(flag, perm)` に置き換える。
 - [ ] `safe_file_linux.go` の `openat2` を、`EINTR` のあいだ再試行するラッパにする。生のシステムコール発行を
-      `var openat2Syscall = rawOpenat2`（シグネチャは § 1 の seam 表のとおり `*openHow` を受け取る形）へ
-      切り出し、`unsafe.Pointer` の取り回しは `rawOpenat2` の中に閉じる。doc コメント（英語）に、テストが
-      差し替えるための seam であることと、そのためこのパッケージのテストが `t.Parallel()` を使えないことを
-      書く。再試行に上限は設けない（[02_architecture.md](02_architecture.md) § 3.2）。`EINTR` 以外の errno は
-      現在と同じ形でそのまま返し、`safeOpenFileInternal` の errno 対応付け（:285-294）は変更しない。
+      `rawOpenat2`（シグネチャは § 1 の seam 表のとおり `*openHow` を受け取る形）へ切り出し、
+      `unsafe.Pointer` の取り回しはその中に閉じる。再試行に上限は設けない
+      （[02_architecture.md](02_architecture.md) § 3.2）。`EINTR` 以外の errno は現在と同じ形でそのまま
+      返し、`safeOpenFileInternal` の errno 対応付け（:285-294）は変更しない。
+- [ ] `openat2Syscall` を § 1 の 2 ファイル方式で用意する。`hooks_linux.go`（`//go:build linux && !test`）に
+      `func openat2Syscall(dirfd int, pathname string, how *openHow) (int, error) { return rawOpenat2(…) }` を、
+      `test_helpers_hooks_linux.go`（`//go:build linux && test`）に `var openat2SyscallHook = rawOpenat2` と、
+      それを呼ぶ同名の `openat2Syscall` を置く。本番ビルドに差し替え可能な値を残さない
+      （`internal/security/getwd.go` と `test_helpers_getwd.go` と同じ形）。
 - [ ] `safe_file_test.go` に `TestSafeOpenFile_RejectsNonPermissionModeBits` を追加する。`os.ModeSetuid`・
       `os.ModeSetgid`・`os.ModeSticky`・`os.ModeDir`・`os.ModeAppend` を含む `perm` について、
       `FileSystemConfig{}` と `FileSystemConfig{DisableOpenat2: true}` の両方で `ErrUnsupportedFileMode` が
@@ -281,7 +304,10 @@
       メッセージに記す。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通る。
-`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。
+`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。（`hooks_linux.go` を追加するため）両ビルドの seam が成立していることを、`go build ./internal/safefileio/`（タグ無し＝本番側の
+`//go:build !test` を通す）と `make test`（`-tags test`＝テスト側の `//go:build test` を通す）の両方で
+確かめる。加えて本番側のファイルに `var` が現れないことを
+`rg -n "^var " internal/safefileio/hooks.go internal/safefileio/hooks_linux.go` が 0 件であることで確認する。
 
 ### Phase 2: 共通ヘルパの整理とフォールバック経路の後始末（F-001 / AC-01〜05）
 
@@ -319,10 +345,11 @@
       `verifySameFile` で同一性を確認し、一致した場合のみ `Close` → `os.Remove` の順に実行する。一致しない、
       または確認自体が失敗した場合は削除せず、`slog.Warn` に対象パスと理由を記録する
       （[02_architecture.md](02_architecture.md) § 5.4）。`Close` の失敗も同じ警告に含める。
-- [ ] `safe_file.go` に、2 回目の親ディレクトリ確認のための seam
-      `var ensureParentDirsAfterOpen = ensureParentDirsNoSymlinks` を追加し、`safeOpenFileFallback:494` の
-      呼び出しをこの変数経由にする。doc コメント（英語）に、テストが 2 回目の確認だけを失敗させるための
-      seam であることと `t.Parallel()` を使えない旨を書く。
+- [ ] 2 回目の親ディレクトリ確認のための seam `ensureParentDirsAfterOpen` を § 1 の 2 ファイル方式で
+      用意する。`hooks.go`（`//go:build !test`）に `ensureParentDirsNoSymlinks` を直接呼ぶだけの関数を、
+      `test_helpers_hooks.go`（`//go:build test`）に `var ensureParentDirsAfterOpenHook =
+      ensureParentDirsNoSymlinks` と、それを呼ぶ同名の関数を置く。`safeOpenFileFallback:494` の呼び出しを
+      `ensureParentDirsAfterOpen` に差し替える。
 - [ ] `safeOpenFileFallback`（`safe_file.go:475-499`）に作成プローブを実装する。分岐は
       [02_architecture.md](02_architecture.md) § 6.2 の判断フロー図が正であり、そのとおりに実装する。
       再試行の上限には `maxTempNameAttempts` を使う。
@@ -360,7 +387,10 @@
       確認し、外し方をコミットメッセージに記す（AC-05）。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通る。
-`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。
+`GOOS=darwin go vet -tags test ./internal/safefileio/` が通る。（`hooks.go` を追加するため）両ビルドの seam が成立していることを、`go build ./internal/safefileio/`（タグ無し＝本番側の
+`//go:build !test` を通す）と `make test`（`-tags test`＝テスト側の `//go:build test` を通す）の両方で
+確かめる。加えて本番側のファイルに `var` が現れないことを
+`rg -n "^var " internal/safefileio/hooks.go internal/safefileio/hooks_linux.go` が 0 件であることで確認する。
 
 ### Phase 3: ディレクトリ fd プリミティブと `moveFileAnchored` の書き換え（F-002・F-005 の前提）
 
@@ -369,9 +399,8 @@
 この Phase は **Linux の外部挙動を変えない**。非 Linux では、`moveFileAnchored` に移動直前の同一性確認が
 加わるため `ErrSourceIdentityMismatch` が新たに返りうる（現在は `os.Rename` 一発で確認が無い）。これは
 [02_architecture.md](02_architecture.md) § 5.3 の R4 が意図した変化で、隙が狭まる方向である。
-`01_requirements.md` Success Criteria が挙げる挙動の変化 6 点には含まれていないため、レビューで
-7 点目として追記するか、既存の項目に含まれると判断するかを確認していただきたい。挙動の組み替えは
-Phase 4 で行う。
+`01_requirements.md` Success Criteria が挙げる挙動の変化には含まれていなかったため、2026-08-21 に
+7 点目として同文書へ追記した。挙動の組み替えは Phase 4 で行う。
 
 **変更するファイル**: `internal/safefileio/safe_file.go`・`safe_file_linux.go`・`safe_file_nonlinux.go`・
 `safe_file_linux_test.go`
@@ -460,7 +489,10 @@ Phase 4 で行う。
       （[02_architecture.md](02_architecture.md) § 3.4.3）。移動後の宛先を開き直す検査（現行
       `safe_file.go:185-198`）はここへ移す。
 - [ ] 移動後に残す検証を、宛先ディレクトリ fd と宛先名に対する `verifySameFile` による同一性確認へ変える。
-      呼び出しは seam `verifyMovedFile`（§ 1 の表）を経由させ、宛先をパス名で開き直さない。
+      呼び出しは seam `verifyMovedFile` を経由させ、宛先をパス名で開き直さない。seam は § 1 の 2 ファイル
+      方式で用意する。`hooks.go`（`//go:build !test`）に `verifySameFile` を fstatat 経由で呼ぶだけの関数を、
+      `test_helpers_hooks.go`（`//go:build test`）に `var verifyMovedFileHook = …` と、それを呼ぶ同名の
+      関数を置く。
 - [ ] `rename` に到達した後のすべての失敗を `ErrDestinationCommitted` で包む。包む場所は `moveOpenFileCore`
       とし、移動そのものの成否は `moveFileAnchored` の戻り値で判断する
       （[02_architecture.md](02_architecture.md) § 3.9 の責務表）。
@@ -506,12 +538,20 @@ Phase 4 で行う。
 - [ ] `internal/security/machoanalyzer/analyzer_test.go` の `largeFakeFS.Remove`（:241）を削除し、
       `largeFakeFile` に `Sync`（`func (largeFakeFile) Sync() error { return nil }`）を追加する。
 - [ ] `safe_file_cleanup_test.go` の `mockFile` に `Sync` を追加する。
-- [ ] **`File.Truncate` の扱いを決める。** Phase 4-2 で `safe_file.go:238` の `file.Truncate(0)` が消えると、
-      `Truncate` は本番の呼び出し元を 1 つも持たなくなる。これは `01_requirements.md` の F-5 が
-      `Remove` の削除を正当化した基準（0157・0166 と同じ）に当てはまる。`Truncate` を `File` から削除する
-      （併せて `mockFile.Truncate`・`largeFakeFile.Truncate`・`TestMockFileTruncate`・`truncateErr` を消す）か、
-      残す理由を本書に記録するかのどちらかを選ぶ。`make deadcode` はインターフェースのメソッドを報告
-      しないため、この判断を自動検査に委ねることはできない。
+- [ ] **`File.Truncate` を削除する（2026-08-21 決定）。** Phase 4-2 で `safe_file.go:238` の
+      `file.Truncate(0)` が消えると、`Truncate` は本番の呼び出し元を 1 つも持たなくなる。これは
+      `01_requirements.md` の F-5 が `Remove` の削除を正当化した基準（0157・0166 と同じ）に当てはまる。
+      Phase 4-2 の書き換えが済んだ**後**に、次の 5 か所をまとめて消す。`make deadcode` はインターフェースの
+      メソッドを報告しないため、この削除は自動検査では代替できない。
+      - `safe_file.go:73` の `Truncate(size int64) error`（`File` インターフェース）
+      - `safe_file_cleanup_test.go:141-165` の `mockFile.Truncate`
+      - `safe_file_cleanup_test.go` の `mockFile.truncateErr` フィールド
+      - `safe_file_cleanup_test.go:389-460` の `TestMockFileTruncate`
+      - `internal/security/machoanalyzer/analyzer_test.go:231` の `largeFakeFile.Truncate`
+- [ ] `TestMockFileTruncate` の削除で本番コードのカバレッジが下がらないことを確認する。同テストは
+      `mockFile` 自身の `Truncate` の挙動（負のサイズの拒否、伸長時のゼロ埋め）だけを検証しており、
+      `internal/safefileio` の本番関数を 1 つも通らない。`go tool cover -func` の比較（この節の後段）で
+      関数単位の差が無いことを確かめ、その旨をコミットメッセージに記す。
 - [ ] `make deadcode` を実行し、本タスクの削除に起因する新たな未使用シンボルが出ないことを確認する
       （AC-13）。実行前の出力を控えておき、差分で判断する。
 - [ ] `go tool cover -func` を `Remove` 関連テストの整理の前後で取得し、関数単位で失われるカバレッジが
@@ -626,6 +666,10 @@ Phase 4 で行う。
 
 **完了条件**: `make fmt` → `make test` → `make lint` が通る。`make deadcode` に新規項目が出ない。
 `GOOS=darwin go vet -tags test ./...` と `GOOS=netbsd go vet -tags test ./internal/safefileio/` が通る。
+（`hooks.go` に `verifyMovedFile` を足すため）両ビルドの seam が成立していることを、`go build ./internal/safefileio/`（タグ無し＝本番側の
+`//go:build !test` を通す）と `make test`（`-tags test`＝テスト側の `//go:build test` を通す）の両方で
+確かめる。加えて本番側のファイルに `var` が現れないことを
+`rg -n "^var " internal/safefileio/hooks.go internal/safefileio/hooks_linux.go` が 0 件であることで確認する。
 上の性能表が埋まっている。
 
 ### Phase 5: 契約の明記と監査文書への反映（F-007・F-008 / AC-29〜38）
@@ -747,9 +791,9 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
   本タスクの前後で変わらないことを、上記の既存テストで確認する。
 - 既存の解析レコードファイルが変更なしに読めることは、`TestStore_Load_V9DynLibDepsObjectFormat` などの
   固定入力を読むテストが担う。
-- 意図した挙動の変化は `01_requirements.md` Success Criteria の 6 点と、Phase 3 が非 Linux にもたらす
-  `ErrSourceIdentityMismatch`（§ 2 Phase 3 の前書き）に限る。これを超える差分が見つかった場合は実装では
-  なく設計の問題として扱い、`02_architecture.md` の改訂から行う。
+- 意図した挙動の変化は `01_requirements.md` Success Criteria の 7 点に限る（7 点目が Phase 3 の非 Linux
+  の `ErrSourceIdentityMismatch` である）。これを超える差分が見つかった場合は実装ではなく設計の問題として
+  扱い、`02_architecture.md` の改訂から行う。
 
 ### 4.4 テストが理由どおりに失敗できることの確認
 
@@ -774,7 +818,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 | R-4 | `fsync` の追加により `record` の実行時間が延びる | 対象が数百件のとき 0.1〜数秒の増加 | Phase 4-5 で絶対値を実測して記録する。相対比では判断しない（CLAUDE.md の性能方針）。受け入れる根拠は [02_architecture.md](02_architecture.md) § 3.6.4 にある |
 | R-5 | 作成プローブにより、`O_CREATE` を `O_EXCL` なしで使う呼び出しが `ENOENT` で失敗しうる | `internal/runner/bootstrap/logger.go:246` のログファイル open が、フォールバック経路でのみ失敗しうる | 本番ターゲット（Linux 5.6+）では `openat2` 経路が使われプローブは動かない。上限つき再試行で通常の競合は吸収する。`01_requirements.md` Success Criteria に既に記載済みの変化である |
 | R-6 | `98_remaining_issues.md` の書き換えが B1 以外の節に及ぶ | 監査記録の他の残件が失われる | AC-37 の差分確認を Phase 5 の完了条件に含める |
-| R-7 | 承認済みの `02_architecture.md` に無い本番の seam（`ensureParentDirsAfterOpen`・`verifyMovedFile`）を、セキュリティ上重要な経路へ増やす | 可変のパッケージ変数が攻撃面になりうるという指摘を後から受ける可能性がある | § 1「本タスクで新規に必要になる seam」に必要性と代替の不在を明記した。本書の承認をもって認めるか、`02_architecture.md` § 7.1 へ先に追記するかをレビューで決める |
+| R-7 | テスト用の seam を、セキュリティ上重要な経路へ本番でも書き換えられる形で増やしてしまう | 攻撃面が広がる | ビルドタグで本番側とテスト側を排他的に定義し、本番ビルドには差し替え可能な値を一切残さない（§ 1。2026-08-21 承認）。この形が成立していることは、タグ無しのビルド（`go build ./internal/safefileio/`）が通り、かつ本番側のファイルにパッケージ変数が現れないことで確認する（§7 の AC 検証とは別に、Phase 1・2・4 の完了条件に含める） |
 
 ---
 
@@ -785,7 +829,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 - [ ] `ErrUnsupportedFileMode` の追加
 - [ ] `validateOpenPerm` の追加と `SafeOpenFile` からの呼び出し
 - [ ] `openat2Mode` の追加と `safeOpenFileInternal` の書き換え
-- [ ] `openat2` の `EINTR` 再試行ラッパと `openat2Syscall` seam（`*openHow` を受け取る形）
+- [ ] `openat2` の `EINTR` 再試行ラッパと、`hooks_linux.go`／`test_helpers_hooks_linux.go` による `openat2Syscall` seam
 - [ ] AC-14〜16 のテスト追加（openat2 可用性の `require` を含む）
 - [ ] `TestOpenat2_RetriesOnEINTR`・`TestOpenat2_NonEINTRErrnoMapping`・`TestOpenat2_ReadOpenPassesZeroMode` の追加
 - [ ] 再試行を外すとテストが落ちることの確認（AC-28）
@@ -798,7 +842,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 - [ ] `ErrTempLinkNameExhausted` → `ErrTempNameExhausted` の改名
 - [ ] `TestLinkFileToTempName_ExhaustsAttempts` の `require.ErrorIs` への強化
 - [ ] `removeVerifiedFileByPath` の追加
-- [ ] `ensureParentDirsAfterOpen` seam の追加
+- [ ] `hooks.go`／`test_helpers_hooks.go` による `ensureParentDirsAfterOpen` seam の追加
 - [ ] 作成プローブと開き直しの実装（内部由来 `EEXIST` を外へ出さない）
 - [ ] 2 回目の確認失敗時の `Close` と削除の実装、警告の記録、元のエラーの保持
 - [ ] AC-01〜03 のテスト追加（fd の集合比較、`identity_mismatch` サブテストを含む）
@@ -822,7 +866,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 - [ ] `ErrDestinationCommitted` の追加
 - [ ] `moveOpenFileCore` の分割と検査順序の変更（AC-06）
 - [ ] 宛先の権限方針の検査を `rename` より前へ移動
-- [ ] 移動後の検証を `verifyMovedFile` 経由の同一性確認へ変更
+- [ ] 移動後の検証を `verifyMovedFile` 経由の同一性確認へ変更（seam は `hooks.go`／`test_helpers_hooks.go`）
 - [ ] `rename` 到達後の失敗への `ErrDestinationCommitted` の付与と警告の記録
 - [ ] `File` への `Sync` の追加
 - [ ] `createTempFileInDir`・`removeVerifiedFileAt` の追加
@@ -830,7 +874,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 - [ ] `safeWriteFileCommon`・`atomicMoveFileCore` の入口への `validateOpenPerm` の追加
 - [ ] 差し替え後の `Close` 失敗を警告に留める
 - [ ] `FileSystem.Remove` と実装 4 箇所の削除
-- [ ] `File.Truncate` の扱いの決定（削除するか、残す理由を記録するか）
+- [ ] `File.Truncate` の削除（インターフェース・`mockFile`・`largeFakeFile`・`TestMockFileTruncate`・`truncateErr`）
 - [ ] `largeFakeFile`・`mockFile` への `Sync` の追加
 - [ ] 挙動が変わる既存テスト 3 件の削除と、不要になったヘルパ（`safe_file_test.go:162-215` ほか）の削除
 - [ ] AC-07・07a・07b・18〜21・23・24 のテスト追加（差し替え後の `ErrDestinationCommitted` を含む）
@@ -950,8 +994,7 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 - `make test` と `make lint` が警告なく通る。`GOOS=darwin` と `GOOS=netbsd` の `go vet -tags test` も通る。
 - `make deadcode` に本タスク由来の新規項目が無い。
 - 本タスクの前後で、`safefileio` の公開 API が成功したときに書き込まれる内容と移動先のファイルが
-  変わらない。挙動の変化は `01_requirements.md` Success Criteria が挙げる 6 点と、非 Linux の
-  `ErrSourceIdentityMismatch`（§ 2 Phase 3）に限られる。
+  変わらない。挙動の変化は `01_requirements.md` Success Criteria が挙げる 7 点に限られる。
 - リーフのシンボリックリンクを検知して拒否するという ADR の設計前提が、すべての公開 API について
   維持されている。
 - Phase 4-5 の性能表が実測値で埋まっている。
@@ -963,10 +1006,10 @@ Phase の名前・順序・先行条件は [02_architecture.md](02_architecture.
 ## 10. 次のステップ
 
 - 本書のレビューと `approved` への更新を待つ。承認前に実装コードを書かない
-  （[requirements_process.md](../../dev/developer_guide/requirements_process.md) § 0）。レビューでは、
-  § 1 の seam 2 つ（`ensureParentDirsAfterOpen`・`verifyMovedFile`）を本書の承認で認めるか
-  `02_architecture.md` へ先に追記するか、および Phase 3 が非 Linux にもたらす挙動の変化を
-  `01_requirements.md` Success Criteria の 7 点目として追記するかの 2 点を、併せて判断していただきたい。
+  （[requirements_process.md](../../dev/developer_guide/requirements_process.md) § 0）。本書の作成時に
+  未決だった 3 点は 2026-08-21 に決着した。seam は本番ビルドに可変の値を残さない 2 ファイル方式とする
+  （§ 1）、Phase 3 が非 Linux にもたらす挙動の変化は承認され `01_requirements.md` Success Criteria の
+  7 点目として追記済み、`File.Truncate` は Phase 4 のあとに削除する（§ 2 Phase 4-3）。
 - 承認後、Phase 1 から順に実装する。Phase 3 は外部挙動をほぼ変えないため、Phase 4 と分けてレビューを
   受ける。
 - Phase 5 のマージ後に #978 を close する。
