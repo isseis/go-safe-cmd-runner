@@ -385,9 +385,6 @@ func openDirNoSymlinksFallback(dir string) (int, error) {
 	}
 
 	if err := verifyDirAfterOpen(fd, dir, resolvedDir); err != nil {
-		// Recorded independently of how the close below turns out: a component
-		// of the path changed while the directory was being opened, which is the
-		// signature of an attack in progress.
 		slog.Warn(dirPostOpenCheckFailedMsg,
 			slog.String("dir", dir),
 			slog.Any("error", err))
@@ -885,9 +882,6 @@ func safeOpenFileFallback(absPath string, flag int, perm os.FileMode) (*os.File,
 
 	// Detect symlink attack after ensureParentDirNoSymlinks call above.
 	if err := ensureParentDirsAfterOpen(absPath); err != nil {
-		// Recorded independently of how the cleanup below turns out: a
-		// component of the path changed while the file was being opened, which
-		// is the signature of an attack in progress.
 		slog.Warn(postOpenCheckFailedMsg,
 			slog.String("path", absPath),
 			slog.Any("error", err))
