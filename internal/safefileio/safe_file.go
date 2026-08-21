@@ -178,8 +178,6 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 	srcDir, srcName := filepath.Dir(absSrc), filepath.Base(absSrc)
 	dstDir, dstName := filepath.Dir(absDst), filepath.Base(absDst)
 
-	// Both fds are released on every path out of this function, however the
-	// branches below turn out.
 	srcDirFd, err := fs.openDirNoSymlinks(srcDir)
 	if err != nil {
 		return fmt.Errorf("source parent directory unsafe: %w", err)
@@ -622,7 +620,6 @@ func verifySameFileAt(file File, dirFd int, name string) error {
 	return compareInode(fdStat, &entryStat, name)
 }
 
-// fdStatOf reads the (dev, ino) identity of an open file from its descriptor.
 func fdStatOf(file File) (*syscall.Stat_t, error) {
 	fdInfo, err := file.Stat()
 	if err != nil {

@@ -78,8 +78,9 @@ func mayCreateFile(flag int) bool {
 	return flag&os.O_CREATE != 0 || flag&unix.O_TMPFILE == unix.O_TMPFILE
 }
 
-// openat2Mode returns the value to place in openHow.mode. It exists to keep
-// the openat2 and fallback paths in agreement, in both directions:
+// openat2Mode returns the value to place in openHow.mode. The rule openPermBits
+// applies is what keeps the openat2 and fallback paths in agreement, and it
+// matters in both directions:
 //
 // For a non-creating open, openat2(2) rejects a non-zero mode with EINVAL,
 // while os.OpenFile hands the same value to a kernel that ignores it. Zeroing

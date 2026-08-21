@@ -63,13 +63,11 @@ func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string, perm os.FileMo
 		return fmt.Errorf("failed to ensure directory for final path: %w", err)
 	}
 
-	// Use safeFS.AtomicMoveFile for secure atomic file moving.
-	// AtomicMoveFile validates parent-directory components via
-	// openDirNoSymlinks, which rejects user-owned symlinks while
-	// allowing root-owned OS-managed symlinks (e.g. /tmp -> /private/tmp on
-	// macOS).  Do NOT pre-resolve symlinks here: doing so would bypass that
-	// check and allow a user-owned symlink in a parent directory to redirect
-	// the write to an attacker-controlled location.
+	// AtomicMoveFile validates the parent-directory components itself, rejecting
+	// user-owned symlinks while allowing root-owned OS-managed ones (e.g.
+	// /tmp -> /private/tmp on macOS). Do NOT pre-resolve symlinks here: doing so
+	// would bypass that check and allow a user-owned symlink in a parent
+	// directory to redirect the write to an attacker-controlled location.
 	if err := f.safeFS.AtomicMoveFile(tempPath, finalPath, perm); err != nil {
 		return fmt.Errorf("failed to move to final path %s: %w", finalPath, err)
 	}

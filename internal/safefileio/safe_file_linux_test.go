@@ -4,6 +4,7 @@ package safefileio
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -497,12 +498,17 @@ func TestOpenPrimitives_SetCloseOnExec(t *testing.T) {
 // A directory fd that outlived its failed check would be worse than a leak. The
 // move path anchors renameat and openat to it, so a descriptor handed on after
 // the check said the directory had changed would defeat the check entirely.
+//
+// It also covers the case where the second walk refuses the path outright,
+// which is why it asserts the warning as well; the cases where the walk accepts
+// the path are in TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges.
 func TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 	parent := tu.SafeTempDir(t)
 	dir := filepath.Join(parent, "target")
 	require.NoError(t, os.Mkdir(dir, 0o750))
 
 	before := openFDTargetsUnder(t, parent)
+	recorder := captureWarnings(t)
 
 	stubEnsureDirAfterOpen(t, func(string) (string, error) { return "", errPostCheckFailed })
 
@@ -512,6 +518,9 @@ func TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
 
 	assert.Equal(t, before, openFDTargetsUnder(t, parent),
 		"the directory descriptor opened before the failed check must not be left open")
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, dirPostOpenCheckFailedMsg)
+	record.AssertAttrs(t, map[string]any{"dir": dir})
 }
 
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)

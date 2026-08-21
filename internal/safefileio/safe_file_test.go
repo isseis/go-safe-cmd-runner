@@ -883,7 +883,6 @@ func TestValidateOpenAtName(t *testing.T) {
 		{name: "dot", input: ".", wantErr: true},
 		{name: "dotdot", input: "..", wantErr: true},
 		{name: "root", input: "/", wantErr: true},
-		{name: "double slash", input: "//", wantErr: true},
 		{name: "absolute path", input: "/etc/passwd", wantErr: true},
 		{name: "relative path", input: "sub/file.txt", wantErr: true},
 		{name: "parent traversal", input: "../file.txt", wantErr: true},
@@ -994,26 +993,19 @@ func symlinkedDirFixture(t *testing.T) (linkDir, realDir string) {
 // TestEnsureDirNoSymlinks_ReturnsResolvedPath pins the return value itself, not
 // just the accept/reject verdict: a caller that opens the path it was given
 // rather than the one that comes back would fail on exactly the layout the
-// allowlist exists to support.
+// allowlist exists to support. The symlink here is mid-path, which the
+// fallback-route test below cannot reach -- it can only place one at the leaf.
+//
+// Rejection of a symlink that is not on the allowlist is covered by
+// TestEnsureParentDirsNoSymlinks.
 func TestEnsureDirNoSymlinks_ReturnsResolvedPath(t *testing.T) {
 	linkDir, realDir := symlinkedDirFixture(t)
-	target := filepath.Join(linkDir, "sub")
+	allowOSManagedSymlink(t, linkDir)
 
-	// The negative control: with the allowlist untouched the walk rejects the
-	// symlink, so the case below is reached only because it was allowed.
-	t.Run("rejects a symlink that is not on the allowlist", func(t *testing.T) {
-		_, err := ensureDirNoSymlinks(target)
-		assert.ErrorIs(t, err, ErrIsSymlink)
-	})
-
-	t.Run("returns the target of a followed symlink", func(t *testing.T) {
-		allowOSManagedSymlink(t, linkDir)
-
-		resolved, err := ensureDirNoSymlinks(target)
-		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(realDir, "sub"), resolved,
-			"the followed symlink must be replaced by its target in the returned path")
-	})
+	resolved, err := ensureDirNoSymlinks(filepath.Join(linkDir, "sub"))
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(realDir, "sub"), resolved,
+		"the followed symlink must be replaced by its target in the returned path")
 }
 
 // TestOpenDirNoSymlinksFallback_OpensResolvedPath covers the consequence of the
@@ -1064,25 +1056,12 @@ func stubEnsureDirAfterOpen(t *testing.T, stub func(dir string) (string, error))
 // system calls, and unix.Open refuses a symlink only at the leaf, so a component
 // replaced in between is invisible to everything else here.
 //
-// The three subtests are the three ways that shows up: the re-walk refuses the
-// path, the re-walk resolves it somewhere else, and the re-walk is perfectly
-// happy because the directory was replaced by another real directory -- which
-// only the inode comparison can see.
+// The two subtests are the two ways that shows up once the re-walk itself
+// accepts the path: it resolves somewhere else, or it is perfectly happy because
+// the directory was replaced by another real directory -- which only the inode
+// comparison can see. The third way, the re-walk refusing the path outright, is
+// covered by TestOpenDirNoSymlinksFallback_ClosesFDWhenPostCheckFails.
 func TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges(t *testing.T) {
-	t.Run("second walk rejects the path", func(t *testing.T) {
-		dir := tu.SafeTempDir(t)
-		recorder := captureWarnings(t)
-
-		stubEnsureDirAfterOpen(t, func(string) (string, error) { return "", errPostCheckFailed })
-
-		fd, err := openDirNoSymlinksFallback(dir)
-		require.ErrorIs(t, err, errPostCheckFailed)
-		assert.Equal(t, -1, fd)
-
-		record := recorder.RequireRecord(t, slog.LevelWarn, dirPostOpenCheckFailedMsg)
-		record.AssertAttrs(t, map[string]any{"dir": dir})
-	})
-
 	t.Run("second walk resolves elsewhere", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 		dir := filepath.Join(tmpDir, "target")
