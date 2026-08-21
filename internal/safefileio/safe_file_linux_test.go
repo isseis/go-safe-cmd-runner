@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -227,7 +228,7 @@ func TestLinkFileToTempName_RetriesOnNameCollision(t *testing.T) {
 	names := []string{collidingName, "safefileio-move-free-test"}
 	call := 0
 	origFunc := generateTempLinkName
-	generateTempLinkName = func() (string, error) {
+	generateTempLinkName = func(_ string) (string, error) {
 		name := names[call]
 		call++
 		return name, nil
@@ -261,11 +262,11 @@ func TestLinkFileToTempName_ExhaustsAttempts(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, collidingName), []byte("existing"), 0o600))
 
 	origFunc := generateTempLinkName
-	generateTempLinkName = func() (string, error) { return collidingName, nil }
+	generateTempLinkName = func(_ string) (string, error) { return collidingName, nil }
 	t.Cleanup(func() { generateTempLinkName = origFunc })
 
 	_, err = linkFileToTempName(osFile, dir)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrTempNameExhausted)
 }
 
 // TestLinkFileToTempName_NonEEXISTErrorIsNotRetried verifies that a linkat
@@ -298,6 +299,59 @@ func TestLinkFileToTempName_NonEEXISTErrorIsNotRetried(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, unix.EPERM)
 	assert.Equal(t, 1, calls, "a non-EEXIST linkat error must not be retried")
+}
+
+// openFDTargetsUnder returns the set of paths under dir that this process
+// currently holds open, read from /proc/self/fd.
+//
+// It is a set of link targets rather than a count of entries: the Go runtime
+// opens and closes descriptors of its own, and os.ReadDir occupies one while it
+// runs, so a difference in the number of entries says nothing about the file
+// under test.
+func openFDTargetsUnder(t *testing.T, dir string) map[string]struct{} {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+
+	prefix := dir + string(os.PathSeparator)
+	targets := map[string]struct{}{}
+	for _, entry := range entries {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", entry.Name()))
+		if err != nil {
+			// The descriptor was closed between the ReadDir and this readlink
+			// (the ReadDir's own is the usual one).
+			continue
+		}
+		if strings.HasPrefix(target, prefix) {
+			targets[target] = struct{}{}
+		}
+	}
+	return targets
+}
+
+// TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails lives in the Linux-only
+// file because it observes descriptors through /proc/self/fd; the function it
+// covers is portable and is reached here by calling it directly.
+//
+// The negative control -- deleting the Close and watching this fail -- must be
+// run with GOGC=off. Otherwise a garbage collection can run *os.File's
+// finalizer, closing the leaked descriptor before the test looks, and the test
+// passes over a real leak.
+func TestSafeOpenFileFallback_ClosesFDWhenPostCheckFails(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("content"), 0o600))
+
+	before := openFDTargetsUnder(t, dir)
+
+	stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
+
+	file, err := safeOpenFileFallback(filePath, os.O_RDONLY, 0)
+	require.ErrorIs(t, err, errPostCheckFailed)
+	assert.Nil(t, file, "no handle may be returned alongside an error")
+
+	assert.Equal(t, before, openFDTargetsUnder(t, dir),
+		"the descriptor opened before the failed check must not be left open")
 }
 
 type openat2SyscallFunc func(dirfd int, pathname string, how *openHow) (int, error)

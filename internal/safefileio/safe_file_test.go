@@ -154,6 +154,66 @@ func TestSafeOpenFile_CreatePermUnchanged(t *testing.T) {
 	}
 }
 
+// TestSafeOpenFileFallback_CreationProbe covers the open itself, not the
+// cleanup: splitting an O_CREATE open into an O_EXCL probe and a reopen is only
+// acceptable if the caller cannot tell, so each row states what the caller must
+// still see.
+func TestSafeOpenFileFallback_CreationProbe(t *testing.T) {
+	const existingContent = "content that was already there"
+
+	t.Run("creates_when_absent", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "created.txt")
+
+		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.NoError(t, err)
+		require.NoError(t, file.Close())
+		assert.FileExists(t, filePath)
+	})
+
+	t.Run("opens_existing_without_reporting_it_exists", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "existing.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte(existingContent), 0o600))
+
+		// The probe hits EEXIST here. That is the function's own doing, so it
+		// must be absorbed: only a caller that asked for O_EXCL may be told the
+		// file exists.
+		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_RDONLY, 0o600)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = file.Close() })
+
+		got, err := io.ReadAll(file)
+		require.NoError(t, err)
+		assert.Equal(t, existingContent, string(got), "the reopen must land on the existing file")
+	})
+
+	t.Run("reports_exists_when_caller_asked_for_o_excl", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "existing.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte(existingContent), 0o600))
+
+		_, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, ErrFileExists)
+	})
+
+	t.Run("rejects_leaf_symlink", func(t *testing.T) {
+		dir := tu.SafeTempDir(t)
+		targetPath := filepath.Join(dir, "target.txt")
+		require.NoError(t, os.WriteFile(targetPath, []byte(existingContent), 0o600))
+		linkPath := filepath.Join(dir, "link.txt")
+		require.NoError(t, os.Symlink(targetPath, linkPath))
+
+		// An O_EXCL open of a symlink fails with EEXIST even when the link
+		// dangles, so the probe sends this case down the reopen. The reopen has
+		// to keep O_NOFOLLOW, or a symlink at the leaf would be followed
+		// instead of rejected.
+		_, err := safeOpenFileFallback(linkPath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, ErrIsSymlink)
+
+		got, err := os.ReadFile(targetPath)
+		require.NoError(t, err)
+		assert.Equal(t, existingContent, string(got), "the link target must not have been touched")
+	})
+}
+
 func TestSafeReadFile(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -754,7 +814,6 @@ func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
 
 // TestResolvedPathModeEnforcement verifies that passing a ResolvedPath created with
 // NewResolvedPath (resolveModeFull) to write functions returns ErrInvalidFilePath.
-// This corresponds to AC-14, AC-15, AC-16.
 func TestResolvedPathModeEnforcement(t *testing.T) {
 	tempDir := tu.SafeTempDir(t)
 
@@ -816,7 +875,7 @@ func TestEnsureParentDirsNoSymlinks(t *testing.T) {
 }
 
 // TestSafeReadFile_AcceptsBothModes verifies that SafeReadFile accepts ResolvedPath values
-// created with either NewResolvedPath or NewResolvedPathParentOnly (AC-17).
+// created with either NewResolvedPath or NewResolvedPathParentOnly.
 func TestSafeReadFile_AcceptsBothModes(t *testing.T) {
 	tempDir := tu.SafeTempDir(t)
 	filePath := filepath.Join(tempDir, "readable.txt")

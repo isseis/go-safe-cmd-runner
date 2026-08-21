@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -234,6 +235,113 @@ func (m *mockFileSystem) getRemoveCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.removeCallCount
+}
+
+// errPostCheckFailed stands in for whatever ensureParentDirsNoSymlinks reports
+// when a path component is swapped in while the file is being opened.
+var errPostCheckFailed = errors.New("simulated post-open path check failure")
+
+// stubEnsureParentDirsAfterOpen replaces the second parent-directory check for
+// the duration of the test. Only that second call goes through the override, so
+// the open itself still runs against a path the first check accepted.
+func stubEnsureParentDirsAfterOpen(t *testing.T, stub func(absPath string) error) {
+	t.Helper()
+	orig := ensureParentDirsAfterOpenOverride
+	t.Cleanup(func() { ensureParentDirsAfterOpenOverride = orig })
+	ensureParentDirsAfterOpenOverride = stub
+}
+
+// captureWarnings routes package-level slog output into a recorder for the
+// duration of the test. safefileio logs through the default logger, so the
+// default is what has to be swapped.
+func captureWarnings(t *testing.T) *tu.LogRecorder {
+	t.Helper()
+	logger, recorder := tu.NewRecordingLogger()
+	orig := slog.Default()
+	slog.SetDefault(logger)
+	t.Cleanup(func() { slog.SetDefault(orig) })
+	return recorder
+}
+
+// TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails covers what is
+// left on disk when the post-open check fails, which differs by how the file
+// came to be there.
+func TestSafeOpenFileFallback_RemovesCreatedFileWhenPostCheckFails(t *testing.T) {
+	t.Run("created", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "created.txt")
+
+		stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
+
+		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, errPostCheckFailed)
+		assert.Nil(t, file)
+		assert.NoFileExists(t, filePath, "a file this call created must not survive the failure")
+	})
+
+	t.Run("pre_existing", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "existing.txt")
+		content := []byte("pre-existing content")
+		require.NoError(t, os.WriteFile(filePath, content, 0o600))
+
+		stubEnsureParentDirsAfterOpen(t, func(string) error { return errPostCheckFailed })
+
+		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, errPostCheckFailed)
+		assert.Nil(t, file)
+
+		got, readErr := os.ReadFile(filePath)
+		require.NoError(t, readErr)
+		assert.Equal(t, content, got, "a file this call did not create must be left untouched")
+	})
+
+	t.Run("identity_mismatch", func(t *testing.T) {
+		filePath := filepath.Join(tu.SafeTempDir(t), "swapped.txt")
+		replacement := []byte("content of an unrelated file")
+
+		recorder := captureWarnings(t)
+
+		// Swap a different inode into the path between the creation and the
+		// failing check, i.e. exactly the situation in which deleting by path
+		// name would destroy a file of someone else's choosing.
+		stubEnsureParentDirsAfterOpen(t, func(absPath string) error {
+			require.NoError(t, os.Remove(absPath))
+			require.NoError(t, os.WriteFile(absPath, replacement, 0o600))
+			return errPostCheckFailed
+		})
+
+		file, err := safeOpenFileFallback(filePath, os.O_CREATE|os.O_WRONLY, 0o600)
+		require.ErrorIs(t, err, errPostCheckFailed)
+		assert.NotErrorIs(t, err, ErrSourceIdentityMismatch,
+			"the caller must see the check failure, not a detail of the cleanup")
+		assert.Nil(t, file)
+
+		got, readErr := os.ReadFile(filePath)
+		require.NoError(t, readErr)
+		assert.Equal(t, replacement, got, "the substituted file must not be removed")
+
+		record := recorder.RequireRecord(t, slog.LevelWarn,
+			"left a file in place after a failed open: it no longer refers to the opened inode")
+		record.AssertAttrs(t, map[string]any{"path": filePath})
+	})
+}
+
+// TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch drives the helper
+// directly with a File whose Stat can never match a real file: mockFileInfo
+// reports a syscall.Stat_t with Dev and Ino left at zero.
+func TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch(t *testing.T) {
+	filePath := filepath.Join(tu.SafeTempDir(t), "victim.txt")
+	content := []byte("content of an unrelated file")
+	require.NoError(t, os.WriteFile(filePath, content, 0o600))
+
+	file := newMockFile(content, &mockFileInfo{name: "victim.txt", mode: 0o600, size: int64(len(content))})
+
+	err := removeVerifiedFileByPath(file, filePath)
+	require.ErrorIs(t, err, ErrSourceIdentityMismatch)
+
+	got, readErr := os.ReadFile(filePath)
+	require.NoError(t, readErr)
+	assert.Equal(t, content, got)
+	assert.True(t, file.isClosed, "the fd must be released even when the removal is skipped")
 }
 
 // TestSafeWriteFileOverwrite_NoCleanupOnError tests that existing files are NOT deleted when overwrite fails
