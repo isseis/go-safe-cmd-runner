@@ -228,7 +228,7 @@ func (largeFakeFile) ReadAt(_ []byte, _ int64) (int, error) { return 0, io.EOF }
 func (largeFakeFile) Chmod(_ os.FileMode) error             { return nil }
 func (largeFakeFile) Close() error                          { return nil }
 func (largeFakeFile) Stat() (os.FileInfo, error)            { return largeFakeFileInfo{}, nil }
-func (largeFakeFile) Truncate(_ int64) error                { return nil }
+func (largeFakeFile) Sync() error                           { return nil }
 
 // largeFakeFS implements safefileio.FileSystem, returning largeFakeFile for any path.
 type largeFakeFS struct{}
@@ -238,7 +238,6 @@ func (largeFakeFS) SafeOpenFile(_ string, _ int, _ os.FileMode) (safefileio.File
 }
 func (largeFakeFS) AtomicMoveFile(_, _ string, _ os.FileMode) error      { return nil }
 func (largeFakeFS) GetGroupMembership() *groupmembership.GroupMembership { return nil }
-func (largeFakeFS) Remove(_ string) error                                { return nil }
 
 // TestStandardMachOAnalyzer_FileTooLarge tests that a file exceeding maxFileSize
 // returns AnalysisError wrapping ErrFileTooLarge. (AC-5)

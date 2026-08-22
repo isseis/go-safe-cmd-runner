@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -99,17 +100,39 @@ func TestSafeOpenFile_RejectsNonPermissionModeBits(t *testing.T) {
 	}
 }
 
-// TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits is a tripwire: the
-// write path reaches validateOpenPerm only by going through SafeOpenFile, so
-// this fails loudly if a later change reroutes it without carrying the check
-// across. ValidateRequestedPermissions cannot stand in, because it masks with
-// 0o7777 and so sees plain 0o600 where os.ModeSetuid (1<<23) was requested.
+// TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits is a tripwire on the
+// write path, which no longer reaches validateOpenPerm through SafeOpenFile and
+// so carries the call itself. This fails loudly if a later change reroutes it
+// again without carrying the check across. ValidateRequestedPermissions cannot
+// stand in, because it masks with 0o7777 and so sees plain 0o600 where
+// os.ModeSetuid (1<<23) was requested.
 func TestSafeWriteFileOverwrite_RejectsNonPermissionModeBits(t *testing.T) {
 	filePath := filepath.Join(tu.SafeTempDir(t), "target.txt")
 
 	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("content"), os.ModeSetuid|0o600)
 	require.ErrorIs(t, err, ErrUnsupportedFileMode)
 	assert.NoFileExists(t, filePath, "rejection must happen before anything is written")
+}
+
+// TestAtomicMoveFile_RejectsNonPermissionModeBits is the same tripwire on the
+// move path, which likewise no longer reaches validateOpenPerm through
+// SafeOpenFile: requiredPerm is applied by fchmod on the source fd, so a mode
+// carrying os.ModeSetuid would set a permission the caller never named.
+func TestAtomicMoveFile_RejectsNonPermissionModeBits(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	srcContent := []byte("content that must not move")
+	require.NoError(t, os.WriteFile(srcPath, srcContent, 0o600))
+
+	fs := NewFileSystem(FileSystemConfig{})
+	err := fs.AtomicMoveFile(srcPath, dstPath, os.ModeSetuid|0o600)
+	require.ErrorIs(t, err, ErrUnsupportedFileMode)
+
+	assert.NoFileExists(t, dstPath, "rejection must happen before anything is moved")
+	got, err := os.ReadFile(srcPath)
+	require.NoError(t, err)
+	assert.Equal(t, srcContent, got, "the source must keep both its content and its place")
 }
 
 // TestSafeOpenFile_ReadOpenPermIgnoredOnBothPaths covers the divergence this
@@ -386,61 +409,6 @@ func TestSafeReadFile(t *testing.T) {
 	}
 }
 
-// failingFile is a file that fails on Close
-type failingFile struct {
-	File
-}
-
-var errSimulatedClose = errors.New("simulated close error")
-
-func (f *failingFile) Close() error {
-	// Always return an error when closing
-	return errSimulatedClose
-}
-
-// failingCloseFS is a FileSystem that returns files that fail on Close
-type failingCloseFS struct {
-	FileSystem
-}
-
-func (fs failingCloseFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-	return &failingFile{File: f}, nil
-}
-
-// failingWriteCloseFS is a file that fails on Write and Close
-type failingWriteCloseFS struct {
-	File
-}
-
-var errSimulatedWrite = errors.New("simulated write error")
-
-func (f *failingWriteCloseFS) Write(_ []byte) (n int, err error) {
-	return 0, errSimulatedWrite
-}
-
-func (f *failingWriteCloseFS) Close() error {
-	// Call the original Close to ensure cleanup
-	_ = f.File.Close()
-	return errSimulatedClose
-}
-
-// failingWriteFS is a FileSystem that returns files that fail on Write and Close
-type failingWriteFS struct {
-	FileSystem
-}
-
-func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
-	if err != nil {
-		return nil, err
-	}
-	return &failingWriteCloseFS{File: f}, nil
-}
-
 func TestValidateFilePermissions(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -576,28 +544,6 @@ func TestValidateFilePermissions(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestSafeWriteFileOverwrite_FileCloseError(t *testing.T) {
-	t.Run("close error only", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "testfile.txt")
-
-		fs := failingCloseFS{FileSystem: defaultFS}
-		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
-		assert.Error(t, err, "Expected error when closing file fails")
-		assert.ErrorIs(t, err, errSimulatedClose, "Expected specific close error")
-	})
-
-	t.Run("write error takes precedence over close error", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "testfile.txt")
-
-		fs := failingWriteFS{FileSystem: defaultFS}
-		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), []byte("test"), 0o644, fs)
-		assert.Error(t, err, "Expected error when writing to file")
-		assert.ErrorIs(t, err, errSimulatedWrite, "Expected specific write error")
-	})
 }
 
 func TestSetuidSetgidBehavior(t *testing.T) {
@@ -1609,4 +1555,160 @@ func TestGroupMembershipFollowsProcessPermissionCheckUIDPolicy(t *testing.T) {
 			})
 		})
 	}
+}
+
+// assertNoTempFilesLeft asserts that the write path took its temporary file
+// back out of dir. Every entry this package leaves behind carries the same
+// prefix stem, so the directory listing is the whole check.
+func assertNoTempFilesLeft(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.False(t, strings.HasPrefix(entry.Name(), tempFilePrefixStem),
+			"a temporary file was left behind: %s", entry.Name())
+	}
+}
+
+// TestSafeWriteFileOverwrite_SucceedsWithPermApplied holds the write to the
+// mode the caller asked for, on both a destination it creates and one it
+// replaces. The umask is fixed to a value that would remove a bit of the
+// requested mode, because the previous implementation created the file with
+// O_CREATE and so handed back perm &^ umask; the temporary file's fchmod is
+// what makes the result exact.
+func TestSafeWriteFileOverwrite_SucceedsWithPermApplied(t *testing.T) {
+	const requestedPerm = os.FileMode(0o640)
+
+	// Umask is process-wide and this package's tests never call t.Parallel();
+	// failing to restore it would quietly break later tests.
+	previousUmask := syscall.Umask(0o022)
+	t.Cleanup(func() { syscall.Umask(previousUmask) })
+
+	t.Run("new_destination", func(t *testing.T) {
+		dir := tu.SafeTempDir(t)
+		filePath := filepath.Join(dir, "created.txt")
+		content := []byte("freshly written content")
+
+		require.NoError(t, SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, requestedPerm))
+
+		got, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+
+		info, err := os.Lstat(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, requestedPerm, info.Mode().Perm())
+		assertNoTempFilesLeft(t, dir)
+	})
+
+	t.Run("existing_destination", func(t *testing.T) {
+		dir := tu.SafeTempDir(t)
+		filePath := filepath.Join(dir, "existing.txt")
+		require.NoError(t, os.WriteFile(filePath, []byte("previous content"), 0o600))
+
+		content := []byte("replacement content")
+		require.NoError(t, SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, requestedPerm))
+
+		got, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, content, got)
+
+		// The destination's own mode is replaced rather than preserved: the
+		// moved inode carries the mode the caller requested.
+		info, err := os.Lstat(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, requestedPerm, info.Mode().Perm())
+		assertNoTempFilesLeft(t, dir)
+	})
+}
+
+// TestSafeWriteFileOverwrite_RejectsSymlinkDestination covers the reason the
+// write probes the destination at all. A rename replaces a symlink rather than
+// following it, so nothing would be written through the link -- but the refusal
+// this package promises would silently become a replacement.
+func TestSafeWriteFileOverwrite_RejectsSymlinkDestination(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	targetPath := filepath.Join(dir, "target.txt")
+	targetContent := []byte("content behind the link")
+	require.NoError(t, os.WriteFile(targetPath, targetContent, 0o600))
+
+	linkPath := filepath.Join(dir, "link.txt")
+	require.NoError(t, os.Symlink(targetPath, linkPath))
+
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, linkPath), []byte("new content"), 0o600)
+	require.ErrorIs(t, err, ErrIsSymlink)
+
+	got, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, targetContent, got, "nothing may be written through the link")
+
+	info, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "the destination must still be the symlink itself")
+	linkTarget, err := os.Readlink(linkPath)
+	require.NoError(t, err)
+	assert.Equal(t, targetPath, linkTarget, "the link must still point where it did")
+
+	assertNoTempFilesLeft(t, dir)
+}
+
+// TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact covers a
+// failure that lands before anything is written: the destination probe refuses
+// an existing file the caller may not write. This is the portable half of the
+// pre-commit contract; the linkat-injected half is in safe_file_linux_test.go.
+func TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "world_writable.txt")
+	originalContent := []byte("content that must survive")
+	require.NoError(t, os.WriteFile(filePath, originalContent, 0o600))
+	// Set the refused mode with chmod rather than at creation: umask would
+	// take the world-writable bit back off and the probe would then accept it.
+	require.NoError(t, os.Chmod(filePath, 0o666))
+
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("new content"), 0o600)
+	require.ErrorIs(t, err, ErrInvalidFilePermissions)
+	assert.NotErrorIs(t, err, ErrDestinationCommitted,
+		"a refusal before the rename must not claim the destination was replaced")
+
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, got)
+
+	assertNoTempFilesLeft(t, dir)
+}
+
+// TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted covers the
+// one outcome that returns an error over a destination that has already been
+// replaced. A caller has to be able to tell it apart from a write that did
+// nothing, and the operator record has to name both paths involved.
+func TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("previous content"), 0o600))
+
+	recorder := captureWarnings(t)
+	errIdentity := errors.New("simulated post-move identity failure")
+	orig := verifyMovedFileOverride
+	t.Cleanup(func() { verifyMovedFileOverride = orig })
+	verifyMovedFileOverride = func(File, int, string) error { return errIdentity }
+
+	content := []byte("content that is already visible")
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, 0o600)
+	require.ErrorIs(t, err, ErrDestinationCommitted)
+	require.ErrorIs(t, err, errIdentity)
+
+	// The rename went through, so the inode the write filled is now the
+	// destination. That it is still readable is also what says the failure did
+	// not go on to delete it: removing "the temporary file" by identity after
+	// the commit would have removed this very inode.
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, tempFileLeftBehindMsg)
+	record.AssertAttrs(t, map[string]any{"destination": filePath})
+	tempAttr, ok := record.Attrs["temp_file"].(string)
+	require.True(t, ok, "the record must name the temporary file so it can be reconciled with this run")
+	assert.Equal(t, dir, filepath.Dir(tempAttr), "the temporary file belongs to the destination's own directory")
+	assert.True(t, strings.HasPrefix(filepath.Base(tempAttr), tempWriteNamePrefix))
 }

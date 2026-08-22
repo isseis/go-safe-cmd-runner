@@ -186,7 +186,7 @@ func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
 
 // tempLinkNamePrefix marks the temporary hard link moveFileAnchored creates in
 // the destination directory.
-const tempLinkNamePrefix = ".safefileio-move-"
+const tempLinkNamePrefix = tempFilePrefixStem + "move-"
 
 // generateTempLinkName produces the name used for the temporary hard link in
 // moveFileAnchored. It is a package variable (rather than a direct call to
