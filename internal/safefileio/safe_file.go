@@ -49,7 +49,7 @@ func NewFileSystem(config FileSystemConfig) FileSystem {
 	return fs
 }
 
-// DefaultFileSystem is the default filesystem implementation
+// defaultFS is the default filesystem implementation
 var defaultFS = NewFileSystem(FileSystemConfig{})
 
 // FileSystem is an interface that abstracts secure file system operations
@@ -169,7 +169,6 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 // first side effect onwards. Once both directory fds are held no path is
 // resolved a second time.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
-	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
 		return err
 	}
@@ -189,9 +188,8 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 	}
 	defer closeDirFd(dstDirFd, dstDir)
 
-	// Open the source file safely BEFORE changing permissions, relative to the
-	// directory fd just verified, so that neither the parent nor the leaf can be
-	// substituted by a symlink.
+	// Opened relative to the directory fd just verified, so that neither the
+	// parent nor the leaf can be substituted by a symlink.
 	srcFile, err := fs.openFileAt(srcDirFd, srcName, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open source file safely: %w", err)
@@ -280,7 +278,6 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		return fmt.Errorf("%w: filePath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
 	}
 
-	// Pre-validate requested permissions for write operation
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(perm, groupmembership.FileOpWrite); err != nil {
 		return err
 	}
@@ -297,7 +294,6 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		}
 	}()
 
-	// Validate the file is a regular file (not a device, pipe, etc.)
 	if err := canSafelyAccessFile(file, absPath, subjectFileAtPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
 	}
@@ -338,16 +334,13 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 func ensureDirNoSymlinks(dir string) (string, error) {
 	components := splitPathComponents(dir)
 
-	// Start from the root and traverse step by step
-	// Note: filepath.VolumeName(dir) + string(os.PathSeparator) ensures correct root path on both Unix and Windows.
-	// For example, on Windows: VolumeName("C:\\Users") + "\\" = "C:\\"
+	// VolumeName keeps the root correct on Windows too: VolumeName("C:\\Users") + "\\" = "C:\\".
 	currentPath := filepath.VolumeName(dir) + string(os.PathSeparator)
 
 	for _, component := range components {
 		currentPath = filepath.Join(currentPath, component)
 
-		// Use os.Lstat to check if the current component is a symlink
-		// This doesn't follow symlinks, making it safe
+		// Lstat, so the component being tested for is not itself followed.
 		fi, err := os.Lstat(currentPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -357,11 +350,7 @@ func ensureDirNoSymlinks(dir string) (string, error) {
 			return "", fmt.Errorf("failed to stat %s: %w", currentPath, err)
 		}
 
-		// Check if it's a symlink
 		if fi.Mode()&os.ModeSymlink != 0 {
-			// Allow only well-known OS-managed symlinks whose target matches the
-			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
-			// All other symlinks -- including unexpected root-owned ones -- are rejected.
 			if !isAllowedOSManagedSymlink(currentPath) {
 				return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
 			}
@@ -375,7 +364,6 @@ func ensureDirNoSymlinks(dir string) (string, error) {
 			continue
 		}
 
-		// Ensure it's a directory (except for the last component which might not exist yet)
 		if !fi.IsDir() {
 			return "", fmt.Errorf("%w: not a directory: %s", ErrInvalidFilePath, currentPath)
 		}
@@ -741,7 +729,6 @@ func splitPathComponents(dir string) []string {
 		current = parent
 	}
 
-	// Reverse the slice to get the correct order (root to target)
 	for i, j := 0, len(components)-1; i < j; i, j = i+1, j-1 {
 		components[i], components[j] = components[j], components[i]
 	}
@@ -765,7 +752,6 @@ func SafeReadFileWithFS(filePath common.ResolvedPath, fs FileSystem) ([]byte, er
 		return nil, fmt.Errorf("%w: empty path", ErrInvalidFilePath)
 	}
 
-	// Use the FileSystem interface consistently for both testing and production
 	file, err := fs.SafeOpenFile(absPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
@@ -790,7 +776,8 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 		return nil, ErrFileTooLarge
 	}
 
-	// Use io.ReadAll with LimitReader for consistent behavior across implementations
+	// MaxFileSize+1 so that a file that grew past the limit since the Stat
+	// above is caught by the check below rather than silently truncated.
 	content, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
@@ -804,7 +791,6 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 }
 
 // getFileStatInfo retrieves file statistics and validates that the file is a regular file.
-// This helper performs common validation steps used by multiple functions.
 func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -815,7 +801,6 @@ func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, 
 		return nil, nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
 	}
 
-	// Get file stat info for UID/GID
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
@@ -852,7 +837,6 @@ func canSafelyAccessFile(file File, filePath string, subject accessSubject, oper
 		return err
 	}
 
-	// Use unified permission and ownership check based on operation type
 	var (
 		allowed   bool
 		policyErr error
