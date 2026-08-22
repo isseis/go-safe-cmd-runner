@@ -8,7 +8,7 @@
 | Created | 2026-08-20 |
 | Review date | 2026-08-21 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-08-22: § 3.6.3 の「宛先ディレクトリの `fsync` は行わない」という判断を、行う方へ改めた。見送りの理由の一つだった「ディレクトリを開く仕組みを新設する必要がある」が、§ 3.4.1 でディレクトリ fd を握る形になった時点で成り立たなくなっていたため（レビュー指摘）。併せて § 3.6.4 のコストと § 9 の将来拡張を更新した |
 
 ## 関連文書
 
@@ -416,13 +416,13 @@ var (
 
 #### 3.6.2 新しい経路
 
-1. **入口の検査。** `IsParentOnly` の要求（AC-22）と `ValidateRequestedPermissions(perm, FileOpWrite)` は現状のまま先頭で行う。
+1. **入口の検査。** `IsParentOnly` の要求（AC-22）と `ValidateRequestedPermissions(perm, FileOpWrite)` は現状のまま先頭で行う。この経路は書き換え後 `SafeOpenFile` を通らないため、§ 3.1 の `validateOpenPerm` もここで呼ぶ。順序は `ValidateRequestedPermissions` の**後**である。前に置くと、POSIX の setuid ビット（`0o4000`。`os.ModeSetuid` とは別のビットで `0o7777` のマスク内にある）を含む `perm` が権限方針の超過ではなく未対応の mode として返るようになり、従来の分類が変わってしまう。`atomicMoveFileCore` の入口も同じ順序で同じ 2 つを呼ぶ。
 2. **宛先ディレクトリ fd の取得。** `openDirNoSymlinks(filepath.Dir(absPath))` で宛先の親ディレクトリを開く。以降のファイル操作はすべてこの fd と単一のファイル名を起点に行い、絶対パスを解決し直さない（§ 3.4.1）。
 3. **宛先のプローブ。** `openFileAt(dirFd, name, os.O_RDONLY, 0)` で宛先を開く。`ErrIsSymlink` なら一時ファイルを作る前に拒否する（AC-20）。`os.ErrNotExist` なら宛先が無いということで次へ進む。開けた場合は `canSafelyAccessFile(FileOpWrite)` で既存の宛先の権限・所有者を検査し、開いたファイルを閉じる。
 4. **一時ファイルの作成。** 同じディレクトリ fd の下に、`.safefileio-write-` で始まるランダムな名前で `O_WRONLY|O_CREATE|O_EXCL` で作る。権限は `perm` ではなく固定の `0600` とする。最終的な権限は § 3.4 の fchmod が設定するので一時ファイルが `perm` を持つ必要はなく、書いている途中の内容が `perm` の広さで他者に見えることも避けられる。名前が衝突した場合（`ErrFileExists`）は上限回数まで名前を変えて再試行する。作成も `openFileAt` を通るので、この経路もシンボリックリンクの検査を受ける。
 5. **書き込みと同期。** 内容を書き、`Sync` でデータをディスクへ送る。
 6. **差し替え。** 一時ファイルの fd を保ったまま `moveOpenFileCore` を呼ぶ。移動元と移動先には同じディレクトリ fd を渡し、名前だけが一時ファイル名と宛先名で異なる。
-7. **後始末。** `ErrDestinationCommitted` を含まない失敗（＝`rename` に到達していない）では、fd を握ったまま `removeVerifiedFileAt(dirFd, tmpName)` で一時ファイルを削除する（AC-21）。確認は `fstatat`、削除は `unlinkat` で、どちらもディレクトリ fd 相対である。`ErrDestinationCommitted` を含む失敗では削除を試みない。その時点で一時ファイルの名前は、消えているか、こちらの inode ではないものを指しているかのどちらかであり、どちらの場合も削除の対象にならないためである。この場合は § 5.4 の警告を記録する。
+7. **後始末。** `ErrDestinationCommitted` を含まない失敗（＝`rename` に到達していない）では、fd を握ったまま `removeVerifiedFileAt(dirFd, tmpName)` で一時ファイルを削除する（AC-21）。確認は `fstatat`、削除は `unlinkat` で、どちらもディレクトリ fd 相対である。`ErrDestinationCommitted` を含む失敗では削除を試みない。その時点で一時ファイルの名前は、`rename` に消費されて消えているか、あるいは（Linux で `rename` 後の移動元の削除そのものが失敗した場合に限り）宛先に公開された inode への 2 本目のリンクとして残っているかのどちらかである。前者は削除の対象が無く、後者は削除しても安全だが § 5.4 の記録以上のものを得ない。この場合は § 5.4 の警告を記録する。
 
 プローブを置く理由は 2 つある。第一に、リーフのシンボリックリンクの拒否を維持するためである。`rename` はシンボリックリンク自体を置き換えるので、リンク先が書き換わる危険はない。しかし ADR が設計前提として宣言している「リーフのシンボリックリンクを検知して拒否する」が、拒否ではなく黙って置き換えるという挙動に変わってしまう。第二に、既存の宛先に対する書き込み権限の検査を維持するためである。従来はこの検査が宛先を開いた直後に行われていた。プローブを置かないと、この検査は移動後の宛先に対してしか行われず、実質的に消える。
 
@@ -436,11 +436,17 @@ var (
 
 クラッシュや電源断に対して「古い内容か新しい内容のどちらか」を保証するには、`rename` の前に一時ファイルのデータがディスクに届いている必要がある。`File` インターフェースに `Sync() error` を追加する。本番の実装 `*os.File` は既に持っている。手書きでメソッドを列挙しているテスト用の実装型 2 つ（`internal/safefileio/safe_file_cleanup_test.go` の `mockFile`、`internal/security/machoanalyzer/analyzer_test.go` の `largeFakeFile`）には追加が必要である。
 
-宛先ディレクトリ自身の `fsync` は行わない。本タスクが必要とする不変条件は「宛先は古い内容か新しい内容のどちらかである」ことであり、ディレクトリの `fsync` が追加で保証するのは「`rename` 済みであることがクラッシュ後も残る」ことである。これが欠けた場合に見えるのは古い内容であり、不変条件は破れない。宛先ファイルが初めて作られる場合も同じで、クラッシュ後に見えるのは「ファイルが無い」状態、すなわち書き込み前の状態である。ディレクトリを開く仕組みをこのパッケージに新設する必要も生じるため、範囲に含めない。
+宛先ディレクトリ自身も `rename` の後に `fsync` する。これが保証するのは「`rename` 済みであることがクラッシュ後も残る」ことである。一時ファイルの `fsync` だけでは、書き込みが成功を返した後のクラッシュで宛先が以前の内容へ、初めて作られる場合は「ファイルが無い」状態へ戻りうる。不変条件そのものは破れないが、成功を受け取った呼び出し元が期待できない結果である。
+
+`fsync` の対象は新たに開き直した fd になる。Linux では書き込み経路が握るディレクトリ fd は `O_PATH` であり（§ 3.4.1）、カーネルはこの fd に対する入出力操作をすべて拒むためである。開き直しは絶対パスではなく、握っている fd を起点に単一の名前 `"."` で行う（`openat(dirFd, ".", O_RDONLY|O_DIRECTORY)`）。パスを二度解決しないという § 3.4.1 の方針がここでも保たれ、`fsync` する inode は書き込みが起点とした inode と同じものになる。
+
+**読み取り権限が無い場合。** 開き直しには `O_PATH` が要求を避けているディレクトリの読み取り権限が要る。投函用ディレクトリ（`0o733` など）ではこれが `EACCES` になる。この場合は警告に記録して成功を返す。失われるのは耐久性だけであり、クラッシュ後に見えるのは以前の内容、すなわち不変条件の範囲内だからである。成功した書き込みを、それを理由に失敗へ変えることはしない。
+
+**`fsync` そのものが失敗した場合。** `rename` の後なので宛先には既に新しい内容がある。§ 3.4.4 の契約に従い `ErrDestinationCommitted` を包んで返す。呼び出し元が「書き込みは何も起きなかった」と解釈して、古い内容が残っている前提で再試行することを防ぐためである。
 
 #### 3.6.4 コストと挙動の差分
 
-**コスト。** 1 回の書き込みあたり create・write・fsync・link・rename が各 1 回増える。このうち無視できないのは `fsync` である。耐久性のあるストレージでの `fsync` は一般に 0.5〜10 ms を要し、数十マイクロ秒で済む他の操作とは桁が違う。書き込みは `record` 実行時に対象ファイル 1 件につき 1 回発生するので、対象が数百件なら合計で 0.1〜数秒の増加になりうる。1 件あたりの ELF／Mach-O 解析とハッシュ計算がミリ秒〜数十ミリ秒であることを踏まえると、これは同じ桁の増加であり「測定に現れない」とは言えない。要件定義書 F-7 の「数十マイクロ秒の追加は測定に現れない」という見積もりは `fsync` を含まない時点のものであり、修正が必要である（§ 10）。
+**コスト。** 1 回の書き込みあたり create・write・link・rename が各 1 回、`fsync` が 2 回（一時ファイルと宛先ディレクトリ）増える。このうち無視できないのは `fsync` である。耐久性のあるストレージでの `fsync` は一般に 0.5〜10 ms を要し、数十マイクロ秒で済む他の操作とは桁が違う。書き込みは `record` 実行時に対象ファイル 1 件につき 1 回発生するので、対象が数百件なら合計で 0.1〜数秒の増加になりうる。1 件あたりの ELF／Mach-O 解析とハッシュ計算がミリ秒〜数十ミリ秒であることを踏まえると、これは同じ桁の増加であり「測定に現れない」とは言えない。要件定義書 F-7 の「数十マイクロ秒の追加は測定に現れない」という見積もりは `fsync` を含まない時点のものであり、修正が必要である（§ 10）。
 
 それでもこのコストを受け入れる。破損した解析レコードは後段の検証で改ざんと区別できず、`record` は対話的な操作で 1 回のコマンド実行の中に収まるからである。CLAUDE.md の性能方針に従い、実装時に `record` 実行の wall time を変更の前後で実測し、絶対値を `03_implementation_plan.md` に記録する。
 
@@ -513,7 +519,7 @@ classDiagram
 
 | ファイル | 区分 | 責務と変更内容 |
 |---|---|---|
-| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。`rename` の前後の別は `moveFileAnchored` が内部 sentinel `errRenameCommitted` で申告する。§ 3.4.4）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinksFallback`・`openFileAtFallback`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts`・`commitFailure`・`logPermissionRejection`・`rejectionRule`・`accessSubject` を追加。併せて経路をまたいで共有する補助を追加する（`verifySameFileAt`・`fdStatOf`・`compareInode`・`validateOpenAtName`・`openPermBits`・`mapOpenErrno`・`mapDirOpenErrno`・`mapRenameErrno`・`closeDirFd`）。`openDirNoSymlinks`・`openFileAt` 自体は経路の選択を持つため `*osFS` のメソッドとしてプラットフォーム別ファイルに置く。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
+| `internal/safefileio/safe_file.go` | 変更 | `ErrDestinationCommitted` を `rename` 到達後の失敗に付ける（`moveOpenFileCore` が担う。`rename` の前後の別は `moveFileAnchored` が内部 sentinel `errRenameCommitted` で申告する。§ 3.4.4）。`FileSystem` から `Remove` を削除。`File` に `Sync` を追加。`SafeOpenFile` に `validateOpenPerm` の呼び出しを追加。`atomicMoveFileCore` から `moveOpenFileCore` を分割し、検証と fchmod の順序を入れ替え、宛先の権限方針の検査を `rename` より前へ移す。`safeWriteFileCommon` を一時ファイル方式へ変更。`safeOpenFileFallback` に作成プローブと後始末を追加。`verifySameFile` をここへ移動し引数を `File` に一般化。`ensureParentDirsNoSymlinks` から `ensureDirNoSymlinks` を切り出す。`openDirNoSymlinksFallback`・`openFileAtFallback`・`removeVerifiedFileByPath`・`removeVerifiedFileAt`・`createTempFileInDir`・`randomTempName`（接頭辞対応）・`validateOpenPerm`・`maxTempNameAttempts`・`commitFailure`・`logPermissionRejection`・`rejectionRule`・`accessSubject` を追加。書き込み経路の内訳として `probeWriteDestination`（§ 3.6.2 手順 3）・`writeAndReplace`（同 手順 5・6）・`closeAfterCommit`（§ 4.2 の差し替え後の `Close`）と、一時エントリの共通接頭辞 `tempFilePrefixStem`（`.safefileio-`。`tempWriteNamePrefix` と `tempLinkNamePrefix` の双方がこれを土台にする）を置く。`NewFileSystem` の具象型版 `newOSFS` も追加する（書き込み経路がディレクトリ fd の基本操作を必要とし、それらは `FileSystem` に出していないため、`safeWriteFileCommon` は `*osFS` を受け取る）。併せて経路をまたいで共有する補助を追加する（`verifySameFileAt`・`fdStatOf`・`compareInode`・`validateOpenAtName`・`openPermBits`・`mapOpenErrno`・`mapDirOpenErrno`・`mapRenameErrno`・`closeDirFd`）。`openDirNoSymlinks`・`openFileAt` 自体は経路の選択を持つため `*osFS` のメソッドとしてプラットフォーム別ファイルに置く。移動後の宛先検証をパス名での開き直しから `verifySameFile` による同一性確認へ変更。`AtomicMoveFile`・`SafeWriteFileOverwrite`・`SafeReadFile`・`canSafelyReadFromFile` および package コメントに契約を追記 |
 | `internal/safefileio/safe_file_linux.go` | 変更 | `openat2` を `EINTR` 再試行ラッパにし、システムコール発行を `rawOpenat2` へ切り出して差し替え点 `openat2Syscall`（ビルドタグで排他的に定義する 2 ファイル方式）経由で呼ぶ。`openat2Mode` を追加し `safeOpenFileInternal` から使う。`moveFileAnchored` をディレクトリ fd と名前を受け取る形へ変え、`linkat` と `rename` を宛先ディレクトリ fd 相対に、`unlinkat` を移動元ディレクトリ fd 相対にする（§ 3.4.5）。`verifySameFile` も `fstatat` によるディレクトリ fd 相対の参照に対応させる。`openDirNoSymlinks`・`openFileAt` の openat2 版を実装する。`rename` より後の失敗を内部 sentinel `errRenameCommitted` で包む（公開 sentinel の `ErrDestinationCommitted` へ translate するのは `moveOpenFileCore`。§ 3.4.4）。`verifySameFile`・`randomTempName`・`maxLinkatAttempts` の移動と改名に伴う参照の更新 |
 | `internal/safefileio/safe_file_nonlinux.go` | 変更 | package コメントのフォールバック経路の限界に関する記述を共通の表現に揃える。`moveFileAnchored` を `unix.Renameat` によるディレクトリ fd 相対の移動へ変え、直前に `fstatat` で同一性を確認する（§ 3.4.5）。`openDirNoSymlinks`・`openFileAt` のフォールバック版を実装する |
 | `internal/safefileio/overrides_linux.go` | 新規 | 本番ビルド（`//go:build linux && !test`）の `openat2Syscall`。`rawOpenat2` を直接呼ぶだけの関数で、差し替え可能な値を持たない |
@@ -849,7 +855,7 @@ Phase 3 を独立させたのは、ディレクトリ fd のプリミティブ�
 
 - **非 Linux 経路の dirfd ウォーク。** § 5.3 の R1 を原理的に解消したい場合は、`openat` でルートからコンポーネント単位に降りる方式が候補になる。その際は `ensureDirNoSymlinks` が持つ OS 管理シンボリックリンクの allowlist を新方式へ移し、判断が 2 か所に分かれないようにする必要がある。本タスクでは採らない。
 - **`writeFileAtomic` の統合。** `internal/dynamicanalysis/store.go` と `internal/libccache/cache.go` の 2 つの同一実装（§ 3.6.1）は、守るべき対象を再評価したうえで `SafeWriteFileOverwrite` へ寄せる候補である。寄せる場合は `common.NewResolvedPathParentOnly` を通すパスの取り回しが前提になる。
-- **ディレクトリの `fsync`。** クラッシュ後に「新しい内容であること」まで保証する要求が出た場合は、§ 3.6.3 の判断を見直し、ディレクトリを開く仕組みをパッケージに加える。
+- **読み取れないディレクトリでの耐久性。** § 3.6.3 のとおり、投函用ディレクトリでは `fsync` 用の開き直しが `EACCES` となり、`rename` の耐久性が得られない。ここまで保証する要求が出た場合は、`O_PATH` の fd から `fsync` できる仕組み（`AT_EMPTY_PATH` を伴う開き直しなど）の有無をカーネルの版ごとに確かめたうえで判断する。
 
 ---
 

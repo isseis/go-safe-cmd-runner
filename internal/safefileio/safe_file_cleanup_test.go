@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -24,16 +23,12 @@ import (
 // when the mock is used in concurrent test scenarios (e.g., with t.Parallel()).
 // ReadAt is an exception: it reads data but does NOT modify pos per io.ReaderAt contract.
 type mockFile struct {
-	mu          sync.Mutex
-	data        []byte // raw data for ReadAt/Seek support; protected by mu
-	pos         int64  // current position; protected by mu
-	statErr     error
-	writeErr    error
-	closeErr    error
-	truncateErr error
-	fileInfo    os.FileInfo
-	isClosed    bool
-	closeMutex  sync.Mutex
+	mu         sync.Mutex
+	data       []byte // raw data for ReadAt/Seek support; protected by mu
+	pos        int64  // current position; protected by mu
+	fileInfo   os.FileInfo
+	isClosed   bool
+	closeMutex sync.Mutex
 }
 
 func newMockFile(content []byte, fileInfo os.FileInfo) *mockFile {
@@ -56,9 +51,6 @@ func (m *mockFile) Read(p []byte) (n int, err error) {
 }
 
 func (m *mockFile) Write(p []byte) (n int, err error) {
-	if m.writeErr != nil {
-		return 0, m.writeErr
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// Extend data if needed
@@ -79,8 +71,6 @@ var (
 	errInvalidWhence    = errors.New("invalid whence")
 	errNegativePosition = errors.New("negative position")
 	errNegativeOffset   = errors.New("negative offset")
-	errDiskFull         = errors.New("disk full")
-	errTruncateFailed   = errors.New("truncate failed")
 )
 
 func (m *mockFile) Seek(offset int64, whence int) (int64, error) {
@@ -125,13 +115,10 @@ func (m *mockFile) Close() error {
 	m.closeMutex.Lock()
 	defer m.closeMutex.Unlock()
 	m.isClosed = true
-	return m.closeErr
+	return nil
 }
 
 func (m *mockFile) Stat() (os.FileInfo, error) {
-	if m.statErr != nil {
-		return nil, m.statErr
-	}
 	return m.fileInfo, nil
 }
 
@@ -139,29 +126,9 @@ func (m *mockFile) Chmod(_ os.FileMode) error {
 	return nil
 }
 
-func (m *mockFile) Truncate(size int64) error {
-	if m.truncateErr != nil {
-		return m.truncateErr
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Reject negative size (matches os.File.Truncate behavior)
-	if size < 0 {
-		return fmt.Errorf("negative size: %d", size)
-	}
-	// Handle shrinking
-	if size < int64(len(m.data)) {
-		m.data = m.data[:size]
-		if m.pos > size {
-			m.pos = size
-		}
-	} else if size > int64(len(m.data)) {
-		// Handle extension with null bytes (matches os.File.Truncate behavior)
-		diff := size - int64(len(m.data))
-		m.data = append(m.data, make([]byte, diff)...)
-		// Position stays unchanged when extending
-	}
-	// size == len(m.data) - no change needed
+// Sync is a no-op: the mock holds its data in memory, so there is nothing to
+// flush, and no test asserts on a flush failure.
+func (m *mockFile) Sync() error {
 	return nil
 }
 
@@ -185,56 +152,6 @@ func (m *mockFileInfo) Sys() any {
 		Uid: m.uid,
 		Gid: m.gid,
 	}
-}
-
-// mockFileSystem is a test implementation of FileSystem interface
-type mockFileSystem struct {
-	openFunc           func(name string, flag int, perm os.FileMode) (File, error)
-	removeFunc         func(name string) error
-	atomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
-	groupMembership    *groupmembership.GroupMembership
-	removeCallCount    int
-	mu                 sync.Mutex
-}
-
-func newMockFileSystem() *mockFileSystem {
-	return &mockFileSystem{
-		groupMembership: groupmembership.New(),
-	}
-}
-
-func (m *mockFileSystem) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	if m.openFunc != nil {
-		return m.openFunc(name, flag, perm)
-	}
-	return nil, errors.New("mock open not implemented")
-}
-
-func (m *mockFileSystem) Remove(name string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.removeCallCount++
-	if m.removeFunc != nil {
-		return m.removeFunc(name)
-	}
-	return nil
-}
-
-func (m *mockFileSystem) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
-	if m.atomicMoveFileFunc != nil {
-		return m.atomicMoveFileFunc(srcPath, dstPath, requiredPerm)
-	}
-	return errors.New("mock AtomicMoveFile not implemented")
-}
-
-func (m *mockFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
-	return m.groupMembership
-}
-
-func (m *mockFileSystem) getRemoveCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.removeCallCount
 }
 
 // errPostCheckFailed stands in for whatever ensureParentDirsNoSymlinks reports
@@ -359,229 +276,6 @@ func TestRemoveVerifiedFileByPath_SkipsRemovalOnInodeMismatch(t *testing.T) {
 	require.NoError(t, readErr)
 	assert.Equal(t, content, got)
 	assert.True(t, file.isClosed, "the fd must be released even when the removal is skipped")
-}
-
-// TestSafeWriteFileOverwrite_NoCleanupOnError tests that existing files are NOT deleted when overwrite fails
-func TestSafeWriteFileOverwrite_NoCleanupOnError(t *testing.T) {
-	t.Run("existing file is NOT deleted when overwrite validation fails", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "existing_file.txt")
-
-		mockFS := newMockFileSystem()
-
-		// Setup: SafeOpenFile succeeds (overwrite mode - no O_TRUNC, no O_EXCL)
-		// but validation fails
-		mockFS.openFunc = func(_ string, flag int, _ os.FileMode) (File, error) {
-			// Verify this is an overwrite operation (no O_TRUNC, no O_EXCL)
-			assert.False(t, flag&os.O_TRUNC != 0, "Should NOT be using O_TRUNC for overwrite")
-			assert.False(t, flag&os.O_EXCL != 0, "Should NOT be using O_EXCL for overwrite")
-
-			mockFile := &mockFile{
-				data:     nil,
-				statErr:  errors.New("validation error"),
-				isClosed: false,
-			}
-			return mockFile, nil
-		}
-
-		content := []byte("new content")
-
-		// Execute: Try to overwrite (truncate happens after validation)
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
-
-		// Verify: Operation failed
-		require.Error(t, err)
-
-		// Verify: Remove was NOT called (fileCreated should be false when not using O_EXCL)
-		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
-			"Remove should NOT be called when overwriting existing file fails")
-	})
-
-	t.Run("existing file is NOT deleted when overwrite write fails", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "existing_write_fail.txt")
-
-		mockFS := newMockFileSystem()
-
-		// Get current user's UID and GID
-		currentUID := uint32(os.Getuid())
-		currentGID := uint32(os.Getgid())
-
-		// Setup: File passes validation but write fails
-		mockFS.openFunc = func(name string, _ int, perm os.FileMode) (File, error) {
-			fileInfo := &mockFileInfo{
-				name: filepath.Base(name),
-				mode: perm,
-				size: 100, // Non-zero size indicates existing file
-				uid:  currentUID,
-				gid:  currentGID,
-			}
-			mockFile := newMockFile([]byte("old content"), fileInfo)
-			mockFile.writeErr = errDiskFull
-			return mockFile, nil
-		}
-
-		content := []byte("new content")
-
-		// Execute
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
-
-		// Verify
-		require.ErrorIs(t, err, errDiskFull)
-
-		// Verify: File was NOT removed
-		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
-			"Existing file should NOT be removed when write fails during overwrite")
-	})
-
-	t.Run("existing file is NOT deleted when truncate fails", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "existing_truncate_fail.txt")
-
-		mockFS := newMockFileSystem()
-
-		// Get current user's UID and GID
-		currentUID := uint32(os.Getuid())
-		currentGID := uint32(os.Getgid())
-
-		// Setup: File passes validation but truncate fails
-		mockFS.openFunc = func(name string, _ int, perm os.FileMode) (File, error) {
-			fileInfo := &mockFileInfo{
-				name: filepath.Base(name),
-				mode: perm,
-				size: 100, // Non-zero size indicates existing file
-				uid:  currentUID,
-				gid:  currentGID,
-			}
-			mockFile := newMockFile([]byte("old content"), fileInfo)
-			mockFile.truncateErr = errTruncateFailed
-			return mockFile, nil
-		}
-
-		content := []byte("new content")
-
-		// Execute
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err := safeWriteFileOverwriteWithFS(rp, content, 0o644, mockFS)
-
-		// Verify
-		require.ErrorIs(t, err, errTruncateFailed)
-
-		// Verify: File was NOT removed (truncate failure should not trigger cleanup)
-		assert.Equal(t, 0, mockFS.getRemoveCallCount(),
-			"Existing file should NOT be removed when truncate fails during overwrite")
-	})
-}
-
-// TestFileCleanup_Integration tests the cleanup behavior with real filesystem
-func TestFileCleanup_Integration(t *testing.T) {
-	t.Run("existing file is NOT deleted on overwrite error", func(t *testing.T) {
-		tempDir := tu.SafeTempDir(t)
-		filePath := filepath.Join(tempDir, "existing.txt")
-
-		// Create an existing file with valid permissions
-		originalContent := []byte("original content")
-		require.NoError(t, os.WriteFile(filePath, originalContent, 0o644))
-
-		fs := NewFileSystem(FileSystemConfig{})
-
-		// Try to overwrite with invalid permissions (should fail validation)
-		newContent := []byte("new content")
-		rp, rpErr := common.NewResolvedPathParentOnly(filePath)
-		require.NoError(t, rpErr)
-		err := safeWriteFileOverwriteWithFS(rp, newContent, 0o666, fs)
-
-		// Verify: Operation failed
-		require.Error(t, err)
-
-		// Verify: File still exists (was not deleted)
-		_, statErr := os.Stat(filePath)
-		assert.NoError(t, statErr, "File should still exist after overwrite failure")
-
-		// Verify: File content is preserved (truncate happens after validation)
-		content, readErr := os.ReadFile(filePath)
-		require.NoError(t, readErr)
-		assert.Equal(t, originalContent, content, "Original content should be preserved when validation fails")
-	})
-}
-
-// Test suite for mockFile.Truncate method enhancements
-func TestMockFileTruncate(t *testing.T) {
-	t.Run("truncate_with_negative_size_returns_error", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
-		err := mockFile.Truncate(-1)
-		assert.Error(t, err, "Truncate with negative size should return error")
-		assert.Equal(t, []byte("test content"), mockFile.data, "Data should not change on error")
-	})
-
-	t.Run("truncate_shrinks_file", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
-		err := mockFile.Truncate(4)
-		require.NoError(t, err)
-		assert.Equal(t, []byte("test"), mockFile.data, "File should be truncated to 4 bytes")
-	})
-
-	t.Run("truncate_shrinks_file_and_resets_position", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
-		mockFile.pos = 10
-		err := mockFile.Truncate(5)
-		require.NoError(t, err)
-		assert.Equal(t, int64(5), mockFile.pos, "Position should be reset to truncate size when beyond")
-		assert.Equal(t, []byte("test "), mockFile.data, "File should be truncated to 5 bytes")
-	})
-
-	t.Run("truncate_extends_file_with_null_bytes", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
-		err := mockFile.Truncate(8)
-		require.NoError(t, err)
-		assert.Equal(t, 8, len(mockFile.data), "File should be extended to 8 bytes")
-		// First 4 bytes should be original content
-		assert.Equal(t, []byte("test"), mockFile.data[:4], "Original content should be preserved")
-		// Last 4 bytes should be null bytes
-		assert.Equal(t, []byte{0, 0, 0, 0}, mockFile.data[4:], "Extended portion should be null bytes")
-	})
-
-	t.Run("truncate_extends_file_preserves_position", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
-		mockFile.pos = 2
-		err := mockFile.Truncate(10)
-		require.NoError(t, err)
-		assert.Equal(t, int64(2), mockFile.pos, "Position should not change when extending")
-		assert.Equal(t, 10, len(mockFile.data), "File should be extended to 10 bytes")
-	})
-
-	t.Run("truncate_to_same_size_is_noop", func(t *testing.T) {
-		original := []byte("test content")
-		mockFile := newMockFile(original, &mockFileInfo{name: "test.txt", size: 12})
-		mockFile.pos = 5
-		err := mockFile.Truncate(12)
-		require.NoError(t, err)
-		assert.Equal(t, original, mockFile.data, "Data should not change when truncating to same size")
-		assert.Equal(t, int64(5), mockFile.pos, "Position should not change")
-	})
-
-	t.Run("truncate_to_zero", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test content"), &mockFileInfo{name: "test.txt", size: 12})
-		mockFile.pos = 5
-		err := mockFile.Truncate(0)
-		require.NoError(t, err)
-		assert.Equal(t, 0, len(mockFile.data), "File should be empty after truncate to 0")
-		assert.Equal(t, int64(0), mockFile.pos, "Position should be reset to 0")
-	})
-
-	t.Run("truncate_error_handling", func(t *testing.T) {
-		mockFile := newMockFile([]byte("test"), &mockFileInfo{name: "test.txt", size: 4})
-		mockFile.truncateErr = errors.New("permission denied")
-		err := mockFile.Truncate(8)
-		assert.Error(t, err)
-		assert.Equal(t, "permission denied", err.Error())
-		assert.Equal(t, []byte("test"), mockFile.data, "Data should not change when error is set")
-	})
 }
 
 // TestMockFileSeek tests the Seek method of mockFile for all whence values and error cases.
@@ -754,4 +448,24 @@ func TestMockFileReadAt(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 0, n)
 	})
+}
+
+// errStatFile is a File whose Stat always fails. The failure is reachable in
+// production (a revoked fd, an I/O error on the inode) but not from a test that
+// hands the checks a file it just created, so it is injected here.
+type errStatFile struct {
+	File
+}
+
+var errStatUnavailable = errors.New("simulated fstat failure")
+
+func (errStatFile) Stat() (os.FileInfo, error) { return nil, errStatUnavailable }
+
+// TestCanSafelyAccessFile_PropagatesStatFailure pins the fail-closed direction
+// of the permission checks: a file whose mode and owner cannot be read is
+// refused, not waved through for want of evidence against it.
+func TestCanSafelyAccessFile_PropagatesStatFailure(t *testing.T) {
+	err := canSafelyAccessFile(errStatFile{}, "/nonexistent/path", subjectFileAtPath,
+		groupmembership.FileOpWrite, groupmembership.New())
+	require.ErrorIs(t, err, errStatUnavailable)
 }

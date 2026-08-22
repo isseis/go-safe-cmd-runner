@@ -21,8 +21,6 @@ type MockFileSystem struct {
 	SafeOpenFileFunc func(name string, flag int, perm os.FileMode) (safefileio.File, error)
 	// GetGroupMembershipFunc allows customizing GetGroupMembership behavior
 	GetGroupMembershipFunc func() *groupmembership.GroupMembership
-	// RemoveFunc allows customizing Remove behavior
-	RemoveFunc func(name string) error
 	// AtomicMoveFileFunc allows customizing AtomicMoveFile behavior
 	AtomicMoveFileFunc func(srcPath, dstPath string, requiredPerm os.FileMode) error
 
@@ -32,7 +30,6 @@ type MockFileSystem struct {
 		DstPath      string
 		RequiredPerm os.FileMode
 	}
-	RemoveCalls []string
 }
 
 // SafeOpenFile implements safefileio.FileSystem.
@@ -49,15 +46,6 @@ func (m *MockFileSystem) GetGroupMembership() *groupmembership.GroupMembership {
 		return m.GetGroupMembershipFunc()
 	}
 	return groupmembership.New()
-}
-
-// Remove implements safefileio.FileSystem.
-func (m *MockFileSystem) Remove(name string) error {
-	m.RemoveCalls = append(m.RemoveCalls, name)
-	if m.RemoveFunc != nil {
-		return m.RemoveFunc(name)
-	}
-	return nil
 }
 
 // AtomicMoveFile implements safefileio.FileSystem.

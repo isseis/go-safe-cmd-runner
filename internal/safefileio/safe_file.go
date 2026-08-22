@@ -37,6 +37,13 @@ type osFS struct {
 
 // NewFileSystem creates a new FileSystem with the given configuration
 func NewFileSystem(config FileSystemConfig) FileSystem {
+	return newOSFS(config)
+}
+
+// newOSFS is NewFileSystem keeping the concrete type, for the package-internal
+// callers that need the directory-fd primitives (openDirNoSymlinks, openFileAt)
+// the FileSystem interface deliberately does not expose.
+func newOSFS(config FileSystemConfig) *osFS {
 	fs := &osFS{
 		config:          config,
 		groupMembership: groupmembership.New(),
@@ -50,7 +57,7 @@ func NewFileSystem(config FileSystemConfig) FileSystem {
 }
 
 // defaultFS is the default filesystem implementation
-var defaultFS = NewFileSystem(FileSystemConfig{})
+var defaultFS = newOSFS(FileSystemConfig{})
 
 // FileSystem is an interface that abstracts secure file system operations
 type FileSystem interface {
@@ -58,8 +65,6 @@ type FileSystem interface {
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
-	// Remove removes the named file or (empty) directory
-	Remove(name string) error
 	// AtomicMoveFile atomically moves a file from source to destination with secure permissions
 	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 }
@@ -74,7 +79,10 @@ type File interface {
 	Chmod(mode os.FileMode) error
 	Close() error
 	Stat() (os.FileInfo, error)
-	Truncate(size int64) error
+	// Sync must reach durable storage before the caller treats the content as
+	// written: safeWriteFileCommon relies on it to guarantee that a crash
+	// leaves the destination holding either the old content or the new one.
+	Sync() error
 }
 
 // IsOpenat2Available returns true if openat2 is available and enabled
@@ -119,11 +127,6 @@ func validateOpenPerm(perm os.FileMode) error {
 	return nil
 }
 
-// Remove removes the named file or (empty) directory
-func (fs *osFS) Remove(name string) error {
-	return os.Remove(name)
-}
-
 // AtomicMoveFile atomically moves a file from source to destination with secure permissions.
 // Path resolution is intentionally limited to filepath.Abs (no EvalSymlinks) so that symlinks
 // in srcPath and dstPath's parent remain visible to the security checks in atomicMoveFileCore
@@ -151,12 +154,16 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 //
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
-func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) (err error) {
+func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) error {
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
 
-// safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
-func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+// safeWriteFileOverwriteWithFS is the internal implementation that accepts a
+// FileSystem for testing. The concrete type is required rather than the
+// interface: the write works through the directory-fd primitives
+// (openDirNoSymlinks, openFileAt), which the interface deliberately does not
+// expose.
+func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs *osFS) error {
 	return safeWriteFileCommon(filePath, content, perm, fs)
 }
 
@@ -170,6 +177,13 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 // resolved a second time.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
+		return err
+	}
+
+	// This route does not go through SafeOpenFile either, so it too carries
+	// SafeOpenFile's mode check, in the same order and for the same reasons;
+	// see safeWriteFileCommon.
+	if err := validateOpenPerm(requiredPerm); err != nil {
 		return err
 	}
 
@@ -266,14 +280,40 @@ func commitFailure(err error, dstPath string) error {
 	return fmt.Errorf("%w: %w", ErrDestinationCommitted, err)
 }
 
-// safeWriteFileCommon contains the common logic for safe file writing operations
-func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+// tempFilePrefixStem is carried by every directory entry this package creates
+// for its own use, so an entry left behind by a crash is recognisable as this
+// package's without knowing which operation left it.
+const tempFilePrefixStem = ".safefileio-"
+
+// tempWriteNamePrefix marks the temporary file safeWriteFileCommon writes the
+// new content into before renaming it over the destination.
+const tempWriteNamePrefix = tempFilePrefixStem + "write-" //nolint:gosec // G101: a directory-entry prefix, not a credential
+
+// tempWritePerm is the mode the temporary file is created with. It is fixed
+// rather than taken from the caller: the destination's final mode is set by
+// moveOpenFileCore's fchmod once the content is complete, so opening the file
+// any wider than the owner would only expose a half-written file.
+const tempWritePerm os.FileMode = 0o600
+
+const tempCloseFailedMsg = "failed to close the temporary file after the destination was replaced"
+
+const tempFileLeftBehindMsg = "left the temporary file in place: the destination had already been replaced"
+
+// safeWriteFileCommon contains the common logic for safe file writing
+// operations. It writes content to a temporary file in the destination's own
+// directory and renames it over the destination, so the destination is only
+// ever the content it already had or the content of a completed write, never a
+// truncated or half-written one.
+//
+// The temporary file is created, written, and moved entirely through the
+// directory fd taken once at the start; no path is resolved a second time.
+func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.FileMode, fs *osFS) error {
 	absPath := filePath.String()
 	if absPath == "" {
 		return fmt.Errorf("%w: empty path", ErrInvalidFilePath)
 	}
 	// Require NewResolvedPathParentOnly so the leaf-symlink position is not pre-resolved;
-	// SafeOpenFile (openat2 RESOLVE_NO_SYMLINKS) can then detect and reject a symlink at the leaf.
+	// the destination probe below can then detect and reject a symlink at the leaf.
 	if !filePath.IsParentOnly() {
 		return fmt.Errorf("%w: filePath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
 	}
@@ -282,32 +322,153 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		return err
 	}
 
-	file, err := fs.SafeOpenFile(absPath, os.O_WRONLY|os.O_CREATE, perm)
-	if err != nil {
+	// This route no longer goes through SafeOpenFile, so it carries
+	// SafeOpenFile's mode check itself. The check above cannot stand in for
+	// it: it masks with 0o7777 and so reads os.ModeSetuid (1<<23) as a plain
+	// 0o600. It runs second so that a mode carrying the POSIX setuid bit
+	// (0o4000, which is inside that mask) is still reported as exceeding the
+	// permission policy rather than as an unsupported mode.
+	if err := validateOpenPerm(perm); err != nil {
 		return err
 	}
 
+	dir, name := filepath.Dir(absPath), filepath.Base(absPath)
+
+	dirFd, err := fs.openDirNoSymlinks(dir)
+	if err != nil {
+		return fmt.Errorf("destination parent directory unsafe: %w", err)
+	}
+	defer closeDirFd(dirFd, dir)
+
+	if err := probeWriteDestination(fs, dirFd, name, absPath); err != nil {
+		return err
+	}
+
+	tmpFile, tmpName, err := createTempFileInDir(fs, dirFd, tempWriteNamePrefix)
+	if err != nil {
+		// The caller has never seen the random temporary name, so the failure
+		// is reported against the destination it asked for.
+		return fmt.Errorf("failed to create a temporary file for %s: %w", absPath, err)
+	}
+
+	err = writeAndReplace(tmpFile, dirFd, tmpName, name, absPath, content, perm, fs.GetGroupMembership())
+	switch {
+	case err == nil:
+		closeAfterCommit(tmpFile, absPath)
+		// The content is durable, but the entry that publishes it is not until
+		// the directory is flushed as well; a failure here is reported the same
+		// way as any other post-rename failure, since the destination already
+		// holds the new content.
+		if syncErr := syncDirEntry(dirFd, dir); syncErr != nil {
+			return commitFailure(syncErr, absPath)
+		}
+		return nil
+	case errors.Is(err, ErrDestinationCommitted):
+		// The temporary name has either been consumed by the move, or -- if
+		// the move failed at removing the source after the rename -- is a
+		// second link to the inode now published at the destination. Removing
+		// it would be safe in that one case and impossible in the others, and
+		// buys nothing over the record below, which lets an operator reconcile
+		// a leftover entry with this run.
+		closeAfterCommit(tmpFile, absPath)
+		slog.Warn(tempFileLeftBehindMsg,
+			slog.String("destination", absPath),
+			slog.String("temp_file", filepath.Join(dir, tmpName)))
+		return err
+	default:
+		// The destination has not been touched; take the temporary file back
+		// out. removeVerifiedFileAt closes the file and records why it could
+		// not remove it, so the caller still sees the failure that got here.
+		_ = removeVerifiedFileAt(tmpFile, dirFd, dir, tmpName)
+		return err
+	}
+}
+
+// writeAndReplace fills the temporary file and moves it onto the destination
+// name. Everything it does is reversible by removing the temporary file, right
+// up to the rename inside moveOpenFileCore, which is what makes the caller's
+// distinction between a committed and an uncommitted failure exact.
+func writeAndReplace(tmpFile File, dirFd int, tmpName, dstName, dstPath string, content []byte, perm os.FileMode, gm *groupmembership.GroupMembership) error {
+	if _, err := tmpFile.Write(content); err != nil {
+		return fmt.Errorf("failed to write to %s: %w", dstPath, err)
+	}
+
+	// The content must be durable before the rename publishes it: without
+	// this, a crash could leave the destination naming an inode whose blocks
+	// were never written, which is neither the old content nor the new.
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("failed to flush %s to disk: %w", dstPath, err)
+	}
+
+	return moveOpenFileCore(tmpFile, dirFd, tmpName, dirFd, dstName, dstPath, perm, gm)
+}
+
+// probeWriteDestination applies to an existing destination the checks that used
+// to run on the destination fd the write itself opened. Without it a rename
+// would silently replace a leaf symlink instead of refusing it, and an existing
+// destination the caller may not write would be checked only after it had
+// already been replaced.
+//
+// Opening read-only is what makes those checks possible on the inode rather
+// than on a path name; a destination that is writable but not readable is
+// refused here, where the previous O_WRONLY open accepted it.
+func probeWriteDestination(fs *osFS, dirFd int, name, absPath string) error {
+	file, err := fs.openFileAt(dirFd, name, os.O_RDONLY, 0)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// Nothing is being replaced, so there is nothing to check.
+			return nil
+		}
+		return fmt.Errorf("failed to open destination file safely: %w", err)
+	}
 	defer func() {
-		closeErr := file.Close()
-		if closeErr != nil && err == nil {
-			err = fmt.Errorf("failed to close file: %w", closeErr)
+		if closeErr := file.Close(); closeErr != nil {
+			slog.Warn("error closing destination probe",
+				slog.String("path", absPath),
+				slog.Any("error", closeErr))
 		}
 	}()
 
-	if err := canSafelyAccessFile(file, absPath, subjectFileAtPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
-		return err
+	return canSafelyAccessFile(file, absPath, subjectFileAtPath, groupmembership.FileOpWrite, fs.GetGroupMembership())
+}
+
+// createTempFileInDir creates a file under a random name in the directory dirFd
+// is open on, and returns it with the name it was created under. O_EXCL makes
+// the creation itself the point at which the name is claimed, so the returned
+// name always belongs to this call; a name already taken is retried under a new
+// random one rather than opened.
+func createTempFileInDir(fs *osFS, dirFd int, prefix string) (File, string, error) {
+	for range maxTempNameAttempts {
+		name, err := generateTempName(prefix)
+		if err != nil {
+			return nil, "", err
+		}
+
+		file, err := fs.openFileAt(dirFd, name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, tempWritePerm)
+		switch {
+		case err == nil:
+			return file, name, nil
+		case errors.Is(err, ErrFileExists):
+			continue
+		default:
+			return nil, "", err
+		}
 	}
 
-	// Truncate after permission check to ensure content is written to an empty file
-	if err := file.Truncate(0); err != nil {
-		return fmt.Errorf("failed to truncate %s: %w", absPath, err)
-	}
+	return nil, "", fmt.Errorf("%w: after %d attempts", ErrTempNameExhausted, maxTempNameAttempts)
+}
 
-	if _, err = file.Write(content); err != nil {
-		return fmt.Errorf("failed to write to %s: %w", absPath, err)
+// closeAfterCommit closes a temporary file whose content is already at the
+// destination. The failure is recorded rather than returned: the write did
+// happen, and reporting an error over a destination that holds the new content
+// would tell the caller the opposite of what is on disk (see the design
+// document's error handling section).
+func closeAfterCommit(file File, dstPath string) {
+	if err := file.Close(); err != nil {
+		slog.Warn(tempCloseFailedMsg,
+			slog.String("destination", dstPath),
+			slog.Any("error", err))
 	}
-
-	return nil
 }
 
 // ensureParentDirsNoSymlinks checks that no component of absPath's parent
@@ -547,6 +708,43 @@ func closeDirFd(fd int, dir string) {
 	}
 }
 
+// dirSyncUnreadableMsg records a directory entry left un-fsynced because the
+// directory cannot be opened for reading.
+const dirSyncUnreadableMsg = "could not flush the destination directory: it is not readable"
+
+// fsyncDirAt makes the directory entry the rename created durable. The
+// temporary file's data is already fsynced before the rename, but the entry
+// naming it is not: without this, a crash right after a successful write takes
+// the destination back to its previous content -- or, on a first write, to not
+// existing at all -- after the caller was told the write succeeded.
+//
+// dirFd itself cannot be fsynced: on Linux it is opened O_PATH (dirAccessFlag),
+// which the kernel refuses every I/O operation on. The directory is reopened
+// through dirFd under the single name ".", so what gets fsynced is the same
+// inode the whole write was anchored to and no path is resolved a second time.
+func fsyncDirAt(dirFd int, dir string) error {
+	fd, err := unix.Openat(dirFd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, unix.EACCES) {
+			// Read permission on the destination directory is exactly what
+			// dirAccessFlag exists to avoid demanding, and a write-only drop
+			// directory (0o733 and the like) has none. Losing the entry costs
+			// durability, not the invariant -- the destination still reads as
+			// its previous content -- so this is recorded rather than turned
+			// into a failure for a write that did succeed.
+			slog.Warn(dirSyncUnreadableMsg, slog.String("dir", dir))
+			return nil
+		}
+		return fmt.Errorf("failed to open the destination directory %s for flushing: %w", dir, err)
+	}
+	defer closeDirFd(fd, dir)
+
+	if err := unix.Fsync(fd); err != nil {
+		return fmt.Errorf("failed to flush the destination directory %s: %w", dir, err)
+	}
+	return nil
+}
+
 // maxTempNameAttempts bounds retries when a randomly generated temporary name
 // -- a hard link name in moveFileAnchored, or a temporary file name in the
 // write path -- collides with an existing entry (EEXIST). With tmpNameRandBytes
@@ -701,6 +899,51 @@ func removeVerifiedFileByPath(file File, path string) error {
 
 	if closeErr != nil {
 		slog.Warn("failed to close the file created by a failed open",
+			slog.String("path", path),
+			slog.Any("error", closeErr))
+		return closeErr
+	}
+
+	return nil
+}
+
+// removeVerifiedFileAt is removeVerifiedFileByPath for a caller that names its
+// target as an entry of an already-open directory: the check is an fstatat and
+// the removal an unlinkat, both relative to dirFd, so only the final name is
+// exposed to being swapped and the parent is pinned to an inode throughout.
+//
+// file is always closed, whether or not the removal happens. The returned error
+// says why the removal was skipped or failed; a caller already on a failure
+// path must not return it in place of the failure that brought it here, which
+// this function has recorded for it. dir names the directory dirFd is open on;
+// it is used to make the record locatable and nothing is resolved through it.
+func removeVerifiedFileAt(file File, dirFd int, dir, name string) error {
+	path := filepath.Join(dir, name)
+	verifyErr := verifySameFileAt(file, dirFd, name)
+	closeErr := file.Close()
+
+	if verifyErr != nil {
+		// Reached both when the entry is known to be a different inode and
+		// when the comparison could not be made at all. Both leave it alone:
+		// removing whatever sits there now would turn a detected substitution
+		// into a deletion the substituter chose.
+		slog.Warn("left a temporary file in place: could not confirm it still refers to the inode that was written",
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", verifyErr))...)
+		return verifyErr
+	}
+
+	if err := unix.Unlinkat(dirFd, name, 0); err != nil {
+		slog.Warn("failed to remove the temporary file left by a failed write",
+			withCloseError(closeErr,
+				slog.String("path", path),
+				slog.Any("error", err))...)
+		return err
+	}
+
+	if closeErr != nil {
+		slog.Warn("failed to close the temporary file removed after a failed write",
 			slog.String("path", path),
 			slog.Any("error", closeErr))
 		return closeErr

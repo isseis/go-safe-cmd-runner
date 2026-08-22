@@ -725,3 +725,36 @@ func TestOpenat2_PassesModeOnlyForCreatingOpens(t *testing.T) {
 	require.Equal(t, []uint64{uint64(perm)}, modes[createdPath], "a creating open must pass the requested permission bits")
 	require.Equal(t, []uint64{uint64(perm)}, modes[dir], "an O_TMPFILE open creates a file and must pass the requested permission bits")
 }
+
+// TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact covers the
+// pre-commit contract at the point where it is hardest to keep: the temporary
+// file has been created and filled, and the move then fails before the rename.
+// The destination must still hold what it held, and the temporary file must be
+// gone.
+//
+// linkat is the step that fails here because it is the last one before the
+// rename and the only one this package can make fail on demand; it is a
+// Linux-only substitution point, which is why this test is. The portable half
+// of the same contract is covered by
+// TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact.
+func TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+	originalContent := []byte("content that must survive")
+	require.NoError(t, os.WriteFile(filePath, originalContent, 0o600))
+
+	origLinkat := linkatFunc
+	t.Cleanup(func() { linkatFunc = origLinkat })
+	linkatFunc = func(int, string, int, string, int) error { return unix.EPERM }
+
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("new content"), 0o600)
+	require.ErrorIs(t, err, unix.EPERM)
+	assert.NotErrorIs(t, err, ErrDestinationCommitted,
+		"a failure before the rename must not claim the destination was replaced")
+
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, got)
+
+	assertNoTempFilesLeft(t, dir)
+}

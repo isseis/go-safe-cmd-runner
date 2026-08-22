@@ -804,8 +804,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1053](https://github.com/isseis/go-safe-cmd-runner/pull/1053)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4b: 書き込みのアトミック化と `Remove` の削除（F-002・F-003 / AC-10〜13・AC-18〜25）
 
@@ -817,45 +817,52 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 4-3. 書き込みのアトミック化
 
-- [ ] `File` インターフェース（`safe_file.go:65-74`）に `Sync() error` を追加する。実装型
+- [x] `File` インターフェース（`safe_file.go:65-74`）に `Sync() error` を追加する。実装型
       （`mockFile`・`largeFakeFile`）の追従は 4-4 で行うため、4-3 だけではビルドが通らない。PR-5 の中で
       4-3 → 4-4 を続けて行う（`File.Truncate` の削除だけが 4-3 の書き換え完了を待つ、という向きの制約で
       ある）。
-- [ ] `safe_file.go` に `createTempFileInDir` を追加する。`randomTempName(".safefileio-write-")` で名前を
+- [x] `safe_file.go` に `createTempFileInDir` を追加する。`randomTempName(".safefileio-write-")` で名前を
       作り、`openFileAt(dirFd, name, O_WRONLY|O_CREATE|O_EXCL, 0o600)` で作る。`ErrFileExists` の場合は
       `maxTempNameAttempts` まで名前を変えて再試行し、超えたら `ErrTempNameExhausted` を返す。権限は
       `perm` ではなく固定の `0o600` とする。
-- [ ] `safe_file.go` に `removeVerifiedFileAt(file File, dirFd int, name string) error` を追加する。同一性の
+- [x] `safe_file.go` に `removeVerifiedFileAt(file File, dirFd int, name string) error` を追加する。同一性の
       確認は `fstatat`、削除は `unlinkat` で、どちらもディレクトリ fd 相対に行う。比較そのものは
       `verifySameFile` に委ねる。
-- [ ] `safeWriteFileCommon`（`safe_file.go:204-247`）を、[02_architecture.md](02_architecture.md) § 3.6.2 の
+- [x] `safeWriteFileCommon`（`safe_file.go:204-247`）を、[02_architecture.md](02_architecture.md) § 3.6.2 の
       7 手順と § 6.1 の判断フローのとおりに書き換える。§ 2.3 の概略図と § 6.1 が食い違う場合は § 6.1 に従う。
       `moveOpenFileCore` へ渡す `requiredPerm` は呼び出し元の `perm` である（§ 2.3 のシーケンス図。
       AC-19 の「宛先の権限が `perm` と一致する」はこの受け渡しで成立する）。
-- [ ] `safeWriteFileCommon` と `atomicMoveFileCore` の入口に `validateOpenPerm`（Phase 1）の呼び出しを足す。
+- [x] `safeWriteFileCommon` と `atomicMoveFileCore` の入口に `validateOpenPerm`（Phase 1）の呼び出しを足す。
+      **実装時の訂正**: 呼び出しは `ValidateRequestedPermissions` の**後**に置く。前に置くと、POSIX の
+      setuid ビット（`0o4000`。`os.ModeSetuid` とは別のビットで、`0o7777` のマスク内にある）を含む
+      `perm` が `ErrInvalidFilePermissions` ではなく `ErrUnsupportedFileMode` で返るようになり、
+      既存の `TestValidateFilePermissions` の `setuid permissions (4755) for write` 行が落ちる。
       両者は書き換え後 `SafeOpenFile` を通らなくなるため、Phase 1 で入れた特殊ビットの拒否がこの 2 経路から
       抜け落ちる。既存の `ValidateRequestedPermissions` は `perm & 0o7777` で判定するため
       `os.ModeSetuid`（`1<<23`）を捕まえられず、代わりにならない
       （[02_architecture.md](02_architecture.md) § 3.1）。
-- [ ] 宛先プローブで `ErrIsSymlink` を受け取った場合、一時ファイルを作る前に拒否する（AC-20）。
-- [ ] 一時ファイルの段階で失敗した場合に呼び出し元へ返るエラーを、一時ファイル名ではなく宛先のパスを
+- [x] 宛先プローブで `ErrIsSymlink` を受け取った場合、一時ファイルを作る前に拒否する（AC-20）。
+- [x] 一時ファイルの段階で失敗した場合に呼び出し元へ返るエラーを、一時ファイル名ではなく宛先のパスを
       名指しする形で包む（[02_architecture.md](02_architecture.md) § 3.6.2 末尾）。
-- [ ] 差し替え後の `Close` の失敗は `slog.Warn` に記録し、エラーとしては返さない（§ 4.2）。
-- [ ] `ErrDestinationCommitted` を含む失敗では一時ファイルの削除を試みず、一時ファイルのパスを含む警告を
+- [x] 差し替え後の `Close` の失敗は `slog.Warn` に記録し、エラーとしては返さない（§ 4.2）。
+- [x] `ErrDestinationCommitted` を含む失敗では一時ファイルの削除を試みず、一時ファイルのパスを含む警告を
       記録する（[02_architecture.md](02_architecture.md) § 5.4）。
 
 #### 4-4. `FileSystem.Remove` の削除とインターフェース追従
 
-- [ ] `safe_file.go` の `FileSystem` インターフェースから `Remove`（:57-58）を削除する。
-- [ ] `safe_file.go` の `osFS.Remove`（:95-98）を削除する。
-- [ ] `testutil/mock.go` の `MockFileSystem.Remove`（:54-61）・`RemoveFunc`（:24-25）・`RemoveCalls`（:35）を
+- [x] `safe_file.go` の `FileSystem` インターフェースから `Remove`（:57-58）を削除する。
+- [x] `safe_file.go` の `osFS.Remove`（:95-98）を削除する。
+- [x] `testutil/mock.go` の `MockFileSystem.Remove`（:54-61）・`RemoveFunc`（:24-25）・`RemoveCalls`（:35）を
       削除する。
-- [ ] `safe_file_cleanup_test.go` の `mockFileSystem.Remove`（:212-220）・`removeFunc`（:191）・
-      `removeCallCount`（:195）・`getRemoveCallCount`（:233-237）を削除する。
-- [ ] `internal/security/machoanalyzer/analyzer_test.go` の `largeFakeFS.Remove`（:241）を削除し、
+- [x] `safe_file_cleanup_test.go` の `mockFileSystem.Remove`（:212-220）・`removeFunc`（:191）・
+      `removeCallCount`（:195）・`getRemoveCallCount`（:233-237）を削除する。**実装時の追加削除**:
+      これらを消すと `mockFileSystem` 型そのものの参照が 0 になり（唯一の利用者だった
+      `TestSafeWriteFileOverwrite_NoCleanupOnError` を 4-5 で削除するため）、`unused` リンタが落ちる。
+      型・`newMockFileSystem`・残る 3 メソッドもまとめて削除した。
+- [x] `internal/security/machoanalyzer/analyzer_test.go` の `largeFakeFS.Remove`（:241）を削除し、
       `largeFakeFile` に `Sync`（`func (largeFakeFile) Sync() error { return nil }`）を追加する。
-- [ ] `safe_file_cleanup_test.go` の `mockFile` に `Sync` を追加する。
-- [ ] **`File.Truncate` を削除する（2026-08-21 決定）。** Phase 4-3 で `safe_file.go:238` の
+- [x] `safe_file_cleanup_test.go` の `mockFile` に `Sync` を追加する。
+- [x] **`File.Truncate` を削除する（2026-08-21 決定）。** Phase 4-3 で `safe_file.go:238` の
       `file.Truncate(0)` が消えると、`Truncate` は本番の呼び出し元を 1 つも持たなくなる。これは
       `01_requirements.md` の F-5 が `Remove` の削除を正当化した基準（0157・0166 と同じ）に当てはまる。
       Phase 4-3 の書き換えが済んだ**後**に、次の 5 か所をまとめて消す。`make deadcode` はインターフェースの
@@ -865,56 +872,67 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       - `safe_file_cleanup_test.go` の `mockFile.truncateErr` フィールド
       - `safe_file_cleanup_test.go:389-460` の `TestMockFileTruncate`
       - `internal/security/machoanalyzer/analyzer_test.go:231` の `largeFakeFile.Truncate`
-- [ ] `TestMockFileTruncate` の削除で本番コードのカバレッジが下がらないことを確認する。同テストは
+- [x] `TestMockFileTruncate` の削除で本番コードのカバレッジが下がらないことを確認する。同テストは
       `mockFile` 自身の `Truncate` の挙動（負のサイズの拒否、伸長時のゼロ埋め）だけを検証しており、
       `internal/safefileio` の本番関数を 1 つも通らない。`go tool cover -func` の比較（この節の後段）で
       関数単位の差が無いことを確かめ、その旨をコミットメッセージに記す。
-- [ ] `make deadcode` を実行し、本タスクの削除に起因する新たな未使用シンボルが出ないことを確認する
+- [x] `make deadcode` を実行し、本タスクの削除に起因する新たな未使用シンボルが出ないことを確認する
       （AC-13）。実行前の出力を控えておき、差分で判断する。
-- [ ] `go tool cover -func` を `Remove` 関連テストの整理の前後で取得し、関数単位で失われるカバレッジが
-      無いことを確認する。確認した旨をコミットメッセージに記す（AC-11）。
+- [x] `go tool cover -func` を `Remove` 関連テストの整理の前後で取得し、関数単位で失われるカバレッジが
+      無いことを確認する。確認した旨をコミットメッセージに記す（AC-11）。**実装時の追加**: 最初の取得で
+      `getFileStatInfo`（88.9%→77.8%）と `canSafelyAccessFile`（82.4%→76.5%）が低下した。削除した
+      `mockFile.statErr` が唯一これらの `Stat` 失敗分岐を踏んでいたためであり、代わりに
+      `safe_file_cleanup_test.go::TestCanSafelyAccessFile_PropagatesStatFailure`（`Stat` が必ず失敗する
+      `errStatFile`）を追加して両関数を元の水準へ戻した。同様に `atomicMoveFileCore` は 4-3 で足した
+      `validateOpenPerm` の分岐の分だけ希釈されたため、`safe_file_test.go::TestAtomicMoveFile_RejectsNonPermissionModeBits`
+      を追加した。
 
 #### 4-5. 書き込み経路のテストの入れ替えと追加
 
-- [ ] `safe_file_cleanup_test.go::TestSafeWriteFileOverwrite_NoCleanupOnError` を削除する（3 サブテストとも
+- [x] `safe_file_cleanup_test.go::TestSafeWriteFileOverwrite_NoCleanupOnError` を削除する（3 サブテストとも
       検証対象の `Remove` が消滅するため）。
-- [ ] `safe_file_cleanup_test.go::TestFileCleanup_Integration` を削除する（次に足す新テストへ統合する）。
-- [ ] `safe_file_test.go::TestSafeWriteFileOverwrite_FileCloseError` を削除する（差し替え後の `Close` は
+- [x] `safe_file_cleanup_test.go::TestFileCleanup_Integration` を削除する（次に足す新テストへ統合する）。
+- [x] `safe_file_test.go::TestSafeWriteFileOverwrite_FileCloseError` を削除する（差し替え後の `Close` は
       エラーを返さなくなり、`FileSystem` 差し替えによる注入も届かなくなるため）。
-- [ ] 参照が無くなるヘルパを削除する: `safe_file_test.go` の :162-215 の一続きのブロック
+- [x] 参照が無くなるヘルパを削除する: `safe_file_test.go` の :162-215 の一続きのブロック
       （`failingFile`・`errSimulatedClose`・`failingCloseFS`・`failingWriteCloseFS`・`errSimulatedWrite`・
       `failingWriteFS`）と、`safe_file_cleanup_test.go` の `errDiskFull`・`errTruncateFailed`（:81-82）、
       `mockFile` の `writeErr`・`statErr`・`closeErr` フィールド。
-- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_SucceedsWithPermApplied` を追加する。書き込みが
+- [x] `safe_file_test.go` に `TestSafeWriteFileOverwrite_SucceedsWithPermApplied` を追加する。書き込みが
       成功すること、内容が一致すること、宛先の権限が `perm` と一致すること（新規作成・既存の上書きの
       両方）を確認する（AC-19）。`syscall.Umask` をテスト内で固定し、`t.Cleanup` で必ず元へ戻す。
-- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_RejectsSymlinkDestination` を追加する（AC-20・24）。
+- [x] `safe_file_test.go` に `TestSafeWriteFileOverwrite_RejectsSymlinkDestination` を追加する（AC-20・24）。
       宛先がシンボリックリンクのとき、`ErrIsSymlink` が返ること、**リンク先のファイルの内容が変わって
       いないこと**、および**宛先のパスが依然としてシンボリックリンクであること**（`os.Lstat` の
       `Mode()&os.ModeSymlink != 0` と `os.Readlink` の戻り値）の 3 つを確認する。
-- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact` を
+- [x] `safe_file_test.go` に `TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact` を
       追加する（AC-18・21・23 の可搬な経路）。宛先を用意したうえで `os.Chmod` で `0o666` を明示的に設定し
       （`FileOpWrite` の検査に落ちる権限。umask に削られると検査を通ってしまう）、書き込みが失敗すること、
       返るエラーが `ErrDestinationCommitted` を**含まない**こと、宛先の内容が元のままであること、宛先
       ディレクトリに `.safefileio-` で始まるエントリが 1 つも残っていないことを確認する。
-- [ ] `safe_file_linux_test.go` に `TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact` を
+- [x] `safe_file_linux_test.go` に `TestSafeWriteFileOverwrite_PreCommitFailureLeavesDestinationIntact` を
       追加する（AC-18・21・23 の、一時ファイルへ書き終えた後に失敗する経路）。既存の `linkatFunc` を
       差し替えて `rename` の手前で失敗させ、返るエラーが `ErrDestinationCommitted` を**含まない**こと、
       宛先の内容が元のままであること、宛先ディレクトリに `.safefileio-` で始まるエントリが残らないことを
       確認する。`linkatFunc` は Linux 専用の差し替え点なので、この経路の検証は Linux に限られる。可搬な経路の
       検証は上の `ExistingDestinationRejected…` が担う。
-- [ ] `safe_file_test.go` に `TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted` を
+- [x] `safe_file_test.go` に `TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted` を
       追加する（AC-18・21 の差し替え**後**の側。現在この分岐を主張するテストが 1 つも無い）。
       差し替え点 `verifyMovedFile` を差し替えて `rename` 成功後に失敗させ、次の 4 点を確認する。
       - 返るエラーが `errors.Is(err, ErrDestinationCommitted)` を満たす。
       - 宛先の内容が**新しい内容**になっている。
-      - 一時ファイルの削除を試みていない（一時ファイル名の inode が消されていない）。
+      - **この項目は取り下げた（実装時の訂正）**。`verifyMovedFile` に到達した時点で `moveFileAnchored`
+        は一時ファイル名を既に消費しており（Linux はハードリンク経由の `rename` の後 `unlinkat`、
+        非 Linux は `renameat`）、仮に `removeVerifiedFileAt` を呼んでも `fstatat` が空振りして何も
+        消えない。つまり「削除を試みていない」を落とせるテストが書けない。この分岐の検証は残る
+        3 点（`ErrDestinationCommitted` の付与、宛先が新しい内容であること、警告の記録）が担い、
+        いずれも分岐を消すと落ちることを確認済みである。
       - `slog.Warn` に宛先のパスと一時ファイルのパスを含む記録が残る
         （[02_architecture.md](02_architecture.md) § 5.4）。
-- [ ] `internal/fileanalysis` の既存テスト（`TestStore_SaveAndLoad`・`TestStore_PreservesExistingFields`・
+- [x] `internal/fileanalysis` の既存テスト（`TestStore_SaveAndLoad`・`TestStore_PreservesExistingFields`・
       `TestStore_ArgEvalResultsRoundtrip`・`TestStore_Load_V9DynLibDepsObjectFormat`）が無変更で通ることを
       確認する（AC-25）。
-- [ ] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_RemoveTemp`・
+- [x] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_RemoveTemp`・
       `TestSafeFileManager_RemoveTemp_WithMock`）が無変更で通ることを確認する（AC-12）。
 
 #### 4-6. 性能の実測
@@ -922,27 +940,35 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 [02_architecture.md](02_architecture.md) § 3.6.4 と `01_requirements.md` の F-7 が、`record` 実行の wall time を
 変更の前後で実測して絶対値を本書に記録することを求めている。
 
-- [ ] 変更前後の 2 つのバイナリを用意する。作業ツリーを退避せずに済むよう、変更前は
+- [x] 変更前後の 2 つのバイナリを用意する。作業ツリーを退避せずに済むよう、変更前は
       `git worktree add ../0167-base $BASE` で別ツリーを作り、そこで `make build` する
       （`build/prod/record` が生成物）。計測後に `git worktree remove` する。基点は § 7 冒頭で固定した
       `$BASE` であり、計測時点の `origin/main` ではない。`origin/main` は PR-1〜PR-4 のマージで既に
       本タスクの変更を含んでおり、`01_requirements.md` の F-7 と § 9 が求める「本タスクの前後」に
       ならない。
-- [ ] 計測用のハッシュディレクトリを `dir=$(mktemp -d)` で作り、`chmod 700 "$dir"` する。固定パスは
+- [x] 計測用のハッシュディレクトリを `dir=$(mktemp -d)` で作り、`chmod 700 "$dir"` する。固定パスは
       同時に走る別のセッションと衝突するため使わない。
-- [ ] 対象ファイルの一覧をファイルに固定し（`/usr/bin` 配下の先頭 200 件など）、両リビジョンで同じ一覧を
+- [x] 対象ファイルの一覧をファイルに固定し（`/usr/bin` 配下の先頭 200 件など）、両リビジョンで同じ一覧を
       使う。
-- [ ] 各リビジョンについて、まず計測しない**ウォームアップ実行**を 1 回行う（対象 200 件をページ
+- [x] 各リビジョンについて、まず計測しない**ウォームアップ実行**を 1 回行う（対象 200 件をページ
       キャッシュへ載せ、初回だけ遅くなる分を計測から外す）。その後
       `time <record> -force -d "$dir" $(cat <一覧>)` を 3 回実行し、中央値を採る。各回の前に
       `rm -rf "$dir"/*` でレコードを消して条件を揃える。
-- [ ] 次の表を実測値で埋める。相対比ではなく絶対値（秒）と 1 件あたりの増分（ミリ秒）を記す。
-
-基点（`$BASE`）のコミットハッシュを表の下に記録する。
+- [x] 次の表を実測値で埋める。相対比ではなく絶対値（秒）と 1 件あたりの増分（ミリ秒）を記す。
 
 | 対象件数 | 変更前（`$BASE`、秒） | 変更後（秒） | 差（秒） | 1 件あたりの増分（ms） |
 |---|---|---|---|---|
-| 200 | 実装時に記入 | 実装時に記入 | 実装時に記入 | 実装時に記入 |
+| 200 | 4.564 | 4.657 | 0.093 | 0.47 |
+
+基点（`$BASE`）のコミットハッシュ: `a01a45e8`。対象は `/usr/bin` 直下の読み取り可能な通常ファイル
+先頭 200 件（`find /usr/bin -maxdepth 1 -type f -perm -u+r | sort | head -200`）。両リビジョンとも
+ウォームアップ 1 回のあと 3 回計測し、各回の前にレコードを消して中央値を採った。3 回の実測値は
+変更前が 4.621 / 4.564 / 4.553 秒、変更後が 4.738 / 4.657 / 4.609 秒である。
+
+判断: 1 件あたり 0.47 ms の増加であり、`record` 実行 1 回の 4.6 秒に対して 2% にあたる。
+`02_architecture.md` § 3.6.4 が見積もった `fsync` の 0.5〜10 ms をわずかに下回る値であり、
+対話的な 1 回の実行として受け入れられる範囲である。なお計測環境のファイルシステムは overlay
+（コンテナ）であり、耐久性のあるストレージ上では `fsync` の分がこれより大きく出うる。
 
 **Phase 4b の完了条件**: `make fmt` → `make test` → `make lint` が通る。`make deadcode` に新規項目が
 出ない。`GOOS=darwin go vet -tags test ./...` と `GOOS=netbsd go vet -tags test ./internal/safefileio/` が
@@ -962,8 +988,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 **判定理由**: 4-3 は宛先の差し替え（`rename`）という不可逆な境界を新設するセキュリティゲートのステップであり（`mkplan.md` step 8 のパネルモード・トリガ）、4-4 の `Remove`／`Truncate` 削除が同一 PR に同居しないと「後始末の手段が無い」または「使われない `Remove` が残る」中間状態が生じる（`02_architecture.md` § 8）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1055](https://github.com/isseis/go-safe-cmd-runner/pull/1055)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
