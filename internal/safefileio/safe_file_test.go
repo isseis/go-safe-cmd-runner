@@ -1739,6 +1739,95 @@ func TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted(t *testi
 	assert.True(t, strings.HasPrefix(filepath.Base(tempAttr), tempWriteNamePrefix))
 }
 
+// TestSafeWriteFileOverwrite_FlushesDestinationDirectory states that a
+// successful write makes the rename itself durable, not just the content it
+// publishes. Without the directory flush a crash after this call returned takes
+// the destination back to what it held before -- or, here, to not existing --
+// which is the one outcome a caller that was told "written" cannot expect.
+//
+// The recorded fd is compared with the destination's own directory so that the
+// test says which directory was flushed, not merely that something was.
+func TestSafeWriteFileOverwrite_FlushesDestinationDirectory(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "created.txt")
+
+	orig := syncDirEntryOverride
+	t.Cleanup(func() { syncDirEntryOverride = orig })
+	var flushedStats []unix.Stat_t
+	syncDirEntryOverride = func(dirFd int, dirName string) error {
+		var st unix.Stat_t
+		require.NoError(t, unix.Fstat(dirFd, &st))
+		flushedStats = append(flushedStats, st)
+		assert.Equal(t, dir, dirName)
+		return orig(dirFd, dirName)
+	}
+
+	content := []byte("content that must survive a crash")
+	require.NoError(t, SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, 0o600))
+
+	require.Len(t, flushedStats, 1, "the destination directory must be flushed exactly once")
+	var dirStat unix.Stat_t
+	require.NoError(t, unix.Stat(dir, &dirStat))
+	assert.Equal(t, dirStat.Dev, flushedStats[0].Dev)
+	assert.Equal(t, dirStat.Ino, flushedStats[0].Ino,
+		"the fd flushed must be the directory the new entry was created in")
+
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+	assertNoTempFilesLeft(t, dir)
+}
+
+// TestSafeWriteFileOverwrite_DirectoryFlushFailureIsDestinationCommitted covers
+// the flush failing. It happens after the rename, so the new content is already
+// visible; the caller has to be told that rather than that the write did
+// nothing, or it would retry against a destination it believes still holds the
+// old content.
+func TestSafeWriteFileOverwrite_DirectoryFlushFailureIsDestinationCommitted(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("previous content"), 0o600))
+
+	errFlush := errors.New("simulated directory flush failure")
+	orig := syncDirEntryOverride
+	t.Cleanup(func() { syncDirEntryOverride = orig })
+	syncDirEntryOverride = func(int, string) error { return errFlush }
+
+	content := []byte("content that is already visible")
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, 0o600)
+	require.ErrorIs(t, err, ErrDestinationCommitted)
+	require.ErrorIs(t, err, errFlush)
+
+	got, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+}
+
+// TestFsyncDirAt_UnreadableDirectoryIsRecordedNotFailed covers the one case the
+// flush cannot be performed in: the directory fd is opened O_PATH precisely so
+// that a write-only drop directory works, and reopening such a directory for
+// the fsync is refused. Durability is lost there, but the destination still
+// reads as its previous content, so the write is not failed over it.
+func TestFsyncDirAt_UnreadableDirectoryIsRecordedNotFailed(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the directory read permission this case depends on")
+	}
+
+	dir := tu.SafeTempDir(t)
+	dirFd, err := unix.Open(dir, unix.O_DIRECTORY|unix.O_CLOEXEC|dirAccessFlag, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = unix.Close(dirFd) })
+
+	// Applied after the fd is taken, the way a drop directory would already be:
+	// search and write are kept, read is not.
+	require.NoError(t, os.Chmod(dir, 0o333))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	recorder := captureWarnings(t)
+	require.NoError(t, fsyncDirAt(dirFd, dir))
+	recorder.RequireRecord(t, slog.LevelWarn, dirSyncUnreadableMsg)
+}
+
 // TestCreateTempFileInDir_RetriesUntilNameIsFree covers the collision handling
 // the random names make unreachable in practice. The retry has to claim a
 // different name rather than open the one that is taken: opening it would hand

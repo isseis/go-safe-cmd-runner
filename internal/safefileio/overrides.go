@@ -27,6 +27,12 @@ func verifyMovedFile(file File, dirFd int, name string) error {
 	return verifySameFileAt(file, dirFd, name)
 }
 
+// syncDirEntry flushes the destination directory once the rename has published
+// the new content, making that directory entry durable.
+func syncDirEntry(dirFd int, dir string) error {
+	return fsyncDirAt(dirFd, dir)
+}
+
 // generateTempName produces the random name createTempFileInDir claims with
 // O_EXCL.
 func generateTempName(prefix string) (string, error) {

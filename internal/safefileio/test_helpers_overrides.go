@@ -40,6 +40,16 @@ func verifyMovedFile(file File, dirFd int, name string) error {
 	return verifyMovedFileOverride(file, dirFd, name)
 }
 
+// syncDirEntryOverride serves two purposes: it makes the flush observable, so a
+// test can state that the success path performs it at all, and it reaches the
+// failure branch, which is otherwise unreachable -- an fsync on a directory fd
+// the write itself just used does not fail.
+var syncDirEntryOverride = fsyncDirAt
+
+func syncDirEntry(dirFd int, dir string) error {
+	return syncDirEntryOverride(dirFd, dir)
+}
+
 // generateTempNameOverride reaches the collision retry in createTempFileInDir
 // and the bound that ends it. Neither is reachable otherwise: the names carry
 // 12 random bytes, so a collision does not occur, let alone ten in a row.

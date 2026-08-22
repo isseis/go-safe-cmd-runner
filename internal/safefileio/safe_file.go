@@ -355,6 +355,13 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 	switch {
 	case err == nil:
 		closeAfterCommit(tmpFile, absPath)
+		// The content is durable, but the entry that publishes it is not until
+		// the directory is flushed as well; a failure here is reported the same
+		// way as any other post-rename failure, since the destination already
+		// holds the new content.
+		if syncErr := syncDirEntry(dirFd, dir); syncErr != nil {
+			return commitFailure(syncErr, absPath)
+		}
 		return nil
 	case errors.Is(err, ErrDestinationCommitted):
 		// The temporary name has either been consumed by the move, or -- if
@@ -699,6 +706,43 @@ func closeDirFd(fd int, dir string) {
 			slog.String("dir", dir),
 			slog.Any("error", err))
 	}
+}
+
+// dirSyncUnreadableMsg records a directory entry left un-fsynced because the
+// directory cannot be opened for reading.
+const dirSyncUnreadableMsg = "could not flush the destination directory: it is not readable"
+
+// fsyncDirAt makes the directory entry the rename created durable. The
+// temporary file's data is already fsynced before the rename, but the entry
+// naming it is not: without this, a crash right after a successful write takes
+// the destination back to its previous content -- or, on a first write, to not
+// existing at all -- after the caller was told the write succeeded.
+//
+// dirFd itself cannot be fsynced: on Linux it is opened O_PATH (dirAccessFlag),
+// which the kernel refuses every I/O operation on. The directory is reopened
+// through dirFd under the single name ".", so what gets fsynced is the same
+// inode the whole write was anchored to and no path is resolved a second time.
+func fsyncDirAt(dirFd int, dir string) error {
+	fd, err := unix.Openat(dirFd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, unix.EACCES) {
+			// Read permission on the destination directory is exactly what
+			// dirAccessFlag exists to avoid demanding, and a write-only drop
+			// directory (0o733 and the like) has none. Losing the entry costs
+			// durability, not the invariant -- the destination still reads as
+			// its previous content -- so this is recorded rather than turned
+			// into a failure for a write that did succeed.
+			slog.Warn(dirSyncUnreadableMsg, slog.String("dir", dir))
+			return nil
+		}
+		return fmt.Errorf("failed to open the destination directory %s for flushing: %w", dir, err)
+	}
+	defer closeDirFd(fd, dir)
+
+	if err := unix.Fsync(fd); err != nil {
+		return fmt.Errorf("failed to flush the destination directory %s: %w", dir, err)
+	}
+	return nil
 }
 
 // maxTempNameAttempts bounds retries when a randomly generated temporary name
