@@ -1110,9 +1110,8 @@ func TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges(t *testing.T) {
 }
 
 // writeFileWithPerm creates a file whose permissions are exactly perm. Passing
-// perm to os.WriteFile is not enough: the process umask removes bits from it,
-// and the modes these tests turn on -- group and world write -- are the ones a
-// default umask removes.
+// perm to os.WriteFile is not enough: a default umask removes the group and
+// world write bits these tests turn on.
 func writeFileWithPerm(t *testing.T, path string, content []byte, perm os.FileMode) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(path, content, 0o600))
@@ -1120,10 +1119,9 @@ func writeFileWithPerm(t *testing.T, path string, content []byte, perm os.FileMo
 }
 
 // TestAtomicMoveFile_ValidatesSourceBeforeChmod pins the order of the source
-// validation and the fchmod. With the fchmod first, a world-writable source is
+// validation and the fchmod: with the fchmod first, a world-writable source is
 // narrowed to requiredPerm and then passes a check that would have refused what
-// the caller actually pointed at; a refused move must instead leave the source
-// as it was found.
+// the caller actually pointed at.
 func TestAtomicMoveFile_ValidatesSourceBeforeChmod(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	srcPath := filepath.Join(dir, "src.txt")
@@ -1170,22 +1168,15 @@ func gidOutsideOwnGroups(t *testing.T) (gid int, ok bool) {
 // reordered source validation now refuses outright, where before the fchmod
 // narrowed them into acceptance.
 //
-// The read policy is not symmetric with the write policy: a group-writable
-// source is refused only when the caller is not in that group, which is why
-// there is no world-and-group table here but two separate cases.
-//
 // The mode-exceeds-maximum rule that the design document lists as a third case
 // cannot be reached through a real file: CanCurrentUserSafelyReadFile masks the
 // mode with 0o7777, and Go encodes setuid, setgid and sticky above that mask,
 // so the only bit a file can carry that MaxAllowedReadPerms (0o6775) disallows
-// is 0o002 -- which the world-writable rule has already refused. It is
-// reachable only through ValidateRequestedPermissions, which takes a mode from
-// the caller rather than from a file.
+// is 0o002 -- which the world-writable rule has already refused.
 func TestAtomicMoveFile_RejectsUnsafeSourcePermissions(t *testing.T) {
-	// The world-writable case overlaps with
-	// TestAtomicMoveFile_ValidatesSourceBeforeChmod on purpose: that one is
-	// about the order of the check and the fchmod, this one about which
-	// sources the check refuses. Only this one names the rule.
+	// Overlaps with TestAtomicMoveFile_ValidatesSourceBeforeChmod on purpose:
+	// that one is about the order of the check and the fchmod, this one about
+	// which rule refuses the source.
 	t.Run("world_writable", func(t *testing.T) {
 		dir := tu.SafeTempDir(t)
 		srcPath := filepath.Join(dir, "src.txt")
@@ -1193,8 +1184,8 @@ func TestAtomicMoveFile_RejectsUnsafeSourcePermissions(t *testing.T) {
 		writeFileWithPerm(t, srcPath, []byte("content"), 0o666)
 
 		fs := NewFileSystem(FileSystemConfig{})
-		// Even a requiredPerm that is itself safe does not make the source
-		// acceptable; the source is judged as it stands.
+		// A safe requiredPerm does not make the source acceptable; the source
+		// is judged as it stands.
 		err := fs.AtomicMoveFile(srcPath, dstPath, 0o600)
 		require.ErrorIs(t, err, ErrInvalidFilePermissions)
 		require.ErrorIs(t, err, groupmembership.ErrFileWorldWritable)
@@ -1223,10 +1214,8 @@ func TestAtomicMoveFile_RejectsUnsafeSourcePermissions(t *testing.T) {
 }
 
 // TestCanSafelyAccessFile_RecordsRejection covers the audit record a refusal
-// leaves behind. The reordered move path refuses sources it used to narrow and
-// accept, so an operator meets this record for the first time on files that
-// worked before; it has to say which file and which rule, not only that
-// something was refused.
+// leaves behind: the reordered move path refuses sources that worked before, so
+// the record has to say which file and which rule.
 func TestCanSafelyAccessFile_RecordsRejection(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -1294,8 +1283,7 @@ func TestRejectionRule(t *testing.T) {
 		{name: "not_owner", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotOwner, want: "not-owner"},
 		{name: "not_writable", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotWritable, want: "not-writable"},
 		// The write policy answers false with no error only when the file's
-		// group has a member besides its owner, which is the refusal the
-		// design expects to meet in ordinary use.
+		// group has a member besides its owner.
 		{name: "write_refused_without_a_cause", operation: groupmembership.FileOpWrite, cause: nil, want: "group-writable-not-sole-member"},
 		{name: "read_refused_without_a_cause", operation: groupmembership.FileOpRead, cause: nil, want: "unknown"},
 		{name: "unrecognized_cause", operation: groupmembership.FileOpRead, cause: errors.New("something else"), want: "unknown"},
@@ -1315,15 +1303,15 @@ func TestRejectionRule(t *testing.T) {
 }
 
 // TestAtomicMoveFile_SafeSourceStillMoves is the other half of the reordering:
-// the sources the read policy accepts must move exactly as they did before,
-// with requiredPerm applied at the destination.
+// the sources the read policy accepts must still move, with requiredPerm
+// applied at the destination.
 func TestAtomicMoveFile_SafeSourceStillMoves(t *testing.T) {
 	sources := []struct {
 		name string
 		perm os.FileMode
 	}{
 		{name: "owner_only", perm: 0o600},
-		// Group-writable, in a group the caller belongs to: the read policy
+		// Group-writable in a group the caller belongs to: the read policy
 		// admits this, and the reordering must not turn it into a refusal.
 		{name: "group_writable_member", perm: 0o660},
 	}
@@ -1370,7 +1358,7 @@ func openSourceForMove(t *testing.T, fs FileSystem, dir, name string) (dirFd int
 // the two permission policies: ValidateRequestedPermissions lets requiredPerm
 // through at the entry, and CanCurrentUserSafelyWriteFile then refuses the file
 // it produces. That used to be found only after the rename, leaving the
-// destination replaced and an error returned; it must now be found before.
+// destination replaced.
 func TestMoveOpenFileCore_RejectsRequiredPermBeforeRename(t *testing.T) {
 	// A mode with no owner-write bit is the one refusal reachable without
 	// arranging group memberships: the write policy requires the caller to be
@@ -1397,9 +1385,7 @@ func TestMoveOpenFileCore_RejectsRequiredPermBeforeRename(t *testing.T) {
 
 // assertRejectedBeforeRename runs moveOpenFileCore with requiredPerm over a
 // source prepared by prepare, and asserts that it refused before touching the
-// destination. The destination exists and holds known content, since what the
-// pre-rename check exists to prevent is an existing destination being replaced
-// and an error returned anyway.
+// destination, which holds known content the refusal must leave in place.
 func assertRejectedBeforeRename(t *testing.T, requiredPerm os.FileMode, prepare func(*testing.T, string)) {
 	t.Helper()
 	dir := tu.SafeTempDir(t)
@@ -1432,7 +1418,7 @@ func assertRejectedBeforeRename(t *testing.T, requiredPerm os.FileMode, prepare 
 	assert.Equal(t, srcContent, got, "the source must still be where it was")
 
 	// The record names the destination path while describing the source inode,
-	// which is only readable as what it is if it says so.
+	// so it has to mark the subject as the pending destination.
 	record := recorder.RequireRecord(t, slog.LevelWarn, permissionRejectionMsg)
 	record.AssertAttrs(t, map[string]any{
 		"path":      dstPath,
@@ -1467,9 +1453,7 @@ func sharedGroupOfCurrentUser(t *testing.T) (gid int, ok bool) {
 
 // TestMoveOpenFileCore_PostMoveIdentityFailureIsDestinationCommitted covers the
 // one outcome that leaves the destination changed and still returns an error.
-// The caller has to be able to tell it apart from a move that did nothing, and
-// an operator has to find it in the log, since the previous content is gone
-// either way.
+// The caller has to be able to tell it apart from a move that did nothing.
 func TestMoveOpenFileCore_PostMoveIdentityFailureIsDestinationCommitted(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	srcPath := filepath.Join(dir, "src.txt")

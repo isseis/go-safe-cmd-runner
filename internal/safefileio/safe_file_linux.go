@@ -248,9 +248,7 @@ func moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, 
 	}
 
 	// Everything from here on happens with the destination already replaced,
-	// so each failure carries errRenameCommitted: the caller's contract for a
-	// failed move differs on either side of the rename, and this is the only
-	// place that knows which side a failure is on.
+	// so each failure carries errRenameCommitted.
 	//
 	// The source entry is removed by name, so confirm it still names the inode
 	// that was moved before removing it.

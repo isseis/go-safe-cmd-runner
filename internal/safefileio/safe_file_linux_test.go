@@ -265,14 +265,8 @@ func TestMoveFileAnchored_UnlinkSourceFailureReturnsErrorAfterSuccessfulRename(t
 // TestMoveOpenFileCore_MoveFailureAfterRenameIsDestinationCommitted covers the
 // second way a call can fail with the destination already replaced: the move
 // removes the source entry after the rename, so its own error can arrive once
-// the destination is committed. Nothing outside the move can tell which side of
-// the rename such an error came from, so the move marks it and
-// moveOpenFileCore translates the mark -- a failure reported as ordinary would
-// tell the caller nothing happened when the previous content is in fact gone.
-//
-// It is Linux-only for the same reason as the moveFileAnchored-level test it
-// mirrors: only there does the move remove the source as a separate step after
-// the rename.
+// the destination is committed. Linux-only, since only there is the source
+// removed as a separate step after the rename.
 func TestMoveOpenFileCore_MoveFailureAfterRenameIsDestinationCommitted(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root is exempt from the directory permission check that makes the source unlink fail")

@@ -167,8 +167,7 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 //
 // It opens and validates the source; moveOpenFileCore does everything from the
 // first side effect onwards. Once both directory fds are held no path is
-// resolved a second time: the move works from the fds and a single name on each
-// side.
+// resolved a second time.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
 	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
@@ -213,75 +212,62 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 	return moveOpenFileCore(srcFile, srcDirFd, srcName, dstDirFd, dstName, absDst, requiredPerm, fs.GetGroupMembership())
 }
 
-// destinationCommittedMsg marks the one outcome an operator has to be able to
-// find after the fact: the rename went through and the operation failed anyway,
-// so what sits at the destination now is the moved content, chosen by whoever
-// won the race for the name rather than by this process. It is the difference
-// between "run it again" and "quarantine what is there".
+// destinationCommittedMsg is logged when the rename went through and the
+// operation failed anyway: the destination holds the moved content, so the
+// remedy is not to run it again.
 const destinationCommittedMsg = "destination was replaced before the failure; it now holds the moved file"
 
 // errRenameCommitted marks a failure moveFileAnchored met after its rename had
-// already put the moved inode at the destination. Only the move knows which
-// side of the rename it failed on -- on Linux it removes the source entry as a
-// separate step afterwards -- so it says so here rather than leaving
-// moveOpenFileCore to guess. moveOpenFileCore is what turns this into the
-// exported ErrDestinationCommitted; nothing outside this package sees it.
+// already replaced the destination -- on Linux it removes the source entry as a
+// separate step afterwards. Only the move knows which side of the rename it
+// failed on; moveOpenFileCore turns the mark into the exported
+// ErrDestinationCommitted.
 var errRenameCommitted = errors.New("failure occurred after the rename replaced the destination")
 
 // moveOpenFileCore moves the inode behind file to dstName under dstDirFd. The
-// caller opens the source and validates it for reading; from here on everything
-// that changes anything happens, in the order the design document fixes.
+// caller opens the source and validates it for reading; everything with a side
+// effect happens here.
 //
 // file must be the source's own fd, not a handle reopened by name: the read
 // validation the caller ran does not look at the owner, so an attacker's file
-// substituted at the source name would pass it just as well.
-//
-// srcDirFd and srcName name the source entry to remove once the move is done;
-// dstDirFd and dstName the destination. dstPath is the destination's absolute
-// path, carried for messages only -- nothing here resolves it.
+// substituted at the source name would pass it just as well. dstPath is used
+// for messages only -- nothing here resolves it.
 //
 // A failure once the rename has replaced the destination is wrapped in
-// ErrDestinationCommitted, so a caller can tell "nothing happened" from "the
-// destination is the new content and something still went wrong" with
-// errors.Is. Nothing is rolled back in that case: the destination's previous
-// content is already gone and cannot be put back.
+// ErrDestinationCommitted. Nothing is rolled back in that case: the
+// destination's previous content is already gone.
 func moveOpenFileCore(file File, srcDirFd int, srcName string, dstDirFd int, dstName, dstPath string, requiredPerm os.FileMode, gm *groupmembership.GroupMembership) error {
 	// fchmod rather than os.Chmod: the fd cannot be redirected by a symlink
-	// swapped in at the source name, and the inode whose mode is set here is
-	// the one that arrives at the destination.
+	// swapped in at the source name.
 	if err := file.Chmod(requiredPerm); err != nil {
 		return fmt.Errorf("failed to set secure permissions on source: %w", err)
 	}
 
-	// The destination write policy is applied here, to this fd, rather than to
-	// the destination after the move. The inode is the same either way, so the
-	// verdict is the same; what changes is the cost of a refusal, which used to
-	// be an error reported over a destination that had already been replaced.
-	// This is reached in ordinary use, not only under attack:
-	// ValidateRequestedPermissions admits modes CanCurrentUserSafelyWriteFile
-	// refuses, a group-writable mode in a shared group among them.
+	// The destination write policy is applied to this fd before the rename
+	// rather than to the destination after it: the inode is the same, so the
+	// verdict is the same, but a refusal no longer arrives over a destination
+	// that has already been replaced. Refusals happen in ordinary use, not only
+	// under attack: ValidateRequestedPermissions admits modes
+	// CanCurrentUserSafelyWriteFile refuses, a group-writable mode in a shared
+	// group among them.
 	if err := canSafelyAccessFile(file, dstPath, subjectPendingDestination, groupmembership.FileOpWrite, gm); err != nil {
 		return fmt.Errorf("destination file validation failed: %w", err)
 	}
 
 	if err := moveFileAnchored(file, srcDirFd, srcName, dstDirFd, dstName); err != nil {
-		// A move can fail on either side of the rename, and only the move
-		// itself knows which: it marks the failures that happened once the
-		// rename had gone through. Asking the destination instead -- whether
-		// it now holds this inode -- would answer wrongly in the case that
-		// matters most, an attacker taking the destination over immediately
-		// after our rename reading as "nothing happened".
+		// Only the move knows which side of the rename it failed on. Asking
+		// the destination instead -- whether it now holds this inode -- would
+		// read an attacker taking the destination over right after our rename
+		// as "nothing happened".
 		if errors.Is(err, errRenameCommitted) {
 			return commitFailure(fmt.Errorf("atomic move failed after the destination was replaced: %w", err), dstPath)
 		}
 		return fmt.Errorf("atomic move failed: %w", err)
 	}
 
-	// What is left to establish after the move is identity, not permissions:
-	// the permissions were checked on this fd, and asking again about the same
-	// inode under its new name would answer the same question. A mismatch here
-	// means the destination name was taken over between the rename and this
-	// check.
+	// Only identity is left to establish; the permissions were checked on this
+	// same inode's fd. A mismatch means the destination name was taken over
+	// between the rename and this check.
 	if err := verifyMovedFile(file, dstDirFd, dstName); err != nil {
 		return commitFailure(fmt.Errorf("destination identity check failed after the move: %w", err), dstPath)
 	}
@@ -289,9 +275,8 @@ func moveOpenFileCore(file File, srcDirFd int, srcName string, dstDirFd int, dst
 	return nil
 }
 
-// commitFailure marks a failure that happened after the rename had already
-// replaced the destination, and records it: an operator deciding what to do
-// with the destination has nothing else to go on.
+// commitFailure wraps and logs a failure that happened after the rename had
+// already replaced the destination.
 func commitFailure(err error, dstPath string) error {
 	slog.Warn(destinationCommittedMsg,
 		slog.String("destination", dstPath),
@@ -856,10 +841,7 @@ func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, 
 }
 
 // accessSubject says what the fd handed to canSafelyAccessFile is, relative to
-// the path named alongside it. A rejection record has to be readable as what it
-// is: usually a statement about the file at that path, but on the move path a
-// statement about an inode that is about to be given that name and has not been
-// there yet.
+// the path logged alongside it, so a rejection record is readable as what it is.
 type accessSubject int
 
 const (
@@ -917,16 +899,12 @@ func canSafelyAccessFile(file File, filePath string, subject accessSubject, oper
 	return nil
 }
 
-// permissionRejectionMsg marks a file refused on its permissions. Reordering
-// the move path's checks makes this reachable for sources that used to be
-// narrowed and then accepted, so an operator meeting it for the first time
-// needs the record to say which file and which rule, not only that something
-// was refused.
+// permissionRejectionMsg marks a file refused on its permissions. The move
+// path's reordered checks refuse sources that used to be narrowed and then
+// accepted, so the record must say which file and which rule.
 const permissionRejectionMsg = "refused a file on its permissions"
 
-// logPermissionRejection records what an operator needs to act on a refusal:
-// the file, what the fd was relative to that path, the mode, owner and group it
-// was refused for, and the rule that refused it.
+// logPermissionRejection records what an operator needs to act on a refusal.
 func logPermissionRejection(filePath, opName string, subject accessSubject, fileInfo os.FileInfo, stat *syscall.Stat_t, operation groupmembership.FileOperation, cause error) {
 	attrs := []any{
 		slog.String("path", filePath),
@@ -937,25 +915,20 @@ func logPermissionRejection(filePath, opName string, subject accessSubject, file
 		slog.Uint64("gid", uint64(stat.Gid)),
 		slog.String("rule", rejectionRule(operation, cause)),
 	}
-	// Nothing is learned from an error attribute that is nil every time it is
-	// absent; the rule already names the refusal.
 	if cause != nil {
 		attrs = append(attrs, slog.Any("error", cause))
 	}
 	slog.Warn(permissionRejectionMsg, attrs...)
 }
 
-// rejectionRule names the policy that refused a file, so that the records can
-// be told apart without reading the message the policy happened to produce.
+// rejectionRule names the policy that refused a file, so records can be told
+// apart without reading the message the policy happened to produce.
 //
-// The names come from the sentinels groupmembership returns, with one exception
-// it cannot supply: the write policy refuses a group-writable file whose group
-// has another member by returning false with no error at all
-// (CanUserSafelyWriteFile hands back isUserOnlyGroupMember's verdict directly).
-// That is the one refusal the design expects in ordinary use -- a shared group
-// -- so it is named here rather than left as unknown. It is also the only way
-// either policy answers false without an error, which is what makes naming it
-// from the operation sound.
+// The names come from groupmembership's sentinels, with one exception it cannot
+// supply: the write policy refuses a group-writable file whose group has another
+// member by returning false with no error. That is the only way either policy
+// answers false without an error, which is what makes naming it from the
+// operation sound.
 func rejectionRule(operation groupmembership.FileOperation, cause error) string {
 	switch {
 	case errors.Is(cause, groupmembership.ErrFileWorldWritable):
@@ -977,8 +950,8 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 
 // canSafelyReadFromFile checks if the current user can safely read from a file with
 // more relaxed permissions than write operations. It is canSafelyAccessFile's
-// read check -- the same policy, the same messages, the same record -- with the
-// file's os.FileInfo handed back, which the read path needs for the size limit.
+// read check with the file's os.FileInfo handed back, which the read path needs
+// for the size limit.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, _, err := getFileStatInfo(file, filePath)
 	if err != nil {
