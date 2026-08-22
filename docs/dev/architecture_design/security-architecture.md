@@ -219,7 +219,13 @@ func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
     // The caller sets RESOLVE_NO_SYMLINKS in how.resolve, which atomically
     // prevents symlink following
     pathBytes, err := syscall.BytePtrFromString(pathname)
-    fd, _, errno := syscall.Syscall6(SysOpenat2, ...)
+    if err != nil {
+        return -1, err
+    }
+    fd, _, errno := syscall.Syscall6(SysOpenat2, uintptr(dirfd), /* ... */)
+    if errno != 0 {
+        return -1, errno
+    }
     return int(fd), nil
 }
 ```
@@ -235,6 +241,12 @@ func ensureDirNoSymlinks(dir string) (string, error) {
     // Step-by-step path validation from root to target
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // Does not follow symlinks
+        if err != nil {
+            if os.IsNotExist(err) {
+                continue // A directory that does not exist yet is fine for creation
+            }
+            return "", fmt.Errorf("failed to stat %s: %w", currentPath, err)
+        }
         if fi.Mode()&os.ModeSymlink != 0 {
             // Known OS-managed symlinks (e.g. /etc/mtab) are allowed as an exception;
             // resolve them via EvalSymlinks and continue validation
@@ -242,9 +254,14 @@ func ensureDirNoSymlinks(dir string) (string, error) {
                 return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
             }
             resolved, err := filepath.EvalSymlinks(currentPath)
+            if err != nil {
+                return "", fmt.Errorf("failed to resolve OS symlink %s: %w", currentPath, err)
+            }
             // Continue validation using resolved from here on
             currentPath = resolved
+            continue
         }
+        // ... validation rejecting non-directory components follows
     }
     // Return the resolved path; the caller opens it to obtain a directory fd
     return currentPath, nil

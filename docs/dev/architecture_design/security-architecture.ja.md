@@ -219,7 +219,13 @@ func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
     // 呼び出し元が how.resolve に RESOLVE_NO_SYMLINKS を設定し、
     // シンボリックリンクの追跡を原子的に防止する
     pathBytes, err := syscall.BytePtrFromString(pathname)
-    fd, _, errno := syscall.Syscall6(SysOpenat2, ...)
+    if err != nil {
+        return -1, err
+    }
+    fd, _, errno := syscall.Syscall6(SysOpenat2, uintptr(dirfd), /* ... */)
+    if errno != 0 {
+        return -1, errno
+    }
     return int(fd), nil
 }
 ```
@@ -235,6 +241,12 @@ func ensureDirNoSymlinks(dir string) (string, error) {
     // ルートからターゲットまでのステップバイステップパス検証
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // シンボリックリンクを追跡しない
+        if err != nil {
+            if os.IsNotExist(err) {
+                continue // 未作成のディレクトリは作成時に許容する
+            }
+            return "", fmt.Errorf("failed to stat %s: %w", currentPath, err)
+        }
         if fi.Mode()&os.ModeSymlink != 0 {
             // OS が管理する既知のシンボリックリンク（例: /etc/mtab 等）は例外的に許可し、
             // EvalSymlinks で解決した上で検証を継続する
@@ -242,9 +254,14 @@ func ensureDirNoSymlinks(dir string) (string, error) {
                 return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
             }
             resolved, err := filepath.EvalSymlinks(currentPath)
+            if err != nil {
+                return "", fmt.Errorf("failed to resolve OS symlink %s: %w", currentPath, err)
+            }
             // 以降、resolved を使って検証を継続
             currentPath = resolved
+            continue
         }
+        // ... ディレクトリ以外の components を拒否する検証が続く
     }
     // 解決後のパスを返す。呼び出し元はこのパスを open してディレクトリ fd を得る
     return currentPath, nil
