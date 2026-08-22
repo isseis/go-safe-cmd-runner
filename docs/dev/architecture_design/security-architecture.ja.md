@@ -202,35 +202,58 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 
 **最新Linuxセキュリティ（openat2）**:
 ```go
-// 場所: internal/safefileio/safe_file_linux.go（Linux 専用ビルドファイル）の openat2() 関数
+// 場所: internal/safefileio/safe_file_linux.go（Linux 専用ビルドファイル）の openat2()/rawOpenat2() 関数
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    // RESOLVE_NO_SYMLINKSフラグを使用してシンボリックリンクの追跡を原子的に防止
+    // EINTR のあいだ再試行する。EINTR は open が成立しなかったことを意味するため、
+    // 再試行は同じ操作の作り直しであって重複実行にはならない。
+    for {
+        fd, err := openat2Syscall(dirfd, pathname, how)
+        if errors.Is(err, syscall.EINTR) {
+            continue
+        }
+        return fd, err
+    }
+}
+
+func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
+    // 呼び出し元が how.resolve に RESOLVE_NO_SYMLINKS を設定し、
+    // シンボリックリンクの追跡を原子的に防止する
     pathBytes, err := syscall.BytePtrFromString(pathname)
     fd, _, errno := syscall.Syscall6(SysOpenat2, ...)
     return int(fd), nil
 }
 ```
 
+`openat2Syscall` は `rawOpenat2` を呼ぶだけの関数で、テストビルドでのみ差し替え可能です
+（`//go:build !test` と `//go:build test` の 2 ファイルで同名の関数を排他的に定義するため、本番ビルドには
+差し替え可能なパッケージ変数が残りません）。
+
 **フォールバックセキュリティ（従来システム）**:
 ```go
-// 場所: internal/safefileio/safe_file.go の ensureParentDirsNoSymlinks() 関数
-func ensureParentDirsNoSymlinks(absPath string) error {
+// 場所: internal/safefileio/safe_file.go の ensureDirNoSymlinks() 関数
+func ensureDirNoSymlinks(dir string) (string, error) {
     // ルートからターゲットまでのステップバイステップパス検証
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // シンボリックリンクを追跡しない
         if fi.Mode()&os.ModeSymlink != 0 {
             // OS が管理する既知のシンボリックリンク（例: /etc/mtab 等）は例外的に許可し、
             // EvalSymlinks で解決した上で検証を継続する
-            if !common.IsAllowedOSManagedSymlink(currentPath) {
-                return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            if !isAllowedOSManagedSymlink(currentPath) {
+                return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
             }
             resolved, err := filepath.EvalSymlinks(currentPath)
             // 以降、resolved を使って検証を継続
+            currentPath = resolved
         }
     }
-    return nil
+    // 解決後のパスを返す。呼び出し元はこのパスを open してディレクトリ fd を得る
+    return currentPath, nil
 }
 ```
+
+`ensureParentDirsNoSymlinks(absPath)` は、親ディレクトリについて `ensureDirNoSymlinks` を呼び解決先を
+捨てるだけのラッパです。`isAllowedOSManagedSymlink` は `common.IsAllowedOSManagedSymlink` を呼ぶだけの
+関数で、テストビルドでのみ差し替え可能です。
 
 シンボリックリンクは原則として拒否しますが、OS がインストール時から管理する既知のシンボリックリンク（`common.IsAllowedOSManagedSymlink()` で判定）のみ例外的に許可し、解決先を検証対象として扱います。
 
