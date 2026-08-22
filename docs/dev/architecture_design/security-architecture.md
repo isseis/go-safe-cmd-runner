@@ -202,35 +202,58 @@ Provides symlink-safe file I/O operations to prevent symlink attacks, TOCTOU (Ti
 
 **Modern Linux Security (openat2)**:
 ```go
-// Location: internal/safefileio/safe_file_linux.go (Linux-only build file), the openat2() function
+// Location: internal/safefileio/safe_file_linux.go (Linux-only build file), the openat2()/rawOpenat2() functions
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    // Atomically prevent symlink following with RESOLVE_NO_SYMLINKS flag
+    // Retry while the kernel reports EINTR. EINTR means the open never took
+    // effect, so a retry redoes the same operation rather than repeating it.
+    for {
+        fd, err := openat2Syscall(dirfd, pathname, how)
+        if errors.Is(err, syscall.EINTR) {
+            continue
+        }
+        return fd, err
+    }
+}
+
+func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
+    // The caller sets RESOLVE_NO_SYMLINKS in how.resolve, which atomically
+    // prevents symlink following
     pathBytes, err := syscall.BytePtrFromString(pathname)
     fd, _, errno := syscall.Syscall6(SysOpenat2, ...)
     return int(fd), nil
 }
 ```
 
+`openat2Syscall` is a function that does nothing but call `rawOpenat2`, and it can be replaced only in
+test builds (the same name is defined exclusively across two files, one `//go:build !test` and one
+`//go:build test`, so no replaceable package variable remains in the production build).
+
 **Fallback Security (Legacy Systems)**:
 ```go
-// Location: internal/safefileio/safe_file.go, the ensureParentDirsNoSymlinks() function
-func ensureParentDirsNoSymlinks(absPath string) error {
+// Location: internal/safefileio/safe_file.go, the ensureDirNoSymlinks() function
+func ensureDirNoSymlinks(dir string) (string, error) {
     // Step-by-step path validation from root to target
     for _, component := range components {
         fi, err := os.Lstat(currentPath) // Does not follow symlinks
         if fi.Mode()&os.ModeSymlink != 0 {
             // Known OS-managed symlinks (e.g. /etc/mtab) are allowed as an exception;
             // resolve them via EvalSymlinks and continue validation
-            if !common.IsAllowedOSManagedSymlink(currentPath) {
-                return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
+            if !isAllowedOSManagedSymlink(currentPath) {
+                return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
             }
             resolved, err := filepath.EvalSymlinks(currentPath)
             // Continue validation using resolved from here on
+            currentPath = resolved
         }
     }
-    return nil
+    // Return the resolved path; the caller opens it to obtain a directory fd
+    return currentPath, nil
 }
 ```
+
+`ensureParentDirsNoSymlinks(absPath)` is a wrapper that calls `ensureDirNoSymlinks` on the parent
+directory and discards the resolved path. `isAllowedOSManagedSymlink` is a function that does nothing
+but call `common.IsAllowedOSManagedSymlink`, and it can be replaced only in test builds.
 
 Symlinks are rejected in principle, but known OS-managed symlinks present since installation (determined via `common.IsAllowedOSManagedSymlink()`) are allowed as an exception, with their resolved target treated as the validation subject.
 
