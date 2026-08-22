@@ -71,8 +71,6 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
 //
 // The rename is the last thing this does, so no failure it reports can have
 // left the destination replaced, and none is marked with errRenameCommitted.
-// The Linux implementation, which removes the source afterwards, does mark
-// them.
 func moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, dstName string) error {
 	if err := validateOpenAtName(dstName); err != nil {
 		return err
