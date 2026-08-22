@@ -247,14 +247,19 @@ func moveFileAnchored(srcFile File, srcDirFd int, srcName string, dstDirFd int, 
 		return fmt.Errorf("failed to rename temporary hard link to destination: %w", mapRenameErrno(err))
 	}
 
+	// Everything from here on happens with the destination already replaced,
+	// so each failure carries errRenameCommitted: the caller's contract for a
+	// failed move differs on either side of the rename, and this is the only
+	// place that knows which side a failure is on.
+	//
 	// The source entry is removed by name, so confirm it still names the inode
 	// that was moved before removing it.
 	if err = verifySameFileAt(osFile, srcDirFd, srcName); err != nil {
-		return fmt.Errorf("refusing to remove source path after move: %w", err)
+		return fmt.Errorf("%w: refusing to remove source path after move: %w", errRenameCommitted, err)
 	}
 
 	if err = unix.Unlinkat(srcDirFd, srcName, 0); err != nil {
-		return fmt.Errorf("failed to remove original source path after move: %w", err)
+		return fmt.Errorf("%w: failed to remove original source path after move: %w", errRenameCommitted, err)
 	}
 
 	return nil

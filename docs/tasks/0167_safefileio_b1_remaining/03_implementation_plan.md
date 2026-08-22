@@ -701,19 +701,26 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       `test_helpers_overrides.go`（`//go:build test`）に `var verifyMovedFileOverride = …` と、それを呼ぶ同名の
       関数を置く。
 - [x] `rename` に到達した後のすべての失敗を `ErrDestinationCommitted` で包む。包む場所は `moveOpenFileCore`
-      とする。**`rename` に到達したかどうかの判定は、`moveFileAnchored` の戻り値ではなく宛先の同一性で行う
-      （実装時の決定。[02_architecture.md](02_architecture.md) § 3.4.4 に追記した）。** `moveFileAnchored` は
-      `rename` の後に移動元の削除を行うため、戻り値のエラーだけでは前後を区別できず、それを「未到達」と
-      みなすと § 5.2 が `ErrDestinationCommitted` の対象として挙げる「移動元の削除失敗」が漏れる。
-      `moveFileAnchored` が失敗した場合に `verifySameFileAt`（宛先ディレクトリ fd と宛先名）を行い、
-      一致したときだけ包む。包む位置は `moveOpenFileCore` のままなので、`moveFileAnchored` を直接呼ぶ
-      既存テストの前提は変わらない。
+      とする。**`rename` に到達したかどうかは `moveFileAnchored` が内部 sentinel `errRenameCommitted` で
+      申告する（実装時の決定。[02_architecture.md](02_architecture.md) § 3.4.4 に追記した）。**
+      `moveFileAnchored` は `rename` の後に移動元の削除を行うため、戻り値のエラーだけでは前後を区別できず、
+      それを「未到達」とみなすと § 5.2 が `ErrDestinationCommitted` の対象として挙げる「移動元の削除失敗」が
+      漏れる。宛先の同一性を問い合わせて判定する案はレビューで棄却した（`rename` 直後に宛先を奪われると
+      「何も起きなかった」と報告してしまう。§ 3.4.4）。公開 sentinel を付ける位置は `moveOpenFileCore` の
+      ままであり、`moveFileAnchored` の戻り値の形は変わらないため、同関数を直接呼ぶ既存テストの前提も
+      変わらない。
 - [x] `slog.Warn` に、宛先が置き換わったうえで失敗した事象を記録する。宛先のパスと失敗した検証の内容を
       含める（[02_architecture.md](02_architecture.md) § 5.4 の最重要項目）。
 - [x] 権限検査による拒否の記録に、対象の `mode`・`uid`・`gid` と、判定を下した規則（world-writable・
       グループ非所属・上限超過のいずれか）を含める（同 § 5.4）。規則の名前は `groupmembership` の
-      sentinel から決める（`rejectionRule`）。記録は `canSafelyAccessFile` の 1 か所に置いたため、
-      読み取り・書き込みの両方の拒否が同じ形で残る。
+      sentinel から決める（`rejectionRule`）。記録は `canSafelyAccessFile` の 1 か所に置き、
+      `canSafelyReadFromFile` は同関数の読み取り検査を呼ぶ形へ寄せたため（重複していた読み取り方針の
+      実装が 1 つになる）、`SafeReadFile` の拒否も同じ記録を残す。**`rule` は `groupmembership` の
+      sentinel から決めるが、共有グループによる書き込みの拒否だけは `CanUserSafelyWriteFile` が
+      エラー無しの false を返すため、書き込み検査でエラーが無い場合を
+      `group-writable-not-sole-member` と名付けている（レビュー指摘による追加。両方針のうち
+      エラー無しで false を返す分岐はこれだけである）。** 検査対象がパスの示すファイルなのか、これから
+      そのパスへ移す inode なのかは `subject` 属性で区別する（`accessSubject`）。
 
 #### 4-2. 移動経路のテストの追加
 
@@ -761,6 +768,12 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
         移動元の親ディレクトリから書き込み権限を落として `rename` 後の unlink を失敗させ、
         `moveFileAnchored` 由来の失敗も同じく包まれることを確認する（Linux 専用。移動元の削除が
         `rename` と別の段になるのが Linux の経路だけであるため）。
+- [x] **拒否の記録のテストを追加する（レビュー指摘による追加）。**
+      `safe_file_test.go::TestCanSafelyAccessFile_RecordsRejection` が実ファイルに対する拒否で
+      `path`・`subject`・`operation`・`mode`・`uid`・`gid`・`rule` が残ることを確認し、
+      `::TestRejectionRule` が、実ファイルでは作れない規則（グループ非所属・上限超過・非所有者）と
+      エラー無しの false の扱いを表で確認する。`TestMoveOpenFileCore_RejectsRequiredPermBeforeRename` は
+      `subject` が `pending-destination` であることを併せて確認する。
 - [x] `internal/runner/base/output` の既存テスト（`TestSafeFileManager_MoveToFinal`・
       `TestSafeFileManager_MoveToFinal_WithMock`）が無変更で通ることを確認する（AC-07b）。
 - [x] 検査順序の入れ替えを元に戻すと `TestAtomicMoveFile_ValidatesSourceBeforeChmod` が落ちることを
