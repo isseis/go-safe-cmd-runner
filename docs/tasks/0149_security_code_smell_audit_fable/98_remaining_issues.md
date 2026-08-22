@@ -52,13 +52,9 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 ### B1（safefileio）
 
-- **F-2〜F-9**（F-1 を除く）: 0155（P3 TOCTOU）は F-1（`AtomicMoveFile` の fd アンカー化）のみを対象とし、以下は対象外のまま。
-  - F-2: 非 Linux フォールバック経路の symlink TOCTOU
-  - F-3: fd リーク
-  - F-4: ロールバック欠如
-  - F-5: `Remove` の安全性契約
-  - F-6〜F-9: 詳細は `findings/B1_safefileio.md` を参照
-- → [#978](https://github.com/isseis/go-safe-cmd-runner/issues/978) を作成済み。
+> **B1 F-2〜F-9 について**: [0167](../0167_safefileio_b1_remaining/03_implementation_plan.md) で解消済み（[#978](https://github.com/isseis/go-safe-cmd-runner/issues/978)）。F-3（fd リーク）はフォールバック経路の失敗時に fd を必ず閉じ、その呼び出し自身が作成したファイルだけを、握っている fd の inode との同一性を確認したうえで削除するようにした。F-4-1（chmod が検証より先）は検査を先に置き、安全でない権限のソースは権限を狭めて受け入れるのではなく拒否するようにした。F-5（`Remove` の安全性契約）は、本番の呼び出し元が 0 件であることを確認して `FileSystem.Remove` をインターフェースごと削除した（`File.Truncate` も同じ基準で削除した）。F-6（openat2 に渡す mode）は `os.ModePerm` 外のビットを `ErrUnsupportedFileMode` で拒否し、ファイルを作らない open では mode 0 を渡すようにして両経路の成否を揃えた。F-7（完全性が重要な書き込み）は一時ファイルへ書いて `rename` で差し替える方式に変え、差し替えに到達した後の失敗を `ErrDestinationCommitted` で判別できるようにした。F-9（`EINTR`）は `openat2` を再試行するようにした。
+>
+> **F-2・F-4-2・F-8 は、所見の主推奨とは異なる形で close した。** F-2（非 Linux フォールバック経路の symlink TOCTOU）の主推奨は dirfd ウォークの実装だが、この経路が使われるのは openat2 が無い環境に限られ、[security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) が本番ターゲットを Linux 5.6+ と定めて非 Linux を開発・限定用途に限る運用を既に推奨している。開発環境でしか効かない対策にパス解決の再実装を投じるのは YAGNI に反し、OS 管理 symlink の allowlist の判断が 2 か所に分かれもする。かわりに、経路によって保証の強さが違うことを package コメントと公開 API 4 つの doc コメントに明記した。F-4-2（移動後の宛先検証が失敗しても宛先はそのまま）の主推奨は宛先削除によるロールバックだが、`AtomicMoveFile` は既存ファイルの置換にも使われるため、宛先を削除しても移動前の内容は復元されない。失敗時に元の内容まで消える方が悪い結果であり、これは 0155 が `moveFileAnchored` の doc コメントで既に宣言していた設計決定でもある。かわりに契約を `AtomicMoveFile` の doc コメントへ明記し、`ErrDestinationCommitted` で判別できるようにした。F-8（読み取りと書き込みの検査が非対称）はもともと挙動の変更を求めない Info であり、非対称は意図的であるだけでなく対称化してはならない。所有者の妥当性はディレクトリ権限監査が担っており、読み手と所有者が異なることは分離運用が成立するための条件だからである（読み取りポリシー自体の所在は `internal/groupmembership` であり、変更するなら D1 の所見として扱う別件になる）。理由を `canSafelyReadFromFile` の doc コメントに明記した。
 
 ### B2（filevalidator）
 

@@ -32,6 +32,7 @@
 - 悪用シナリオ: 攻撃者が (1) 事前チェック後に親ディレクトリを symlink に差し替え → (2) open が symlink 先で実行される → (3) 事後チェック前に symlink を実ディレクトリに戻す、という往復差し替えに成功すると両チェックを通過する。タイミングは厳しいが、inotify/kqueue 等で open を検知して往復させる攻撃は既知の手法。macOS（本開発環境）は常にこの経路を使う。
 - 緩和要因: パッケージコメントおよび関数コメントで二相検証の限界が示唆されており、Linux 本番環境では openat2 によりこの窓は存在しない。攻撃には中間ディレクトリの書き換え権限が必要で、その場合そもそも脅威モデル上ほぼ敗北している。
 - 推奨対応: 非 Linux でも `openat` を用いてルートからコンポーネント単位で `O_DIRECTORY|O_NOFOLLOW` を指定しながら降りていく方式（dirfd ウォーク）に置き換えると原理的に排除できる。少なくとも「フォールバック経路は best-effort」であることを公開 API のドキュメントに明記する。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で、推奨対応の後者（明記）により close した。dirfd ウォークは採らない。この経路が使われるのは openat2 が無い環境に限られ、本番ターゲットは Linux 5.6+ と定められているため、パス解決の再実装は開発環境でしか効かない対策になり、OS 管理 symlink の allowlist の判断も 2 か所に分かれる。package コメントと公開 API 4 つ（`SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile`）の doc コメントに、経路によって保証の強さが違うことと、フォールバックが隙を狭めるだけで排除はしないことを明記した。
 
 ### F-3 🟠Low: safeOpenFileFallback — 事後チェック失敗時にファイルディスクリプタがリークする
 
@@ -39,6 +40,7 @@
 - 問題: `os.OpenFile` 成功後、2 回目の `ensureParentDirsNoSymlinks` がエラーを返すと `file` を Close せずに `nil, err` を返す。fd がリークする。
 - 悪用シナリオ: 攻撃者が親ディレクトリの symlink 差し替えを繰り返して事後チェックを意図的に失敗させ続けると、長時間動作するプロセスで fd を枯渇させられる（DoS）。通常運用でもエラー経路で fd が漏れるのは資源リーク。加えて、`O_CREATE` で作成済みのファイルが symlink 先に残置される可能性がある（作成の取り消しもない）。
 - 推奨対応: エラー時に `file.Close()`（および必要に応じて作成したファイルの削除）を行う。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で解消済み。事後チェック失敗時に fd を必ず閉じるようにした。削除については、その呼び出し自身が作成したファイルだけを対象とし（`O_CREAT` を `O_EXCL` 付きで先に試す作成プローブにより、作成したかどうかを判別する）、握っている fd の inode と削除対象が同一であることを確認したうえで削除する。同一性を確認できない場合は削除せず警告を記録して元のエラーを返す。事後チェックが失敗した時点でそのパスの指す先は信用できないため、パス名だけを頼りに削除することはしない。
 
 ### F-4 🟠Low: atomicMoveFileCore — 失敗時の副作用（chmod 済み・移動済み）が巻き戻されない
 
@@ -48,6 +50,7 @@
   2. `os.Rename` 成功後の宛先検証（182-195 行）が失敗してもファイルは宛先に移動済みのまま。呼び出し元がエラーを見て中断しても、宛先に「検証に失敗したファイル」が残置される。
 - 悪用シナリオ: 直接の権限昇格ではないが、「エラーを返したのに状態は成功時と同じ」という half-done 状態は上位層の想定（エラー＝出力ファイルは作られていない）を裏切り、検証失敗ファイルの残置・後続処理での誤使用につながる。
 - 推奨対応: 宛先検証失敗時は宛先ファイルを削除（ロールバック）するか、少なくとも関数コメントで「失敗時も移動が完了している場合がある」ことを契約として明記する。chmod は検証成功後に行う（fchmod なので順序変更のリスクは低い）。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で、1 は推奨どおり、2 は推奨の後者（明記）により close した。1 は chmod を検証の後へ移した。これにより挙動が変わり、読み取り検査が拒否する権限のソースは、権限を狭めてから受け入れるのではなく拒否されるようになる（意図した変更。本番の呼び出し元は `0600` の一時ファイルを渡すため影響を受けない）。2 のロールバックは実装しない。`AtomicMoveFile` は既存ファイルの置換にも使われるため宛先を削除しても移動前の内容は復元されず、失敗時に元の内容まで消える方が悪い結果になる（0155 が `moveFileAnchored` の doc コメントで既に宣言していた設計決定でもある）。かわりに `AtomicMoveFile` の doc コメントへ契約を明記し、`rename` に到達した後の失敗を sentinel エラー `ErrDestinationCommitted` で包んで `errors.Is` により判別できるようにした。あわせて、従来は `rename` の後に行っていた宛先の権限方針の検査を `rename` の前へ移し、正規の利用で「置き換わったのにエラー」になる場合を副作用の前の拒否へ変えた。
 
 ### F-5 🟠Low: FileSystem.Remove が無検査の os.Remove 直通で、パッケージの安全性契約と乖離
 
@@ -55,30 +58,35 @@
 - 問題: `SafeOpenFile` / `AtomicMoveFile` が symlink・権限検査を行うのに対し、同じ `FileSystem` インターフェースの `Remove` は `os.Remove(name)` をそのまま呼ぶ。unlink 時のパス解決で親コンポーネントの symlink は通常どおり辿られるため、「safefileio の FileSystem を使っているから安全」という呼び出し側の期待（命名と実装の乖離）に反する。
 - 悪用シナリオ: 攻撃者が制御できるパスが `Remove` に渡る場合、親ディレクトリ symlink の差し替えで意図しないファイルを削除させられる。現状の呼び出し元は自プロセスが作成した一時ファイルの削除が中心でリスクは低い。
 - 推奨対応: `ensureParentDirsNoSymlinks` を `Remove` にも適用するか、メソッドコメントに「安全性検査なし。信頼済みパス専用」と明記する。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で、いずれの推奨対応も採らず `FileSystem.Remove` をインターフェースごと削除して close した。本番の呼び出し元が 1 つも無いことを確認したためである（参照はインターフェース定義・`osFS` の実装・テストのモックのみで、`internal/runner/base/output/file.go` が呼ぶ `Remove` は `common.FileSystem` の別メソッド）。読み手のいない API の安全性契約を整えても得るものはなく、0157 の `WithUserGroup`／`IsUserGroupSupported`、0166 の `privilege.Metrics` と同じ基準による。同じ基準で、本番の呼び出し元が F-7 の対応により 0 件になった `File.Truncate` も削除した。
 
 ### F-6 🔵Info: openat2 の mode に os.FileMode をそのまま渡している
 
 - 該当箇所: `internal/safefileio/safe_file_linux.go:103-108` (`mode: uint64(perm)`)
 - 問題: Go の `os.FileMode` は setuid/setgid/sticky を独自ビット（1<<23 等）で表現するため、`os.OpenFile` 内部の `syscallMode()` 相当の変換なしに渡すと、これらのビットを含む perm はカーネルへ誤った mode として届く。また openat2(2) は `O_CREAT`/`O_TMPFILE` なしで mode≠0 を渡すと `EINVAL` を返す仕様であり、非ゼロ perm + 読み取りオープンの組み合わせは fallback 経路と挙動が食い違う。現状の呼び出し元は 0o777 以下のビットと読み取り時 perm=0 のみを渡しているため実害はないが、将来の呼び出しで静かに壊れる罠。
 - 推奨対応: perm を `perm & os.ModePerm` に正規化し、特殊ビットが渡された場合は明示的にエラーにする。`O_CREATE` なしのときは mode を 0 に落とす。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で解消済み。特殊ビットについては正規化を行わず、`os.ModePerm` の外のビットを含む `perm` を sentinel エラー `ErrUnsupportedFileMode` で拒否する（黙って落とすと呼び出し元の誤りが表面化しないため。CLAUDE.md「正規化するな、拒否せよ」）。この検査は両経路に共通の入口で行うため、拒否は経路によらず一致する。`O_CREATE` なしのときに mode を 0 に落とす方は推奨どおり実装した（`O_TMPFILE` はファイルを作りうるため作成側に数える。mode 0 で `O_TMPFILE` を渡すと権限 `0000` のファイルが黙って作られるためである）。
 
 ### F-7 🔵Info: safeWriteFileCommon はインプレース書き込みで、クラッシュ時に部分書き込みが残る
 
 - 該当箇所: `internal/safefileio/safe_file.go:217-243`
 - 問題: `O_WRONLY|O_CREATE` → 検証 → `Truncate(0)` → `Write` の順で既存ファイルを直接上書きする。Write 中のクラッシュ・ディスク満杯で、切り詰め済み/部分内容のファイルが残る。ハッシュマニフェスト等の完全性が重要なファイルでは、破損ファイルが後段の検証で「改ざん」と区別できない。fail-closed（検証が失敗する方向）なのでセキュリティ上の実害はないが、耐障害性の観点では temp+`AtomicMoveFile` が既に同パッケージにあるのに使われていない。
 - 推奨対応: 完全性が重要な書き込みは temp ファイル + `AtomicMoveFile` パターンへ寄せることを検討。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で解消済み。`safeWriteFileCommon` を、宛先と同じディレクトリに一時ファイルを作って書き、`fsync` の後に `rename` で差し替える方式へ変えた。宛先は、書き込み前の内容か完了した書き込みの内容のいずれかにしかならない。リーフがシンボリックリンクの場合に拒否するという ADR の設計前提は、差し替えの前に宛先を読み取りで開くプローブで維持している（`rename` 自体はシンボリックリンクを黙って置き換えるため）。差し替えに到達する前に失敗した場合は一時ファイルを取り除き、到達した後の失敗は `ErrDestinationCommitted` を包んで返し、残りうる一時ファイルのパスを警告に記録する。一時ファイルの後始末は `FileSystem.Remove`（F-5）ではなく、ディレクトリ fd 相対の内部関数で行う。
 
 ### F-8 🔵Info: 読み取り権限検査が GID とモードのみで、所有者 UID を考慮しない
 
 - 該当箇所: `internal/safefileio/safe_file.go:442, 489`（`CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())`）
 - 問題: 書き込み検査は `(uid, gid, mode)` を見るのに対し、読み取り検査は `(gid, mode)` のみ。悪意ある一般ユーザーが所有するファイルでも、group/other のビットが基準を満たせば「安全に読める」と判定される。これは groupmembership 側のポリシー設計であり、読み取り対象は別途ハッシュ検証されるため許容と考えられるが、対称性の欠如は意図的である旨のコメントがあるとよい。詳細は D1（groupmembership 監査）で扱う。
 - 推奨対応: D1 で読み取りポリシーの意図を確認し、`canSafelyReadFromFile` のコメントに設計意図を明記。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で、推奨対応のうち後者（コメントへの明記）により close した。読み取りポリシーそのものは `internal/groupmembership` にあり、変更するなら D1 の所見として扱う別件である。非対称は許容されているだけでなく対称化してはならない、というのが確認の結論である。理由は 2 つで、いずれも `canSafelyReadFromFile` の doc コメントに書いた。(1) 所有者の妥当性は `internal/security` のディレクトリ権限監査が既に担っており（所有者は root か実行者本人に限られる）、しかもそちらの方が効く（ファイルの所有者は誰が中身を書き換えられるかしか示さないが、ディレクトリの所有者は誰がエントリを別のファイルに差し替えられるかを決める）。(2) 読み手と所有者が異なることは分離運用が成立するための条件であり、所有者の一致を要求すると本番構成が動かなくなる。あわせて、読み取り検査が所有者を見ないことが「fd で検証したソースをパス名で開き直してはならない」理由でもあることを 1 文で書いた。
 
 ### F-9 🔵Info: openat2 呼び出しに EINTR リトライがない
 
 - 該当箇所: `internal/safefileio/safe_file_linux.go:68-90`
 - 問題: 生の `syscall.Syscall6` 呼び出しのため、シグナル到着時に `EINTR` がそのまま呼び出し元へ返る（Go ランタイムの非同期プリエンプションシグナル SIGURG 等）。失敗は fail-closed（操作が拒否される方向）だが、まれな偽陰性エラーの原因になり得る。
 - 推奨対応: `errno == syscall.EINTR` のときのリトライループを追加。
+- 対応状況: [0167](../../0167_safefileio_b1_remaining/03_implementation_plan.md) で推奨どおり解消済み。生のシステムコール発行を `rawOpenat2` へ切り出し、`openat2` を `EINTR` のあいだ再試行するラッパにした。再試行に上限は設けない（`EINTR` は open が成立しなかったことを意味するため再試行は同じ操作の作り直しであり、割り込みの出どころは Go ランタイムのプリエンプションシグナルで攻撃者の制御下にないため）。`EINTR` 以外の errno の対応付け（`ELOOP`→`ErrIsSymlink`、`EEXIST`→`ErrFileExists`、`ENOENT`→`os.ErrNotExist`）は変更していない。
 
 ---
 
