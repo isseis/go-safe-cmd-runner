@@ -1600,12 +1600,12 @@ func TestSafeWriteFileOverwrite_SucceedsWithPermApplied(t *testing.T) {
 
 	// The umask must actually remove a bit of the requested mode, or the
 	// new_destination case would pass just as well against the O_CREATE open
-	// this task replaced: 0o037 drops the group-read bit of 0o640, which the
-	// temporary file's fchmod is what puts back.
+	// this task replaced: 0o077 takes the group-read bit off 0o640, leaving
+	// 0o600, and the temporary file's fchmod is what puts it back.
 	//
 	// Umask is process-wide and this package's tests never call t.Parallel();
 	// failing to restore it would quietly break later tests.
-	previousUmask := syscall.Umask(0o037)
+	previousUmask := syscall.Umask(0o077)
 	t.Cleanup(func() { syscall.Umask(previousUmask) })
 
 	forEachOpenRoute(t, "new_destination", func(t *testing.T, fs *osFS) {
