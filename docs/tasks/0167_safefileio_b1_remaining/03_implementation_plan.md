@@ -1199,10 +1199,10 @@ Phase の区切りをそのまま PR の区切りにする。§ 8 の Phase 4 �
 Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。本節は PR 単位のマージ進捗だけを追う。
 
 - [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3。[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3）
-- [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4）
-- [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
-- [ ] PR-5 マージ済み（対象ステップ: 4-3 / 4-4 / 4-5 / 4-6）
+- [x] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3。[#1051](https://github.com/isseis/go-safe-cmd-runner/pull/1051)）
+- [x] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4。[#1052](https://github.com/isseis/go-safe-cmd-runner/pull/1052)）
+- [x] PR-4 マージ済み（対象ステップ: 4-1 / 4-2。[#1053](https://github.com/isseis/go-safe-cmd-runner/pull/1053)）
+- [x] PR-5 マージ済み（対象ステップ: 4-3 / 4-4 / 4-5 / 4-6。[#1055](https://github.com/isseis/go-safe-cmd-runner/pull/1055)）
 - [ ] PR-6 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）
 
 ### 全体
@@ -1279,18 +1279,20 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 `make lint` と `make test` では気づけない残存参照だけを挙げる。§7 の AC 検証と重複する項目はここに置かない。
 `rg` の選択は `|` で書く（§7 冒頭の注記と同じ）。
 
-- [ ] `rg -n "ErrTempLinkNameExhausted" .` が 0 件（改名の取りこぼし。コード側はコンパイルが捕まえるが、
-      コメントと文書は捕まえない）
-- [ ] `rg -n "randomTempName\(\)" .` が 0 件（接頭辞を取らない旧シグネチャへの言及がコメントに残っていない）
-- [ ] `rg -n "maxLinkatAttempts" .` が 0 件（`maxTempNameAttempts` への改名の取りこぼし）
-- [ ] `rg -n "ensureParentDirsNoSymlinks" internal/safefileio/ docs/` の各ヒットが、ラッパとして残る関数を
+- [x] `rg -n "ErrTempLinkNameExhausted" .` が 0 件（改名の取りこぼし。コード側はコンパイルが捕まえるが、
+      コメントと文書は捕まえない）。残る 4 件はいずれも本タスクの `02`／`03` 文書が改名そのものを
+      記述している行であり、旧名を現存するものとして説明している箇所は無い
+- [x] `rg -n "randomTempName\(\)" .` が 0 件（接頭辞を取らない旧シグネチャへの言及がコメントに残っていない）
+- [x] `rg -n "maxLinkatAttempts" .` が 0 件（`maxTempNameAttempts` への改名の取りこぼし）。上と同じく、
+      残る 4 件は本タスクの文書が改名そのものを記述している行である
+- [x] `rg -n "ensureParentDirsNoSymlinks" internal/safefileio/ docs/` の各ヒットが、ラッパとして残る関数を
       正しく指している（`openDirNoSymlinks`／`ensureDirNoSymlinks` が担うようになった役割を、この関数の
       ものとして説明している箇所が残っていない）
-- [ ] `rg -n "safefileio.*Remove|FileSystem.*Remove" docs/` の結果に、削除した `safefileio.FileSystem.Remove`
+- [x] `rg -n "safefileio.*Remove|FileSystem.*Remove" docs/` の結果に、削除した `safefileio.FileSystem.Remove`
       を現存するものとして説明している箇所が無い（`internal/common` の `Remove` への言及は残ってよい）
-- [ ] `rg -n "Truncate\(0\)" docs/ internal/safefileio/` の結果に、`safeWriteFileCommon` が宛先を切り詰める
+- [x] `rg -n "Truncate\(0\)" docs/ internal/safefileio/` の結果に、`safeWriteFileCommon` が宛先を切り詰める
       という説明が残っていない
-- [ ] `git diff $BASE...HEAD -- '*.go' | rg -n "^\+.*(AC-[0-9]|F-00[0-9])"` が 0 件（本タスクが Go
+- [x] `git diff $BASE...HEAD -- '*.go' | rg -n "^\+.*(AC-[0-9]|F-00[0-9])"` が 0 件（本タスクが Go
       ソースへ AC 番号を持ち込んでいないこと。`runplan` のコミット前検査が拒否する。ツリー全体を対象に
       すると本タスクと無関係な既存のヒットが出るため、追加行だけを見る）
 
