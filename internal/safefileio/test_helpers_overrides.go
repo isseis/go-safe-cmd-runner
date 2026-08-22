@@ -30,6 +30,16 @@ func ensureParentDirsAfterOpen(absPath string) error {
 	return ensureParentDirsAfterOpenOverride(absPath)
 }
 
+// verifyMovedFileOverride reaches a branch a test cannot otherwise produce: the
+// failure has to land after a rename that succeeded, and a move's source and
+// destination can share a directory, so taking away the parent's permissions
+// stops the rename itself instead.
+var verifyMovedFileOverride = verifySameFileAt
+
+func verifyMovedFile(file File, dirFd int, name string) error {
+	return verifyMovedFileOverride(file, dirFd, name)
+}
+
 // ensureDirAfterOpenOverride reaches a branch a test cannot otherwise produce
 // for the same reason, with one more thing to intervene on: the directory the
 // fd already holds can be replaced between the two checks.

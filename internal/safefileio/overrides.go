@@ -21,6 +21,12 @@ func ensureParentDirsAfterOpen(absPath string) error {
 	return ensureParentDirsNoSymlinks(absPath)
 }
 
+// verifyMovedFile runs the identity check moveOpenFileCore makes once the
+// rename has put the moved inode at its destination.
+func verifyMovedFile(file File, dirFd int, name string) error {
+	return verifySameFileAt(file, dirFd, name)
+}
+
 // ensureDirAfterOpen runs the second directory check of
 // openDirNoSymlinksFallback, the one that detects a component swapped in while
 // the directory was being opened.

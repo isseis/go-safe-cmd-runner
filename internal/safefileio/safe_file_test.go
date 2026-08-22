@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -1106,6 +1107,380 @@ func TestOpenDirNoSymlinksFallback_AbandonsOpenWhenDirChanges(t *testing.T) {
 		require.NoError(t, walkErr)
 		assert.Equal(t, dir, walkResult)
 	})
+}
+
+// writeFileWithPerm creates a file whose permissions are exactly perm. Passing
+// perm to os.WriteFile is not enough: a default umask removes the group and
+// world write bits these tests turn on.
+func writeFileWithPerm(t *testing.T, path string, content []byte, perm os.FileMode) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, content, 0o600))
+	require.NoError(t, os.Chmod(path, perm))
+}
+
+// TestAtomicMoveFile_ValidatesSourceBeforeChmod pins the order of the source
+// validation and the fchmod: with the fchmod first, a world-writable source is
+// narrowed to requiredPerm and then passes a check that would have refused what
+// the caller actually pointed at.
+func TestAtomicMoveFile_ValidatesSourceBeforeChmod(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	content := []byte("world-writable content")
+	writeFileWithPerm(t, srcPath, content, 0o666)
+
+	fs := NewFileSystem(FileSystemConfig{})
+	err := fs.AtomicMoveFile(srcPath, dstPath, 0o600)
+	require.ErrorIs(t, err, ErrInvalidFilePermissions)
+
+	info, err := os.Lstat(srcPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o666), info.Mode().Perm(),
+		"a refused move must not have narrowed the source's permissions first")
+
+	got, err := os.ReadFile(srcPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got, "the source must still be where it was")
+	assert.NoFileExists(t, dstPath)
+}
+
+// gidOutsideOwnGroups returns a gid the current user does not belong to, or
+// reports that none was found.
+func gidOutsideOwnGroups(t *testing.T) (gid int, ok bool) {
+	t.Helper()
+	own, err := os.Getgroups()
+	require.NoError(t, err)
+	owned := make(map[int]struct{}, len(own)+1)
+	owned[os.Getgid()] = struct{}{}
+	for _, g := range own {
+		owned[g] = struct{}{}
+	}
+	// Low gids are the ones a system is sure to have (root, daemon, bin, ...).
+	for candidate := range 64 {
+		if _, mine := owned[candidate]; !mine {
+			return candidate, true
+		}
+	}
+	return 0, false
+}
+
+// TestAtomicMoveFile_RejectsUnsafeSourcePermissions covers the inputs the
+// reordered source validation now refuses outright, where before the fchmod
+// narrowed them into acceptance.
+//
+// The mode-exceeds-maximum rule that the design document lists as a third case
+// cannot be reached through a real file: CanCurrentUserSafelyReadFile masks the
+// mode with 0o7777, and Go encodes setuid, setgid and sticky above that mask,
+// so the only bit a file can carry that MaxAllowedReadPerms (0o6775) disallows
+// is 0o002 -- which the world-writable rule has already refused.
+func TestAtomicMoveFile_RejectsUnsafeSourcePermissions(t *testing.T) {
+	// Overlaps with TestAtomicMoveFile_ValidatesSourceBeforeChmod on purpose:
+	// that one is about the order of the check and the fchmod, this one about
+	// which rule refuses the source.
+	t.Run("world_writable", func(t *testing.T) {
+		dir := tu.SafeTempDir(t)
+		srcPath := filepath.Join(dir, "src.txt")
+		dstPath := filepath.Join(dir, "dst.txt")
+		writeFileWithPerm(t, srcPath, []byte("content"), 0o666)
+
+		fs := NewFileSystem(FileSystemConfig{})
+		// A safe requiredPerm does not make the source acceptable; the source
+		// is judged as it stands.
+		err := fs.AtomicMoveFile(srcPath, dstPath, 0o600)
+		require.ErrorIs(t, err, ErrInvalidFilePermissions)
+		require.ErrorIs(t, err, groupmembership.ErrFileWorldWritable)
+		assert.NoFileExists(t, dstPath)
+	})
+
+	t.Run("group_writable_non_member", func(t *testing.T) {
+		gid, ok := gidOutsideOwnGroups(t)
+		if !ok {
+			t.Skip("no gid outside the current user's groups was found, so a non-member group source cannot be built")
+		}
+		dir := tu.SafeTempDir(t)
+		srcPath := filepath.Join(dir, "src.txt")
+		dstPath := filepath.Join(dir, "dst.txt")
+		writeFileWithPerm(t, srcPath, []byte("content"), 0o660)
+		if err := os.Chown(srcPath, -1, gid); err != nil {
+			t.Skipf("cannot give the source a group the caller is not in: %v", err)
+		}
+
+		fs := NewFileSystem(FileSystemConfig{})
+		err := fs.AtomicMoveFile(srcPath, dstPath, 0o600)
+		require.ErrorIs(t, err, ErrInvalidFilePermissions)
+		require.ErrorIs(t, err, groupmembership.ErrGroupWritableNonMember)
+		assert.NoFileExists(t, dstPath)
+	})
+}
+
+// TestCanSafelyAccessFile_RecordsRejection covers the audit record a refusal
+// leaves behind: the reordered move path refuses sources that worked before, so
+// the record has to say which file and which rule.
+func TestCanSafelyAccessFile_RecordsRejection(t *testing.T) {
+	cases := []struct {
+		name      string
+		perm      os.FileMode
+		operation groupmembership.FileOperation
+		opName    string
+		wantRule  string
+	}{
+		{
+			name:      "world_writable_read",
+			perm:      0o666,
+			operation: groupmembership.FileOpRead,
+			opName:    "read",
+			wantRule:  "world-writable",
+		},
+		{
+			name:      "not_writable_write",
+			perm:      0o444,
+			operation: groupmembership.FileOpWrite,
+			opName:    "write",
+			wantRule:  "not-writable",
+		},
+	}
+
+	fs := NewFileSystem(FileSystemConfig{})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			filePath := filepath.Join(tu.SafeTempDir(t), "subject.txt")
+			writeFileWithPerm(t, filePath, []byte("content"), tc.perm)
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = file.Close() })
+
+			recorder := captureWarnings(t)
+			err = canSafelyAccessFile(file, filePath, subjectFileAtPath, tc.operation, fs.GetGroupMembership())
+			require.ErrorIs(t, err, ErrInvalidFilePermissions)
+
+			record := recorder.RequireRecord(t, slog.LevelWarn, permissionRejectionMsg)
+			record.AssertAttrs(t, map[string]any{
+				"path":      filePath,
+				"subject":   subjectFileAtPath.String(),
+				"operation": tc.opName,
+				"mode":      fmt.Sprintf("%04o", tc.perm),
+				"uid":       uint64(os.Getuid()),
+				"gid":       uint64(os.Getgid()),
+				"rule":      tc.wantRule,
+			})
+		})
+	}
+}
+
+// TestRejectionRule covers the rules a real file cannot be built to trigger
+// here -- they need group memberships or ownership the test process cannot
+// arrange -- and the one refusal that arrives with no error to name it.
+func TestRejectionRule(t *testing.T) {
+	cases := []struct {
+		name      string
+		operation groupmembership.FileOperation
+		cause     error
+		want      string
+	}{
+		{name: "world_writable", operation: groupmembership.FileOpRead, cause: groupmembership.ErrFileWorldWritable, want: "world-writable"},
+		{name: "group_writable_non_member", operation: groupmembership.FileOpRead, cause: groupmembership.ErrGroupWritableNonMember, want: "group-writable-non-member"},
+		{name: "permissions_exceed_maximum", operation: groupmembership.FileOpRead, cause: groupmembership.ErrPermissionsExceedMaximum, want: "permissions-exceed-maximum"},
+		{name: "not_owner", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotOwner, want: "not-owner"},
+		{name: "not_writable", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotWritable, want: "not-writable"},
+		// The write policy answers false with no error only when the file's
+		// group has a member besides its owner.
+		{name: "write_refused_without_a_cause", operation: groupmembership.FileOpWrite, cause: nil, want: "group-writable-not-sole-member"},
+		{name: "read_refused_without_a_cause", operation: groupmembership.FileOpRead, cause: nil, want: "unknown"},
+		{name: "unrecognized_cause", operation: groupmembership.FileOpRead, cause: errors.New("something else"), want: "unknown"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cause := tc.cause
+			if cause != nil {
+				// The policies wrap their sentinels before returning them, so
+				// a rule matched by identity alone would not hold in practice.
+				cause = fmt.Errorf("with permissions 660: %w", cause)
+			}
+			assert.Equal(t, tc.want, rejectionRule(tc.operation, cause))
+		})
+	}
+}
+
+// TestAtomicMoveFile_SafeSourceStillMoves is the other half of the reordering:
+// the sources the read policy accepts must still move, with requiredPerm
+// applied at the destination.
+func TestAtomicMoveFile_SafeSourceStillMoves(t *testing.T) {
+	sources := []struct {
+		name string
+		perm os.FileMode
+	}{
+		{name: "owner_only", perm: 0o600},
+		// Group-writable in a group the caller belongs to: the read policy
+		// admits this, and the reordering must not turn it into a refusal.
+		{name: "group_writable_member", perm: 0o660},
+	}
+
+	const requiredPerm = os.FileMode(0o644)
+	for _, src := range sources {
+		t.Run(src.name, func(t *testing.T) {
+			dir := tu.SafeTempDir(t)
+			srcPath := filepath.Join(dir, "src.txt")
+			dstPath := filepath.Join(dir, "dst.txt")
+			content := []byte("moved content")
+			writeFileWithPerm(t, srcPath, content, src.perm)
+
+			fs := NewFileSystem(FileSystemConfig{})
+			require.NoError(t, fs.AtomicMoveFile(srcPath, dstPath, requiredPerm))
+
+			got, err := os.ReadFile(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, content, got)
+
+			info, err := os.Lstat(dstPath)
+			require.NoError(t, err)
+			assert.Equal(t, requiredPerm, info.Mode().Perm())
+			assert.NoFileExists(t, srcPath)
+		})
+	}
+}
+
+// openSourceForMove opens name under dir the way atomicMoveFileCore does, and
+// returns the directory fd and the open file for a direct moveOpenFileCore
+// call.
+func openSourceForMove(t *testing.T, fs FileSystem, dir, name string) (dirFd int, file File) {
+	t.Helper()
+	osfs, ok := fs.(*osFS)
+	require.True(t, ok, "NewFileSystem must return *osFS")
+	dirFd = dirFdForTest(t, fs, dir)
+	opened, err := osfs.openFileAt(dirFd, name, os.O_RDONLY, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = opened.Close() })
+	return dirFd, opened
+}
+
+// TestMoveOpenFileCore_RejectsRequiredPermBeforeRename covers the gap between
+// the two permission policies: ValidateRequestedPermissions lets requiredPerm
+// through at the entry, and CanCurrentUserSafelyWriteFile then refuses the file
+// it produces. That used to be found only after the rename, leaving the
+// destination replaced.
+func TestMoveOpenFileCore_RejectsRequiredPermBeforeRename(t *testing.T) {
+	// A mode with no owner-write bit is the one refusal reachable without
+	// arranging group memberships: the write policy requires the caller to be
+	// able to write the file it is about to accept.
+	t.Run("required_perm_not_writable_by_owner", func(t *testing.T) {
+		assertRejectedBeforeRename(t, 0o444, func(*testing.T, string) {})
+	})
+
+	// The case the design document is about: a group-writable requiredPerm in a
+	// group with more than one member. It needs such a group to exist.
+	t.Run("required_perm_group_writable_in_shared_group", func(t *testing.T) {
+		gid, ok := sharedGroupOfCurrentUser(t)
+		if !ok {
+			t.Skip("the caller belongs to no group with another member, so a shared-group destination cannot be built")
+		}
+		assertRejectedBeforeRename(t, 0o660, func(t *testing.T, srcPath string) {
+			t.Helper()
+			if err := os.Chown(srcPath, -1, gid); err != nil {
+				t.Skipf("cannot put the source in the shared group: %v", err)
+			}
+		})
+	})
+}
+
+// assertRejectedBeforeRename runs moveOpenFileCore with requiredPerm over a
+// source prepared by prepare, and asserts that it refused before touching the
+// destination, which holds known content the refusal must leave in place.
+func assertRejectedBeforeRename(t *testing.T, requiredPerm os.FileMode, prepare func(*testing.T, string)) {
+	t.Helper()
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	srcContent := []byte("source content")
+	dstContent := []byte("destination content that must survive")
+	require.NoError(t, os.WriteFile(srcPath, srcContent, 0o600))
+	require.NoError(t, os.WriteFile(dstPath, dstContent, 0o600))
+	prepare(t, srcPath)
+
+	fs := NewFileSystem(FileSystemConfig{})
+	gm := fs.GetGroupMembership()
+	// Without this, the test would not say which of the two policies refused:
+	// a requiredPerm the entry check rejects never reaches the one under test.
+	require.NoError(t, gm.ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite),
+		"requiredPerm must pass the entry check, or this test proves nothing about the later one")
+
+	recorder := captureWarnings(t)
+	dirFd, file := openSourceForMove(t, fs, dir, "src.txt")
+	err := moveOpenFileCore(file, dirFd, "src.txt", dirFd, "dst.txt", dstPath, requiredPerm, gm)
+	require.ErrorIs(t, err, ErrInvalidFilePermissions)
+	assert.NotErrorIs(t, err, ErrDestinationCommitted, "the refusal must come before the rename")
+
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, dstContent, got, "the destination must be untouched")
+	got, err = os.ReadFile(srcPath)
+	require.NoError(t, err)
+	assert.Equal(t, srcContent, got, "the source must still be where it was")
+
+	// The record names the destination path while describing the source inode,
+	// so it has to mark the subject as the pending destination.
+	record := recorder.RequireRecord(t, slog.LevelWarn, permissionRejectionMsg)
+	record.AssertAttrs(t, map[string]any{
+		"path":      dstPath,
+		"subject":   subjectPendingDestination.String(),
+		"operation": "write",
+	})
+}
+
+// sharedGroupOfCurrentUser returns a gid the current user belongs to that has
+// at least one other member, which is what CanCurrentUserSafelyWriteFile
+// refuses a group-writable file for.
+func sharedGroupOfCurrentUser(t *testing.T) (gid int, ok bool) {
+	t.Helper()
+	groups, err := os.Getgroups()
+	require.NoError(t, err)
+	current, err := user.Current()
+	require.NoError(t, err)
+
+	gm := groupmembership.New()
+	for _, candidate := range groups {
+		// #nosec G115 - a gid from os.Getgroups is a valid gid
+		members, err := gm.GetGroupMembers(uint32(candidate))
+		if err != nil {
+			continue
+		}
+		if len(members) != 1 || members[0] != current.Username {
+			return candidate, true
+		}
+	}
+	return 0, false
+}
+
+// TestMoveOpenFileCore_PostMoveIdentityFailureIsDestinationCommitted covers the
+// one outcome that leaves the destination changed and still returns an error.
+// The caller has to be able to tell it apart from a move that did nothing.
+func TestMoveOpenFileCore_PostMoveIdentityFailureIsDestinationCommitted(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	srcPath := filepath.Join(dir, "src.txt")
+	dstPath := filepath.Join(dir, "dst.txt")
+	content := []byte("moved content")
+	require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+	require.NoError(t, os.WriteFile(dstPath, []byte("previous content"), 0o600))
+
+	recorder := captureWarnings(t)
+	errIdentity := errors.New("simulated post-move identity failure")
+	orig := verifyMovedFileOverride
+	t.Cleanup(func() { verifyMovedFileOverride = orig })
+	verifyMovedFileOverride = func(File, int, string) error { return errIdentity }
+
+	fs := NewFileSystem(FileSystemConfig{})
+	dirFd, file := openSourceForMove(t, fs, dir, "src.txt")
+	err := moveOpenFileCore(file, dirFd, "src.txt", dirFd, "dst.txt", dstPath, 0o600, fs.GetGroupMembership())
+
+	require.ErrorIs(t, err, ErrDestinationCommitted)
+	require.ErrorIs(t, err, errIdentity)
+
+	got, err := os.ReadFile(dstPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got, "the rename went through, so the destination holds the moved content")
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, destinationCommittedMsg)
+	record.AssertAttrs(t, map[string]any{"destination": dstPath})
 }
 
 // TestAtomicMoveFile_WritesUnderOSManagedSymlink is the same obligation seen

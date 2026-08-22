@@ -49,7 +49,7 @@ func NewFileSystem(config FileSystemConfig) FileSystem {
 	return fs
 }
 
-// DefaultFileSystem is the default filesystem implementation
+// defaultFS is the default filesystem implementation
 var defaultFS = NewFileSystem(FileSystemConfig{})
 
 // FileSystem is an interface that abstracts secure file system operations
@@ -165,12 +165,10 @@ func safeWriteFileOverwriteWithFS(filePath common.ResolvedPath, content []byte, 
 // and rejected here by openDirNoSymlinks, which pins each parent directory to an
 // inode, and by openFileAt, which rejects a symlink at the leaf.
 //
-// Once both directory fds are held, the move itself resolves no path a second
-// time: it works from the fds and a single name on each side. The post-move
-// destination validation below is the one exception, and Phase 4a of the design
-// document replaces it with an fd-anchored identity check.
+// It opens and validates the source; moveOpenFileCore does everything from the
+// first side effect onwards. Once both directory fds are held no path is
+// resolved a second time.
 func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osFS) error {
-	// Pre-validate requested permissions
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(requiredPerm, groupmembership.FileOpWrite); err != nil {
 		return err
 	}
@@ -190,9 +188,8 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 	}
 	defer closeDirFd(dstDirFd, dstDir)
 
-	// Open the source file safely BEFORE changing permissions, relative to the
-	// directory fd just verified, so that neither the parent nor the leaf can be
-	// substituted by a symlink.
+	// Opened relative to the directory fd just verified, so that neither the
+	// parent nor the leaf can be substituted by a symlink.
 	srcFile, err := fs.openFileAt(srcDirFd, srcName, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open source file safely: %w", err)
@@ -203,44 +200,70 @@ func atomicMoveFileCore(absSrc, absDst string, requiredPerm os.FileMode, fs *osF
 		}
 	}()
 
-	// Set secure permissions via the opened file handle (fchmod).
-	// This avoids the TOCTOU race where os.Chmod follows symlinks and could
-	// modify permissions on an unintended target before symlink checks run.
-	if err := srcFile.Chmod(requiredPerm); err != nil {
-		return fmt.Errorf("failed to set secure permissions on source: %w", err)
-	}
-
-	// Validate source file properties
-	if err := canSafelyAccessFile(srcFile, absSrc, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {
+	// Validate the source before anything is changed about it: the mode this
+	// check reads must be the caller's, not one this function has already
+	// narrowed. A source it refuses is left exactly as it was found.
+	if err := canSafelyAccessFile(srcFile, absSrc, subjectFileAtPath, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("source file validation failed: %w", err)
 	}
 
-	// Move the verified source inode into place. moveFileAnchored anchors the
-	// move to srcFile's fd (on Linux) rather than re-resolving the source by
-	// path name, so a replacement of the source entry between the open above and
-	// this call cannot cause a different inode to be moved (see
-	// safe_file_linux.go).
-	if err := moveFileAnchored(srcFile, srcDirFd, srcName, dstDirFd, dstName); err != nil {
-		return fmt.Errorf("atomic move failed: %w", err)
+	return moveOpenFileCore(srcFile, srcDirFd, srcName, dstDirFd, dstName, absDst, requiredPerm, fs.GetGroupMembership())
+}
+
+const destinationCommittedMsg = "destination was replaced before the failure; it now holds the moved file"
+
+var errRenameCommitted = errors.New("failure occurred after the rename replaced the destination")
+
+// moveOpenFileCore moves the inode behind file to dstName under dstDirFd; the
+// caller has already opened the source and validated it for reading.
+//
+// file must be the source's own fd, not a handle reopened by name: the read
+// validation the caller ran does not look at the owner, so an attacker's file
+// substituted at the source name would pass it just as well. dstPath is used
+// for messages only -- nothing here resolves it.
+//
+// A failure once the rename has replaced the destination is wrapped in
+// ErrDestinationCommitted; nothing is rolled back.
+func moveOpenFileCore(file File, srcDirFd int, srcName string, dstDirFd int, dstName, dstPath string, requiredPerm os.FileMode, gm *groupmembership.GroupMembership) error {
+	// fchmod rather than os.Chmod: the fd cannot be redirected by a symlink
+	// swapped in at the source name.
+	if err := file.Chmod(requiredPerm); err != nil {
+		return fmt.Errorf("failed to set secure permissions on source: %w", err)
 	}
 
-	// Validate destination file after move
-	dstFile, err := fs.SafeOpenFile(absDst, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open destination file safely: %w", err)
-	}
-	defer func() {
-		if closeErr := dstFile.Close(); closeErr != nil {
-			slog.Warn("error closing destination file", slog.Any("error", closeErr))
-		}
-	}()
-
-	// Final validation of destination file
-	if err := canSafelyAccessFile(dstFile, absDst, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
+	// The destination write policy is applied to this fd before the rename:
+	// the inode is the same, so the verdict is the same, but a refusal no
+	// longer arrives over a destination that has already been replaced.
+	if err := canSafelyAccessFile(file, dstPath, subjectPendingDestination, groupmembership.FileOpWrite, gm); err != nil {
 		return fmt.Errorf("destination file validation failed: %w", err)
 	}
 
+	if err := moveFileAnchored(file, srcDirFd, srcName, dstDirFd, dstName); err != nil {
+		// Only the move knows which side of the rename it failed on; asking
+		// the destination instead would read a name taken over right after our
+		// rename as "nothing happened".
+		if errors.Is(err, errRenameCommitted) {
+			return commitFailure(fmt.Errorf("atomic move failed after the destination was replaced: %w", err), dstPath)
+		}
+		return fmt.Errorf("atomic move failed: %w", err)
+	}
+
+	// Only identity is left to establish; the permissions were checked on this
+	// same inode's fd.
+	if err := verifyMovedFile(file, dstDirFd, dstName); err != nil {
+		return commitFailure(fmt.Errorf("destination identity check failed after the move: %w", err), dstPath)
+	}
+
 	return nil
+}
+
+// commitFailure wraps and logs a failure that happened after the rename had
+// already replaced the destination.
+func commitFailure(err error, dstPath string) error {
+	slog.Warn(destinationCommittedMsg,
+		slog.String("destination", dstPath),
+		slog.Any("error", err))
+	return fmt.Errorf("%w: %w", ErrDestinationCommitted, err)
 }
 
 // safeWriteFileCommon contains the common logic for safe file writing operations
@@ -255,7 +278,6 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		return fmt.Errorf("%w: filePath must be created with NewResolvedPathParentOnly", ErrInvalidFilePath)
 	}
 
-	// Pre-validate requested permissions for write operation
 	if err := fs.GetGroupMembership().ValidateRequestedPermissions(perm, groupmembership.FileOpWrite); err != nil {
 		return err
 	}
@@ -272,8 +294,7 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		}
 	}()
 
-	// Validate the file is a regular file (not a device, pipe, etc.)
-	if err := canSafelyAccessFile(file, absPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyAccessFile(file, absPath, subjectFileAtPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
 	}
 
@@ -313,16 +334,13 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 func ensureDirNoSymlinks(dir string) (string, error) {
 	components := splitPathComponents(dir)
 
-	// Start from the root and traverse step by step
-	// Note: filepath.VolumeName(dir) + string(os.PathSeparator) ensures correct root path on both Unix and Windows.
-	// For example, on Windows: VolumeName("C:\\Users") + "\\" = "C:\\"
+	// VolumeName keeps the root correct on Windows too: VolumeName("C:\\Users") + "\\" = "C:\\".
 	currentPath := filepath.VolumeName(dir) + string(os.PathSeparator)
 
 	for _, component := range components {
 		currentPath = filepath.Join(currentPath, component)
 
-		// Use os.Lstat to check if the current component is a symlink
-		// This doesn't follow symlinks, making it safe
+		// Lstat, so the component being tested for is not itself followed.
 		fi, err := os.Lstat(currentPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -332,11 +350,7 @@ func ensureDirNoSymlinks(dir string) (string, error) {
 			return "", fmt.Errorf("failed to stat %s: %w", currentPath, err)
 		}
 
-		// Check if it's a symlink
 		if fi.Mode()&os.ModeSymlink != 0 {
-			// Allow only well-known OS-managed symlinks whose target matches the
-			// expected value in the allowlist (e.g. /tmp -> /private/tmp on macOS).
-			// All other symlinks -- including unexpected root-owned ones -- are rejected.
 			if !isAllowedOSManagedSymlink(currentPath) {
 				return "", fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
 			}
@@ -350,7 +364,6 @@ func ensureDirNoSymlinks(dir string) (string, error) {
 			continue
 		}
 
-		// Ensure it's a directory (except for the last component which might not exist yet)
 		if !fi.IsDir() {
 			return "", fmt.Errorf("%w: not a directory: %s", ErrInvalidFilePath, currentPath)
 		}
@@ -716,7 +729,6 @@ func splitPathComponents(dir string) []string {
 		current = parent
 	}
 
-	// Reverse the slice to get the correct order (root to target)
 	for i, j := 0, len(components)-1; i < j; i, j = i+1, j-1 {
 		components[i], components[j] = components[j], components[i]
 	}
@@ -740,7 +752,6 @@ func SafeReadFileWithFS(filePath common.ResolvedPath, fs FileSystem) ([]byte, er
 		return nil, fmt.Errorf("%w: empty path", ErrInvalidFilePath)
 	}
 
-	// Use the FileSystem interface consistently for both testing and production
 	file, err := fs.SafeOpenFile(absPath, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, err
@@ -765,7 +776,8 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 		return nil, ErrFileTooLarge
 	}
 
-	// Use io.ReadAll with LimitReader for consistent behavior across implementations
+	// MaxFileSize+1 so that a file that grew past the limit since the Stat
+	// above is caught by the check below rather than silently truncated.
 	content, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
@@ -779,7 +791,6 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 }
 
 // getFileStatInfo retrieves file statistics and validates that the file is a regular file.
-// This helper performs common validation steps used by multiple functions.
 func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -790,7 +801,6 @@ func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, 
 		return nil, nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
 	}
 
-	// Get file stat info for UID/GID
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
@@ -799,60 +809,125 @@ func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, 
 	return fileInfo, stat, nil
 }
 
+// accessSubject says what the fd handed to canSafelyAccessFile is, relative to
+// the path logged alongside it, so a rejection record is readable as what it is.
+type accessSubject int
+
+const (
+	// subjectFileAtPath: the fd is the file the path currently names.
+	subjectFileAtPath accessSubject = iota
+	// subjectPendingDestination: the fd is a file about to be moved to the
+	// path, so the path may name something else, or nothing, right now.
+	subjectPendingDestination
+)
+
+func (s accessSubject) String() string {
+	if s == subjectPendingDestination {
+		return "pending-destination"
+	}
+	return "file-at-path"
+}
+
 // canSafelyAccessFile checks if the current user can safely access a file by validating
 // file permissions, ownership, and group membership in a unified security check.
 // It verifies the file is a regular file and uses groupmembership to validate permissions for the operation.
-func canSafelyAccessFile(file File, filePath string, operation groupmembership.FileOperation, groupMembership *groupmembership.GroupMembership) error {
+func canSafelyAccessFile(file File, filePath string, subject accessSubject, operation groupmembership.FileOperation, groupMembership *groupmembership.GroupMembership) error {
 	fileInfo, stat, err := getFileStatInfo(file, filePath)
 	if err != nil {
 		return err
 	}
 
-	// Use unified permission and ownership check based on operation type
+	var (
+		allowed   bool
+		policyErr error
+		opName    string
+		verb      string
+	)
 	switch operation {
 	case groupmembership.FileOpRead:
-		canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
-		if err != nil {
-			return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
-		}
-		if !canSafelyRead {
-			return fmt.Errorf("%w: %s - current user cannot safely read from this file",
-				ErrInvalidFilePermissions, filePath)
-		}
+		opName, verb = "read", "read from"
+		allowed, policyErr = groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
 	case groupmembership.FileOpWrite:
-		canSafelyWrite, err := groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
-		if err != nil {
-			return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
-		}
-		if !canSafelyWrite {
-			return fmt.Errorf("%w: %s - current user cannot safely write to this file",
-				ErrInvalidFilePermissions, filePath)
-		}
+		opName, verb = "write", "write to"
+		allowed, policyErr = groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
 	default:
 		return fmt.Errorf("%w: unknown operation type", ErrInvalidFileOperation)
+	}
+
+	if policyErr != nil {
+		logPermissionRejection(filePath, opName, subject, fileInfo, stat, operation, policyErr)
+		return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, policyErr)
+	}
+	if !allowed {
+		logPermissionRejection(filePath, opName, subject, fileInfo, stat, operation, nil)
+		return fmt.Errorf("%w: %s - current user cannot safely %s this file",
+			ErrInvalidFilePermissions, filePath, verb)
 	}
 
 	return nil
 }
 
+// permissionRejectionMsg marks a file refused on its permissions. The move
+// path's reordered checks refuse sources that used to be narrowed and then
+// accepted, so the record must say which file and which rule.
+const permissionRejectionMsg = "refused a file on its permissions"
+
+// logPermissionRejection records what an operator needs to act on a refusal.
+func logPermissionRejection(filePath, opName string, subject accessSubject, fileInfo os.FileInfo, stat *syscall.Stat_t, operation groupmembership.FileOperation, cause error) {
+	attrs := []any{
+		slog.String("path", filePath),
+		slog.String("subject", subject.String()),
+		slog.String("operation", opName),
+		slog.String("mode", fmt.Sprintf("%04o", fileInfo.Mode().Perm())),
+		slog.Uint64("uid", uint64(stat.Uid)),
+		slog.Uint64("gid", uint64(stat.Gid)),
+		slog.String("rule", rejectionRule(operation, cause)),
+	}
+	if cause != nil {
+		attrs = append(attrs, slog.Any("error", cause))
+	}
+	slog.Warn(permissionRejectionMsg, attrs...)
+}
+
+// rejectionRule names the policy that refused a file, so records can be told
+// apart without reading the message the policy happened to produce.
+//
+// The names come from groupmembership's sentinels, with one exception it cannot
+// supply: the write policy refuses a group-writable file whose group has another
+// member by returning false with no error. That is the only way either policy
+// answers false without an error, which is what makes naming it from the
+// operation sound.
+func rejectionRule(operation groupmembership.FileOperation, cause error) string {
+	switch {
+	case errors.Is(cause, groupmembership.ErrFileWorldWritable):
+		return "world-writable"
+	case errors.Is(cause, groupmembership.ErrGroupWritableNonMember):
+		return "group-writable-non-member"
+	case errors.Is(cause, groupmembership.ErrPermissionsExceedMaximum):
+		return "permissions-exceed-maximum"
+	case errors.Is(cause, groupmembership.ErrFileNotOwner):
+		return "not-owner"
+	case errors.Is(cause, groupmembership.ErrFileNotWritable):
+		return "not-writable"
+	case cause == nil && operation == groupmembership.FileOpWrite:
+		return "group-writable-not-sole-member"
+	default:
+		return "unknown"
+	}
+}
+
 // canSafelyReadFromFile checks if the current user can safely read from a file with
-// more relaxed permissions than write operations.
-// It verifies the file is a regular file and uses groupmembership to validate read permissions.
+// more relaxed permissions than write operations. It is canSafelyAccessFile's
+// read check with the file's os.FileInfo handed back, which the read path needs
+// for the size limit.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
-	fileInfo, stat, err := getFileStatInfo(file, filePath)
+	fileInfo, _, err := getFileStatInfo(file, filePath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Use comprehensive read-specific permission check from groupmembership
-	// This covers world-writable checks, group membership validation, and permission validation
-	canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
-	}
-	if !canSafelyRead {
-		return nil, fmt.Errorf("%w: %s - current user cannot safely read from this file",
-			ErrInvalidFilePermissions, filePath)
+	if err := canSafelyAccessFile(file, filePath, subjectFileAtPath, groupmembership.FileOpRead, groupMembership); err != nil {
+		return nil, err
 	}
 
 	return fileInfo, nil
