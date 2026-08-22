@@ -1006,25 +1006,25 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 5-1. package コメントと公開 API の doc コメント
 
-- [ ] `safe_file.go` の package コメント（:1-6）に、`openat2` が使える環境とフォールバック経路とで保証の
+- [x] `safe_file.go` の package コメント（:1-6）に、`openat2` が使える環境とフォールバック経路とで保証の
       強さが異なること、後者は競合の隙を狭めるが排除はしない best-effort であること、本番ターゲットは
       Linux 5.6+ であり非 Linux は開発・限定用途に限ることを英語で追記する（AC-29・31・33）。
-- [ ] `safe_file_nonlinux.go` の package コメント（:3-7）の表現を、上の package コメントと矛盾しない
+- [x] `safe_file_nonlinux.go` の package コメント（:3-7）の表現を、上の package コメントと矛盾しない
       共通の言い回しに揃える。
-- [ ] `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントに、
+- [x] `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントに、
       package コメントの限界の記述への参照（`See the package documentation …`）を英語で足す（AC-30・33）。
-- [ ] **古くなった仕組みの説明を書き換える。** `AtomicMoveFile` の doc コメント（`safe_file.go:100-104`）は
+- [x] **古くなった仕組みの説明を書き換える。** `AtomicMoveFile` の doc コメント（`safe_file.go:100-104`）は
       「`SafeOpenFile` via openat2 RESOLVE_NO_SYMLINKS for the source、`ensureParentDirsNoSymlinks` for the
       destination parent」と、Phase 3 で置き換わる仕組みを名指ししている。`SafeWriteFileOverwrite` の
       doc コメント（:117-127）も「falls back to path verification before opening the file」と、一時ファイル
       方式になる前の手順を説明している。両方を新しい仕組み（`openDirNoSymlinks`／`openFileAt`、および
       一時ファイルへ書いて差し替える手順）に合わせて書き直す。
-- [ ] `AtomicMoveFile` の doc コメントに [02_architecture.md](02_architecture.md) § 3.4.4 が挙げる 4 点を
+- [x] `AtomicMoveFile` の doc コメントに [02_architecture.md](02_architecture.md) § 3.4.4 が挙げる 4 点を
       英語で追記する（AC-08・09）。
-- [ ] `SafeWriteFileOverwrite` の doc コメントに、差し替えに到達する前の失敗では宛先が書き込み前の内容の
+- [x] `SafeWriteFileOverwrite` の doc コメントに、差し替えに到達する前の失敗では宛先が書き込み前の内容の
       ままであること、到達後の失敗は `ErrDestinationCommitted` を含み `errors.Is` で判別できることを英語で
       追記する（[02_architecture.md](02_architecture.md) § 5.2）。
-- [ ] `canSafelyReadFromFile` の doc コメント（`safe_file.go:448-450`）に、読み取り検査が所有者 UID を見ず
+- [x] `canSafelyReadFromFile` の doc コメント（`safe_file.go:448-450`）に、読み取り検査が所有者 UID を見ず
       `(gid, mode)` だけで判定すること、それが意図的であること、および AC-32 が挙げる 2 つの理由
       （ディレクトリ権限監査との役割分担、分離運用の成立条件）を英語で書く。あわせて、この非対称性が
       「ソースをパス名で開き直してはならない」理由でもあることを 1 文で書く

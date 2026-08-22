@@ -3,8 +3,13 @@
 // Package safefileio provides secure file I/O operations with protection against
 // common security vulnerabilities like symlink attacks and TOCTOU race conditions.
 //
-// This file contains non-Linux platform implementation that uses the portable
-// two-phase verification method (safeOpenFileFallback).
+// This file contains the non-Linux platform implementation. openat2 does not
+// exist here, so every open takes the fallback route's portable two-phase
+// verification (safeOpenFileFallback), which is best-effort: it narrows the
+// window in which a path component can be substituted, and detects a
+// substitution that did occur, but it does not eliminate the window. These
+// platforms are for development and limited use, not for production; see the
+// package documentation in safe_file.go.
 package safefileio
 
 import (

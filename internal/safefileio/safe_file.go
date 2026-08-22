@@ -4,6 +4,30 @@
 // Platform-specific implementations:
 //   - Linux: see safe_file_linux.go (uses openat2 with fallback to portable method)
 //   - Others: see safe_file_nonlinux.go (uses portable method only)
+//
+// # How strong the guarantees are depends on the route
+//
+// The two routes do not offer the same guarantee, and callers that need the
+// strong one have to know which route they are on.
+//
+// On the openat2 route the kernel resolves the path and opens it in a single
+// system call with RESOLVE_NO_SYMLINKS, so there is no moment between checking
+// a path and using it: the race this package defends against cannot occur.
+//
+// The fallback route -- taken whenever openat2 is unavailable (Linux 5.5 and
+// earlier, every non-Linux platform) or has been switched off with
+// FileSystemConfig.DisableOpenat2 -- verifies the parent directories, opens
+// with O_NOFOLLOW, and verifies again. That is best-effort: it narrows the
+// window in which a component can be substituted, and detects a substitution
+// that did occur, but it does not eliminate the window. The same applies to
+// opening a directory, which the fallback route performs as a walk followed by
+// a separate open. Once a directory fd is held, no path is resolved again and
+// the window is closed for everything that follows.
+//
+// The production target for this project is therefore Linux 5.6 or later,
+// where the openat2 route is taken. Non-Linux platforms are for development
+// and limited use, not for production. See docs/user/security-risk-assessment.md,
+// "Assumptions and Limitations".
 package safefileio
 
 import (
@@ -61,11 +85,25 @@ var defaultFS = newOSFS(FileSystemConfig{})
 
 // FileSystem is an interface that abstracts secure file system operations
 type FileSystem interface {
-	// SafeOpenFile opens a file with security checks to prevent symlink attacks and TOCTOU race conditions
+	// SafeOpenFile opens a file with security checks to prevent symlink attacks
+	// and TOCTOU race conditions. See the package documentation for how strong
+	// that protection is on each route.
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
-	// AtomicMoveFile atomically moves a file from source to destination with secure permissions
+	// AtomicMoveFile atomically moves a file from source to destination with
+	// secure permissions. See the package documentation for how strong the
+	// symlink and TOCTOU protection is on each route.
+	//
+	// The move is the point of no return. If the rename onto the destination
+	// succeeds and a later step fails, AtomicMoveFile returns an error that
+	// wraps ErrDestinationCommitted, and the destination holds the moved file:
+	// the caller can tell that case apart with errors.Is. A file that was at
+	// the destination beforehand is not restored -- it was replaced by the
+	// rename. No rollback is attempted, precisely because deleting the moved
+	// file would not bring the previous content back; leaving the caller with
+	// neither version is worse than leaving it with a file whose verification
+	// failed.
 	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 }
 
@@ -144,9 +182,23 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 }
 
 // SafeWriteFileOverwrite writes a file safely, allowing overwrite of existing files.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations,
-// eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
-// On systems without openat2, it falls back to path verification before opening the file.
+//
+// The content is written to a temporary file in the destination's own directory
+// and renamed over the destination, so the destination is only ever the content
+// it already had or the content of a completed write -- never a truncated or
+// half-written one. Everything is done through a directory fd taken once at the
+// start: the destination's parent is opened with openDirNoSymlinks, and the
+// temporary file and the existing destination are reached with openFileAt
+// relative to that fd, so no path is resolved a second time. See the package
+// documentation for how strong the symlink and TOCTOU protection is on each
+// route.
+//
+// If the write fails before the rename, the destination still holds the content
+// it had before the call and no temporary file is left in its directory. If it
+// fails after the rename, the destination holds the new content and the error
+// wraps ErrDestinationCommitted, so the caller can tell the two apart with
+// errors.Is; in that case a temporary entry may remain, and the failure is
+// recorded with its path.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
@@ -983,7 +1035,8 @@ const MaxFileSize = 128 * 1024 * 1024
 
 // SafeReadFile reads a file safely after validating the path and checking file properties.
 // It enforces a maximum file size of MaxFileSize to prevent memory exhaustion attacks.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations.
+// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations;
+// see the package documentation for how strong that protection is on each route.
 func SafeReadFile(filePath common.ResolvedPath) ([]byte, error) {
 	return SafeReadFileWithFS(filePath, defaultFS)
 }
@@ -1163,6 +1216,30 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // more relaxed permissions than write operations. It is canSafelyAccessFile's
 // read check with the file's os.FileInfo handed back, which the read path needs
 // for the size limit.
+//
+// The read check judges on (gid, mode) alone and deliberately does not look at
+// the owner's UID, where the write check does. The asymmetry is intended, for
+// two reasons.
+//
+// First, whether an owner is acceptable is already decided elsewhere: the
+// directory permission audit in internal/security requires every directory on
+// the path to be owned by root or by the invoking user. That is the stronger
+// check of the two -- a file's owner only says who can rewrite its content,
+// while a directory's owner says who can swap the entry for a different file
+// altogether, and where swapping is possible an owner check on the file is
+// worth nothing. It also covers read targets that are not hash-verified, such
+// as the hash files themselves. Repeating it per file would buy nothing.
+//
+// Second, a reader that is not the owner is a requirement of the separated
+// record/run setup, not an accident: the hash files are deliberately not owned
+// by the account that runs the commands, so that account cannot rewrite its
+// own hashes. Requiring the owner to match would stop the production
+// configuration from working at all, along with the ordinary case of a non-root
+// runner reading root-owned binaries and configuration.
+//
+// This is also why a source must never be reopened by path name once it has
+// been verified through an fd: since the read check does not look at the owner,
+// a file an attacker substituted at that path would pass it.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, _, err := getFileStatInfo(file, filePath)
 	if err != nil {
