@@ -164,14 +164,33 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
         return safeOpenFileFallback(absPath, flag, perm)
     }
     how := openHow{
-        flags:   uint64(flag),
-        mode:    uint64(perm),
+        flags:   uint64(flag | unix.O_CLOEXEC),
+        mode:    openat2Mode(flag, perm), // Pass 0 for an open that does not create
         resolve: ResolveNoSymlinks, // Disable symbolic link resolution (atomic)
     }
     fd, err := openat2(AtFdcwd, absPath, &how)
     // ...
 }
+
+// openat2 retries while the kernel reports EINTR. EINTR means the open never
+// took effect, so a retry redoes the same operation rather than repeating it.
+func openat2(dirfd int, pathname string, how *openHow) (int, error) {
+    for {
+        fd, err := openat2Syscall(dirfd, pathname, how)
+        if errors.Is(err, syscall.EINTR) {
+            continue
+        }
+        return fd, err
+    }
+}
 ```
+
+`mode` goes through `openat2Mode`. Go's `os.FileMode` places setuid, setgid, and sticky at its own
+bit positions, so passing such a value straight to the kernel delivers a mode the caller did not
+mean; `SafeOpenFile` therefore rejects a `perm` containing those bits with `ErrUnsupportedFileMode`.
+In addition, `openat2(2)` returns `EINVAL` when `mode` is non-zero on a call that does not create a
+file, so 0 is passed for an open without `O_CREAT` / `O_TMPFILE`. This makes success and failure
+agree with the fallback route (where `os.OpenFile` ignores `mode` in the same situation).
 
 #### Security Assessment
 - ✅ **Cryptographic Integrity**: Strong tampering detection with SHA-256
@@ -211,6 +230,16 @@ itself, a 1 GB limit is enforced during binary analysis.
   symbolic link → open with `O_NOFOLLOW` → re-verify. This implementation is robust but, in
   principle, **cannot match the atomicity of `openat2`** and a very small TOCTOU race window
   remains (acknowledged in the code comments).
+- An open on this route takes two steps, because it needs to know whether it created the file
+  itself. When `O_CREAT` is specified without `O_EXCL`, it first opens with `O_EXCL` added; if
+  that succeeds, the file is known to be one it created. If `EEXIST` comes back, it reopens with
+  `O_CREAT` removed, which opens the existing file. This information is needed for the cleanup
+  performed when the second parent-directory check fails. The open fd is always closed, and
+  **only a file that the call itself created** is removed. The removal happens only after
+  confirming that the inode held by the fd and the removal target are the same; when that cannot
+  be confirmed, nothing is removed, a warning is recorded, and the original error is returned. A
+  removal is never performed on the strength of the path name alone (once the second check has
+  failed, whatever that path points to can no longer be trusted).
 - Therefore, **macOS and similar platforms are limited to development or restricted use**. All
   production deployments must use Linux with `openat2` available. On kernels without `openat2`
   support (Linux 5.5 or older), running the tool in production implies accepting the theoretical

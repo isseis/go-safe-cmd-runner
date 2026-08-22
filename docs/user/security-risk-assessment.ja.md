@@ -163,14 +163,32 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
         return safeOpenFileFallback(absPath, flag, perm)
     }
     how := openHow{
-        flags:   uint64(flag),
-        mode:    uint64(perm),
+        flags:   uint64(flag | unix.O_CLOEXEC),
+        mode:    openat2Mode(flag, perm), // 作成を伴わない open では 0 を渡す
         resolve: ResolveNoSymlinks, // シンボリックリンク解決を無効化（アトミック）
     }
     fd, err := openat2(AtFdcwd, absPath, &how)
     // ...
 }
+
+// openat2 は EINTR のあいだ再試行する。EINTR は open が成立しなかったことを
+// 意味するため、再試行は同じ操作の作り直しであって重複実行にはならない。
+func openat2(dirfd int, pathname string, how *openHow) (int, error) {
+    for {
+        fd, err := openat2Syscall(dirfd, pathname, how)
+        if errors.Is(err, syscall.EINTR) {
+            continue
+        }
+        return fd, err
+    }
+}
 ```
+
+`mode` は `openat2Mode` を通します。`os.FileMode` の setuid・setgid・sticky は Go 独自のビット位置にあり、
+そのままカーネルへ渡すと呼び出し元の意図と異なる mode になるため、`SafeOpenFile` はそれらのビットを含む
+`perm` を `ErrUnsupportedFileMode` で拒否します。さらに `openat2(2)` はファイルを作らない呼び出しで
+`mode` が 0 でないと `EINVAL` を返すため、`O_CREAT`／`O_TMPFILE` を伴わない open では 0 を渡します。
+これによりフォールバック経路（`os.OpenFile` は同じ状況で `mode` を無視する）と成否が一致します。
 
 #### セキュリティ評価
 - ✅ **暗号学的整合性**: SHA-256による強力な改ざん検知
@@ -206,6 +224,14 @@ func (fs *osFS) safeOpenFileInternal(absPath string, flag int, perm os.FileMode)
   代替します。実装は堅牢ですが、
   原理的に `openat2` のアトミック性には及ばず、**極めて短い TOCTOU 競合ウィンドウが残ります**（コード内
   コメントでも認識済み）。
+- この経路の open は、自分がファイルを作ったのかどうかを知る必要があるため 2 段階になります。
+  `O_CREAT` を `O_EXCL` なしで指定された場合、まず `O_EXCL` を付けて開き、成功すれば自分が作成した
+  ものと分かります。`EEXIST` になった場合は `O_CREAT` を外して開き直し、既存のファイルを開きます。
+  この情報が要るのは、2 回目の親ディレクトリ確認が失敗したときの後始末のためです。開いた fd は必ず
+  閉じ、**その呼び出し自身が作成したファイルだけ**を削除します。削除は、握っている fd の inode と
+  削除対象が同一であることを確かめてから行い、確認できない場合は削除せず警告を記録して元のエラーを
+  返します。パス名だけを頼りに削除することはありません（2 回目の確認が失敗した時点で、そのパスの
+  指す先はもはや信用できないためです）。
 - このため、**macOS 等は開発・限定用途に限る**運用を推奨します。本番運用は必ず Linux + `openat2` 環境を
   使用してください。`openat2` 非対応のカーネル（Linux 5.5 以下）で本番運用した場合、最悪のケースでは
   検証〜実行間でファイルが差し替えられ得ることを理解してください。
