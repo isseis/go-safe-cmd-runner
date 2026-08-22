@@ -357,10 +357,12 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		closeAfterCommit(tmpFile, absPath)
 		return nil
 	case errors.Is(err, ErrDestinationCommitted):
-		// The rename has already consumed the temporary name: it either no
-		// longer exists or names an inode that is not the one just written, so
-		// there is nothing here that may be removed. Record the name so an
-		// operator can reconcile a leftover entry with this run.
+		// The temporary name has either been consumed by the move, or -- if
+		// the move failed at removing the source after the rename -- is a
+		// second link to the inode now published at the destination. Removing
+		// it would be safe in that one case and impossible in the others, and
+		// buys nothing over the record below, which lets an operator reconcile
+		// a leftover entry with this run.
 		closeAfterCommit(tmpFile, absPath)
 		slog.Warn(tempFileLeftBehindMsg,
 			slog.String("destination", absPath),
@@ -370,7 +372,7 @@ func safeWriteFileCommon(filePath common.ResolvedPath, content []byte, perm os.F
 		// The destination has not been touched; take the temporary file back
 		// out. removeVerifiedFileAt closes the file and records why it could
 		// not remove it, so the caller still sees the failure that got here.
-		_ = removeVerifiedFileAt(tmpFile, dirFd, tmpName)
+		_ = removeVerifiedFileAt(tmpFile, dirFd, dir, tmpName)
 		return err
 	}
 }
@@ -430,7 +432,7 @@ func probeWriteDestination(fs *osFS, dirFd int, name, absPath string) error {
 // random one rather than opened.
 func createTempFileInDir(fs *osFS, dirFd int, prefix string) (File, string, error) {
 	for range maxTempNameAttempts {
-		name, err := randomTempName(prefix)
+		name, err := generateTempName(prefix)
 		if err != nil {
 			return nil, "", err
 		}
@@ -869,8 +871,10 @@ func removeVerifiedFileByPath(file File, path string) error {
 // file is always closed, whether or not the removal happens. The returned error
 // says why the removal was skipped or failed; a caller already on a failure
 // path must not return it in place of the failure that brought it here, which
-// this function has recorded for it.
-func removeVerifiedFileAt(file File, dirFd int, name string) error {
+// this function has recorded for it. dir names the directory dirFd is open on;
+// it is used to make the record locatable and nothing is resolved through it.
+func removeVerifiedFileAt(file File, dirFd int, dir, name string) error {
+	path := filepath.Join(dir, name)
 	verifyErr := verifySameFileAt(file, dirFd, name)
 	closeErr := file.Close()
 
@@ -881,7 +885,7 @@ func removeVerifiedFileAt(file File, dirFd int, name string) error {
 		// into a deletion the substituter chose.
 		slog.Warn("left a temporary file in place: could not confirm it still refers to the inode that was written",
 			withCloseError(closeErr,
-				slog.String("name", name),
+				slog.String("path", path),
 				slog.Any("error", verifyErr))...)
 		return verifyErr
 	}
@@ -889,14 +893,14 @@ func removeVerifiedFileAt(file File, dirFd int, name string) error {
 	if err := unix.Unlinkat(dirFd, name, 0); err != nil {
 		slog.Warn("failed to remove the temporary file left by a failed write",
 			withCloseError(closeErr,
-				slog.String("name", name),
+				slog.String("path", path),
 				slog.Any("error", err))...)
 		return err
 	}
 
 	if closeErr != nil {
 		slog.Warn("failed to close the temporary file removed after a failed write",
-			slog.String("name", name),
+			slog.String("path", path),
 			slog.Any("error", closeErr))
 		return closeErr
 	}

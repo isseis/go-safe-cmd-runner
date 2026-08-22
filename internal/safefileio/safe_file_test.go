@@ -60,6 +60,26 @@ func newFileSystemForRoute(t *testing.T, route openRoute) FileSystem {
 	return fs
 }
 
+// forEachOpenRoute runs body once per open route, on a FileSystem built for
+// that route. The write path takes the concrete type, so this is also what
+// gives a test access to a route other than the default one.
+func forEachOpenRoute(t *testing.T, name string, body func(t *testing.T, fs *osFS)) {
+	t.Helper()
+	for _, route := range openRoutes {
+		subName := route.name
+		if name != "" {
+			subName = name + "/" + route.name
+		}
+		t.Run(subName, func(t *testing.T) {
+			fs := newOSFS(route.config)
+			if route.requireOpenat2 && !fs.IsOpenat2Available() {
+				t.Skip("openat2 is unavailable here, so the openat2 route cannot be exercised")
+			}
+			body(t, fs)
+		})
+	}
+}
+
 func dirFdForTest(t *testing.T, fs FileSystem, dir string) int {
 	t.Helper()
 	osfs, ok := fs.(*osFS)
@@ -1572,24 +1592,28 @@ func assertNoTempFilesLeft(t *testing.T, dir string) {
 
 // TestSafeWriteFileOverwrite_SucceedsWithPermApplied holds the write to the
 // mode the caller asked for, on both a destination it creates and one it
-// replaces. The umask is fixed to a value that would remove a bit of the
-// requested mode, because the previous implementation created the file with
-// O_CREATE and so handed back perm &^ umask; the temporary file's fchmod is
-// what makes the result exact.
+// replaces. Each subtest is a case the previous implementation got wrong in a
+// different way: it handed back perm &^ umask on a file it created, and left an
+// existing destination's own mode alone.
 func TestSafeWriteFileOverwrite_SucceedsWithPermApplied(t *testing.T) {
 	const requestedPerm = os.FileMode(0o640)
 
+	// The umask must actually remove a bit of the requested mode, or the
+	// new_destination case would pass just as well against the O_CREATE open
+	// this task replaced: 0o037 drops the group-read bit of 0o640, which the
+	// temporary file's fchmod is what puts back.
+	//
 	// Umask is process-wide and this package's tests never call t.Parallel();
 	// failing to restore it would quietly break later tests.
-	previousUmask := syscall.Umask(0o022)
+	previousUmask := syscall.Umask(0o037)
 	t.Cleanup(func() { syscall.Umask(previousUmask) })
 
-	t.Run("new_destination", func(t *testing.T) {
+	forEachOpenRoute(t, "new_destination", func(t *testing.T, fs *osFS) {
 		dir := tu.SafeTempDir(t)
 		filePath := filepath.Join(dir, "created.txt")
 		content := []byte("freshly written content")
 
-		require.NoError(t, SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, requestedPerm))
+		require.NoError(t, safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), content, requestedPerm, fs))
 
 		got, err := os.ReadFile(filePath)
 		require.NoError(t, err)
@@ -1601,13 +1625,13 @@ func TestSafeWriteFileOverwrite_SucceedsWithPermApplied(t *testing.T) {
 		assertNoTempFilesLeft(t, dir)
 	})
 
-	t.Run("existing_destination", func(t *testing.T) {
+	forEachOpenRoute(t, "existing_destination", func(t *testing.T, fs *osFS) {
 		dir := tu.SafeTempDir(t)
 		filePath := filepath.Join(dir, "existing.txt")
 		require.NoError(t, os.WriteFile(filePath, []byte("previous content"), 0o600))
 
 		content := []byte("replacement content")
-		require.NoError(t, SafeWriteFileOverwrite(mustResolvedPath(t, filePath), content, requestedPerm))
+		require.NoError(t, safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), content, requestedPerm, fs))
 
 		got, err := os.ReadFile(filePath)
 		require.NoError(t, err)
@@ -1627,29 +1651,31 @@ func TestSafeWriteFileOverwrite_SucceedsWithPermApplied(t *testing.T) {
 // following it, so nothing would be written through the link -- but the refusal
 // this package promises would silently become a replacement.
 func TestSafeWriteFileOverwrite_RejectsSymlinkDestination(t *testing.T) {
-	dir := tu.SafeTempDir(t)
-	targetPath := filepath.Join(dir, "target.txt")
-	targetContent := []byte("content behind the link")
-	require.NoError(t, os.WriteFile(targetPath, targetContent, 0o600))
+	forEachOpenRoute(t, "", func(t *testing.T, fs *osFS) {
+		dir := tu.SafeTempDir(t)
+		targetPath := filepath.Join(dir, "target.txt")
+		targetContent := []byte("content behind the link")
+		require.NoError(t, os.WriteFile(targetPath, targetContent, 0o600))
 
-	linkPath := filepath.Join(dir, "link.txt")
-	require.NoError(t, os.Symlink(targetPath, linkPath))
+		linkPath := filepath.Join(dir, "link.txt")
+		require.NoError(t, os.Symlink(targetPath, linkPath))
 
-	err := SafeWriteFileOverwrite(mustResolvedPath(t, linkPath), []byte("new content"), 0o600)
-	require.ErrorIs(t, err, ErrIsSymlink)
+		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, linkPath), []byte("new content"), 0o600, fs)
+		require.ErrorIs(t, err, ErrIsSymlink)
 
-	got, err := os.ReadFile(targetPath)
-	require.NoError(t, err)
-	assert.Equal(t, targetContent, got, "nothing may be written through the link")
+		got, err := os.ReadFile(targetPath)
+		require.NoError(t, err)
+		assert.Equal(t, targetContent, got, "nothing may be written through the link")
 
-	info, err := os.Lstat(linkPath)
-	require.NoError(t, err)
-	assert.NotZero(t, info.Mode()&os.ModeSymlink, "the destination must still be the symlink itself")
-	linkTarget, err := os.Readlink(linkPath)
-	require.NoError(t, err)
-	assert.Equal(t, targetPath, linkTarget, "the link must still point where it did")
+		info, err := os.Lstat(linkPath)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink, "the destination must still be the symlink itself")
+		linkTarget, err := os.Readlink(linkPath)
+		require.NoError(t, err)
+		assert.Equal(t, targetPath, linkTarget, "the link must still point where it did")
 
-	assertNoTempFilesLeft(t, dir)
+		assertNoTempFilesLeft(t, dir)
+	})
 }
 
 // TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact covers a
@@ -1657,24 +1683,26 @@ func TestSafeWriteFileOverwrite_RejectsSymlinkDestination(t *testing.T) {
 // an existing file the caller may not write. This is the portable half of the
 // pre-commit contract; the linkat-injected half is in safe_file_linux_test.go.
 func TestSafeWriteFileOverwrite_ExistingDestinationRejectedLeavesItIntact(t *testing.T) {
-	dir := tu.SafeTempDir(t)
-	filePath := filepath.Join(dir, "world_writable.txt")
-	originalContent := []byte("content that must survive")
-	require.NoError(t, os.WriteFile(filePath, originalContent, 0o600))
-	// Set the refused mode with chmod rather than at creation: umask would
-	// take the world-writable bit back off and the probe would then accept it.
-	require.NoError(t, os.Chmod(filePath, 0o666))
+	forEachOpenRoute(t, "", func(t *testing.T, fs *osFS) {
+		dir := tu.SafeTempDir(t)
+		filePath := filepath.Join(dir, "world_writable.txt")
+		originalContent := []byte("content that must survive")
+		require.NoError(t, os.WriteFile(filePath, originalContent, 0o600))
+		// Set the refused mode with chmod rather than at creation: umask would
+		// take the world-writable bit back off and the probe would then accept it.
+		require.NoError(t, os.Chmod(filePath, 0o666))
 
-	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("new content"), 0o600)
-	require.ErrorIs(t, err, ErrInvalidFilePermissions)
-	assert.NotErrorIs(t, err, ErrDestinationCommitted,
-		"a refusal before the rename must not claim the destination was replaced")
+		err := safeWriteFileOverwriteWithFS(mustResolvedPath(t, filePath), []byte("new content"), 0o600, fs)
+		require.ErrorIs(t, err, ErrInvalidFilePermissions)
+		assert.NotErrorIs(t, err, ErrDestinationCommitted,
+			"a refusal before the rename must not claim the destination was replaced")
 
-	got, err := os.ReadFile(filePath)
-	require.NoError(t, err)
-	assert.Equal(t, originalContent, got)
+		got, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+		assert.Equal(t, originalContent, got)
 
-	assertNoTempFilesLeft(t, dir)
+		assertNoTempFilesLeft(t, dir)
+	})
 }
 
 // TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted covers the
@@ -1698,9 +1726,7 @@ func TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted(t *testi
 	require.ErrorIs(t, err, errIdentity)
 
 	// The rename went through, so the inode the write filled is now the
-	// destination. That it is still readable is also what says the failure did
-	// not go on to delete it: removing "the temporary file" by identity after
-	// the commit would have removed this very inode.
+	// destination, and it still holds the content that was written.
 	got, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 	assert.Equal(t, content, got)
@@ -1712,3 +1738,156 @@ func TestSafeWriteFileOverwrite_PostCommitFailureIsDestinationCommitted(t *testi
 	assert.Equal(t, dir, filepath.Dir(tempAttr), "the temporary file belongs to the destination's own directory")
 	assert.True(t, strings.HasPrefix(filepath.Base(tempAttr), tempWriteNamePrefix))
 }
+
+// TestCreateTempFileInDir_RetriesUntilNameIsFree covers the collision handling
+// the random names make unreachable in practice. The retry has to claim a
+// different name rather than open the one that is taken: opening it would hand
+// back a file someone else's write is still filling.
+func TestCreateTempFileInDir_RetriesUntilNameIsFree(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	takenName := tempWriteNamePrefix + "already-here"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, takenName), []byte("not ours"), 0o600))
+
+	orig := generateTempNameOverride
+	t.Cleanup(func() { generateTempNameOverride = orig })
+	calls := 0
+	generateTempNameOverride = func(prefix string) (string, error) {
+		calls++
+		if calls == 1 {
+			return takenName, nil
+		}
+		return prefix + "free", nil
+	}
+
+	fs := newOSFS(FileSystemConfig{})
+	dirFd := dirFdForTest(t, fs, dir)
+
+	file, name, err := createTempFileInDir(fs, dirFd, tempWriteNamePrefix)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	assert.Equal(t, 2, calls, "the taken name must be given up, not opened")
+	assert.NotEqual(t, takenName, name)
+
+	// The entry that was already there must still be the file it was.
+	got, err := os.ReadFile(filepath.Join(dir, takenName))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("not ours"), got)
+}
+
+// TestCreateTempFileInDir_GivesUpAfterRepeatedCollisions holds the retry to a
+// bound: a counterparty that keeps taking the name this call is about to use
+// must end the attempt rather than spin.
+func TestCreateTempFileInDir_GivesUpAfterRepeatedCollisions(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	takenName := tempWriteNamePrefix + "always-taken"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, takenName), []byte("not ours"), 0o600))
+
+	orig := generateTempNameOverride
+	t.Cleanup(func() { generateTempNameOverride = orig })
+	calls := 0
+	generateTempNameOverride = func(string) (string, error) {
+		calls++
+		return takenName, nil
+	}
+
+	fs := newOSFS(FileSystemConfig{})
+	dirFd := dirFdForTest(t, fs, dir)
+
+	_, _, err := createTempFileInDir(fs, dirFd, tempWriteNamePrefix)
+	require.ErrorIs(t, err, ErrTempNameExhausted)
+	assert.Equal(t, maxTempNameAttempts, calls)
+}
+
+// TestSafeWriteFileOverwrite_TempFileFailureNamesTheDestination pins what the
+// caller is told when the failure is about a file it has never heard of. The
+// random temporary name is this package's business; the path the caller asked
+// to write is the one that has to appear in the error.
+func TestSafeWriteFileOverwrite_TempFileFailureNamesTheDestination(t *testing.T) {
+	dir := tu.SafeTempDir(t)
+	filePath := filepath.Join(dir, "target.txt")
+
+	orig := generateTempNameOverride
+	t.Cleanup(func() { generateTempNameOverride = orig })
+	// Failing the name generation is the one way to fail this stage without the
+	// cause naming a temporary file itself, which is what lets the assertion
+	// below be about the wrapping rather than about the cause.
+	errNoName := errors.New("simulated name generation failure")
+	generateTempNameOverride = func(string) (string, error) { return "", errNoName }
+
+	err := SafeWriteFileOverwrite(mustResolvedPath(t, filePath), []byte("content"), 0o600)
+	require.ErrorIs(t, err, errNoName)
+	assert.Contains(t, err.Error(), filePath,
+		"the caller must be told which destination failed, not left with a name it has never seen")
+	assert.NotContains(t, err.Error(), tempWriteNamePrefix)
+	assert.NoFileExists(t, filePath)
+}
+
+// TestWriteAndReplace_ReportsWriteAndSyncFailures covers the two steps between
+// the temporary file and the rename. Sync is the reason File carries the method
+// at all -- without it a crash could leave the destination naming an inode
+// whose blocks were never written -- so a failure there must stop the replace.
+func TestWriteAndReplace_ReportsWriteAndSyncFailures(t *testing.T) {
+	errWrite := errors.New("simulated write failure")
+	errSync := errors.New("simulated sync failure")
+
+	tests := []struct {
+		name string
+		file File
+		want error
+	}{
+		{name: "write_fails", file: failingStepFile{writeErr: errWrite}, want: errWrite},
+		{name: "sync_fails", file: failingStepFile{syncErr: errSync}, want: errSync},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A dirFd of -1 is safe to pass: reaching it would mean the failure
+			// was not reported and the replace went ahead anyway, which is the
+			// bug this test is about.
+			err := writeAndReplace(tt.file, -1, "tmp", "dst", "/some/dst", []byte("content"), 0o600, groupmembership.New())
+			require.ErrorIs(t, err, tt.want)
+		})
+	}
+}
+
+// failingStepFile fails one step of the write and passes the rest. Neither a
+// short write nor an fsync error can be produced from a file a test just
+// created, and the write path takes the concrete *osFS, so there is no
+// FileSystem to inject one through.
+type failingStepFile struct {
+	File
+	writeErr error
+	syncErr  error
+}
+
+func (f failingStepFile) Write(p []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	return len(p), nil
+}
+
+func (f failingStepFile) Sync() error { return f.syncErr }
+
+// TestCloseAfterCommit_RecordsFailureWithoutReturningIt pins the one place this
+// package deliberately swallows an error. Once the rename has published the new
+// content, returning a close failure would tell the caller the write did not
+// happen when it did; the record is the only trace left, so it has to exist.
+func TestCloseAfterCommit_RecordsFailureWithoutReturningIt(t *testing.T) {
+	recorder := captureWarnings(t)
+	errClose := errors.New("simulated close failure")
+
+	closeAfterCommit(failingCloseFile{closeErr: errClose}, "/some/dst")
+
+	record := recorder.RequireRecord(t, slog.LevelWarn, tempCloseFailedMsg)
+	record.AssertAttrs(t, map[string]any{"destination": "/some/dst"})
+}
+
+// failingCloseFile fails on Close and on nothing else.
+type failingCloseFile struct {
+	File
+	closeErr error
+}
+
+func (f failingCloseFile) Close() error { return f.closeErr }

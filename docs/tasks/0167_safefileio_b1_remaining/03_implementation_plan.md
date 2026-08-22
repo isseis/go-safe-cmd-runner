@@ -921,11 +921,12 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
       差し替え点 `verifyMovedFile` を差し替えて `rename` 成功後に失敗させ、次の 4 点を確認する。
       - 返るエラーが `errors.Is(err, ErrDestinationCommitted)` を満たす。
       - 宛先の内容が**新しい内容**になっている。
-      - 一時ファイルの削除を試みていない。**実装時の訂正**: `verifyMovedFile` に到達した時点で
-        `moveFileAnchored` は一時ファイル名を既に消費しており（Linux はハードリンク経由の `rename` の後
-        `unlinkat`、非 Linux は `renameat`）、一時ファイル名の inode を直接見ることはできない。同一性で
-        削除すれば消えるのは差し替え済みの**宛先**の inode（＝一時ファイルが持っていた inode）なので、
-        宛先が新しい内容で読めることがこの主張の検証になる。テストのコメントにその旨を書いた。
+      - **この項目は取り下げた（実装時の訂正）**。`verifyMovedFile` に到達した時点で `moveFileAnchored`
+        は一時ファイル名を既に消費しており（Linux はハードリンク経由の `rename` の後 `unlinkat`、
+        非 Linux は `renameat`）、仮に `removeVerifiedFileAt` を呼んでも `fstatat` が空振りして何も
+        消えない。つまり「削除を試みていない」を落とせるテストが書けない。この分岐の検証は残る
+        3 点（`ErrDestinationCommitted` の付与、宛先が新しい内容であること、警告の記録）が担い、
+        いずれも分岐を消すと落ちることを確認済みである。
       - `slog.Warn` に宛先のパスと一時ファイルのパスを含む記録が残る
         （[02_architecture.md](02_architecture.md) § 5.4）。
 - [x] `internal/fileanalysis` の既存テスト（`TestStore_SaveAndLoad`・`TestStore_PreservesExistingFields`・
@@ -965,7 +966,7 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 変更前が 4.621 / 4.564 / 4.553 秒、変更後が 4.738 / 4.657 / 4.609 秒である。
 
 判断: 1 件あたり 0.47 ms の増加であり、`record` 実行 1 回の 4.6 秒に対して 2% にあたる。
-`02_architecture.md` § 3.6.4 が見積もった `fsync` の 0.5〜10 ms のうち下限側に収まっており、
+`02_architecture.md` § 3.6.4 が見積もった `fsync` の 0.5〜10 ms をわずかに下回る値であり、
 対話的な 1 回の実行として受け入れられる範囲である。なお計測環境のファイルシステムは overlay
 （コンテナ）であり、耐久性のあるストレージ上では `fsync` の分がこれより大きく出うる。
 

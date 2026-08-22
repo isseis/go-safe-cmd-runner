@@ -27,6 +27,12 @@ func verifyMovedFile(file File, dirFd int, name string) error {
 	return verifySameFileAt(file, dirFd, name)
 }
 
+// generateTempName produces the random name createTempFileInDir claims with
+// O_EXCL.
+func generateTempName(prefix string) (string, error) {
+	return randomTempName(prefix)
+}
+
 // ensureDirAfterOpen runs the second directory check of
 // openDirNoSymlinksFallback, the one that detects a component swapped in while
 // the directory was being opened.
