@@ -205,7 +205,7 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 // 場所: internal/safefileio/safe_file_linux.go（Linux 専用ビルドファイル）の openat2()/rawOpenat2() 関数
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
     // EINTR のあいだ再試行する。EINTR は open が成立しなかったことを意味するため、
-    // 再試行は同じ操作の作り直しであって重複実行にはならない。
+    // 再試行は同じ操作のやり直しであって重複実行にはならない。
     for {
         fd, err := openat2Syscall(dirfd, pathname, how)
         if errors.Is(err, syscall.EINTR) {
@@ -217,7 +217,7 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 
 func rawOpenat2(dirfd int, pathname string, how *openHow) (int, error) {
     // 呼び出し元が how.resolve に RESOLVE_NO_SYMLINKS を設定し、
-    // シンボリックリンクの追跡を原子的に防止する
+    // シンボリックリンクの追跡をアトミックに防止する
     pathBytes, err := syscall.BytePtrFromString(pathname)
     if err != nil {
         return -1, err
