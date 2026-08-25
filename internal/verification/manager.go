@@ -598,20 +598,14 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 	return nil
 }
 
-// VerifyCommandDependencies verifies everything a command binary depends on:
-// its dynamic library dependencies first, then its recorded shebang interpreter
-// chain. It is called separately from VerifyGroupFiles to avoid the need to track
-// which files in the verification set are command files vs explicit verify_files
-// entries.
+// VerifyCommandDependencies verifies a command's dynamic library dependencies,
+// then its recorded shebang interpreter chain.
 //
-// The two checks are exposed as a single method rather than as two, because the
-// dep-hash cache they share must not outlive one command: shebang verification
-// skips recomputing an interpreter's hash when dynlib verification already
-// confirmed that exact file during this call. A cache carried across commands
-// would let a file replaced between two commands of the same group pass shebang
-// verification on the stale hash. Scoping the cache to this call makes that
-// impossible to get wrong from the outside, and keeps Manager free of per-command
-// mutable state so concurrent callers cannot race on it.
+// The two checks share a dep-hash cache scoped to this single call, not stored
+// on Manager: carrying it across commands could let a file replaced between two
+// commands of the same group pass shebang verification on a stale hash, and
+// scoping it here also keeps Manager free of per-command state that concurrent
+// callers could race on.
 func (m *Manager) VerifyCommandDependencies(cmdPath string, envVars map[string]string) error {
 	verifiedDepHashes := make(map[string]string)
 	if err := m.verifyDynLibDeps(cmdPath, verifiedDepHashes); err != nil {
@@ -621,20 +615,13 @@ func (m *Manager) VerifyCommandDependencies(cmdPath string, envVars map[string]s
 }
 
 // isDeferredHashDirUnavailable reports whether err is a deferred error raised by
-// a read-only Validator because the hash directory was absent or unreadable, and
-// whether that condition is safe to soft-fail here.
-// During dry-run, LoadRecord surfaces both filevalidator.ErrHashDirNotExist (the
-// directory does not exist) and a raw os.ErrPermission (the directory exists but
-// is not readable). Both mean per-file verification already reports the condition
-// as hash_directory_not_found, so dependent checks (dynlib, shebang) must soft-fail
-// rather than abort the dry-run preview.
+// a read-only Validator because the hash directory was absent or unreadable.
 //
-// This soft-fail is gated on m.isDryRun: outside dry-run, VerifyGroupFiles reading
-// the same record normally fails closed before these dependent checks ever run, but
-// that is an implicit ordering assumption of the current callers, not a guarantee.
-// A future caller that invokes VerifyCommandDependencies standalone must not
-// silently skip verification on a permission error, so in
-// production mode this reports false and the caller propagates the error instead.
+// Soft-fail applies only in dry-run: per-file verification already reports this
+// condition as hash_directory_not_found there, so dependent checks must not abort
+// the preview. Outside dry-run this must report false — a standalone caller of
+// VerifyCommandDependencies must not silently skip verification on a permission
+// error, even though today VerifyGroupFiles happens to fail closed first.
 func (m *Manager) isDeferredHashDirUnavailable(err error) bool {
 	if !m.isDryRun {
 		return false
