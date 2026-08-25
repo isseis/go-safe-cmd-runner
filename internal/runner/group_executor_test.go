@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -423,8 +422,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
-	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -497,8 +495,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	// Mock verification manager to verify group files and resolve paths
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVerificationManager.On("ResolvePath", "/bin/some-command").Return("/bin/some-command", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
-	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil)
 
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -576,8 +573,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 
 	// Mock verification manager to resolve paths
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
-	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil,
@@ -1434,8 +1430,7 @@ func TestGroupExecutor_ExecIdentityBound(t *testing.T) {
 	mockVM.On("VerifyGroupFiles", mock.Anything).
 		Return(&verification.Result{ContentHashes: map[string]string{resolved: "sha256:abc"}}, nil)
 	mockVM.On("ResolvePath", unresolved).Return(resolved, nil).Once()
-	mockVM.On("VerifyCommandDynLibDeps", resolved).Return(nil)
-	mockVM.On("VerifyCommandShebangInterpreter", resolved, mock.Anything).Return(nil)
+	mockVM.On("VerifyCommandDependencies", resolved, mock.Anything).Return(nil)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
 
@@ -1495,11 +1490,9 @@ func setupMocksForTest(t *testing.T) (*securitytestutil.MockValidator, *verifica
 	// Setup default behavior for file verification - return empty Result
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil).Maybe()
 
-	// Setup default behavior for dynlib verification - return nil (no error)
-	mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil).Maybe()
-
-	// Setup default behavior for shebang interpreter verification - return nil (no error)
-	mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil).Maybe()
+	// Setup default behavior for command dependency verification (dynlib +
+	// shebang interpreter) - return nil (no error)
+	mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	return mockValidator, mockVerificationManager
 }
@@ -2765,8 +2758,7 @@ func TestCommandFailureLogging_StderrInErrorLog(t *testing.T) {
 			// Mock verification manager
 			mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 			mockVerificationManager.On("ResolvePath", mock.Anything).Return("/bin/false", nil)
-			mockVerificationManager.On("VerifyCommandDynLibDeps", mock.Anything).Return(nil)
-			mockVerificationManager.On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).Return(nil)
+			mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil)
 
 			// Mock validator
 			mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
@@ -3094,7 +3086,7 @@ func TestPreExpandCommands_Error(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles verifies that
-// VerifyCommandDynLibDeps is called only for command binaries, not for files
+// VerifyCommandDependencies is called only for command binaries, not for files
 // listed in verify_files. verify_files entries are passed to VerifyGroupFiles
 // but do not appear in runtimeGroup.Commands, so they must not trigger dynlib
 // verification.
@@ -3119,7 +3111,7 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	)
 
 	// Group has one command (/bin/echo) and one verify_files entry (/etc/hosts).
-	// VerifyCommandDynLibDeps must be called for /bin/echo but NOT for /etc/hosts.
+	// VerifyCommandDependencies must be called for /bin/echo but NOT for /etc/hosts.
 	group := &runnertypes.GroupSpec{
 		Name: "test-group",
 		Commands: []runnertypes.CommandSpec{
@@ -3143,10 +3135,9 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	// ResolvePath is called for each command binary.
 	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	// VerifyCommandDynLibDeps is expected ONLY for the command binary (/bin/echo),
+	// VerifyCommandDependencies is expected ONLY for the command binary (/bin/echo),
 	// not for the verify_files entry (/etc/hosts).
-	mockVerificationManager.On("VerifyCommandDynLibDeps", "/bin/echo").Return(nil)
-	mockVerificationManager.On("VerifyCommandShebangInterpreter", "/bin/echo", mock.Anything).Return(nil)
+	mockVerificationManager.On("VerifyCommandDependencies", "/bin/echo", mock.Anything).Return(nil)
 
 	// Mock command execution to succeed.
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
@@ -3158,12 +3149,10 @@ func TestVerifyGroupFiles_DynLibNotCalledForVerifyFiles(t *testing.T) {
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 	require.NoError(t, err)
 
-	// Assert that VerifyCommandDynLibDeps was called exactly once (for /bin/echo),
+	// Assert that VerifyCommandDependencies was called exactly once (for /bin/echo),
 	// not for /etc/hosts.
-	mockVerificationManager.AssertCalled(t, "VerifyCommandDynLibDeps", "/bin/echo")
-	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", "/etc/hosts")
-	mockVerificationManager.AssertCalled(t, "VerifyCommandShebangInterpreter", "/bin/echo", mock.Anything)
-	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", "/etc/hosts", mock.Anything)
+	mockVerificationManager.AssertCalled(t, "VerifyCommandDependencies", "/bin/echo", mock.Anything)
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDependencies", "/etc/hosts", mock.Anything)
 	mockVerificationManager.AssertExpectations(t)
 }
 
@@ -3211,7 +3200,7 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 	resolveErr := errors.New("command not found")
 	mockVerificationManager.On("ResolvePath", "/nonexistent/command").Return("", resolveErr)
 
-	// VerifyCommandDynLibDeps and VerifyCommandShebangInterpreter must NOT be called
+	// VerifyCommandDependencies must NOT be called
 	// because the ResolvePath failure aborts verifyGroupFiles early.
 	// (No mocks set up; testify will fail if they are called unexpectedly.)
 
@@ -3219,8 +3208,7 @@ func TestVerifyGroupFiles_DynLibResolvePathFailure(t *testing.T) {
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 	require.ErrorIs(t, err, resolveErr)
 
-	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDynLibDeps", mock.Anything)
-	mockVerificationManager.AssertNotCalled(t, "VerifyCommandShebangInterpreter", mock.Anything, mock.Anything)
+	mockVerificationManager.AssertNotCalled(t, "VerifyCommandDependencies", mock.Anything, mock.Anything)
 	mockVerificationManager.AssertExpectations(t)
 }
 
@@ -3280,8 +3268,7 @@ func TestVerifyGroupFiles_ContentHashPropagatedToCommand(t *testing.T) {
 	// ResolvePath is called twice: once in verifyGroupFiles (for ContentHashes lookup)
 	// and once in executeCommandInGroup (for path validation).
 	mockVM.On("ResolvePath", cmdPath).Return(resolvedPath, nil)
-	mockVM.On("VerifyCommandDynLibDeps", resolvedPath).Return(nil)
-	mockVM.On("VerifyCommandShebangInterpreter", resolvedPath, mock.Anything).Return(nil)
+	mockVM.On("VerifyCommandDependencies", resolvedPath, mock.Anything).Return(nil)
 
 	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
 	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
@@ -3340,8 +3327,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_OK(t *testing.T) {
 
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVM.On("ResolvePath", "/usr/local/bin/deploy.sh").Return("/usr/local/bin/deploy.sh", nil)
-	mockVM.On("VerifyCommandDynLibDeps", "/usr/local/bin/deploy.sh").Return(nil)
-	mockVM.On("VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything).Return(nil)
+	mockVM.On("VerifyCommandDependencies", "/usr/local/bin/deploy.sh", mock.Anything).Return(nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil)
@@ -3350,7 +3336,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_OK(t *testing.T) {
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 	require.NoError(t, err)
 
-	mockVM.AssertCalled(t, "VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything)
+	mockVM.AssertCalled(t, "VerifyCommandDependencies", "/usr/local/bin/deploy.sh", mock.Anything)
 	mockVM.AssertExpectations(t)
 }
 
@@ -3395,8 +3381,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
 
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVM.On("ResolvePath", "/usr/local/bin/deploy.sh").Return("/usr/local/bin/deploy.sh", nil)
-	mockVM.On("VerifyCommandDynLibDeps", "/usr/local/bin/deploy.sh").Return(nil)
-	mockVM.On("VerifyCommandShebangInterpreter", "/usr/local/bin/deploy.sh", mock.Anything).Return(shebangErr)
+	mockVM.On("VerifyCommandDependencies", "/usr/local/bin/deploy.sh", mock.Anything).Return(shebangErr)
 
 	ctx := context.Background()
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
@@ -3410,12 +3395,12 @@ func TestVerifyGroupFiles_ShebangInterpreter_Error(t *testing.T) {
 }
 
 // TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH verifies that
-// the PATH passed to VerifyCommandShebangInterpreter is derived from the fully
+// the PATH passed to VerifyCommandDependencies is derived from the fully
 // merged (global → group → command) environment that the runner will actually
 // use, not a hardcoded or system-inherited value.
 //
 // The test sets PATH via group-level env_vars and asserts that the same PATH
-// value is forwarded to VerifyCommandShebangInterpreter verbatim.
+// value is forwarded to VerifyCommandDependencies verbatim.
 // The mock returns nil without inspecting the script's shebang line, proving
 // that only the recorded command_name (held by the verification manager) is
 // used — not a live re-parse of the script file.
@@ -3442,7 +3427,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 
 	// Set PATH via group-level env_vars so that ExpandGroup propagates it
 	// into runtimeGroup.ExpandedEnv, and BuildProcessEnvironment forwards it
-	// to VerifyCommandShebangInterpreter as the effective runtime PATH.
+	// to VerifyCommandDependencies as the effective runtime PATH.
 	group := &runnertypes.GroupSpec{
 		Name:    "test-group",
 		EnvVars: []string{"PATH=" + customPATH},
@@ -3461,12 +3446,10 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
 	mockVM.On("ResolvePath", scriptPath).Return(scriptPath, nil)
-	mockVM.On("VerifyCommandDynLibDeps", scriptPath).Return(nil)
-
-	// Assert that the PATH forwarded to VerifyCommandShebangInterpreter exactly
+	// Assert that the PATH forwarded to VerifyCommandDependencies exactly
 	// matches the group-level env_vars value.
 	mockVM.On(
-		"VerifyCommandShebangInterpreter", scriptPath,
+		"VerifyCommandDependencies", scriptPath,
 		mock.MatchedBy(func(env map[string]string) bool {
 			return env["PATH"] == customPATH
 		}),
@@ -3479,7 +3462,7 @@ func TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH(t *testing.T) 
 	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
 	require.NoError(t, err)
 
-	mockVM.AssertCalled(t, "VerifyCommandShebangInterpreter", scriptPath, mock.Anything)
+	mockVM.AssertCalled(t, "VerifyCommandDependencies", scriptPath, mock.Anything)
 	mockVM.AssertExpectations(t)
 }
 
@@ -3533,95 +3516,6 @@ func TestAuditGroupDirPermissions_ViolationReturnsError(t *testing.T) {
 	err = ge.auditGroupDirPermissions(rg)
 	require.Error(t, err, "expected error when verify_files parent dir is world-writable")
 	assert.ErrorIs(t, err, ErrDirPermViolation)
-}
-
-// TestVerifyCommandCallOrder_DynLibBeforeShebang verifies that
-// VerifyCommandDynLibDeps is called before VerifyCommandShebangInterpreter for
-// every command in a group.  VerifyCommandDynLibDeps resets the per-command
-// dep-hash cache and then repopulates it with freshly verified entries.  If
-// VerifyCommandShebangInterpreter ran first, the cache would still hold stale
-// entries from the previous command; verifyInterpreterHash would then take the
-// cache fast-path and skip the disk re-hash, missing a file replacement.
-func TestVerifyCommandCallOrder_DynLibBeforeShebang(t *testing.T) {
-	// orderTrackingMock records the sequence of VerifyCommandDynLibDeps and
-	// VerifyCommandShebangInterpreter calls to assert ordering.
-	type callRecord struct{ method, path string }
-	var mu sync.Mutex
-	var calls []callRecord
-
-	mockRM := new(runnertestutil.MockResourceManager)
-	mockValidator := new(securitytestutil.MockValidator)
-	mockVerificationManager := new(verificationtestutil.MockManager)
-
-	// Wrap VerifyCommandDynLibDeps / VerifyCommandShebangInterpreter to record
-	// actual invocation order via Run callbacks.
-	mockVerificationManager.
-		On("VerifyCommandDynLibDeps", mock.Anything).
-		Run(func(args mock.Arguments) {
-			mu.Lock()
-			defer mu.Unlock()
-			calls = append(calls, callRecord{"DynLib", args.String(0)})
-		}).Return(nil)
-	mockVerificationManager.
-		On("VerifyCommandShebangInterpreter", mock.Anything, mock.Anything).
-		Run(func(args mock.Arguments) {
-			mu.Lock()
-			defer mu.Unlock()
-			calls = append(calls, callRecord{"Shebang", args.String(0)})
-		}).Return(nil)
-
-	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
-	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
-	mockVerificationManager.On("ResolvePath", "/bin/true").Return("/bin/true", nil)
-
-	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
-	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
-	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
-
-	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 0}, nil,
-	)
-	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
-
-	config := &runnertypes.ConfigSpec{
-		Global: runnertypes.GlobalSpec{Timeout: new(int32(30))},
-	}
-	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
-		Config:              config,
-		Validator:           mockValidator,
-		VerificationManager: mockVerificationManager,
-		ResourceManager:     mockRM,
-	})
-
-	group := &runnertypes.GroupSpec{
-		Name: "order-test-group",
-		Commands: []runnertypes.CommandSpec{
-			{Name: "cmd-echo", Cmd: "/bin/echo", Args: []string{"hello"}},
-			{Name: "cmd-true", Cmd: "/bin/true"},
-		},
-	}
-	runtimeGlobal := &runnertypes.RuntimeGlobal{
-		Spec: &runnertypes.GlobalSpec{Timeout: new(int32(30))},
-	}
-
-	err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal)
-	require.NoError(t, err)
-
-	// For each command the call sequence must be:
-	//   VerifyCommandDynLibDeps(path)  →  VerifyCommandShebangInterpreter(path)
-	// Validate that every DynLib call is immediately followed by the Shebang
-	// call for the same path.
-	require.Len(t, calls, 4, "expected 4 calls: DynLib+Shebang for each of 2 commands")
-	for i := 0; i < len(calls); i += 2 {
-		dynLib := calls[i]
-		shebang := calls[i+1]
-		assert.Equal(t, "DynLib", dynLib.method,
-			"call[%d] must be VerifyCommandDynLibDeps, got %s", i, dynLib.method)
-		assert.Equal(t, "Shebang", shebang.method,
-			"call[%d] must be VerifyCommandShebangInterpreter, got %s", i+1, shebang.method)
-		assert.Equal(t, dynLib.path, shebang.path,
-			"DynLib and Shebang at positions %d/%d must be for the same path", i, i+1)
-	}
 }
 
 // recordingPermChecker records every directory it is asked about and reports no

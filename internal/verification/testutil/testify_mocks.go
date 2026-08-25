@@ -28,14 +28,8 @@ func (m *MockManager) VerifyGroupFiles(input *verification.GroupVerificationInpu
 	return args.Get(0).(*verification.Result), args.Error(1)
 }
 
-// VerifyCommandDynLibDeps mocks the VerifyCommandDynLibDeps method
-func (m *MockManager) VerifyCommandDynLibDeps(cmdPath string) error {
-	args := m.Called(cmdPath)
-	return args.Error(0)
-}
-
-// VerifyCommandShebangInterpreter mocks the VerifyCommandShebangInterpreter method
-func (m *MockManager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
+// VerifyCommandDependencies mocks the VerifyCommandDependencies method
+func (m *MockManager) VerifyCommandDependencies(cmdPath string, envVars map[string]string) error {
 	args := m.Called(cmdPath, envVars)
 	return args.Error(0)
 }

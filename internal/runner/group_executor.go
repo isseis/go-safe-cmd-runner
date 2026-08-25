@@ -402,21 +402,13 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			cmd.ExpandedCmdContentHash = hash
 		}
 
-		if dlErr := ge.verificationManager.VerifyCommandDynLibDeps(resolvedPath); dlErr != nil {
-			slog.Error("Dynamic library verification failed",
-				"group", groupName,
-				"command", resolvedPath,
-				"error", dlErr)
-			return dlErr
-		}
-
 		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
-		if siErr := ge.verificationManager.VerifyCommandShebangInterpreter(resolvedPath, finalEnv); siErr != nil {
-			slog.Error("Shebang interpreter verification failed",
+		if depErr := ge.verificationManager.VerifyCommandDependencies(resolvedPath, finalEnv); depErr != nil {
+			slog.Error("Command dependency verification failed",
 				"group", groupName,
 				"command", resolvedPath,
-				"error", siErr)
-			return siErr
+				"error", depErr)
+			return depErr
 		}
 	}
 

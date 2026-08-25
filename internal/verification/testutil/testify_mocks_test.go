@@ -73,13 +73,14 @@ func TestMockManager_VerifyGroupFiles_NilResult(t *testing.T) {
 	mockManager.AssertExpectations(t)
 }
 
-func TestMockManager_VerifyCommandDynLibDeps(t *testing.T) {
+func TestMockManager_VerifyCommandDependencies(t *testing.T) {
 	mockManager := new(verificationtestutil.MockManager)
-	expectedErr := errors.New("dynlib verification error")
+	expectedErr := errors.New("dependency verification error")
+	env := map[string]string{"PATH": "/usr/bin:/bin"}
 
-	mockManager.On("VerifyCommandDynLibDeps", "/usr/bin/test").Return(expectedErr)
+	mockManager.On("VerifyCommandDependencies", "/usr/bin/test", env).Return(expectedErr)
 
-	err := mockManager.VerifyCommandDynLibDeps("/usr/bin/test")
+	err := mockManager.VerifyCommandDependencies("/usr/bin/test", env)
 
 	assert.Equal(t, expectedErr, err)
 	mockManager.AssertExpectations(t)
