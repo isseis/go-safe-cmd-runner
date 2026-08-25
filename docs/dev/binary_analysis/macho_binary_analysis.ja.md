@@ -179,7 +179,7 @@ macOS の多くのシステムライブラリ（`libSystem.B.dylib` など）は
 
 ### 3.3 runner 実行時の検証
 
-記録済みの `DynLibDeps` が存在する場合、runner の `VerifyCommandDynLibDeps` は
+記録済みの `DynLibDeps` が存在する場合、runner の `VerifyCommandDependencies` は
 各ライブラリのハッシュを実際のファイルと照合する。
 動的リンクバイナリで `DynLibDeps` が未記録の場合は再 record を要求する
 （`ErrDynLibDepsRequired`）。
