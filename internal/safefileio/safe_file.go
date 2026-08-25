@@ -90,7 +90,7 @@ type FileSystem interface {
 	// The rename onto the destination is the point of no return: if a later
 	// step fails, the returned error wraps ErrDestinationCommitted and the
 	// destination holds the moved file, which the caller can tell apart with
-	// errors.Is. Nothing is rolled back -- whatever was at the destination is
+	// errors.Is. There is no rollback: whatever was at the destination is
 	// gone either way, and undoing the move would leave the caller with
 	// neither version.
 	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
@@ -154,10 +154,20 @@ func validateOpenPerm(perm os.FileMode) error {
 	return nil
 }
 
-// AtomicMoveFile atomically moves a file from source to destination with secure permissions.
+// AtomicMoveFile atomically moves a file from source to destination with
+// secure permissions. See the package documentation for how strong the
+// symlink and TOCTOU protection is on each platform.
+//
 // Path resolution is intentionally limited to filepath.Abs (no EvalSymlinks) so that symlinks
 // in srcPath and dstPath's parent remain visible to the security checks in atomicMoveFileCore
 // (openDirNoSymlinks for each parent directory, openFileAt for the source leaf).
+//
+// The rename onto the destination is the point of no return: if a later
+// step fails, the returned error wraps ErrDestinationCommitted and the
+// destination holds the moved file, which the caller can tell apart with
+// errors.Is. There is no rollback: whatever was at the destination is
+// gone either way, and undoing the move would leave the caller with
+// neither version.
 func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
 	absSrc, err := filepath.Abs(srcPath)
 	if err != nil {
