@@ -35,11 +35,6 @@ type Manager struct {
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
 	resultCollector             *ResultCollector
-	// verifiedDepHashes caches path → prefixed hash for deps successfully
-	// verified by verifyDynLibDeps. verifyInterpreterHash consults this cache
-	// to skip redundant hash recomputation when DynLibVerifier already confirmed
-	// the file's integrity during the same runner execution.
-	verifiedDepHashes map[string]string
 }
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
@@ -464,9 +459,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if hashDir == "" {
 		return nil, ErrHashDirectoryEmpty
 	}
-	if hashDir != "" {
-		hashDir = filepath.Clean(hashDir)
-	}
+	hashDir = filepath.Clean(hashDir)
 
 	// Perform security constraint validation
 	if err := validateSecurityConstraints(hashDir, opts); err != nil {
@@ -605,33 +598,30 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 	return nil
 }
 
-// VerifyCommandDynLibDeps performs dynamic library integrity verification for a command binary.
-// It is called separately from VerifyGroupFiles to avoid the need to track
-// which files in the verification set are command files vs explicit verify_files entries.
-func (m *Manager) VerifyCommandDynLibDeps(cmdPath string) error {
-	// Reset the per-command dep-hash cache so that shebang verification for
-	// this command never reuses an entry that was cached for a previous command.
-	// Without this reset, a file replaced between two commands in the same group
-	// would pass shebang verification using the stale cached hash.
-	m.verifiedDepHashes = nil
-	return m.verifyDynLibDeps(cmdPath)
+// VerifyCommandDependencies verifies a command's dynamic library dependencies,
+// then its recorded shebang interpreter chain.
+//
+// The two checks share a dep-hash cache scoped to this single call, not stored
+// on Manager: carrying it across commands could let a file replaced between two
+// commands of the same group pass shebang verification on a stale hash, and
+// scoping it here also keeps Manager free of per-command state that concurrent
+// callers could race on.
+func (m *Manager) VerifyCommandDependencies(cmdPath string, envVars map[string]string) error {
+	verifiedDepHashes := make(map[string]string)
+	if err := m.verifyDynLibDeps(cmdPath, verifiedDepHashes); err != nil {
+		return err
+	}
+	return m.verifyShebangInterpreter(cmdPath, envVars, verifiedDepHashes)
 }
 
 // isDeferredHashDirUnavailable reports whether err is a deferred error raised by
-// a read-only Validator because the hash directory was absent or unreadable, and
-// whether that condition is safe to soft-fail here.
-// During dry-run, LoadRecord surfaces both filevalidator.ErrHashDirNotExist (the
-// directory does not exist) and a raw os.ErrPermission (the directory exists but
-// is not readable). Both mean per-file verification already reports the condition
-// as hash_directory_not_found, so dependent checks (dynlib, shebang) must soft-fail
-// rather than abort the dry-run preview.
+// a read-only Validator because the hash directory was absent or unreadable.
 //
-// This soft-fail is gated on m.isDryRun: outside dry-run, VerifyGroupFiles reading
-// the same record normally fails closed before these dependent checks ever run, but
-// that is an implicit ordering assumption of the current callers, not a guarantee.
-// A future caller that invokes VerifyCommandDynLibDeps / VerifyCommandShebangInterpreter
-// standalone must not silently skip verification on a permission error, so in
-// production mode this reports false and the caller propagates the error instead.
+// Soft-fail applies only in dry-run: per-file verification already reports this
+// condition as hash_directory_not_found there, so dependent checks must not abort
+// the preview. Outside dry-run this must report false — a standalone caller of
+// VerifyCommandDependencies must not silently skip verification on a permission
+// error, even though today VerifyGroupFiles happens to fail closed first.
 func (m *Manager) isDeferredHashDirUnavailable(err error) bool {
 	if !m.isDryRun {
 		return false
@@ -641,7 +631,10 @@ func (m *Manager) isDeferredHashDirUnavailable(err error) bool {
 
 // verifyDynLibDeps performs dynamic library integrity verification when a
 // DynLibDeps snapshot is present in the analysis record.
-func (m *Manager) verifyDynLibDeps(cmdPath string) error {
+// verifiedDepHashes (non-nil, owned by the caller for the duration of one
+// command's verification) receives path → prefixed hash for every dep this call
+// confirmed, so that verifyInterpreterHash can skip recomputing them.
+func (m *Manager) verifyDynLibDeps(cmdPath string, verifiedDepHashes map[string]string) error {
 	if m.fileValidator == nil {
 		return nil
 	}
@@ -688,11 +681,8 @@ func (m *Manager) verifyDynLibDeps(cmdPath string) error {
 		// Cache verified hashes so verifyInterpreterHash can skip redundant
 		// recomputation for interpreter binaries that appear in both DynLibDeps
 		// and shebang_chain.
-		if m.verifiedDepHashes == nil {
-			m.verifiedDepHashes = make(map[string]string, len(record.DynLibDeps))
-		}
 		for _, dep := range record.DynLibDeps {
-			m.verifiedDepHashes[dep.Path] = dep.Hash
+			verifiedDepHashes[dep.Path] = dep.Hash
 		}
 		return nil
 	}
@@ -917,14 +907,17 @@ func (m *Manager) hasMachODynamicLibraryDeps(path string) (bool, error) {
 	return machodylib.HasDynamicLibDeps(path, m.safeFS)
 }
 
-// VerifyCommandShebangInterpreter verifies recorded shebang chain entries for a script command.
+// verifyShebangInterpreter verifies recorded shebang chain entries for a script command.
 // For each entry with ref/path:
 //   - ref is absolute path: EvalSymlinks(ref) must equal path.
 //   - ref is bare command name: PATH re-resolution must equal path.
 //   - path must have a valid hash record.
 //
+// verifiedDepHashes carries the hashes confirmed by verifyDynLibDeps earlier in
+// the same VerifyCommandDependencies call; see verifyInterpreterHash.
+//
 // Returns nil if cmdPath has no analysis record or no shebang chain entries.
-func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[string]string) error {
+func (m *Manager) verifyShebangInterpreter(cmdPath string, envVars map[string]string, verifiedDepHashes map[string]string) error {
 	if m.fileValidator == nil {
 		return nil
 	}
@@ -955,7 +948,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	if len(record.ShebangChain) > 0 {
-		return m.verifyShebangChain(record, record.ShebangChain, envVars)
+		return m.verifyShebangChain(record, record.ShebangChain, envVars, verifiedDepHashes)
 	}
 
 	si := record.ShebangInterpreter
@@ -973,7 +966,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	}
 
 	// Verify that the recorded interpreter binary still exists and matches its hash.
-	if err := m.verifyInterpreterHash(record, si.InterpreterPath); err != nil {
+	if err := m.verifyInterpreterHash(record, si.InterpreterPath, verifiedDepHashes); err != nil {
 		return err
 	}
 
@@ -981,7 +974,7 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 		// Verify the resolved command binary before PATH re-resolution so that a
 		// missing resolved_path record is reported as ErrInterpreterRecordNotFound
 		// rather than being masked by a subsequent path mismatch error.
-		if err := m.verifyInterpreterHash(record, si.ResolvedPath); err != nil {
+		if err := m.verifyInterpreterHash(record, si.ResolvedPath, verifiedDepHashes); err != nil {
 			return err
 		}
 		// Verify that the runtime PATH resolves the command to the recorded binary.
@@ -993,16 +986,16 @@ func (m *Manager) VerifyCommandShebangInterpreter(cmdPath string, envVars map[st
 	return nil
 }
 
-func (m *Manager) verifyShebangChain(record *fileanalysis.Record, chain []fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+func (m *Manager) verifyShebangChain(record *fileanalysis.Record, chain []fileanalysis.ShebangChainEntry, envVars map[string]string, verifiedDepHashes map[string]string) error {
 	for _, entry := range chain {
-		if err := m.verifyShebangChainEntry(record, entry, envVars); err != nil {
+		if err := m.verifyShebangChainEntry(record, entry, envVars, verifiedDepHashes); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fileanalysis.ShebangChainEntry, envVars map[string]string) error {
+func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fileanalysis.ShebangChainEntry, envVars map[string]string, verifiedDepHashes map[string]string) error {
 	if entry.Path == "" {
 		return ErrShebangChainEmptyPath
 	}
@@ -1020,18 +1013,19 @@ func (m *Manager) verifyShebangChainEntry(record *fileanalysis.Record, entry fil
 		}
 	}
 
-	return m.verifyInterpreterHash(record, entry.Path)
+	return m.verifyInterpreterHash(record, entry.Path, verifiedDepHashes)
 }
 
 // verifyInterpreterHash verifies the hash of the given interpreter binary.
 // ErrHashFileNotFound (no record for that binary) is translated into
 // *ErrInterpreterRecordNotFound so callers can distinguish "never recorded"
 // from "tampered" (ErrMismatch).
-func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string) error {
+func (m *Manager) verifyInterpreterHash(record *fileanalysis.Record, interpreterPath string, verifiedDepHashes map[string]string) error {
 	if expectedHash, ok := lookupRecordedDepHash(record, interpreterPath); ok {
 		// If verifyDynLibDeps already hashed and verified this path during the
-		// same execution, the file is known-good; skip redundant I/O.
-		if m.verifiedDepHashes[interpreterPath] == expectedHash {
+		// same VerifyCommandDependencies call, the file is known-good; skip
+		// redundant I/O.
+		if verifiedDepHashes[interpreterPath] == expectedHash {
 			return nil
 		}
 		var sha256Hasher filevalidator.SHA256

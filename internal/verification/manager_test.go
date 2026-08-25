@@ -1633,7 +1633,7 @@ func TestVerify_SchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(cmdPath)
+	err = m.verifyDynLibDeps(cmdPath, map[string]string{})
 	assert.NoError(t, err, "old schema_version record should be skipped (not block execution)")
 }
 
@@ -1667,7 +1667,7 @@ func TestVerify_ELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	verifyErr := m.verifyDynLibDeps(cmdPath, map[string]string{})
 	require.Error(t, verifyErr)
 
 	var errRequired *dynlib.ErrDynLibDepsRequired
@@ -1700,7 +1700,7 @@ func TestVerify_NonELFNoDynLibDeps(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(scriptPath)
+	err = m.verifyDynLibDeps(scriptPath, map[string]string{})
 	assert.NoError(t, err, "non-ELF binary without DynLibDeps should be treated as normal")
 }
 
@@ -1746,7 +1746,7 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	verifyErr := m.verifyDynLibDeps(cmdPath, map[string]string{})
 	require.Error(t, verifyErr, "future schema_version record should return an error")
 
 	var schemaErr *fileanalysis.SchemaVersionMismatchError
@@ -1755,11 +1755,11 @@ func TestVerify_FutureSchemaVersion(t *testing.T) {
 		"Actual schema version should be greater than Expected")
 }
 
-// TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged verifies that
+// TestVerifyDynLibDeps_SucceedsWhenDependenciesUnchanged verifies that
 // verify succeeds when the live dependency resolution at verify time matches
 // the recorded DynLibDeps snapshot exactly, i.e. the environment has not
 // changed since record.
-func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T) {
+func TestVerifyDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF test requires Linux")
 	}
@@ -1774,11 +1774,11 @@ func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T)
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = m.VerifyCommandDynLibDeps(cmdPath)
+	err = m.verifyDynLibDeps(cmdPath, map[string]string{})
 	assert.NoError(t, err, "verify should succeed when live resolution matches the recorded snapshot")
 }
 
-// TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution verifies that
+// TestVerifyDynLibDeps_ReExecutesDependencyResolution verifies that
 // verify re-executes dependency resolution and fails when the live resolution
 // no longer matches the recorded snapshot. Dropping one entry from the
 // recorded DynLibDeps before verify reproduces the simpler half of a
@@ -1786,7 +1786,7 @@ func TestVerifyCommandDynLibDeps_SucceedsWhenDependenciesUnchanged(t *testing.T)
 // record time did not see". TestCompareDynLibDeps_ShadowingCorrelatesBothSides
 // covers the fuller shadowing shape, where a soname's recorded path
 // disappears and a new path for it appears at the same time.
-func TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
+func TestVerifyDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("ELF test requires Linux")
 	}
@@ -1818,7 +1818,7 @@ func TestVerifyCommandDynLibDeps_ReExecutesDependencyResolution(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(cmdPath)
+	verifyErr := m.verifyDynLibDeps(cmdPath, map[string]string{})
 	require.Error(t, verifyErr, "verify must fail when live resolution finds a dependency absent from the recorded snapshot")
 
 	var changedErr *ErrDynLibDepsResolutionChanged
@@ -2033,10 +2033,10 @@ func TestHasDynamicLibraryDeps_NoDeps(t *testing.T) {
 	assert.False(t, hasDeps, "non-ELF file should report no deps")
 }
 
-// TestVerifyCommandDynLibDeps_DynStringError verifies that a DynString error
+// TestVerifyDynLibDeps_DynStringError verifies that a DynString error
 // propagates through the full caller chain (hasDynamicLibraryDeps →
 // verifyDynLibDeps → VerifyCommandDynLibDeps).
-func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
+func TestVerifyDynLibDeps_DynStringError(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	tmpDir := tu.SafeTempDir(t)
 
@@ -2058,17 +2058,17 @@ func TestVerifyCommandDynLibDeps_DynStringError(t *testing.T) {
 	m, err := NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	verifyErr := m.verifyDynLibDeps(corruptPath, map[string]string{})
 	require.Error(t, verifyErr)
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED",
 		"error should include the root cause (DynString failure)")
 }
 
-// TestVerifyCommandDynLibDeps_DynStringError_DryRun verifies that a DynString
+// TestVerifyDynLibDeps_DynStringError_DryRun verifies that a DynString
 // error causes VerifyCommandDynLibDeps to fail even in dry-run mode.
 // Before B3 L1, (false, nil) was silently returned; after the fix, dry-run
 // execution is interrupted by the propagated error.
-func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
+func TestVerifyDynLibDeps_DynStringError_DryRun(t *testing.T) {
 	hashDir := tu.SafeTempDir(t)
 	tmpDir := tu.SafeTempDir(t)
 
@@ -2089,7 +2089,7 @@ func TestVerifyCommandDynLibDeps_DynStringError_DryRun(t *testing.T) {
 	m, err := NewManagerForTest(hashDir, WithDryRunMode())
 	require.NoError(t, err)
 
-	verifyErr := m.VerifyCommandDynLibDeps(corruptPath)
+	verifyErr := m.verifyDynLibDeps(corruptPath, map[string]string{})
 	require.Error(t, verifyErr, "dry-run mode should also propagate the DynString error")
 	assert.Contains(t, verifyErr.Error(), "DT_NEEDED")
 }

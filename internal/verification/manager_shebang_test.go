@@ -77,9 +77,9 @@ func (m *mockFVForShebang) LoadRecord(path string) (*fileanalysis.Record, error)
 
 // --- Tests ---
 
-// TestVerifyCommandShebangInterpreter_NilShebang verifies that a command whose
+// TestVerifyShebangInterpreter_NilShebang verifies that a command whose
 // record has no ShebangInterpreter results in a no-op (nil return).
-func TestVerifyCommandShebangInterpreter_NilShebang(t *testing.T) {
+func TestVerifyShebangInterpreter_NilShebang(t *testing.T) {
 	mockFV := newMockFVForShebang()
 	mockFV.setRecord("/usr/bin/ls", &fileanalysis.Record{
 		SchemaVersion:      fileanalysis.CurrentSchemaVersion,
@@ -89,13 +89,13 @@ func TestVerifyCommandShebangInterpreter_NilShebang(t *testing.T) {
 	})
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/bin/ls", map[string]string{"PATH": "/usr/bin"})
+	err := m.verifyShebangInterpreter("/usr/bin/ls", map[string]string{"PATH": "/usr/bin"}, map[string]string{})
 	assert.NoError(t, err)
 }
 
-// TestVerifyCommandShebangInterpreter_DirectForm_OK verifies that the direct-form
+// TestVerifyShebangInterpreter_DirectForm_OK verifies that the direct-form
 // happy path (interpreter hash OK, symlink still valid) returns nil.
-func TestVerifyCommandShebangInterpreter_DirectForm_OK(t *testing.T) {
+func TestVerifyShebangInterpreter_DirectForm_OK(t *testing.T) {
 	// Use a real interpreter path so EvalSymlinks works for the RawInterpreterPath check.
 	interpPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -113,14 +113,14 @@ func TestVerifyCommandShebangInterpreter_DirectForm_OK(t *testing.T) {
 	// interpreter record exists (no verifyErr → Verify returns nil)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err = m.VerifyCommandShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{})
+	err = m.verifyShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{}, map[string]string{})
 	assert.NoError(t, err)
 }
 
-// TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected verifies that
+// TestVerifyShebangInterpreter_DirectForm_SymlinkRedirected verifies that
 // when the raw interpreter path resolves to a different binary than recorded,
 // ErrInterpreterSymlinkRedirected is returned.
-func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing.T) {
+func TestVerifyShebangInterpreter_DirectForm_SymlinkRedirected(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 
 	// Create two distinct stub binaries.
@@ -148,7 +148,7 @@ func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing
 	require.NoError(t, os.Symlink(targetB, symlink))
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{})
+	err := m.verifyShebangInterpreter("/usr/local/bin/deploy.sh", map[string]string{}, map[string]string{})
 	require.Error(t, err)
 	var redirected *ErrInterpreterSymlinkRedirected
 	assert.ErrorAs(t, err, &redirected)
@@ -157,8 +157,8 @@ func TestVerifyCommandShebangInterpreter_DirectForm_SymlinkRedirected(t *testing
 	assert.Equal(t, targetB, redirected.ActualPath)
 }
 
-// TestVerifyCommandShebangInterpreter_EnvForm_OK verifies the env-form happy path.
-func TestVerifyCommandShebangInterpreter_EnvForm_OK(t *testing.T) {
+// TestVerifyShebangInterpreter_EnvForm_OK verifies the env-form happy path.
+func TestVerifyShebangInterpreter_EnvForm_OK(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	// Create a real sh symlink target so EvalSymlinks works in lookPathInEnv.
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
@@ -178,16 +178,17 @@ func TestVerifyCommandShebangInterpreter_EnvForm_OK(t *testing.T) {
 
 	m := setupManagerWithMockValidator(t, mockFV)
 	// Provide PATH that contains sh so lookPathInEnv can find it.
-	err = m.VerifyCommandShebangInterpreter(
+	err = m.verifyShebangInterpreter(
 		filepath.Join(dir, "process.py"),
 		map[string]string{"PATH": "/usr/bin:/bin"},
+		map[string]string{},
 	)
 	assert.NoError(t, err)
 }
 
-// TestVerifyCommandShebangInterpreter_RecordNotFound verifies that a missing
+// TestVerifyShebangInterpreter_RecordNotFound verifies that a missing
 // interpreter record results in ErrInterpreterRecordNotFound.
-func TestVerifyCommandShebangInterpreter_RecordNotFound(t *testing.T) {
+func TestVerifyShebangInterpreter_RecordNotFound(t *testing.T) {
 	interpPath := "/usr/bin/dash"
 	mockFV := newMockFVForShebang()
 	mockFV.setRecord("/usr/local/bin/script.sh", &fileanalysis.Record{
@@ -202,16 +203,16 @@ func TestVerifyCommandShebangInterpreter_RecordNotFound(t *testing.T) {
 	mockFV.setVerifyErr(interpPath, filevalidator.ErrHashFileNotFound)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+	err := m.verifyShebangInterpreter("/usr/local/bin/script.sh", map[string]string{}, map[string]string{})
 	require.Error(t, err)
 	var notFound *ErrInterpreterRecordNotFound
 	assert.True(t, errors.As(err, &notFound))
 	assert.Equal(t, interpPath, notFound.Path)
 }
 
-// TestVerifyCommandShebangInterpreter_HashMismatch verifies that a hash mismatch
+// TestVerifyShebangInterpreter_HashMismatch verifies that a hash mismatch
 // on the interpreter is propagated.
-func TestVerifyCommandShebangInterpreter_HashMismatch(t *testing.T) {
+func TestVerifyShebangInterpreter_HashMismatch(t *testing.T) {
 	interpPath := "/usr/bin/dash"
 	mockFV := newMockFVForShebang()
 	mockFV.setRecord("/usr/local/bin/script.sh", &fileanalysis.Record{
@@ -225,15 +226,15 @@ func TestVerifyCommandShebangInterpreter_HashMismatch(t *testing.T) {
 	mockFV.setVerifyErr(interpPath, filevalidator.ErrMismatch)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+	err := m.verifyShebangInterpreter("/usr/local/bin/script.sh", map[string]string{}, map[string]string{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, filevalidator.ErrMismatch)
 }
 
-// TestVerifyCommandShebangInterpreter_PathMismatch verifies that when env PATH
+// TestVerifyShebangInterpreter_PathMismatch verifies that when env PATH
 // resolution finds a different binary than recorded, ErrInterpreterPathMismatch
 // is returned.
-func TestVerifyCommandShebangInterpreter_PathMismatch(t *testing.T) {
+func TestVerifyShebangInterpreter_PathMismatch(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	bashPath, err := filepath.EvalSymlinks("/bin/bash")
 	require.NoError(t, err)
@@ -261,28 +262,28 @@ func TestVerifyCommandShebangInterpreter_PathMismatch(t *testing.T) {
 	})
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = m.verifyShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"}, map[string]string{})
 	require.Error(t, err)
 	var mismatch *ErrInterpreterPathMismatch
 	assert.True(t, errors.As(err, &mismatch))
 }
 
-// TestVerifyCommandShebangInterpreter_NoRecord verifies that a command with no
+// TestVerifyShebangInterpreter_NoRecord verifies that a command with no
 // record at all is silently skipped (returns nil).
-func TestVerifyCommandShebangInterpreter_NoRecord(t *testing.T) {
+func TestVerifyShebangInterpreter_NoRecord(t *testing.T) {
 	mockFV := newMockFVForShebang()
 	// No record set — LoadRecord returns ErrRecordNotFound.
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/bin/ls", map[string]string{"PATH": "/usr/bin"})
+	err := m.verifyShebangInterpreter("/usr/bin/ls", map[string]string{"PATH": "/usr/bin"}, map[string]string{})
 	assert.NoError(t, err)
 }
 
-// TestVerifyCommandShebangInterpreter_OldSchema verifies that a command whose
+// TestVerifyShebangInterpreter_OldSchema verifies that a command whose
 // record has a schema version older than CurrentSchemaVersion is rejected with
 // SchemaVersionMismatchError. This guards callers that invoke shebang verification
 // directly (bypassing VerifyGroupFiles), so the schema version is always enforced.
-func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
+func TestVerifyShebangInterpreter_OldSchema(t *testing.T) {
 	mockFV := newMockFVForShebang()
 	// Simulate a record that fails to load with SchemaVersionMismatchError (old schema).
 	oldSchemaErr := &fileanalysis.SchemaVersionMismatchError{
@@ -292,18 +293,18 @@ func TestVerifyCommandShebangInterpreter_OldSchema(t *testing.T) {
 	mockFV.schemaErr["/usr/local/bin/script.sh"] = oldSchemaErr
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+	err := m.verifyShebangInterpreter("/usr/local/bin/script.sh", map[string]string{}, map[string]string{})
 	require.Error(t, err)
 	var schemaErr *fileanalysis.SchemaVersionMismatchError
 	assert.True(t, errors.As(err, &schemaErr), "expected SchemaVersionMismatchError, got: %v", err)
 }
 
-// TestVerifyCommandShebangInterpreter_HashDirUnavailable_Production verifies that
+// TestVerifyShebangInterpreter_HashDirUnavailable_Production verifies that
 // outside dry-run, a deferred hash-directory-unavailable error from LoadRecord
 // (ErrHashDirNotExist or a raw os.ErrPermission) is propagated as an error rather
 // than silently skipped. See issue #972: skipping unconditionally would fail-open
 // for a future caller that invokes shebang verification standalone.
-func TestVerifyCommandShebangInterpreter_HashDirUnavailable_Production(t *testing.T) {
+func TestVerifyShebangInterpreter_HashDirUnavailable_Production(t *testing.T) {
 	for name, deferredErr := range map[string]error{
 		"HashDirNotExist": filevalidator.ErrHashDirNotExist,
 		"Permission":      os.ErrPermission,
@@ -313,16 +314,16 @@ func TestVerifyCommandShebangInterpreter_HashDirUnavailable_Production(t *testin
 			mockFV.schemaErr["/usr/local/bin/script.sh"] = deferredErr
 
 			m := setupManagerWithMockValidator(t, mockFV)
-			err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+			err := m.verifyShebangInterpreter("/usr/local/bin/script.sh", map[string]string{}, map[string]string{})
 			require.Error(t, err, "production mode must fail closed, not skip")
 		})
 	}
 }
 
-// TestVerifyCommandShebangInterpreter_HashDirUnavailable_DryRun verifies that in
+// TestVerifyShebangInterpreter_HashDirUnavailable_DryRun verifies that in
 // dry-run mode, the same deferred hash-directory-unavailable errors are still
 // soft-failed (skip, no error) so the dry-run preview is not aborted.
-func TestVerifyCommandShebangInterpreter_HashDirUnavailable_DryRun(t *testing.T) {
+func TestVerifyShebangInterpreter_HashDirUnavailable_DryRun(t *testing.T) {
 	for name, deferredErr := range map[string]error{
 		"HashDirNotExist": filevalidator.ErrHashDirNotExist,
 		"Permission":      os.ErrPermission,
@@ -333,18 +334,18 @@ func TestVerifyCommandShebangInterpreter_HashDirUnavailable_DryRun(t *testing.T)
 
 			m := setupManagerWithMockValidator(t, mockFV)
 			m.isDryRun = true
-			err := m.VerifyCommandShebangInterpreter("/usr/local/bin/script.sh", map[string]string{})
+			err := m.verifyShebangInterpreter("/usr/local/bin/script.sh", map[string]string{}, map[string]string{})
 			assert.NoError(t, err, "dry-run mode must soft-fail, not abort the preview")
 		})
 	}
 }
 
-// TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch verifies that a hash
+// TestVerifyShebangInterpreter_EnvForm_HashMismatch verifies that a hash
 // mismatch on the env-form resolved_path binary (i.e. the interpreter found via
 // PATH has been tampered with) is propagated as ErrMismatch.
-// This complements TestVerifyCommandShebangInterpreter_HashMismatch which covers
+// This complements TestVerifyShebangInterpreter_HashMismatch which covers
 // the direct-form interpreter path only.
-func TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
+func TestVerifyShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -365,15 +366,15 @@ func TestVerifyCommandShebangInterpreter_EnvForm_HashMismatch(t *testing.T) {
 	mockFV.setVerifyErr(shPath, filevalidator.ErrMismatch)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = m.verifyShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"}, map[string]string{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, filevalidator.ErrMismatch)
 }
 
-// TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing verifies that
+// TestVerifyShebangInterpreter_EnvForm_ResolvedPathMissing verifies that
 // a missing record for resolved_path is reported as ErrInterpreterRecordNotFound
 // rather than being masked by a PATH mismatch error (Issue: wrong verification order).
-func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.T) {
+func TestVerifyShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -394,14 +395,14 @@ func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.
 	mockFV.setVerifyErr(shPath, filevalidator.ErrHashFileNotFound)
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = m.verifyShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"}, map[string]string{})
 	require.Error(t, err)
 	var notFound *ErrInterpreterRecordNotFound
 	assert.True(t, errors.As(err, &notFound), "expected ErrInterpreterRecordNotFound, got: %v", err)
 	assert.Equal(t, shPath, notFound.Path)
 }
 
-// TestVerifyCommandShebangInterpreter_RelativePathCommandName verifies that when
+// TestVerifyShebangInterpreter_RelativePathCommandName verifies that when
 // command_name contains a path separator (e.g. an absolute path used directly),
 // the runtime resolver applies filepath.Abs before EvalSymlinks — mirroring the
 // record-time behaviour in parser.go — so a legitimate script is not falsely
@@ -411,7 +412,7 @@ func TestVerifyCommandShebangInterpreter_EnvForm_ResolvedPathMissing(t *testing.
 // is true. If that path happens to be relative, skipping filepath.Abs before
 // EvalSymlinks would produce a CWD-relative real path that differs from the
 // absolute real path stored at record time. This test exercises that branch.
-func TestVerifyCommandShebangInterpreter_RelativePathCommandName(t *testing.T) {
+func TestVerifyShebangInterpreter_RelativePathCommandName(t *testing.T) {
 	dir := tu.SafeTempDir(t)
 	shPath, err := filepath.EvalSymlinks("/bin/sh")
 	require.NoError(t, err)
@@ -437,6 +438,6 @@ func TestVerifyCommandShebangInterpreter_RelativePathCommandName(t *testing.T) {
 	})
 
 	m := setupManagerWithMockValidator(t, mockFV)
-	err = m.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = m.verifyShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"}, map[string]string{})
 	assert.NoError(t, err)
 }

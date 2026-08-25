@@ -90,7 +90,7 @@ func TestIntegration_ShebangVerification_DirectForm(t *testing.T) {
 	manager, err := verification.NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = manager.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = manager.VerifyCommandDependencies(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
 	assert.NoError(t, err)
 }
 
@@ -119,7 +119,7 @@ func TestIntegration_ShebangVerification_EnvForm(t *testing.T) {
 	manager, err := verification.NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = manager.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = manager.VerifyCommandDependencies(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
 	assert.NoError(t, err)
 }
 
@@ -164,7 +164,7 @@ func TestIntegration_ShebangVerification_InterpreterRecordMissing(t *testing.T) 
 	manager, err := verification.NewManagerForTest(hashDir)
 	require.NoError(t, err)
 
-	err = manager.VerifyCommandShebangInterpreter(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
+	err = manager.VerifyCommandDependencies(scriptPath, map[string]string{"PATH": "/usr/bin:/bin"})
 	require.Error(t, err)
 	var notFound *verification.ErrInterpreterRecordNotFound
 	assert.ErrorAs(t, err, &notFound, "expected ErrInterpreterRecordNotFound, got: %v", err)

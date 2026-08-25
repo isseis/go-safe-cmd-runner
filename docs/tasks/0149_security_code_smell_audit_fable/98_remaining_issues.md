@@ -14,6 +14,8 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 > **D1 M-3 について**: 0160（基準UID決定方針の明示化）・0161（`SUDO_UID` の実在確認・記録）で解消済み。0161 は「呼び出し元の実 UID との突き合わせ」を対象外としたが、これは信頼できる突き合わせ手段が存在しないという技術的な結論であり（0161 要件定義書「突き合わせを対象外とする根拠」参照）、[#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)（`runner` の native root 実行サポート）を実施しないと決定したことで、この残余リスクは今後再検討すべき残件ではなく恒久的に受容する既決事項として確定した。したがって D1 M-3 は本ドキュメントの一覧から除外する（D1 の他所見 L-2/L-3 は §2 に残る）。
 
+> **B3 L2 について**: [#980](https://github.com/isseis/go-safe-cmd-runner/issues/980) で対応済み。`VerifyCommandDynLibDeps` と `VerifyCommandShebangInterpreter` を単一の `VerifyCommandDependencies(cmdPath, envVars)` に統合し、両者が共有していた dep ハッシュキャッシュを Manager のフィールドから呼び出しごとのローカル変数に移した。これにより「dynlib → shebang の順で呼ぶ」という契約は `ManagerInterface` から表現不能になり（単段の入口は非公開化した）、Manager がコマンド単位の可変状態を持たなくなったため並行呼び出し時の data race も消えた。したがって B3 L2 は本ドキュメントの一覧から除外する。
+
 > **B3 M2 について**: [#972](https://github.com/isseis/go-safe-cmd-runner/issues/972) で対応済み。`isDeferredHashDirUnavailable` を `Manager.isDeferredHashDirUnavailable` メソッド化し、`m.isDryRun` が true の場合にのみ skip（fail-open）を許可するようゲートした。dry-run 以外で `VerifyCommandDynLibDeps` / `VerifyCommandShebangInterpreter` が単独で呼ばれるコードパスでも、hash directory 不在・権限エラーはエラーとして伝播し fail-closed になる。したがって B3 M2 は本ドキュメントの一覧から除外する。
 
 ### E1（entrypoints）M-1: `--run-id` が未検証のままログファイル名・ログ行に埋め込まれる
@@ -64,11 +66,6 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
   - B2-6: Mach-O 解析の縮退
   - B2-7〜B2-13: 詳細は `findings/B2_filevalidator.md` を参照
 - → [#979](https://github.com/isseis/go-safe-cmd-runner/issues/979) を作成済み。
-
-### B3（verification）
-
-- **L2**: 詳細は `findings/B3_verification.md` を参照。いずれのタスクの対象にもなっていない。
-- → [#980](https://github.com/isseis/go-safe-cmd-runner/issues/980) を作成済み。
 
 ### C1（binary analysis）
 
