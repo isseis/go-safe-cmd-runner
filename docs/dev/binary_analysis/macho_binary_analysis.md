@@ -161,7 +161,7 @@ Excluded libraries are not included in `LibEntry` and are not subject to hash ve
 
 ### 3.3 Verification at Runner Runtime
 
-When recorded `DynLibDeps` are present, the runner's `VerifyCommandDynLibDeps` matches the hash of each library against the actual file on disk.
+When recorded `DynLibDeps` are present, the runner's `VerifyCommandDependencies` matches the hash of each library against the actual file on disk.
 For dynamically linked binaries whose `DynLibDeps` are not recorded, re-recording is required (`ErrDynLibDepsRequired`).
 
 dyld shared cache libraries are not recorded and therefore their changes are not subject to verification.
