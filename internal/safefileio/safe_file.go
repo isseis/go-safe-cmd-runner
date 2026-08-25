@@ -7,27 +7,20 @@
 //
 // # How strong the guarantees are depends on the route
 //
-// The two routes do not offer the same guarantee, and callers that need the
-// strong one have to know which route they are on.
-//
 // On the openat2 route the kernel resolves the path and opens it in a single
 // system call with RESOLVE_NO_SYMLINKS, so there is no moment between checking
 // a path and using it: the race this package defends against cannot occur.
 //
 // The fallback route -- taken whenever openat2 is unavailable (Linux 5.5 and
 // earlier, every non-Linux platform) or has been switched off with
-// FileSystemConfig.DisableOpenat2 -- verifies the parent directories, opens
-// with O_NOFOLLOW, and verifies again. That is best-effort: it narrows the
-// window in which a component can be substituted, and detects a substitution
-// that did occur, but it does not eliminate the window. The same applies to
-// opening a directory, which the fallback route performs as a walk followed by
-// a separate open. Once a directory fd is held, no path is resolved again and
+// FileSystemConfig.DisableOpenat2 -- is best-effort: it narrows the window in
+// which a path component can be substituted, and detects a substitution that
+// did occur, but it does not eliminate the window. Once a directory fd is held
 // the window is closed for everything that follows.
 //
-// The production target for this project is therefore Linux 5.6 or later,
-// where the openat2 route is taken. Non-Linux platforms are for development
-// and limited use, not for production. See docs/user/security-risk-assessment.md,
-// "Assumptions and Limitations".
+// The production target for this project is therefore Linux 5.6 or later.
+// Non-Linux platforms are for development and limited use, not for production.
+// See docs/user/security-risk-assessment.md, "Assumptions and Limitations".
 package safefileio
 
 import (
@@ -95,15 +88,12 @@ type FileSystem interface {
 	// secure permissions. See the package documentation for how strong the
 	// symlink and TOCTOU protection is on each route.
 	//
-	// The move is the point of no return. If the rename onto the destination
-	// succeeds and a later step fails, AtomicMoveFile returns an error that
-	// wraps ErrDestinationCommitted, and the destination holds the moved file:
-	// the caller can tell that case apart with errors.Is. A file that was at
-	// the destination beforehand is not restored -- it was replaced by the
-	// rename. No rollback is attempted, precisely because deleting the moved
-	// file would not bring the previous content back; leaving the caller with
-	// neither version is worse than leaving it with a file whose verification
-	// failed.
+	// The rename onto the destination is the point of no return: if a later
+	// step fails, the returned error wraps ErrDestinationCommitted and the
+	// destination holds the moved file, which the caller can tell apart with
+	// errors.Is. Nothing is rolled back -- whatever was at the destination is
+	// gone either way, and undoing the move would leave the caller with
+	// neither version.
 	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 }
 
@@ -186,23 +176,17 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 // The content is written to a temporary file in the destination's own directory
 // and renamed over the destination, so the destination is only ever the content
 // it already had or the content of a completed write -- never a truncated or
-// half-written one. Everything is done through a directory fd taken once at the
-// start: the destination's parent is opened with openDirNoSymlinks, and the
-// temporary file and the existing destination are reached with openFileAt
-// relative to that fd, so no path is resolved a second time. See the package
-// documentation for how strong the symlink and TOCTOU protection is on each
-// route.
+// half-written one. See the package documentation for how strong the symlink
+// and TOCTOU protection is on each route.
 //
 // If the write fails before the rename, the destination still holds the content
-// it had before the call and the temporary file is taken back out. Removal is
-// skipped when the entry can no longer be confirmed to be the inode that was
-// written -- removing it then would turn a detected substitution into a
-// deletion the substituter chose -- and it can also fail on its own; in either
-// case the entry remains and the reason is recorded with its path. If the write
-// fails after the rename, the destination holds the new content and the error
-// wraps ErrDestinationCommitted, so the caller can tell the two apart with
-// errors.Is; in that case a temporary entry may remain as well, and the failure
-// is recorded with its path.
+// it had before the call, and the temporary file is removed; when it cannot be
+// confirmed to still be the inode that was written, or the removal itself
+// fails, the entry remains and the reason is recorded with its path. If the
+// write fails after the rename, the destination holds the new content and the
+// error wraps ErrDestinationCommitted, so the caller can tell the two apart
+// with errors.Is; a temporary entry may remain in that case too, recorded the
+// same way.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
@@ -1226,18 +1210,16 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // two reasons.
 //
 // First, whether an owner is acceptable is decided elsewhere, by the directory
-// permission audit in internal/security: a directory whose owner bit is set
-// (perm&0o200) must be owned by root or by the invoking user. That is the
-// stronger check of the two -- a file's owner only says who can rewrite its
-// content, while a directory's owner says who can swap the entry for a
-// different file altogether, and where swapping is possible an owner check on
-// the file is worth nothing. It also covers read targets that are not
-// hash-verified, such as the hash files themselves. Repeating it per file would
-// buy nothing.
+// permission audit in internal/security: a directory whose owner write bit is
+// set must be owned by root or by the invoking user. That is the stronger check
+// of the two -- a directory's owner can swap the entry for a different file
+// altogether, and where swapping is possible an owner check on the file is
+// worth nothing -- and it also covers read targets that are not hash-verified,
+// such as the hash files themselves.
 //
-// The guarantee is conditional rather than absolute, and the limits are worth
-// naming: a directory with no owner write bit (0o555, say) is not owner-checked
-// at all, so an untrusted owner passes and can chmod it writable afterwards;
+// Its guarantee is conditional, and the limits are worth naming: a directory
+// with no owner write bit (0o555, say) is not owner-checked at all, so an
+// untrusted owner passes and can chmod it writable afterwards;
 // TestPermissiveMode skips the check entirely; and cmd/verify deliberately
 // drops the audit's violations for the target files' directories, since a
 // target sitting in a writable directory is what verify exists to inspect.
@@ -1250,8 +1232,8 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // runner reading root-owned binaries and configuration.
 //
 // This is also why a source must never be reopened by path name once it has
-// been verified through an fd: since the read check does not look at the owner,
-// a file an attacker substituted at that path would pass it.
+// been verified through an fd: a file an attacker substituted at that path
+// would pass the read check.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, _, err := getFileStatInfo(file, filePath)
 	if err != nil {
