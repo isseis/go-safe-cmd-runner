@@ -173,16 +173,15 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 
 // SafeWriteFileOverwrite writes a file safely, allowing overwrite of existing files.
 //
-// The content is written to a temporary file in the destination's own directory
-// and renamed over the destination, so the destination is only ever the content
-// it already had or the content of a completed write. See the package
-// documentation for how strong the symlink and TOCTOU protection is on each
-// route.
+// The destination is replaced atomically: it holds either the content it had
+// before the call or the complete new content, never a partial write. See the
+// package documentation for how strong the symlink and TOCTOU protection is on
+// each route.
 //
-// A failure before the rename leaves the destination as it was; a failure after
-// it leaves the destination holding the new content and returns an error
-// wrapping ErrDestinationCommitted, which the caller can detect with errors.Is.
-// Either may leave a temporary entry in the directory, whose path is recorded.
+// On failure the destination has therefore either been left untouched or been
+// fully replaced, and the error wraps ErrDestinationCommitted in the second
+// case, which the caller can detect with errors.Is. Either outcome may leave a
+// temporary entry in the destination's directory, whose path is recorded.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
