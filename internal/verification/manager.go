@@ -459,9 +459,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	if hashDir == "" {
 		return nil, ErrHashDirectoryEmpty
 	}
-	if hashDir != "" {
-		hashDir = filepath.Clean(hashDir)
-	}
+	hashDir = filepath.Clean(hashDir)
 
 	// Perform security constraint validation
 	if err := validateSecurityConstraints(hashDir, opts); err != nil {
