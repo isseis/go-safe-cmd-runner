@@ -194,11 +194,15 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 // route.
 //
 // If the write fails before the rename, the destination still holds the content
-// it had before the call and no temporary file is left in its directory. If it
+// it had before the call and the temporary file is taken back out. Removal is
+// skipped when the entry can no longer be confirmed to be the inode that was
+// written -- removing it then would turn a detected substitution into a
+// deletion the substituter chose -- and it can also fail on its own; in either
+// case the entry remains and the reason is recorded with its path. If the write
 // fails after the rename, the destination holds the new content and the error
 // wraps ErrDestinationCommitted, so the caller can tell the two apart with
-// errors.Is; in that case a temporary entry may remain, and the failure is
-// recorded with its path.
+// errors.Is; in that case a temporary entry may remain as well, and the failure
+// is recorded with its path.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
@@ -1221,14 +1225,22 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // the owner's UID, where the write check does. The asymmetry is intended, for
 // two reasons.
 //
-// First, whether an owner is acceptable is already decided elsewhere: the
-// directory permission audit in internal/security requires every directory on
-// the path to be owned by root or by the invoking user. That is the stronger
-// check of the two -- a file's owner only says who can rewrite its content,
-// while a directory's owner says who can swap the entry for a different file
-// altogether, and where swapping is possible an owner check on the file is
-// worth nothing. It also covers read targets that are not hash-verified, such
-// as the hash files themselves. Repeating it per file would buy nothing.
+// First, whether an owner is acceptable is decided elsewhere, by the directory
+// permission audit in internal/security: a directory whose owner bit is set
+// (perm&0o200) must be owned by root or by the invoking user. That is the
+// stronger check of the two -- a file's owner only says who can rewrite its
+// content, while a directory's owner says who can swap the entry for a
+// different file altogether, and where swapping is possible an owner check on
+// the file is worth nothing. It also covers read targets that are not
+// hash-verified, such as the hash files themselves. Repeating it per file would
+// buy nothing.
+//
+// The guarantee is conditional rather than absolute, and the limits are worth
+// naming: a directory with no owner write bit (0o555, say) is not owner-checked
+// at all, so an untrusted owner passes and can chmod it writable afterwards;
+// TestPermissiveMode skips the check entirely; and cmd/verify deliberately
+// drops the audit's violations for the target files' directories, since a
+// target sitting in a writable directory is what verify exists to inspect.
 //
 // Second, a reader that is not the owner is a requirement of the separated
 // record/run setup, not an accident: the hash files are deliberately not owned
