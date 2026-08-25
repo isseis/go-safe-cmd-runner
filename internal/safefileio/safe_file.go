@@ -175,25 +175,20 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 //
 // The content is written to a temporary file in the destination's own directory
 // and renamed over the destination, so the destination is only ever the content
-// it already had or the content of a completed write -- never a truncated or
-// half-written one. See the package documentation for how strong the symlink
-// and TOCTOU protection is on each route.
+// it already had or the content of a completed write. See the package
+// documentation for how strong the symlink and TOCTOU protection is on each
+// route.
 //
-// If the write fails before the rename, the destination still holds the content
-// it had before the call, and the temporary file is removed; when it cannot be
-// confirmed to still be the inode that was written, or the removal itself
-// fails, the entry remains and the reason is recorded with its path. If the
-// write fails after the rename, the destination holds the new content and the
-// error wraps ErrDestinationCommitted, so the caller can tell the two apart
-// with errors.Is; a temporary entry may remain in that case too, recorded the
-// same way.
+// A failure before the rename leaves the destination as it was; a failure after
+// it leaves the destination holding the new content and returns an error
+// wrapping ErrDestinationCommitted, which the caller can detect with errors.Is.
+// Either may leave a temporary entry in the directory, whose path is recorded.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
 // so this function rejects it and returns ErrInvalidFilePath.
 //
-// Note: The filepath parameter is intentionally not restricted to a safe directory as the
-// function is designed to work with any valid file path while maintaining security.
+// The path is deliberately not restricted to a safe directory.
 func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) error {
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
