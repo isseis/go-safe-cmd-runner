@@ -5,18 +5,17 @@
 //   - Linux: see safe_file_linux.go (uses openat2 with fallback to portable method)
 //   - Others: see safe_file_nonlinux.go (uses portable method only)
 //
-// # How strong the guarantees are depends on the route
+// # How strong the guarantee is depends on the platform
 //
-// On the openat2 route the kernel resolves the path and opens it in a single
-// system call with RESOLVE_NO_SYMLINKS, so there is no moment between checking
-// a path and using it: the race this package defends against cannot occur.
+// On Linux 5.6 or later a path is resolved and opened as one indivisible step,
+// so there is no moment between checking a path and using it: the race this
+// package defends against cannot occur.
 //
-// The fallback route -- taken whenever openat2 is unavailable (Linux 5.5 and
-// earlier, every non-Linux platform) or has been switched off with
-// FileSystemConfig.DisableOpenat2 -- is best-effort: it narrows the window in
-// which a path component can be substituted, and detects a substitution that
-// did occur, but it does not eliminate the window. Once a directory fd is held
-// the window is closed for everything that follows.
+// Everywhere else -- earlier Linux kernels, every non-Linux platform, and any
+// run with FileSystemConfig.DisableOpenat2 set -- the protection is
+// best-effort: it narrows the window in which a path component can be
+// substituted, and detects a substitution that did occur, but it does not
+// eliminate the window.
 //
 // The production target for this project is therefore Linux 5.6 or later.
 // Non-Linux platforms are for development and limited use, not for production.
@@ -80,13 +79,13 @@ var defaultFS = newOSFS(FileSystemConfig{})
 type FileSystem interface {
 	// SafeOpenFile opens a file with security checks to prevent symlink attacks
 	// and TOCTOU race conditions. See the package documentation for how strong
-	// that protection is on each route.
+	// that protection is on each platform.
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
 	// AtomicMoveFile atomically moves a file from source to destination with
 	// secure permissions. See the package documentation for how strong the
-	// symlink and TOCTOU protection is on each route.
+	// symlink and TOCTOU protection is on each platform.
 	//
 	// The rename onto the destination is the point of no return: if a later
 	// step fails, the returned error wraps ErrDestinationCommitted and the
@@ -176,7 +175,7 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 // The destination is replaced atomically: it holds either the content it had
 // before the call or the complete new content, never a partial write. See the
 // package documentation for how strong the symlink and TOCTOU protection is on
-// each route.
+// each platform.
 //
 // On failure the destination has therefore either been left untouched or been
 // fully replaced, and the error wraps ErrDestinationCommitted in the second
@@ -1017,8 +1016,8 @@ const MaxFileSize = 128 * 1024 * 1024
 
 // SafeReadFile reads a file safely after validating the path and checking file properties.
 // It enforces a maximum file size of MaxFileSize to prevent memory exhaustion attacks.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations;
-// see the package documentation for how strong that protection is on each route.
+// See the package documentation for how strong the symlink and TOCTOU protection
+// is on each platform.
 func SafeReadFile(filePath common.ResolvedPath) ([]byte, error) {
 	return SafeReadFileWithFS(filePath, defaultFS)
 }
