@@ -1206,30 +1206,20 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // for the size limit.
 //
 // The read check judges on (gid, mode) alone and deliberately does not look at
-// the owner's UID, where the write check does. The asymmetry is intended, for
-// two reasons.
+// the owner's UID, where the write check does. A reader that is not the owner
+// is a requirement of the separated record/run setup, not an accident: the hash
+// files are deliberately not owned by the account that runs the commands, so
+// that account cannot rewrite its own hashes. Requiring the owner to match
+// would stop the production configuration from working at all, along with the
+// ordinary case of a non-root runner reading root-owned binaries and
+// configuration.
 //
-// First, whether an owner is acceptable is decided elsewhere, by the directory
-// permission audit in internal/security: a directory whose owner write bit is
-// set must be owned by root or by the invoking user. That is the stronger check
-// of the two -- a directory's owner can swap the entry for a different file
-// altogether, and where swapping is possible an owner check on the file is
-// worth nothing -- and it also covers read targets that are not hash-verified,
-// such as the hash files themselves.
-//
-// Its guarantee is conditional, and the limits are worth naming: a directory
-// with no owner write bit (0o555, say) is not owner-checked at all, so an
-// untrusted owner passes and can chmod it writable afterwards;
-// TestPermissiveMode skips the check entirely; and cmd/verify deliberately
-// drops the audit's violations for the target files' directories, since a
-// target sitting in a writable directory is what verify exists to inspect.
-//
-// Second, a reader that is not the owner is a requirement of the separated
-// record/run setup, not an accident: the hash files are deliberately not owned
-// by the account that runs the commands, so that account cannot rewrite its
-// own hashes. Requiring the owner to match would stop the production
-// configuration from working at all, along with the ordinary case of a non-root
-// runner reading root-owned binaries and configuration.
+// What limits the damage is the directory permission audit in internal/security
+// rather than anything here: a directory's owner can swap the entry for a
+// different file altogether, so an owner check on the file would be worth
+// little without it. That audit is not unconditional -- a directory with no
+// owner write bit, for one, is not owner-checked at all -- so it is defence in
+// depth, not a guarantee.
 //
 // This is also why a source must never be reopened by path name once it has
 // been verified through an fd: a file an attacker substituted at that path
