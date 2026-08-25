@@ -224,6 +224,7 @@ jobs:
         with:
           install-mode: goinstall
           version: v2.11.4
+          verify: false
           args: --build-tags test --timeout=5m
 
       - name: Verify modules

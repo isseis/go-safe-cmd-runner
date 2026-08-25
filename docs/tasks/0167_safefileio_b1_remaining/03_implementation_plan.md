@@ -990,8 +990,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1055](https://github.com/isseis/go-safe-cmd-runner/pull/1055)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 契約の明記と監査文書への反映（F-007・F-008 / AC-29〜38）
 
@@ -1006,55 +1006,55 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 #### 5-1. package コメントと公開 API の doc コメント
 
-- [ ] `safe_file.go` の package コメント（:1-6）に、`openat2` が使える環境とフォールバック経路とで保証の
+- [x] `safe_file.go` の package コメント（:1-6）に、`openat2` が使える環境とフォールバック経路とで保証の
       強さが異なること、後者は競合の隙を狭めるが排除はしない best-effort であること、本番ターゲットは
       Linux 5.6+ であり非 Linux は開発・限定用途に限ることを英語で追記する（AC-29・31・33）。
-- [ ] `safe_file_nonlinux.go` の package コメント（:3-7）の表現を、上の package コメントと矛盾しない
+- [x] `safe_file_nonlinux.go` の package コメント（:3-7）の表現を、上の package コメントと矛盾しない
       共通の言い回しに揃える。
-- [ ] `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントに、
+- [x] `SafeOpenFile`・`SafeReadFile`・`SafeWriteFileOverwrite`・`AtomicMoveFile` の各 doc コメントに、
       package コメントの限界の記述への参照（`See the package documentation …`）を英語で足す（AC-30・33）。
-- [ ] **古くなった仕組みの説明を書き換える。** `AtomicMoveFile` の doc コメント（`safe_file.go:100-104`）は
+- [x] **古くなった仕組みの説明を書き換える。** `AtomicMoveFile` の doc コメント（`safe_file.go:100-104`）は
       「`SafeOpenFile` via openat2 RESOLVE_NO_SYMLINKS for the source、`ensureParentDirsNoSymlinks` for the
       destination parent」と、Phase 3 で置き換わる仕組みを名指ししている。`SafeWriteFileOverwrite` の
       doc コメント（:117-127）も「falls back to path verification before opening the file」と、一時ファイル
       方式になる前の手順を説明している。両方を新しい仕組み（`openDirNoSymlinks`／`openFileAt`、および
       一時ファイルへ書いて差し替える手順）に合わせて書き直す。
-- [ ] `AtomicMoveFile` の doc コメントに [02_architecture.md](02_architecture.md) § 3.4.4 が挙げる 4 点を
+- [x] `AtomicMoveFile` の doc コメントに [02_architecture.md](02_architecture.md) § 3.4.4 が挙げる 4 点を
       英語で追記する（AC-08・09）。
-- [ ] `SafeWriteFileOverwrite` の doc コメントに、差し替えに到達する前の失敗では宛先が書き込み前の内容の
+- [x] `SafeWriteFileOverwrite` の doc コメントに、差し替えに到達する前の失敗では宛先が書き込み前の内容の
       ままであること、到達後の失敗は `ErrDestinationCommitted` を含み `errors.Is` で判別できることを英語で
       追記する（[02_architecture.md](02_architecture.md) § 5.2）。
-- [ ] `canSafelyReadFromFile` の doc コメント（`safe_file.go:448-450`）に、読み取り検査が所有者 UID を見ず
+- [x] `canSafelyReadFromFile` の doc コメント（`safe_file.go:448-450`）に、読み取り検査が所有者 UID を見ず
       `(gid, mode)` だけで判定すること、それが意図的であること、および AC-32 が挙げる 2 つの理由
       （ディレクトリ権限監査との役割分担、分離運用の成立条件）を英語で書く。あわせて、この非対称性が
       「ソースをパス名で開き直してはならない」理由でもあることを 1 文で書く
       （[02_architecture.md](02_architecture.md) § 3.7 末尾）。
 #### 5-2. 利用者向け文書・設計文書の更新
 
-- [ ] `docs/user/security-risk-assessment.ja.md:158-172` の `safeOpenFileInternal` の引用を、Phase 1 の
+- [x] `docs/user/security-risk-assessment.ja.md:158-172` の `safeOpenFileInternal` の引用を、Phase 1 の
       変更後の実装（`mode: openat2Mode(flag, perm)` と `EINTR` 再試行を含む形）に合わせる（AC-38）。
-- [ ] 同 :204 付近の `safeOpenFileFallback` の説明を、Phase 2 の作成プローブを含む手順に合わせる（AC-38）。
-- [ ] 同文書「前提と限界」節（:180-211）の本番ターゲット（Linux 5.6+）と非 Linux の位置づけの記述が、
+- [x] 同 :204 付近の `safeOpenFileFallback` の説明を、Phase 2 の作成プローブを含む手順に合わせる（AC-38）。
+- [x] 同文書「前提と限界」節（:180-211）の本番ターゲット（Linux 5.6+）と非 Linux の位置づけの記述が、
       package コメントの追記と同じ内容であることを読み合わせて確認する（AC-31）。食い違いがあれば
       package コメント側を文書に合わせる。
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md:206-215` の `openat2()` の引用を、`EINTR`
+- [x] `docs/dev/architecture_design/security-architecture.ja.md:206-215` の `openat2()` の引用を、`EINTR`
       再試行後の形に更新する。
-- [ ] 同 :217-233 の `ensureParentDirsNoSymlinks()` の引用の見出しと関数名を `ensureDirNoSymlinks()` へ
+- [x] 同 :217-233 の `ensureParentDirsNoSymlinks()` の引用の見出しと関数名を `ensureDirNoSymlinks()` へ
       変える。走査のループそのものは変わらないが、Phase 3 で本体がこの関数へ移るため、引用が「どの関数の
       本体か」を誤って示すことになる。
-- [ ] 日本語版（`security-risk-assessment.ja.md`・`security-architecture.ja.md`）をコミットしたうえで、
+- [x] 日本語版（`security-risk-assessment.ja.md`・`security-architecture.ja.md`）をコミットしたうえで、
       `/mktrans` で英語版（`security-risk-assessment.md`・`security-architecture.md`）へ反映する。
       日英を直接両方編集しない。
 #### 5-3. 0149 監査記録への反映
 
-- [ ] `98_remaining_issues.md` §2 の「B1（safefileio）」（:53-61）から F-2〜F-9 の箇条書き 5 行（:55-59）を
+- [x] `98_remaining_issues.md` §2 の「B1（safefileio）」（:53-61）から F-2〜F-9 の箇条書き 5 行（:55-59）を
       取り除き、同文書が :15・:17・:51 で用いている `> **B1 F-2〜F-9 について**: …` の引用ブロック形式で、
       本タスクと #978 への参照を含む解消済みの記述に置き換える（AC-34）。
-- [ ] 同じ引用ブロックに、F-2・F-4-2・F-8 を所見の主推奨とは異なる形で close したことと、その根拠
+- [x] 同じ引用ブロックに、F-2・F-4-2・F-8 を所見の主推奨とは異なる形で close したことと、その根拠
       （本番ターゲットの限定、0155 の既存の設計決定、読み取り側のポリシーの所在）を書く（AC-35）。
-- [ ] `findings/B1_safefileio.md` の F-2〜F-9 の各節に `- 対応状況: …` の箇条書きを 1 つずつ足す
+- [x] `findings/B1_safefileio.md` の F-2〜F-9 の各節に `- 対応状況: …` の箇条書きを 1 つずつ足す
       （計 8 箇所）。所見の原文（該当箇所・問題・悪用シナリオ・推奨対応）は書き換えない（AC-36）。
-- [ ] `98_remaining_issues.md` の B1 以外の節に変更行が出ていないことを差分で確認する（AC-37）。
+- [x] `98_remaining_issues.md` の B1 以外の節に変更行が出ていないことを差分で確認する（AC-37）。
 
 **完了条件**: `make test` と `make lint` が通る。§7 の AC 検証をすべて実施済みである。
 
@@ -1070,8 +1070,8 @@ doc コメントは両側に置き、本番側には「本番ビルドには差�
 
 **判定理由**: 文書と doc コメントの更新のみで、`既存コード調査結果` に競合する実装案は無く、Conditional checks にも該当せず、復旧処理・並行処理・状態機械のような高リスクステップも含まないため、frontier のトリガに該当しない。5-3 は F-2・F-4-2・F-8 を所見の主推奨とは異なる形で close した理由を書く判断を含むが、根拠（本番ターゲットの限定、0155 の設計決定、読み取り側のポリシーの所在）は本書と `02_architecture.md` に既に書かれており、`weakreview.md` のパスで裏を取れる範囲に収まる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1056](https://github.com/isseis/go-safe-cmd-runner/pull/1056)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1199,10 +1199,10 @@ Phase の区切りをそのまま PR の区切りにする。§ 8 の Phase 4 �
 Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。本節は PR 単位のマージ進捗だけを追う。
 
 - [x] PR-1 マージ済み（対象ステップ: 1-1 / 1-2 / 1-3。[#1050](https://github.com/isseis/go-safe-cmd-runner/pull/1050)）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3）
-- [ ] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4）
-- [ ] PR-4 マージ済み（対象ステップ: 4-1 / 4-2）
-- [ ] PR-5 マージ済み（対象ステップ: 4-3 / 4-4 / 4-5 / 4-6）
+- [x] PR-2 マージ済み（対象ステップ: 2-1 / 2-2 / 2-3。[#1051](https://github.com/isseis/go-safe-cmd-runner/pull/1051)）
+- [x] PR-3 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4。[#1052](https://github.com/isseis/go-safe-cmd-runner/pull/1052)）
+- [x] PR-4 マージ済み（対象ステップ: 4-1 / 4-2。[#1053](https://github.com/isseis/go-safe-cmd-runner/pull/1053)）
+- [x] PR-5 マージ済み（対象ステップ: 4-3 / 4-4 / 4-5 / 4-6。[#1055](https://github.com/isseis/go-safe-cmd-runner/pull/1055)）
 - [ ] PR-6 マージ済み（対象ステップ: 5-1 / 5-2 / 5-3）
 
 ### 全体
@@ -1279,18 +1279,20 @@ Phase ごとの作業内容は § 2 に、PR の区切りは § 3.2 にある。
 `make lint` と `make test` では気づけない残存参照だけを挙げる。§7 の AC 検証と重複する項目はここに置かない。
 `rg` の選択は `|` で書く（§7 冒頭の注記と同じ）。
 
-- [ ] `rg -n "ErrTempLinkNameExhausted" .` が 0 件（改名の取りこぼし。コード側はコンパイルが捕まえるが、
-      コメントと文書は捕まえない）
-- [ ] `rg -n "randomTempName\(\)" .` が 0 件（接頭辞を取らない旧シグネチャへの言及がコメントに残っていない）
-- [ ] `rg -n "maxLinkatAttempts" .` が 0 件（`maxTempNameAttempts` への改名の取りこぼし）
-- [ ] `rg -n "ensureParentDirsNoSymlinks" internal/safefileio/ docs/` の各ヒットが、ラッパとして残る関数を
+- [x] `rg -n "ErrTempLinkNameExhausted" .` が 0 件（改名の取りこぼし。コード側はコンパイルが捕まえるが、
+      コメントと文書は捕まえない）。残る 4 件はいずれも本タスクの `02`／`03` 文書が改名そのものを
+      記述している行であり、旧名を現存するものとして説明している箇所は無い
+- [x] `rg -n "randomTempName\(\)" .` が 0 件（接頭辞を取らない旧シグネチャへの言及がコメントに残っていない）
+- [x] `rg -n "maxLinkatAttempts" .` が 0 件（`maxTempNameAttempts` への改名の取りこぼし）。上と同じく、
+      残る 4 件は本タスクの文書が改名そのものを記述している行である
+- [x] `rg -n "ensureParentDirsNoSymlinks" internal/safefileio/ docs/` の各ヒットが、ラッパとして残る関数を
       正しく指している（`openDirNoSymlinks`／`ensureDirNoSymlinks` が担うようになった役割を、この関数の
       ものとして説明している箇所が残っていない）
-- [ ] `rg -n "safefileio.*Remove|FileSystem.*Remove" docs/` の結果に、削除した `safefileio.FileSystem.Remove`
+- [x] `rg -n "safefileio.*Remove|FileSystem.*Remove" docs/` の結果に、削除した `safefileio.FileSystem.Remove`
       を現存するものとして説明している箇所が無い（`internal/common` の `Remove` への言及は残ってよい）
-- [ ] `rg -n "Truncate\(0\)" docs/ internal/safefileio/` の結果に、`safeWriteFileCommon` が宛先を切り詰める
+- [x] `rg -n "Truncate\(0\)" docs/ internal/safefileio/` の結果に、`safeWriteFileCommon` が宛先を切り詰める
       という説明が残っていない
-- [ ] `git diff $BASE...HEAD -- '*.go' | rg -n "^\+.*(AC-[0-9]|F-00[0-9])"` が 0 件（本タスクが Go
+- [x] `git diff $BASE...HEAD -- '*.go' | rg -n "^\+.*(AC-[0-9]|F-00[0-9])"` が 0 件（本タスクが Go
       ソースへ AC 番号を持ち込んでいないこと。`runplan` のコミット前検査が拒否する。ツリー全体を対象に
       すると本タスクと無関係な既存のヒットが出るため、追加行だけを見る）
 

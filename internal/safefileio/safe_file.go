@@ -4,6 +4,22 @@
 // Platform-specific implementations:
 //   - Linux: see safe_file_linux.go (uses openat2 with fallback to portable method)
 //   - Others: see safe_file_nonlinux.go (uses portable method only)
+//
+// # How strong the guarantee is depends on the platform
+//
+// On Linux 5.6 or later a path is resolved and opened as one indivisible step,
+// so there is no moment between checking a path and using it: the race this
+// package defends against cannot occur.
+//
+// Everywhere else -- earlier Linux kernels, every non-Linux platform, and any
+// run with FileSystemConfig.DisableOpenat2 set -- the protection is
+// best-effort: it narrows the window in which a path component can be
+// substituted, and detects a substitution that did occur, but it does not
+// eliminate the window.
+//
+// The production target for this project is therefore Linux 5.6 or later.
+// Non-Linux platforms are for development and limited use, not for production.
+// See docs/user/security-risk-assessment.md, "Assumptions and Limitations".
 package safefileio
 
 import (
@@ -61,11 +77,22 @@ var defaultFS = newOSFS(FileSystemConfig{})
 
 // FileSystem is an interface that abstracts secure file system operations
 type FileSystem interface {
-	// SafeOpenFile opens a file with security checks to prevent symlink attacks and TOCTOU race conditions
+	// SafeOpenFile opens a file with security checks to prevent symlink attacks
+	// and TOCTOU race conditions. See the package documentation for how strong
+	// that protection is on each platform.
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 	// GetGroupMembership returns the GroupMembership instance for security checks
 	GetGroupMembership() *groupmembership.GroupMembership
-	// AtomicMoveFile atomically moves a file from source to destination with secure permissions
+	// AtomicMoveFile atomically moves a file from source to destination with
+	// secure permissions. See the package documentation for how strong the
+	// symlink and TOCTOU protection is on each platform.
+	//
+	// The rename onto the destination is the point of no return: if a later
+	// step fails, the returned error wraps ErrDestinationCommitted and the
+	// destination holds the moved file, which the caller can tell apart with
+	// errors.Is. Nothing is rolled back -- whatever was at the destination is
+	// gone either way, and undoing the move would leave the caller with
+	// neither version.
 	AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error
 }
 
@@ -144,16 +171,22 @@ func (fs *osFS) AtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode
 }
 
 // SafeWriteFileOverwrite writes a file safely, allowing overwrite of existing files.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations,
-// eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
-// On systems without openat2, it falls back to path verification before opening the file.
+//
+// The destination is replaced atomically: it holds either the content it had
+// before the call or the complete new content, never a partial write. See the
+// package documentation for how strong the symlink and TOCTOU protection is on
+// each platform.
+//
+// On failure the destination has therefore either been left untouched or been
+// fully replaced, and the error wraps ErrDestinationCommitted in the second
+// case, which the caller can detect with errors.Is. Either outcome may leave a
+// temporary entry in the destination's directory, whose path is recorded.
 //
 // filePath must be created with common.NewResolvedPathParentOnly. A path created with
 // common.NewResolvedPath would resolve the leaf symlink, bypassing leaf-symlink detection,
 // so this function rejects it and returns ErrInvalidFilePath.
 //
-// Note: The filepath parameter is intentionally not restricted to a safe directory as the
-// function is designed to work with any valid file path while maintaining security.
+// The path is deliberately not restricted to a safe directory.
 func SafeWriteFileOverwrite(filePath common.ResolvedPath, content []byte, perm os.FileMode) error {
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
@@ -983,7 +1016,8 @@ const MaxFileSize = 128 * 1024 * 1024
 
 // SafeReadFile reads a file safely after validating the path and checking file properties.
 // It enforces a maximum file size of MaxFileSize to prevent memory exhaustion attacks.
-// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations.
+// See the package documentation for how strong the symlink and TOCTOU protection
+// is on each platform.
 func SafeReadFile(filePath common.ResolvedPath) ([]byte, error) {
 	return SafeReadFileWithFS(filePath, defaultFS)
 }
@@ -1163,6 +1197,26 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 // more relaxed permissions than write operations. It is canSafelyAccessFile's
 // read check with the file's os.FileInfo handed back, which the read path needs
 // for the size limit.
+//
+// The read check judges on (gid, mode) alone and deliberately does not look at
+// the owner's UID, where the write check does. A reader that is not the owner
+// is a requirement of the separated record/run setup, not an accident: the hash
+// files are deliberately not owned by the account that runs the commands, so
+// that account cannot rewrite its own hashes. Requiring the owner to match
+// would stop the production configuration from working at all, along with the
+// ordinary case of a non-root runner reading root-owned binaries and
+// configuration.
+//
+// What limits the damage is the directory permission audit in internal/security
+// rather than anything here: a directory's owner can swap the entry for a
+// different file altogether, so an owner check on the file would be worth
+// little without it. That audit is not unconditional -- a directory with no
+// owner write bit, for one, is not owner-checked at all -- so it is defence in
+// depth, not a guarantee.
+//
+// This is also why a source must never be reopened by path name once it has
+// been verified through an fd: a file an attacker substituted at that path
+// would pass the read check.
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, _, err := getFileStatInfo(file, filePath)
 	if err != nil {
