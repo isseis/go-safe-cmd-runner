@@ -324,7 +324,11 @@ func readNsswitchSnapshot() nsswitchSnapshot
 func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenessVerdict
 
 // nssSources returns the source names listed for one database in the
-// contents of /etc/nsswitch.conf, with bracketed action tokens removed.
+// contents of /etc/nsswitch.conf. A trailing "#" comment on the database
+// line is stripped before tokenizing, and a bracketed action token —
+// including one containing internal whitespace, such as
+// "[NOTFOUND=return UNAVAIL=continue]" — is removed as a single unit rather
+// than split on its interior spaces.
 func nssSources(content string, database string) []string
 
 // nsswitchVerdict returns the classification for this process. It reads and
@@ -354,6 +358,10 @@ func nsswitchVerdict() completenessVerdict
 **許可リスト方式**を採り、`files`・`systemd` のみを「完全」の根拠として認める（AC-08）。`compat`・`db`・`ldap`・`sss`・`nis`・`winbind` およびすべての未知の名前は不完全とする。とくに `compat` は `+`／`-` エントリ経由で NIS を引き込みうるため、名前が既知であることを理由に許容しない。ブロックリスト方式では、将来登場する NSS モジュールがすべて既定で「完全」と誤判定される。
 
 **角括弧トークンの扱い**は、`[NOTFOUND=continue]` のような動作指定をソース名から除くことである（AC-09）。これらはソースではなく、直前のソースに対する動作の指定であり、それ自体が参照先を増やすことはない。したがって `group: files [NOTFOUND=continue]` は「完全」である。ただし `group: [NOTFOUND=return]` のようにソース名が1つも残らない行は、行が無いのと同じく「不完全」とする。AC-09 が禁じているのは「角括弧トークンがそれ自体で不完全の理由になること」であり、ソース名を1つも持たない行を不完全とすることはこれに反しない。当該データベースの参照先が読み取れない以上、網羅性を保証できないためである。
+
+角括弧トークンは `[NOTFOUND=return UNAVAIL=continue]` のように内部に空白を含みうる（nsswitch.conf(5)）。空白区切りでトークン化してから `[` で始まるものだけを除く実装では、この閉じ括弧より前で区切られてしまい、`UNAVAIL=continue]` の部分が素性不明のソース名として残る。`nssSources` は角括弧の対応（`[` から対応する `]` まで）を1つのトークンとして扱い、内部の空白で分割しない。
+
+**行末コメントの扱い**は、`group: files systemd # local users only` のように許可された構成のあとに `#` コメントが続く行を、コメントを除いた `files systemd` として分類することである。`nssSources` はデータベース行を1行ずつ処理し、トークン化の前に `#` 以降を切り捨てる。`#` が角括弧トークンの内部（`[...]`）に現れることは nsswitch.conf の文法上ない。コメントを切り捨てずにトークン化すると、`#` 自身と後続の語がすべて素性不明のソース名として残り、本来「完全」であるべき構成が「不完全」に分類される。
 
 **`systemd` を許可リストに含める根拠**は要件書「決定事項」に述べたとおりであり、`nss-systemd` が提供する主体（`DynamicUser=` の一時 UID、`systemd-homed` のユーザー、`machined` のマッピング）が本ツールの保護対象ファイルのグループを共有する立場になりにくいこと、および Ubuntu の既定 `/etc/nsswitch.conf` が `passwd: files systemd` であることによる。残存リスクは §5.4 に記す。
 
@@ -928,6 +936,7 @@ flowchart TD
 | 対象 | 検証内容 | 対応 AC |
 |---|---|---|
 | `classifyNSSCompleteness` | プラットフォーム、`nsswitchState` の4値、`files`／`files systemd`／`sss`／`ldap`／`compat`／`db`／未知の名前、`passwd`・`group` の行の欠落、ソース名に付随する角括弧トークン、ソース名が1つも残らない行の各組み合わせをテーブルで検証 | AC-05〜AC-10 |
+| `nssSources` | 行末に `#` コメントが続く場合にコメントより後ろが無視されること（例: `files systemd # local users only` が `["files", "systemd"]` になること）、内部に空白を含む角括弧トークン（例: `[NOTFOUND=return UNAVAIL=continue]`）が1つのトークンとして除かれ、内部の空白で分割されないこと | AC-09 |
 | `combine`・構築関数・`String()` | 「1つでも不完全なら不完全」、先に評価した原因が残ること、`completeVerdict` が原因を持たないこと、想定外の値の表示 | AC-01 |
 | `scanGroupFile`・`scanPasswdFile` | 不正行を含む内容で `malformedLines` の件数と最初の位置が記録されること、**不正行が対象エントリより後ろにある場合も記録されること**、空行・コメント行が数えられないこと、NIS 互換エントリが不正行として数えられること、`slog.Warn` が従来どおり出力されること | AC-11〜AC-13 |
 | `enumerateFromFiles` | 分類結果と不正行の記録の合成が列挙結果に反映されること。分類が「完全」でも不正行があれば「不完全」になること、およびその逆 | AC-05, AC-11 |
