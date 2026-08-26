@@ -173,9 +173,19 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 		t.Skipf("primary GID %d has no corresponding group entry", primaryGID)
 	}
 
-	members, err := getGroupMembers(uint32(primaryGID))
+	enumeration, err := getGroupMembers(uint32(primaryGID))
 	require.NoError(t, err)
-	assert.Contains(t, members, currentUser.Username)
+	assert.Contains(t, enumeration.members, currentUser.Username)
+}
+
+// TestGetGroupMembers_StatesComplete verifies that the cgo getGroupMembers
+// always reports a complete enumeration on success.
+func TestGetGroupMembers_StatesComplete(t *testing.T) {
+	currentGID := getCurrentUserGID(t)
+
+	enumeration, err := getGroupMembers(currentGID)
+	require.NoError(t, err)
+	assert.Equal(t, completeVerdict(), enumeration.verdict)
 }
 
 func TestGetGroupMembers_MergedCountExceedsMaximum(t *testing.T) {

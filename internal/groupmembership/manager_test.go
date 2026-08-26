@@ -843,8 +843,8 @@ func TestIsUserOnlyGroupMember_NoSpecialCasing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			members := tt.members
-			gm := newWithEnumerator(func(_ uint32) ([]string, error) {
-				return members, nil
+			gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+				return groupEnumeration{members: members, verdict: completeVerdict()}, nil
 			})
 			isOnly, err := gm.isUserOnlyGroupMember(currentUID, uint32(currentPrimaryGID))
 			if tt.wantErr {
@@ -866,8 +866,8 @@ func TestIsUserOnlyGroupMember_EnumerationError(t *testing.T) {
 	require.NoError(t, err)
 
 	sentinelErr := errors.New("injected enumeration failure")
-	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
-		return nil, sentinelErr
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+		return groupEnumeration{}, sentinelErr
 	})
 
 	isOnly, err := gm.isUserOnlyGroupMember(currentUID, 0)
@@ -885,8 +885,8 @@ func TestCanUserSafelyWriteFile_EnumerationError(t *testing.T) {
 	require.NoError(t, err)
 
 	sentinelErr := errors.New("injected enumeration failure")
-	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
-		return nil, sentinelErr
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+		return groupEnumeration{}, sentinelErr
 	})
 
 	canWrite, err := gm.CanUserSafelyWriteFile(currentUID, uint32(currentUID), 0, 0o660)
@@ -901,12 +901,12 @@ func TestGetGroupMembers_ErrorNotCached(t *testing.T) {
 	sentinelErr := errors.New("injected enumeration failure")
 
 	callCount := 0
-	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
 		callCount++
 		if callCount == 1 {
-			return nil, sentinelErr
+			return groupEnumeration{}, sentinelErr
 		}
-		return []string{"user"}, nil
+		return groupEnumeration{members: []string{"user"}, verdict: completeVerdict()}, nil
 	})
 
 	members, err := gm.GetGroupMembers(0)
@@ -938,15 +938,15 @@ func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("primary GID match unaffected by enumeration expansion", func(t *testing.T) {
-		gmWithUser := newWithEnumerator(func(_ uint32) ([]string, error) {
-			return []string{currentUser.Username}, nil
+		gmWithUser := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+			return groupEnumeration{members: []string{currentUser.Username}, verdict: completeVerdict()}, nil
 		})
 		isMember, err := gmWithUser.IsUserInGroup(uint32(currentUID), uint32(currentPrimaryGID))
 		assert.NoError(t, err)
 		assert.True(t, isMember)
 
-		gmWithoutUser := newWithEnumerator(func(_ uint32) ([]string, error) {
-			return []string{}, nil
+		gmWithoutUser := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+			return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil
 		})
 		isMember, err = gmWithoutUser.IsUserInGroup(uint32(currentUID), uint32(currentPrimaryGID))
 		assert.NoError(t, err)
@@ -954,7 +954,9 @@ func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 	})
 
 	t.Run("non-member GID returns false", func(t *testing.T) {
-		gm := newWithEnumerator(func(_ uint32) ([]string, error) { return []string{}, nil })
+		gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+			return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil
+		})
 		isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
 		assert.NoError(t, err)
 		assert.False(t, isMember)
@@ -970,8 +972,8 @@ func TestIsUserInGroup_EnumerationError(t *testing.T) {
 	require.NoError(t, err)
 
 	sentinelErr := errors.New("injected enumeration failure")
-	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
-		return nil, sentinelErr
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+		return groupEnumeration{}, sentinelErr
 	})
 
 	isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
@@ -984,8 +986,8 @@ func TestIsUserInGroup_EnumerationError(t *testing.T) {
 // fails, the read path is fail-closed.
 func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 	sentinelErr := errors.New("injected enumeration failure")
-	gm := newWithEnumerator(func(_ uint32) ([]string, error) {
-		return nil, sentinelErr
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+		return groupEnumeration{}, sentinelErr
 	})
 
 	canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)

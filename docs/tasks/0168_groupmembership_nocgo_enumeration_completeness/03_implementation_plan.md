@@ -125,35 +125,35 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **作業内容**
 
-- [ ] `completeness.go` に `enumerationCompleteness`（`completenessUnstated` をゼロ値とする3値）と `String()` を定義する。表示名の形は既存の `PermissionCheckUIDPolicy.String()` に倣い、想定外の値を `unknown(N)` で表す
-- [ ] `completeness.go` に `incompletenessCause`（`causeUnspecified` をゼロ値とする4値）と `String()` を定義する
-- [ ] `completeness.go` に `completenessVerdict`（フィールドはすべて非公開）と構築関数 `completeVerdict()`・`incompleteVerdict(cause, detail)` を定義する
-- [ ] `completeness.go` に `combine` を定義する。「1つでも不完全なら不完全」であり、完全へ戻る経路を持たせない
-- [ ] `completeness.go` に `groupEnumeration`（`members []string` と `verdict completenessVerdict`）を定義する
-- [ ] `membership_cgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にし、成功時に `completeVerdict()` を申告する
-- [ ] `membership_cgo.go` に `precomputeEnumerationEnvironment()` の CGO 版（何もしない）を定義する
-- [ ] `membership_nocgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にする。この Phase では暫定的に `completeVerdict()` を申告する。**TODO コメントは置かず、暫定であることを Phase 1 のコミットメッセージに英語で明記する**（Phase 4b でこの暫定値が確実に置き換わることは、Phase 4b の静的確認と強制実行で担保する）
-- [ ] `membership_nocgo.go` に `precomputeEnumerationEnvironment()` の非 CGO 版を定義する。この Phase では本体を空にし、Phase 4a で `nsswitchVerdict()` の呼び出しを入れる
-- [ ] `manager.go` の `EnsurePermissionCheckUID` の**先頭**で `precomputeEnumerationEnvironment()` を呼ぶ。`getPermissionCheckUID` が失敗して早期 return するホストでも警告が出るようにする。**呼び出しを Phase 1 に置く理由**: 両版の本体はこの Phase では空だが、呼び出し元が1つも無いと非公開関数として `unused`（`.golangci.yml:13`）に報告され、PR-1〜PR-3 の `make lint` が2構成とも落ちる。本体が空である以上、呼び出しを先に置いても外部から観測できる挙動は変わらない
-- [ ] `manager.go` の `groupMemberCache` を `enumeration groupEnumeration` と `expiry time.Time` に変える
-- [ ] `manager.go` の `enumerateGroupMembers` フィールドの型を `func(gid uint32) (groupEnumeration, error)` に変える
-- [ ] `manager.go` にキャッシュ層 `getGroupEnumeration(gid uint32) (groupEnumeration, error)` を切り出す。キャッシュ有効期間・失効処理・エラーをキャッシュしない扱いは現行のままにする
-- [ ] `manager.go` の `GetGroupMembers` を `getGroupEnumeration` からメンバー集合だけを取り出す包みにする。**シグネチャ `func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)` は変えない**
-- [ ] `test_helpers.go` の `newWithEnumerator` の引数型を `func(gid uint32) (groupEnumeration, error)` に変える
-- [ ] `completeness_test.go` に `combine`・構築関数・`String()` のテストを書く。「1つでも不完全なら不完全」、先に評価した側の原因が残ること、`completeVerdict()` が原因を持たないこと、想定外の値が `unknown(N)` で表示されることを検証する
-- [ ] `membership_cgo_test.go` に、CGO 版 `getGroupMembers` が成功時に「完全」を申告することを検証するテストを追加する
-- [ ] `membership_cgo_test.go:176` の `TestGetGroupMembers_IncludesPrimaryGroupMembers` を新しい戻り値に追随させる
-- [ ] `membership_cgo_test.go` の `TestGetGroupMembers_MergedCountExceedsMaximum` を新しい戻り値に追随させる
-- [ ] `membership_common_test.go:55` の `TestGetGroupMembers_Common` を新しい戻り値に追随させる
-- [ ] `membership_common_test.go:68` の `TestGetGroupMembers_InvalidGID_Common` を新しい戻り値に追随させる。グループ不在時に空集合とエラーなしが返る既存の契約（AC-04）はここで維持される
-- [ ] `membership_semantics_test.go:167` の `getGroupMembers` 呼び出しを新しい戻り値に追随させる。**これを行わないと `cgo && test` 構成がコンパイルできない**
-- [ ] `manager_test.go` の `newWithEnumerator` を呼ぶ全9箇所を、「完全」を申告する `groupEnumeration` を返す形へ更新する（対象テストは `TestIsUserOnlyGroupMember_NoSpecialCasing`、`TestIsUserOnlyGroupMember_EnumerationError`、`TestCanUserSafelyWriteFile_EnumerationError`、`TestGetGroupMembers_ErrorNotCached`、`TestIsUserInGroup_NoRegressionWithPrimaryMembers`、`TestIsUserInGroup_EnumerationError`、`TestCanCurrentUserSafelyReadFile_EnumerationError` の7つ）
+- [x] `completeness.go` に `enumerationCompleteness`（`completenessUnstated` をゼロ値とする3値）と `String()` を定義する。表示名の形は既存の `PermissionCheckUIDPolicy.String()` に倣い、想定外の値を `unknown(N)` で表す
+- [x] `completeness.go` に `incompletenessCause`（`causeUnspecified` をゼロ値とする4値）と `String()` を定義する
+- [x] `completeness.go` に `completenessVerdict`（フィールドはすべて非公開）と構築関数 `completeVerdict()`・`incompleteVerdict(cause, detail)` を定義する
+- [x] `completeness.go` に `combine` を定義する。「1つでも不完全なら不完全」であり、完全へ戻る経路を持たせない
+- [x] `completeness.go` に `groupEnumeration`（`members []string` と `verdict completenessVerdict`）を定義する
+- [x] `membership_cgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にし、成功時に `completeVerdict()` を申告する
+- [x] `membership_cgo.go` に `precomputeEnumerationEnvironment()` の CGO 版（何もしない）を定義する
+- [x] `membership_nocgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にする。この Phase では暫定的に `completeVerdict()` を申告する。**TODO コメントは置かず、暫定であることを Phase 1 のコミットメッセージに英語で明記する**（Phase 4b でこの暫定値が確実に置き換わることは、Phase 4b の静的確認と強制実行で担保する）
+- [x] `membership_nocgo.go` に `precomputeEnumerationEnvironment()` の非 CGO 版を定義する。この Phase では本体を空にし、Phase 4a で `nsswitchVerdict()` の呼び出しを入れる
+- [x] `manager.go` の `EnsurePermissionCheckUID` の**先頭**で `precomputeEnumerationEnvironment()` を呼ぶ。`getPermissionCheckUID` が失敗して早期 return するホストでも警告が出るようにする。**呼び出しを Phase 1 に置く理由**: 両版の本体はこの Phase では空だが、呼び出し元が1つも無いと非公開関数として `unused`（`.golangci.yml:13`）に報告され、PR-1〜PR-3 の `make lint` が2構成とも落ちる。本体が空である以上、呼び出しを先に置いても外部から観測できる挙動は変わらない
+- [x] `manager.go` の `groupMemberCache` を `enumeration groupEnumeration` と `expiry time.Time` に変える
+- [x] `manager.go` の `enumerateGroupMembers` フィールドの型を `func(gid uint32) (groupEnumeration, error)` に変える
+- [x] `manager.go` にキャッシュ層 `getGroupEnumeration(gid uint32) (groupEnumeration, error)` を切り出す。キャッシュ有効期間・失効処理・エラーをキャッシュしない扱いは現行のままにする
+- [x] `manager.go` の `GetGroupMembers` を `getGroupEnumeration` からメンバー集合だけを取り出す包みにする。**シグネチャ `func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)` は変えない**
+- [x] `test_helpers.go` の `newWithEnumerator` の引数型を `func(gid uint32) (groupEnumeration, error)` に変える
+- [x] `completeness_test.go` に `combine`・構築関数・`String()` のテストを書く。「1つでも不完全なら不完全」、先に評価した側の原因が残ること、`completeVerdict()` が原因を持たないこと、想定外の値が `unknown(N)` で表示されることを検証する
+- [x] `membership_cgo_test.go` に、CGO 版 `getGroupMembers` が成功時に「完全」を申告することを検証するテストを追加する
+- [x] `membership_cgo_test.go:176` の `TestGetGroupMembers_IncludesPrimaryGroupMembers` を新しい戻り値に追随させる
+- [x] `membership_cgo_test.go` の `TestGetGroupMembers_MergedCountExceedsMaximum` を新しい戻り値に追随させる
+- [x] `membership_common_test.go:55` の `TestGetGroupMembers_Common` を新しい戻り値に追随させる
+- [x] `membership_common_test.go:68` の `TestGetGroupMembers_InvalidGID_Common` を新しい戻り値に追随させる。グループ不在時に空集合とエラーなしが返る既存の契約（AC-04）はここで維持される
+- [x] `membership_semantics_test.go:167` の `getGroupMembers` 呼び出しを新しい戻り値に追随させる。**これを行わないと `cgo && test` 構成がコンパイルできない**
+- [x] `manager_test.go` の `newWithEnumerator` を呼ぶ全9箇所を、「完全」を申告する `groupEnumeration` を返す形へ更新する（対象テストは `TestIsUserOnlyGroupMember_NoSpecialCasing`、`TestIsUserOnlyGroupMember_EnumerationError`、`TestCanUserSafelyWriteFile_EnumerationError`、`TestGetGroupMembers_ErrorNotCached`、`TestIsUserInGroup_NoRegressionWithPrimaryMembers`、`TestIsUserInGroup_EnumerationError`、`TestCanCurrentUserSafelyReadFile_EnumerationError` の7つ）
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] `rg -c 'func \(gm \*GroupMembership\) GetGroupMembers\(gid uint32\) \(\[\]string, error\)' internal/groupmembership/manager.go` が `1` を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [x] `rg -c 'func \(gm \*GroupMembership\) GetGroupMembers\(gid uint32\) \(\[\]string, error\)' internal/groupmembership/manager.go` が `1` を返す
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である
 
 ### PR-1 作成ポイント: enumeration completeness type and plumbing
 
@@ -169,8 +169,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **判定理由**: 型の形とキャッシュ層の切り出しは `02_architecture.md` §3.1／§3.5 で確定しており、`既存コード調査結果` にも競合する方針の併記は無い。作業は戻り値変更とその追随であり、panel-mode の引き金にも Conditional checks の複数該当にも当たらない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1060](https://github.com/isseis/go-safe-cmd-runner/pull/1060)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

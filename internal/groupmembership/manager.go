@@ -85,7 +85,7 @@ type GroupMembership struct {
 	// enumerateGroupMembers is the function used to list group members.
 	// New() sets it to getGroupMembers (the build-specific implementation).
 	// Tests may replace it to inject deterministic failures.
-	enumerateGroupMembers func(gid uint32) ([]string, error)
+	enumerateGroupMembers func(gid uint32) (groupEnumeration, error)
 
 	// policy is the instance-level permission check UID policy. Its zero
 	// value is PolicyUnset, meaning the instance defers to the process-wide
@@ -98,10 +98,10 @@ type GroupMembership struct {
 	sudoUIDExistence sudoUIDExistenceMemo
 }
 
-// groupMemberCache holds cached group membership data with expiration
+// groupMemberCache holds a cached enumeration result with its expiry.
 type groupMemberCache struct {
-	members []string
-	expiry  time.Time
+	enumeration groupEnumeration
+	expiry      time.Time
 }
 
 // New creates a new GroupMembership instance. If no options are given, the
@@ -118,14 +118,14 @@ func New(opts ...Option) *GroupMembership {
 	return gm
 }
 
-// GetGroupMembers returns all members of a group given its GID
-// Results are cached for performance with the configured timeout
-func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
+// getGroupEnumeration returns the cached or freshly computed enumeration
+// result for gid, including its completeness.
+func (gm *GroupMembership) getGroupEnumeration(gid uint32) (groupEnumeration, error) {
 	// Check cache first
 	gm.cacheMutex.RLock()
 	if cached, exists := gm.membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
 		gm.cacheMutex.RUnlock()
-		return cached.members, nil
+		return cached.enumeration, nil
 	}
 	gm.cacheMutex.RUnlock()
 
@@ -135,7 +135,7 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 
 	// Double-check after acquiring write lock (another goroutine might have populated it)
 	if cached, exists := gm.membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		return cached.members, nil
+		return cached.enumeration, nil
 	}
 
 	// Increment cleanup counter and perform periodic cleanup
@@ -146,18 +146,28 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 	}
 
 	// Get group members using the appropriate implementation (CGO or non-CGO)
-	members, err := gm.enumerateGroupMembers(gid)
+	enumeration, err := gm.enumerateGroupMembers(gid)
 	if err != nil {
-		return nil, err
+		return groupEnumeration{}, err
 	}
 
 	// Cache the result
 	gm.membershipCache[gid] = groupMemberCache{
-		members: members,
-		expiry:  time.Now().Add(DefaultCacheTimeout),
+		enumeration: enumeration,
+		expiry:      time.Now().Add(DefaultCacheTimeout),
 	}
 
-	return members, nil
+	return enumeration, nil
+}
+
+// GetGroupMembers returns all members of a group given its GID.
+// Results are cached for performance with the configured timeout.
+func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
+	enumeration, err := gm.getGroupEnumeration(gid)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(enumeration.members), nil
 }
 
 // IsUserInGroup checks if a user is a member of a group
@@ -515,6 +525,7 @@ func (gm *GroupMembership) getPermissionCheckUID() (int, error) {
 // failing closed if SUDO_UID is unverifiable. This must be called once before processing files,
 // since record reads through safefileio.SafeOpenFile without read-safety checks.
 func (gm *GroupMembership) EnsurePermissionCheckUID() error {
+	precomputeEnumerationEnvironment()
 	_, err := gm.getPermissionCheckUID()
 	return err
 }
