@@ -8,7 +8,7 @@
 | Created | 2026-08-26 |
 | Review date | 2026-08-26 |
 | Reviewer | issei |
-| Comments | - |
+| Comments | 2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
 
 ## 0. 本書の位置づけ
 
@@ -153,15 +153,19 @@ flowchart LR
 | ファイル | ビルドタグ | 配置する内容 |
 |---|---|---|
 | `completeness.go`（新規） | なし | 列挙結果の型 `groupEnumeration`、完全性の型 `enumerationCompleteness`、不完全の原因 `incompletenessCause`、完全性判定 `completenessVerdict` とその合成 |
-| `nsswitch.go`（新規） | `//go:build !cgo \|\| test` | `/etc/nsswitch.conf` の読み取りと分類、プロセス単位の分類の確定 |
-| `membership_nocgo.go`（変更） | `//go:build !cgo` | 非 CGO 版 `getGroupMembers`。分類結果とパース不能行の記録を合成して完全性を申告する |
+| `nsswitch.go`（新規） | `//go:build !cgo \|\| test` | `/etc/nsswitch.conf` の読み取りと分類、および分類警告の生成。いずれもプロセス単位の状態を持たない |
+| `membership_nocgo.go`（変更） | `//go:build !cgo` | 非 CGO 版 `getGroupMembers`。分類結果とパース不能行の記録を合成して完全性を申告する。**プロセス単位の分類の確定（`nsswitchVerdict`）と、そこが使う警告レポータの共有インスタンスもここに置く** |
 | `membership_files.go`（変更） | `//go:build !cgo \|\| test` | `/etc/group`・`/etc/passwd` の走査。読み飛ばした行の記録を戻り値に加える |
 | `membership_cgo.go`（変更） | `//go:build cgo` | CGO 版 `getGroupMembers`。成功時は常に「完全」を申告する |
 | `manager.go`（変更） | なし | 列挙の差し替え点、キャッシュ、`isUserOnlyGroupMember`、エラー定義 |
 
 `completeness.go` にビルドタグを付けないのは、CGO 版・非 CGO 版の両方が同じ型を使うためである。`nsswitch.go` に `!cgo || test` を選ぶのは、CGO ビルドでのみ有効な意味論一致テスト（`membership_semantics_test.go`）が分類関数を呼ぶためであり、`membership_files.go` が同じ理由で同じタグを持っているのに倣う。
 
-**ビルドタグの無いファイルは、両ビルドに存在する識別子だけを参照できる。** `manager.go` にはビルドタグが無いため、`nsswitch.go` の `nsswitchVerdict` を直接呼ぶことはできない。CGO ビルド（`test` タグ無し）では `nsswitch.go` が存在せず、コンパイルが通らないためである。§4.4 が求める起動時の分類の先行評価は、両ビルドに実装を持つ次の関数を経由して行う。
+**`nsswitchVerdict` を `nsswitch.go` ではなく `membership_nocgo.go` に置く**のは、次の2つの理由による。第一に、この関数はプロセス単位で結果を確定させる（latch する）状態を持ち、しかもその状態が意味を持つのは実際に分類を行う非 CGO ビルドだけである。CGO ビルドは NSS を libc 経由で参照するため分類を必要としない（§3.4）。第二に、`nsswitch.go` は `!cgo || test` であるため CGO ビルドでもコンパイルされるが、その構成には `nsswitchVerdict` を呼ぶ production コードが存在しない。`.golangci.yml` が有効にしている `unused` が、呼び出し元を持たないこの関数を報告しうる。`//nolint` で伏せるのは、検出そのものは正しいため適切でない。
+
+この分割により、`nsswitch.go` に残るのは入力から出力が決まる関数（読み取り・分類・トークン化・警告の生成）だけになり、§1.1 の設計原則5「入出力と純粋な処理を分ける」とも整合する。プロセス単位の状態は、それが意味を持つビルドのファイルにのみ存在する。
+
+**ビルドタグの無いファイルは、両ビルドに存在する識別子だけを参照できる。** `manager.go` にはビルドタグが無いため、`membership_nocgo.go` の `nsswitchVerdict` を直接呼ぶことはできない。CGO ビルドではそのファイルが存在せず、コンパイルが通らないためである。§4.4 が求める起動時の分類の先行評価は、両ビルドに実装を持つ次の関数を経由して行う。
 
 ```go
 // precomputeEnumerationEnvironment resolves whatever environment facts this
@@ -334,6 +338,10 @@ func nssSources(content string, database string) []string
 // nsswitchVerdict returns the classification for this process. It reads and
 // classifies on first call and reuses the result for the lifetime of the
 // process, and records an incomplete classification once (see §4.4).
+//
+// This one lives in membership_nocgo.go (//go:build !cgo), not in
+// nsswitch.go: it holds process-wide state that only the build doing the
+// classification has any use for. See §2.2.
 func nsswitchVerdict() completenessVerdict
 ```
 
@@ -602,8 +610,8 @@ classDiagram
 | ファイル | 区分 | 責務 | 対応 AC |
 |---|---|---|---|
 | `internal/groupmembership/completeness.go` | 新規 | 完全性・原因・完全性判定・列挙結果の型と構築関数、合成 `combine`、`String()` | AC-01, AC-02 |
-| `internal/groupmembership/nsswitch.go` | 新規 | `/etc/nsswitch.conf` の読み取り（`readNsswitchSnapshot`）、分類（`classifyNSSCompleteness`、`nssSources`）、プロセス単位の分類の確定と1回限りの記録（`nsswitchVerdict`） | AC-05〜AC-10, AC-18 |
-| `internal/groupmembership/membership_nocgo.go` | 変更 | 非 CGO 版列挙。分類結果と不正行の記録を合成して完全性を申告（`enumerateFromFiles`）。`precomputeEnumerationEnvironment` の非 CGO 版実装 | AC-05, AC-11, AC-18 |
+| `internal/groupmembership/nsswitch.go` | 新規 | `/etc/nsswitch.conf` の読み取り（`readNsswitchSnapshot`）、分類（`classifyNSSCompleteness`、`nssSources`）、分類警告の生成。プロセス単位の状態は持たない（§2.2） | AC-05〜AC-10, AC-18 |
+| `internal/groupmembership/membership_nocgo.go` | 変更 | 非 CGO 版列挙。分類結果と不正行の記録を合成して完全性を申告（`enumerateFromFiles`）。`precomputeEnumerationEnvironment` の非 CGO 版実装。プロセス単位の分類の確定と1回限りの記録（`nsswitchVerdict`、§2.2） | AC-05, AC-11, AC-18 |
 | `internal/groupmembership/membership_files.go` | 変更 | 走査を `io.Reader` 受け取りに分離し、末尾まで読み切って `malformedLines` を返す。既存の `slog.Warn` は維持 | AC-11〜AC-13 |
 | `internal/groupmembership/membership_cgo.go` | 変更 | CGO 版列挙。成功時は常に「完全」を申告。`precomputeEnumerationEnvironment` の CGO 版実装（何もしない） | AC-02 |
 | `internal/groupmembership/manager.go` | 変更 | 列挙の差し替え点の型変更、キャッシュへの完全性の格納、`isUserOnlyGroupMember` の分岐、sentinel エラーとメッセージ、`EnsurePermissionCheckUID` からの `precomputeEnumerationEnvironment` 呼び出し | AC-03, AC-03a, AC-14〜AC-19 |
@@ -706,7 +714,7 @@ var ErrGroupMemberCompletenessUnstated = errors.New("group member enumeration co
 
 ### 4.4 記録（ログ）の方針
 
-**分類が「不完全」となったことは、プロセスにつき1回だけ `slog.Warn` で記録する。** 記録は `nsswitchVerdict` が分類を確定させる時点で行い、`user_database_source`・原因・`detail` を属性として持つ。この形は既存の `sudoUIDAdoptionReporter`（`manager.go`）に倣ったものである。これは採用事実をプロセスにつき1回だけ記録する仕組みである。
+**分類が「不完全」となったことは、プロセスにつき1回だけ `slog.Warn` で記録する。** 記録の生成そのものは `nsswitch.go` に置き、1回限りを保証する共有インスタンスは `nsswitchVerdict` と同じ `membership_nocgo.go` に置く（§2.2）。記録は `nsswitchVerdict` が分類を確定させる時点で行い、`user_database_source`・原因・`detail` を属性として持つ。この形は既存の `sudoUIDAdoptionReporter`（`manager.go`）に倣ったものである。これは採用事実をプロセスにつき1回だけ記録する仕組みである。
 
 **`completenessVerdict`・`groupEnumeration` を構造体のまま `slog.Any` などでログに渡してはならない。** 両者は §3.1 のとおり全フィールドが非公開であり、`internal/redaction` の構造体走査（`RedactingHandler.processStruct`）は reflection でエクスポート済みフィールドを列挙し、1つも無い場合は内容を見ずに `RedactionFailurePlaceholder`（`"[REDACTION FAILED - OUTPUT SUPPRESSED]"`）へ丸ごと置き換える（fail-secure）。したがって構造体をそのまま渡すと、`cause`・`detail` を含む診断情報が一切表示されないまま消える。これは値の一部を隠す通常の redact ではなく診断情報の完全な喪失であり、§1.1 原則6「拒否は診断できなければ意味がない」に反する。ここで述べた `user_database_source`・原因（`cause.String()`）・`detail` の3つを個別の属性として渡す形を必ず守る。
 

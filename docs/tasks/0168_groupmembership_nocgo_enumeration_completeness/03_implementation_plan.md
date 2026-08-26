@@ -94,7 +94,7 @@
 |---|---|
 | `make test` が `CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の2構成で `-tags test` を付けて走る | `Makefile` の `unit-test` ターゲット（477〜484行）を直接確認 |
 | `make lint` が同じ2構成で `--build-tags test` を付けて走る | `Makefile` の `lint` ターゲット（150〜157行）および `GOLINT` 定義（24行）を直接確認 |
-| `unused` linter が有効である | `.golangci.yml:13` を直接確認。**`nsswitch.go` の配置に影響する**（§6.1 の該当リスクと Phase 4 の先行確認を参照） |
+| `unused` linter が有効である | `.golangci.yml:13` を直接確認。**`nsswitchVerdict` の配置根拠になっている**（Phase 4 の「ファイルの分担」と `02_architecture.md` §2.2 を参照） |
 | `unit-test-cgo0` は `CGO_ENABLED=0` を自ら設定し、`unit-test` と違って `build-test`・`elfanalyzer-testdata-verify` を前提としない | `Makefile` 494〜495行を直接確認。Phase 4 の強制実行ではこの差を承知のうえで使う |
 | 本開発コンテナの `/etc/nsswitch.conf` は `passwd: files` / `group: files` であり、分類は「完全」になる | `/etc/nsswitch.conf` を直接確認。**そのため §3.7 の既存テストの破綻は手元では再現しない。** Phase 4 で分類結果を強制した実行を行う |
 | 実行ユーザーは非 root（uid 1000、sudo なし）であり、`/etc/nsswitch.conf` を書き換えて検証することはできない | `id` の出力で確認。強制は一時的なソース改変で行う。一方、`chmod 0000` したファイルを非 root が読めないことは利用できるため、読み取り失敗のテストは実ファイルで再現できる |
@@ -227,9 +227,16 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - `internal/groupmembership/membership_nocgo_test.go`
 - `internal/groupmembership/membership_semantics_test.go`
 
-**先行確認（他の作業に着手する前に行う）**
+**ファイルの分担（`02_architecture.md` §2.2 の改訂を反映）**
 
-- [ ] `nsswitch.go` の骨組み（型と関数シグネチャのみ）を置いた時点で `make lint` を `CGO_ENABLED=1` 構成で実行する。`nsswitch.go` は `!cgo || test` のため CGO 構成でもコンパイルされる一方、production 側の呼び出し元は非 CGO 版 `precomputeEnumerationEnvironment`（`//go:build !cgo`）だけであり、CGO 構成には存在しない。`nsswitchVerdict()` を参照するのは同構成では `nsswitch_test.go` のテストのみとなるため、有効な `unused` linter がこれをどう扱うかは実際に走らせるまで確定しない。**`unused` が報告した場合は、`02_architecture.md` §2.2 のコンポーネント配置表を「`nsswitchVerdict` は `membership_nocgo.go` に置き、`nsswitch.go` には純粋な `readNsswitchSnapshot`・`classifyNSSCompleteness`・`nssSources` のみを置く」へ改訂し、再承認を得てから続行する。** `//nolint` で伏せない（§6.1 のリスク表を参照）
+プロセス単位の状態を持つものと持たないものを、ビルドタグで分ける。
+
+| 置く先 | 内容 |
+|---|---|
+| `nsswitch.go`（`!cgo \|\| test`） | `nsswitchState`・`nsswitchSnapshot`、`readNsswitchSnapshotFrom`・`readNsswitchSnapshot`、`nssSources`、`classifyNSSCompleteness`、警告を組み立てる `nssCompletenessReporter` 型。**いずれもプロセス単位の状態を持たない** |
+| `membership_nocgo.go`（`!cgo`） | `nsswitchVerdict()`、および `nssCompletenessReporter` の package レベルの共有インスタンス。`enumerateFromFiles`、`precomputeEnumerationEnvironment` |
+
+`nsswitchVerdict()` を `nsswitch.go` に置かないのは、`nsswitch.go` が `!cgo || test` のため CGO 構成でもコンパイルされる一方、その構成には呼び出す production コードが無く、`.golangci.yml:13` で有効な `unused` に報告されうるためである。`//nolint` で伏せない。分類そのものが非 CGO ビルドでしか意味を持たないため、`membership_nocgo.go` へ置くほうが設計としても素直である（`02_architecture.md` §2.2）。
 
 **作業内容**
 
@@ -239,7 +246,7 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] `nsswitch.go` に `nssSources(content, database string) []string` を実装する。データベース行のトークン化の前に行末の `#` コメントを切り捨て、角括弧の対応（`[` から対応する `]` まで）を1つのトークンとして扱い内部の空白で分割しない（`02_architecture.md` §3.2）
 - [ ] `nsswitch.go` に `classifyNSSCompleteness(snapshot, goos)` を実装する。分類規則は `02_architecture.md` §3.2 の表に上から順で従い、`switch` の `default` を「不完全」へ倒す。**ファイルシステムに触れない**
 - [ ] 許可リストを `files`・`systemd` の2つに限る。`compat`・`db`・`ldap`・`sss`・`nis`・`winbind` および未知の名前をすべて「不完全」とする（ブロックリスト方式にしない）
-- [ ] `nsswitch.go` に `nsswitchVerdict()` を実装する。最初の呼び出しで読み取りと分類を行い、以後は同じ結果を返す（先行確認の結果しだいで配置先が `membership_nocgo.go` になる）
+- [ ] **`membership_nocgo.go`** に `nsswitchVerdict()` を実装する。最初の呼び出しで読み取りと分類を行い、以後は同じ結果を返す。`nsswitch.go` には置かない（上記「ファイルの分担」）
 - [ ] 警告の生成を `nsswitchVerdict()` から切り離し、既存の `sudoUIDAdoptionReporter`（`manager.go:414`）と同じ形の小さな型 `nssCompletenessReporter` に持たせる。`atomic.Bool` で1回限りを保証し、`report(logger *slog.Logger, v completenessVerdict)` の形で**ロガーを引数で受け取る**。production では package レベルの共有インスタンスを `nsswitchVerdict()` の確定時に呼ぶ。**この形にする理由**: `nsswitchVerdict()` はプロセス単位で latch するうえ、警告は分類が「不完全」のときしか出ない。本コンテナの分類は「完全」で、かつ production へ強制用の seam を足さない方針（§5.3）のため、`nsswitchVerdict()` 越しにテストすると記録が1件も出ないまま素通りする。型を分ければテストが自前のインスタンスと自前のロガーに任意の `incompleteVerdict(...)` を渡せる
 - [ ] `nssCompletenessReporter.report` が、分類が「不完全」の場合に `user_database_source`・`cause.String()`・`detail` の3つを**個別の属性として**持つ `slog.Warn` を1件出す。「完全」の場合は何も出さない
 - [ ] `membership_nocgo.go` の `precomputeEnumerationEnvironment()` の本体を `nsswitchVerdict()` の呼び出しに差し替える
@@ -500,7 +507,7 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 
 | リスク | 影響 | 対策 |
 |---|---|---|
-| `nsswitch.go` が `!cgo \|\| test` タグのため CGO 構成でもコンパイルされるが、その構成では `nsswitchVerdict()` の呼び出し元が存在しない。`unused` linter（`.golangci.yml:13` で有効）が検出しうる | Phase 4 の `make lint`（CGO 構成）が失敗し、Phase 4 が完了できない | Phase 4 の**先行確認**として、骨組みを置いた時点で CGO 構成の `make lint` を実行する。検出された場合は `02_architecture.md` §2.2 の配置表を改訂（`nsswitchVerdict` を `membership_nocgo.go` へ移す）して再承認を得てから続行する。`//nolint` で伏せない |
+| `nsswitchVerdict()` は CGO 構成では呼び出し元を持たないため、`!cgo \|\| test` の `nsswitch.go` に置くと `unused`（`.golangci.yml:13` で有効）に報告されうる | `make lint` の CGO 構成が失敗する | `02_architecture.md` §2.2 の改訂により、`nsswitchVerdict()` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ置くことで、リスクの原因そのものを取り除いた。`nsswitch.go` に残るのは状態を持たない関数と型だけになる |
 | Phase 1 が非 CGO 版に暫定の `completeVerdict()` を置くため、Phase 4 でその差し替えを忘れても、注入側でテストしている全テストが通ってしまう | 本タスクが閉じようとしているフェイルオープンがそのまま残る | §3 の AC-05 に配線の静的確認（`enumerateFromFiles(gid, nsswitchVerdict())` が存在し `completeVerdict()` が残っていないこと）を置き、Phase 4 の強制実行に陽性対照を付ける（§5.3） |
 | `readNsswitchSnapshot()` がパスを受け取らないため、`fs.ErrNotExist` と他の失敗の判別をテストできない。この判別を誤ると読み取り失敗が「完全」の申告に化ける | AC-07 の中核が未検証のまま完了扱いになる | 非公開の `readNsswitchSnapshotFrom(path)` へ分離し、`t.TempDir` と `chmod 0000` で3分岐を検証する（Phase 4） |
 | 本コンテナの分類が「完全」であるため、`02_architecture.md` §3.7 が挙げた既存テストの破綻が手元で再現しない | CI で初めて破綻が現れ、Phase 4 の PR が差し戻される | Phase 4 の完了判定条件として、陽性対照つきの強制実行を必須にする（§5.3） |
@@ -514,7 +521,7 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 
 | リスク | 対策 |
 |---|---|
-| Phase 4 の先行確認で `unused` の問題が判明した場合、アーキテクチャ文書の改訂と再承認が必要になり待ちが発生する | 先行確認を Phase 4 の最初の作業として、他の実装に着手する前に行う |
+| `nsswitchVerdict()` の配置変更に伴い、`02_architecture.md` §2.2・§3.2・§3.10・§4.4 が更新済みである。実装がこの分担から外れると、設計文書と実装が食い違ったまま進む | Phase 4 の「ファイルの分担」の表を実装前に確認し、`make lint` を2構成で通す |
 | Phase 4 で package 外の4ファイルに想定外の破綻が見つかり、作業量が増える | 強制実行を Phase 4 の早い段階で行い、破綻の有無を把握する。破綻した場合はその更新も Phase 4 の作業に含める |
 | Phase 5 の Issue 登録が外部依存（GitHub）であり、番号確定まで文書を確定できない | Issue 登録を Phase 5 の最初の作業とし、番号が出てから `01_requirements.md` と `98_remaining_issues.md` へ書き戻す |
 
