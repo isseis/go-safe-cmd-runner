@@ -8,7 +8,7 @@
 | Created | 2026-08-25 |
 | Review date | 2026-08-26 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-08-26: `02_architecture.md` の設計レビューで、既存の配布バイナリに対する挙動変更を変更履歴へ記載する受け入れ基準が欠けていることが判明したため、AC-30・AC-31 を追記した（承認済みの範囲への追加であり、既存 AC の変更・番号の振り直しは行っていない）。 |
 
 ## 関連 Issue
 
@@ -168,6 +168,8 @@ L-2 も L-3 も、`getGroupMembers` が `(members, nil)` を返しながら `mem
 - **AC-27**: [findings/D1_groupmembership.md](../0149_security_code_smell_audit_fable/findings/D1_groupmembership.md) の L-2・L-3 に本タスクでの対応結果が追記され、`systemd` を許可リストに含めたことによる残存リスクが記録されている。所見の原文は書き換えず、監査時点の記述として残す。
 - **AC-28**: `98_remaining_issues.md` の D1 以外の残件（E1・B2・C1・C2・C3・A3・A7 ほか）の記述が、本タスクの書き換えによって増減していない。
 - **AC-29**: 「対象外」節で分離した2件（CGO 版 `getpwent` の列挙不完全性、`release.yml` の darwin 非 CGO ビルドと Makefile の不整合）が Issue として登録され、本要件定義書と `98_remaining_issues.md` から参照できる。
+- **AC-30**: [CHANGELOG.ja.md](../../../CHANGELOG.ja.md) の「未リリース」→「破壊的変更」に本変更の項目が追加されている。項目からは、拒否が起きる条件（非 CGO ビルドかつ NSS 環境・Linux 以外・ユーザーデータベースの不正行）、影響を受ける構成、回復手段、および切り戻し方法が読み取れる。同節の既存項目が採る書式——見出しに対象コマンドまたは対象範囲を示し、`**影響範囲:**` を設け、アップグレード前に影響有無を判定する具体的な手順を添える——に揃える。
+- **AC-31**: AC-30 の英語版が [CHANGELOG.md](../../../CHANGELOG.md) に `/mktrans` により反映されている。日本語版を先に作成・コミットする。
 
 ## Success Criteria（要件レベル）
 
@@ -176,3 +178,4 @@ L-2 も L-3 も、`getGroupMembers` が `(members, nil)` を返しながら `mem
 - 本タスクの前後で、列挙が完全である環境における `CanUserSafelyWriteFile`・`IsUserInGroup`・`CanCurrentUserSafelyReadFile` の外部から観測できる挙動が変わらない。
 - 非 CGO ビルドが NSS 環境で group-writable ファイルへの書き込みを拒否したとき、運用者がエラーメッセージだけから原因と回復手段に到達できる。
 - #976 の2件それぞれについて、解消したのか、所見の推奨とは異なる形で close したのかが、コードと監査文書の双方から追える。
+- 既存の配布バイナリを使っている運用者が、アップグレード前に、自分のホストが新しい拒否の対象になるかどうかを変更履歴の記載だけから判定できる。
