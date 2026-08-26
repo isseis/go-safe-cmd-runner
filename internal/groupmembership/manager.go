@@ -167,7 +167,7 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return enumeration.members, nil
+	return slices.Clone(enumeration.members), nil
 }
 
 // IsUserInGroup checks if a user is a member of a group
