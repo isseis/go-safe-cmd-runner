@@ -68,4 +68,5 @@ func TestGetGroupMembers_InvalidGID_Common(t *testing.T) {
 	enumeration, err := getGroupMembers(invalidGID)
 	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
 	assert.Empty(t, enumeration.members, "getGroupMembers should return empty slice for non-existent group")
+	assert.Equal(t, completeVerdict(), enumeration.verdict, "a non-existent group is still a complete enumeration of zero members")
 }
