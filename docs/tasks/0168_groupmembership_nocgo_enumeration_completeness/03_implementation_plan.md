@@ -28,7 +28,7 @@
 - **Go のコメント・識別子・文字列リテラルはすべて英語で書く**（`.claude/commands/_context.md` の Source-language rule）。本書の説明文は日本語だが、それをそのままコードへ持ち込まない。
 - **コミットメッセージは英語で書く**（本リポジトリの既存のコミット履歴に揃える）。AC-21 が求める「テストを無効化して失敗を確認した」記録も英語で書き、`disabled` の語を含める。§3 の AC-21 の静的確認はこの語を数える。
 - **各 Phase の完了時に `make fmt` → `make test` → `make lint` を通す**。`make test` と `make lint` はいずれも `CGO_ENABLED=1` と `CGO_ENABLED=0` の2構成で実行される（`Makefile` の `lint` ターゲット 150〜157行、`unit-test` ターゲット 477〜484行で確認済み）。したがって新しいビルドタグ付きファイルの型エラーは、それを導入した Phase で必ず表面化する。
-- **テストは主張する理由で失敗できることを確認する**（AC-21）。確認の方法は `02_architecture.md` §7.3 の表を出発点とし、本書が §7.3 に無い5件を追加する（Phase 4 の完了判定条件を参照）。
+- **テストは主張する理由で失敗できることを確認する**（AC-21）。確認の方法は `02_architecture.md` §7.3 の表を出発点とし、本書が §7.3 に無い5件を追加する（Phase 2・4a・4b の完了判定条件を参照）。
 
 ### 1.3 既存コード調査結果
 
@@ -58,13 +58,13 @@
 | `membership_semantics_test.go:16` `shouldSkipSemanticsTest`、`:42` `nssSources` | テスト専用の分類実装。ビルドタグ `cgo && test` | 削除し、production の `readNsswitchSnapshot`・`classifyNSSCompleteness` を呼ぶ |
 | `membership_semantics_test.go:69` `TestShouldSkipSemanticsTest` | 上記に対するテーブルテスト（7行） | `nsswitch_test.go` へ移設し、`classifyNSSCompleteness` に対するテーブルテストへ作り替える |
 | `membership_semantics_test.go:167`（`TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` 内） | `getGroupMembers` を2値で受ける | 戻り値の変更に追随する。**Phase 1 で対応しないと `cgo && test` 構成がコンパイルできない** |
-| `membership_semantics_test.go:175` `fileExpectedMembers` | `findGroupByGID`・`findUsersWithPrimaryGID` を2値で受ける | 走査関数の戻り値変更に追随する。**変更は Phase 4 で行う**（走査関数のシグネチャが変わるのが Phase 4 のため） |
+| `membership_semantics_test.go:175` `fileExpectedMembers` | `findGroupByGID`・`findUsersWithPrimaryGID` を2値で受ける | 走査関数の戻り値変更に追随する。**変更は Phase 4b で行う**（走査関数のシグネチャが変わるのが Phase 4b のため） |
 | `membership_nocgo_test.go:159` `TestFindGroupByGID`（内部の複製は `:216`）、`:258` `TestFindUsersWithPrimaryGID`（複製は `:308`）、`:351` `TestFileReadingErrors`（複製は `:353`・`:367`） | **production の走査関数を呼んでいない。** `testFindGroupByGID`／`testFindUsersWithPrimaryGID` という走査ループの複製をテスト内に持ち、一時ファイルへ適用している。このままでは signature を変えてもテストは従来どおり通り、`malformedLines` は一度も検証されない | 複製を削除し、`scanGroupFile`・`scanPasswdFile` を直接呼ぶ形へ置き換える |
 | `membership_common_test.go:55`・`:68` | `getGroupMembers` を2値で受ける。ビルドタグなし（両構成で実行される） | 戻り値の変更に追随する |
 | `membership_cgo_test.go:176` | 同上。ビルドタグ `cgo` | 追随に加え、「完全」の申告を検証する |
 | `manager_test.go` の `newWithEnumerator` 利用箇所 | 9箇所。いずれも `([]string, error)` を返す関数を注入 | 「完全」を申告する値を返す形に更新し、従来の期待を維持する |
-| `manager_test.go:263`・`:390`・`:457` | 実環境の列挙で group-writable の許可を確認する3つのサブテスト（`02_architecture.md` §3.7 で特定済み） | 列挙が不完全と申告された場合に `ErrGroupMemberEnumerationIncomplete` を許容するよう更新する |
-| `manager_test.go:1005` `TestSudoUIDAdoptionReporter_Report`、`:1031` `..._ReportsOnlyOnce`、`:1228` `TestSudoUIDAdoptionRecordReachesDefaultLogger` | `tu.NewLogRecorder`（`internal/testutil/handlers.go:41`）で属性を検証する既存のテスト。既定ロガーを差し替えるものは `slog.SetDefault` ＋ `t.Cleanup` を使い `t.Parallel` を呼ばない | **変更しない。** Phase 4 で追加する分類警告のテストは、この3つを雛形として流用する |
+| `manager_test.go:263`・`:390`・`:457` | 実環境の列挙で group-writable の許可を確認する3つのサブテスト（`02_architecture.md` §3.7 で特定済み） | 列挙が不完全と申告された場合に `ErrGroupMemberEnumerationIncomplete` を許容するよう更新する。**変更は Phase 4b で行う**——配線が入るまでは緩和が効いているかを確かめられる経路が無いため |
+| `manager_test.go:1005` `TestSudoUIDAdoptionReporter_Report`、`:1031` `..._ReportsOnlyOnce`、`:1228` `TestSudoUIDAdoptionRecordReachesDefaultLogger` | `tu.NewLogRecorder`（`internal/testutil/handlers.go:41`）で属性を検証する既存のテスト。既定ロガーを差し替えるものは `slog.SetDefault` ＋ `t.Cleanup` を使い `t.Parallel` を呼ばない | **変更しない。** Phase 4a で追加する分類警告のテストは、この3つを雛形として流用する |
 
 #### 呼び出し元パッケージ
 
@@ -75,7 +75,7 @@
 | `internal/safefileio/safe_file.go:1187` `rejectionRule` | 既知の sentinel を列挙する `switch`。新しい2つは `default` の `unknown` に落ちる | 分岐を2つ加える |
 | `internal/safefileio/safe_file_test.go:1239` `TestRejectionRule` | 既存のテーブルテスト | 新しい2行を加える |
 | `internal/runner/base/output/manager.go:257` | `analysis.ErrorMessage = fmt.Sprintf("Permission check failed: %v", err)` | **変更しない。** `02_architecture.md` §5.5 が挙げる3経路の1つだが、値を dry-run の表示メッセージへ描画するだけで `errors.Is` による判別には使わないため、`%v` のままで支障がない。調査済みであることを記録として残す |
-| `internal/runner/base/security` | `GetGroupMembers`・`CanUserSafelyWriteFile` を公開シグネチャ経由で使う（`file_validation.go:336` ほか） | **production コードは変更しない。** ただし実環境の列挙に依存するテストは、Phase 4 の強制実行の結果しだいで更新しうる（§5.4 と AC-04a の検証を参照） |
+| `internal/runner/base/security` | `GetGroupMembers`・`CanUserSafelyWriteFile` を公開シグネチャ経由で使う（`file_validation.go:336` ほか） | **production コードは変更しない。** ただし実環境の列挙に依存するテストは、Phase 4b の強制実行の結果しだいで更新しうる（§5.4 と AC-04a の検証を参照） |
 
 #### 文書
 
@@ -94,9 +94,9 @@
 |---|---|
 | `make test` が `CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の2構成で `-tags test` を付けて走る | `Makefile` の `unit-test` ターゲット（477〜484行）を直接確認 |
 | `make lint` が同じ2構成で `--build-tags test` を付けて走る | `Makefile` の `lint` ターゲット（150〜157行）および `GOLINT` 定義（24行）を直接確認 |
-| `unused` linter が有効である | `.golangci.yml:13` を直接確認。**`nsswitchVerdict` の配置根拠になっている**（Phase 4 の「ファイルの分担」と `02_architecture.md` §2.2 を参照） |
-| `unit-test-cgo0` は `CGO_ENABLED=0` を自ら設定し、`unit-test` と違って `build-test`・`elfanalyzer-testdata-verify` を前提としない | `Makefile` 494〜495行を直接確認。Phase 4 の強制実行ではこの差を承知のうえで使う |
-| 本開発コンテナの `/etc/nsswitch.conf` は `passwd: files` / `group: files` であり、分類は「完全」になる | `/etc/nsswitch.conf` を直接確認。**そのため §3.7 の既存テストの破綻は手元では再現しない。** Phase 4 で分類結果を強制した実行を行う |
+| `unused` linter が有効である | `.golangci.yml:13` を直接確認。**`nsswitchVerdict` の配置根拠になっている**（Phase 4a の「ファイルの分担」と `02_architecture.md` §2.2 を参照） |
+| `unit-test-cgo0` は `CGO_ENABLED=0` を自ら設定し、`unit-test` と違って `build-test`・`elfanalyzer-testdata-verify` を前提としない | `Makefile` 494〜495行を直接確認。Phase 4b の強制実行ではこの差を承知のうえで使う |
+| 本開発コンテナの `/etc/nsswitch.conf` は `passwd: files` / `group: files` であり、分類は「完全」になる | `/etc/nsswitch.conf` を直接確認。**そのため §3.7 の既存テストの破綻は手元では再現しない。** Phase 4b で分類結果を強制した実行を行う |
 | 実行ユーザーは非 root（uid 1000、sudo なし）であり、`/etc/nsswitch.conf` を書き換えて検証することはできない | `id` の出力で確認。強制は一時的なソース改変で行う。一方、`chmod 0000` したファイルを非 root が読めないことは利用できるため、読み取り失敗のテストは実ファイルで再現できる |
 | 本リポジトリのコミットメッセージは英語である | `git log` の既存コミットで確認。AC-21 の静的確認を英語前提にした根拠 |
 | `#` の行頭コメントが nsswitch.conf の文法であること | `/etc/nsswitch.conf` の現物（1〜5行目）で確認 |
@@ -104,7 +104,7 @@
 
 ## 2. 実装ステップ
 
-Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に一致させる。Phase 2・3 を Phase 4 より先に置く理由も同節にある。
+Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に一致させる。Phase 2・3 を Phase 4 より先に置く理由も同節にある。§8 の Phase 4 のみ、レビューの単位として 4a・4b に分割する（順序の変更ではなく計画側の細分化であるため、`02_architecture.md` の改訂は要さない）。
 
 ### Phase 1: 完全性の型と申告（AC-01, AC-02, AC-04, AC-04a）
 
@@ -132,8 +132,9 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] `completeness.go` に `groupEnumeration`（`members []string` と `verdict completenessVerdict`）を定義する
 - [ ] `membership_cgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にし、成功時に `completeVerdict()` を申告する
 - [ ] `membership_cgo.go` に `precomputeEnumerationEnvironment()` の CGO 版（何もしない）を定義する
-- [ ] `membership_nocgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にする。この Phase では暫定的に `completeVerdict()` を申告する。**TODO コメントは置かず、暫定であることを Phase 1 のコミットメッセージに英語で明記する**（Phase 4 でこの暫定値が確実に置き換わることは、Phase 4 の静的確認と強制実行で担保する）
-- [ ] `membership_nocgo.go` に `precomputeEnumerationEnvironment()` の非 CGO 版を定義する。この Phase では本体を空にし、Phase 4 で `nsswitchVerdict()` の呼び出しを入れる
+- [ ] `membership_nocgo.go` の `getGroupMembers` の戻り値を `(groupEnumeration, error)` にする。この Phase では暫定的に `completeVerdict()` を申告する。**TODO コメントは置かず、暫定であることを Phase 1 のコミットメッセージに英語で明記する**（Phase 4b でこの暫定値が確実に置き換わることは、Phase 4b の静的確認と強制実行で担保する）
+- [ ] `membership_nocgo.go` に `precomputeEnumerationEnvironment()` の非 CGO 版を定義する。この Phase では本体を空にし、Phase 4a で `nsswitchVerdict()` の呼び出しを入れる
+- [ ] `manager.go` の `EnsurePermissionCheckUID` の**先頭**で `precomputeEnumerationEnvironment()` を呼ぶ。`getPermissionCheckUID` が失敗して早期 return するホストでも警告が出るようにする。**呼び出しを Phase 1 に置く理由**: 両版の本体はこの Phase では空だが、呼び出し元が1つも無いと非公開関数として `unused`（`.golangci.yml:13`）に報告され、PR-1〜PR-3 の `make lint` が2構成とも落ちる。本体が空である以上、呼び出しを先に置いても外部から観測できる挙動は変わらない
 - [ ] `manager.go` の `groupMemberCache` を `enumeration groupEnumeration` と `expiry time.Time` に変える
 - [ ] `manager.go` の `enumerateGroupMembers` フィールドの型を `func(gid uint32) (groupEnumeration, error)` に変える
 - [ ] `manager.go` にキャッシュ層 `getGroupEnumeration(gid uint32) (groupEnumeration, error)` を切り出す。キャッシュ有効期間・失効処理・エラーをキャッシュしない扱いは現行のままにする
@@ -153,6 +154,25 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
 - [ ] `rg -c 'func \(gm \*GroupMembership\) GetGroupMembers\(gid uint32\) \(\[\]string, error\)' internal/groupmembership/manager.go` が `1` を返す
 - [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である
+
+### PR-1 作成ポイント: enumeration completeness type and plumbing
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0168): carry enumeration completeness through group member lookup`
+
+**レビュー観点**: `enumerationCompleteness`・`incompletenessCause` のゼロ値が安全側（`unstated`／`unspecified`）であること / `combine` に完全へ戻る経路が無いこと / `GetGroupMembers` の公開シグネチャが不変で `internal/runner/base/security` の production コードに差分が無いこと / 非 CGO 版の暫定 `completeVerdict()` が TODO ではなくコミットメッセージで明示されていること / `precomputeEnumerationEnvironment()` が `EnsurePermissionCheckUID` から呼ばれており `unused` に落ちないこと / まだ production の呼び出し元を持たない `incompletenessCause` の各値と `combine` を `completeness_test.go` が使っていること（`unused` はテストからの利用を数えるため、この利用が抜けると `make lint` が落ちる）
+
+**PR の大きさについて**: 本 PR は10ファイル・25項目と大きいが分割できない。`getGroupMembers` と `newWithEnumerator` のシグネチャ変更は、`membership_semantics_test.go:167` を含む全呼び出し元の更新と同時でなければコンパイルが通らないためである。
+
+**実装モデル要件**: standard
+
+**判定理由**: 型の形とキャッシュ層の切り出しは `02_architecture.md` §3.1／§3.5 で確定しており、`既存コード調査結果` にも競合する方針の併記は無い。作業は戻り値変更とその追随であり、panel-mode の引き金にも Conditional checks の複数該当にも当たらない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 判定側のフェイルクローズド化（AC-03, AC-03a, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19）
 
@@ -175,15 +195,31 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] `manager_test.go` に `TestIncompleteEnumerationErrorMessage` を追加する。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の各原因について、メッセージに `user_database_source` の値が含まれること、および `causeNSSSources` では回復手段として `CGO_ENABLED=1` が現れることを検証する
 - [ ] `manager_test.go` に、キャッシュヒット時（同じ GID を2回呼ぶ）にも完全性が保たれ、同じ拒否になることを検証するテストを追加する。注入する関数にクロージャで呼び出し回数のカウンタを持たせ、2回目が列挙を再実行していないことも併せて検証する
 - [ ] `manager_test.go` に、不完全な列挙を注入しても `IsUserInGroup` と `CanCurrentUserSafelyReadFile` の結果が完全な列挙の場合と一致することを検証するテストを追加する
-- [ ] `manager_test.go:263` のサブテスト「group writable file - owner only allowed if exclusive group member」を、`ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する
-- [ ] `manager_test.go:390` のサブテスト「group_writable_member」を同様に更新する
-- [ ] `manager_test.go:457` の `various_permission_combinations` の行「group_read_write」（`0o664`）を同様に更新する
 
 **完了判定条件**
 
 - [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
 - [ ] `02_architecture.md` §7.3 の表のうち「不完全での拒否」「未申告での拒否」「キャッシュを跨ぐ完全性」「読み取り経路の不変」の4行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
 - [ ] §7.3 に無い追加の無効化確認: エラーメッセージ生成から `user_database_source` を落とすと `TestIncompleteEnumerationErrorMessage` が失敗する（AC-18）
+- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+
+### PR-2 作成ポイント: fail-closed group membership decision
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `feat(0168): reject incomplete group enumeration in write permission checks`
+
+**レビュー観点**: 完全性の `switch` が判定より手前にあり `default` が `ErrGroupMemberCompletenessUnstated` 側へ倒れること / 2つの sentinel が `errors.Is` で相互に区別できること / メッセージ生成が文字列の内容ではなく `incompletenessCause` で分岐していること / `completenessVerdict` を `slog.Any` へ渡していないこと
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `mkplan.md` step 8 のセキュリティゲートの引き金に該当する。書き込み許可の判定を fail-closed へ引き上げる中核であり、`switch` の `default`・ゼロ値・sentinel の切り分けを誤ると本タスクが閉じようとしているフェイルオープンがそのまま残る。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 診断可能性（AC-15, AC-18）
 
@@ -212,20 +248,31 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 - [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
 - [ ] `02_architecture.md` §7.3 の表の「sentinel の伝播」の行について、`%w` を `%v` へ戻すと `dir_permissions_unix_test.go` のテストが失敗することを確認し、コミットメッセージに英語で記す
+- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
-### Phase 4: 環境の分類と不正行（AC-05〜AC-13, AC-20）
+### PR-3 作成ポイント: sentinel diagnosability at caller boundaries
 
-非 CGO 版の申告を、Phase 1 で置いた暫定の「完全」から実際の分類結果へ差し替える。
+**対象ステップ**: Phase 3
 
-**変更するファイル**
+**推奨タイトル**: `feat(0168): propagate enumeration sentinels across caller boundaries`
 
-- `internal/groupmembership/nsswitch.go`（新規、`//go:build !cgo || test`）
-- `internal/groupmembership/nsswitch_test.go`（新規、`//go:build !cgo || test`）
-- `internal/groupmembership/membership_files.go`
-- `internal/groupmembership/membership_nocgo.go`
-- `internal/groupmembership/manager.go`
-- `internal/groupmembership/membership_nocgo_test.go`
-- `internal/groupmembership/membership_semantics_test.go`
+**レビュー観点**: `%w` を2つ持つ包装で `ErrInvalidDirPermissions` と新しい sentinel の双方が `errors.Is` で辿れること / `dir_permissions_unix_test.go` のビルドタグが `//go:build !windows && test` であること / `rejectionRule` の2分岐が既存の判定ロジックを変えていないこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 変更は包装の動詞1つと `switch` の2分岐、およびそれを固定するテストに限られる。設計判断は `02_architecture.md` §4.5 で確定済みで、panel-mode の引き金にも複数の Conditional checks にも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 4a: NSS 構成の分類と1回限りの警告（AC-05〜AC-10, AC-20）
+
+非 CGO 版の申告を、Phase 1 で置いた暫定の「完全」から実際の分類結果へ差し替える作業は変更量が大きいため、レビューの単位として 4a・4b の2段に分ける。4a はファイルに触れない分類の純関数と警告レポータだけを入れ、4b が走査の分離と非 CGO 版の配線を行って暫定値を取り除く。4a だけで `make test`・`make lint` が2構成とも通る（`nsswitchVerdict()` は `precomputeEnumerationEnvironment()` から呼ばれ、その呼び出し元は Phase 1 で既に入っているため、`unused` に報告されない）。
+
+4a をさらに「状態を持たない分類」と「latch とレポータ」に割らないのは、後者が `nsswitchVerdict()` と共有インスタンスの2シンボルしかなく、`nsswitch.go` と `membership_nocgo.go` の分担表を両 PR で二重に読ませる代償に見合わないためである。代わりに 4a 全体を `frontier-recommended` として扱う。
 
 **ファイルの分担（`02_architecture.md` §2.2 の改訂を反映）**
 
@@ -238,6 +285,16 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 `nsswitchVerdict()` を `nsswitch.go` に置かないのは、`nsswitch.go` が `!cgo || test` のため CGO 構成でもコンパイルされる一方、その構成には呼び出す production コードが無く、`.golangci.yml:13` で有効な `unused` に報告されうるためである。`//nolint` で伏せない。分類そのものが非 CGO ビルドでしか意味を持たないため、`membership_nocgo.go` へ置くほうが設計としても素直である（`02_architecture.md` §2.2）。
 
+**変更するファイル**
+
+- `internal/groupmembership/nsswitch.go`（新規、`//go:build !cgo || test`）
+- `internal/groupmembership/nsswitch_test.go`（新規、`//go:build !cgo || test`）
+- `internal/groupmembership/membership_nocgo.go`
+- `internal/groupmembership/membership_nocgo_test.go`
+- `internal/groupmembership/membership_semantics_test.go`
+
+production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専用の `nssSources`（`membership_semantics_test.go:42`、`cgo && test`）は同じ package にあり、`cgo && test` 構成では**両方がコンパイルされて再宣言エラーになる**。したがってテスト専用の複製の削除は 4b へ先送りできず、本 Phase の必須作業である。
+
 **作業内容**
 
 - [ ] `nsswitch.go` に `nsswitchState`（`nsswitchUnread` をゼロ値とする4値）と `nsswitchSnapshot` を定義する
@@ -249,16 +306,7 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] **`membership_nocgo.go`** に `nsswitchVerdict()` を実装する。最初の呼び出しで読み取りと分類を行い、以後は同じ結果を返す。`nsswitch.go` には置かない（上記「ファイルの分担」）
 - [ ] 警告の生成を `nsswitchVerdict()` から切り離し、既存の `sudoUIDAdoptionReporter`（`manager.go:414`）と同じ形の小さな型 `nssCompletenessReporter` に持たせる。`atomic.Bool` で1回限りを保証し、`report(logger *slog.Logger, v completenessVerdict)` の形で**ロガーを引数で受け取る**。production では package レベルの共有インスタンスを `nsswitchVerdict()` の確定時に呼ぶ。**この形にする理由**: `nsswitchVerdict()` はプロセス単位で latch するうえ、警告は分類が「不完全」のときしか出ない。本コンテナの分類は「完全」で、かつ production へ強制用の seam を足さない方針（§5.3）のため、`nsswitchVerdict()` 越しにテストすると記録が1件も出ないまま素通りする。型を分ければテストが自前のインスタンスと自前のロガーに任意の `incompleteVerdict(...)` を渡せる
 - [ ] `nssCompletenessReporter.report` が、分類が「不完全」の場合に `user_database_source`・`cause.String()`・`detail` の3つを**個別の属性として**持つ `slog.Warn` を1件出す。「完全」の場合は何も出さない
-- [ ] `membership_nocgo.go` の `precomputeEnumerationEnvironment()` の本体を `nsswitchVerdict()` の呼び出しに差し替える
-- [ ] `manager.go` の `EnsurePermissionCheckUID` の**先頭**で `precomputeEnumerationEnvironment()` を呼ぶ。`getPermissionCheckUID` が失敗して早期 return するホストでも警告が出るようにする
-- [ ] `membership_files.go` に `malformedLines`（`count int`、`first string`）と、その `verdict()` メソッドを定義する
-- [ ] `membership_files.go` の走査を `scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malformedLines, error)` へ切り出す。**対象エントリに一致してもファイル末尾まで読み切る**。一致したエントリは保持する
-- [ ] `membership_files.go` の走査を `scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)` へ切り出す
-- [ ] `findGroupByGID`・`findUsersWithPrimaryGID` を、ファイルを開いて上記へ渡すだけの薄い包みにする。戻り値に `malformedLines` を加える
-- [ ] 既存の `slog.Warn`（`membership_files.go:40`・`:101`）の出力内容（属性 `file`・`line`・`error`）を変えない
-- [ ] 空行と `#` で始まる行を不正行として数えない現行の扱いを維持する
-- [ ] `membership_nocgo.go` に `enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)` を実装し、分類結果と不正行の記録を `combine` で合成する。**分類を先に評価する**（両方が不完全な場合は分類の原因が残る）
-- [ ] `membership_nocgo.go` の `getGroupMembers` を `return enumerateFromFiles(gid, nsswitchVerdict())` の形にし、Phase 1 で置いた暫定の `completeVerdict()` を取り除く
+- [ ] `membership_nocgo.go` の `precomputeEnumerationEnvironment()` の本体を `nsswitchVerdict()` の呼び出しに差し替える。`EnsurePermissionCheckUID` からの呼び出しは Phase 1 で既に入っているため、本 Phase では `manager.go` に触れない
 
 **テストの作業内容**
 
@@ -273,6 +321,61 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] `membership_semantics_test.go:42` の `nssSources` を削除する
 - [ ] `membership_semantics_test.go:69` の `TestShouldSkipSemanticsTest` を削除する（移設先は `nsswitch_test.go`）
 - [ ] `membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` を、`readNsswitchSnapshot` と `classifyNSSCompleteness` を呼び、結果が「完全」でない場合に skip する形へ書き換える。skip の理由は `incompletenessCause.String()` と `detail` から組み立てる
+
+**完了判定条件**
+
+- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [ ] §3.1 の `AC-20` のコマンドが一致無し（無出力・終了コード 1）になる（テスト専用の複製実装が残っていない）
+- [ ] `02_architecture.md` §7.3 の表のうち「分類」「読み取り失敗の扱い」の2行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
+- [ ] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 行末 `#` の切り捨てを外す → `TestNSSSources` が失敗（AC-09）。(2) 分類表からプラットフォームの行を削る → `TestClassifyNSSCompleteness` が失敗（AC-06）
+- [ ] 警告の属性を `slog.Any("verdict", v)` の1つにまとめると `TestNSSCompletenessReporter_Report` が失敗することを確認する（`02_architecture.md` §4.4 の制約を、破れば落ちる形で固定できていることの確認）
+- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+
+### PR-4 作成ポイント: nsswitch classification and one-shot warning
+
+**対象ステップ**: Phase 4a
+
+**推奨タイトル**: `feat(0168): classify nsswitch enumeration completeness`
+
+**レビュー観点**: 許可リストが `files`・`systemd` の2つに限られブロックリストになっていないこと / `fs.ErrNotExist` 以外の読み取り失敗が `nsswitchAbsent` に落ちないこと / `classifyNSSCompleteness` と `nssSources` がファイルシステムに触れないこと / `nsswitchVerdict()` と共有レポータが `membership_nocgo.go` 側にあり CGO 構成で `unused` にならないこと / latch と `atomic.Bool` を持つのが `nsswitchVerdict()` と共有インスタンスだけで、`nsswitch.go` 側にプロセス単位の状態が漏れていないこと / テスト専用の `nssSources` が削除され `cgo && test` 構成で再宣言エラーにならないこと
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: プロセス単位で latch する `nsswitchVerdict()` と、`atomic.Bool` を持つ package レベル共有の `nssCompletenessReporter` という並行に読まれる状態を導入するため、「isolated high-risk/complex step（concurrency）」の引き金に該当する。§6.1 のリスク表7行のうち3行（`unused` による配置制約、`slog.Any` による秘匿化、latch がテストを素通りさせる問題）が本 PR に集中していることも同じ判断を支える。panel-mode の引き金（重いテスト面・セキュリティゲート）には該当しないため `frontier-required` ではない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 4b: 走査の分離・不正行の伝達・非 CGO 版の配線（AC-05 の配線, AC-11〜AC-13）
+
+**変更するファイル**
+
+- `internal/groupmembership/membership_files.go`
+- `internal/groupmembership/membership_nocgo.go`
+- `internal/groupmembership/membership_nocgo_test.go`
+- `internal/groupmembership/membership_semantics_test.go`
+- `internal/groupmembership/manager_test.go`（`:263`・`:390`・`:457` の期待の緩和。配線が入る本 Phase で初めて実際に効く）
+- **強制実行の結果しだいで**（`02_architecture.md` §3.7）: `internal/safefileio/safe_file_test.go`、`internal/runner/base/security/file_validation_test.go`、`internal/runner/base/security/destination_zoning_test.go`、`internal/runner/base/security/trusted_gids_linux_test.go`。**PR-5 の差分がこの4ファイルへ及びうることを、レビュー依頼の時点で明示する**
+
+**作業内容**
+
+- [ ] `membership_files.go` に `malformedLines`（`count int`、`first string`）と、その `verdict()` メソッドを定義する
+- [ ] `membership_files.go` の走査を `scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malformedLines, error)` へ切り出す。**対象エントリに一致してもファイル末尾まで読み切る**。一致したエントリは保持する
+- [ ] `membership_files.go` の走査を `scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)` へ切り出す
+- [ ] `findGroupByGID`・`findUsersWithPrimaryGID` を、ファイルを開いて上記へ渡すだけの薄い包みにする。戻り値に `malformedLines` を加える
+- [ ] 既存の `slog.Warn`（`membership_files.go:40`・`:101`）の出力内容（属性 `file`・`line`・`error`）を変えない
+- [ ] 空行と `#` で始まる行を不正行として数えない現行の扱いを維持する
+- [ ] `membership_nocgo.go` に `enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)` を実装し、分類結果と不正行の記録を `combine` で合成する。**分類を先に評価する**（両方が不完全な場合は分類の原因が残る）
+- [ ] `membership_nocgo.go` の `getGroupMembers` を `return enumerateFromFiles(gid, nsswitchVerdict())` の形にし、Phase 1 で置いた暫定の `completeVerdict()` を取り除く
+
+**テストの作業内容**
+
+- [ ] `manager_test.go:263` のサブテスト「group writable file - owner only allowed if exclusive group member」を、`ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する
+- [ ] `manager_test.go:390` のサブテスト「group_writable_member」を同様に更新する
+- [ ] `manager_test.go:457` の `various_permission_combinations` の行「group_read_write」（`0o664`）を同様に更新する
 - [ ] `membership_semantics_test.go:175` の `fileExpectedMembers` を、走査関数の戻り値変更に追随させる
 - [ ] `membership_nocgo_test.go:159` の `TestFindGroupByGID` から走査ループの複製 `testFindGroupByGID`（`:216`）を削除し、`scanGroupFile` を直接呼ぶ形に置き換える
 - [ ] `membership_nocgo_test.go:258` の `TestFindUsersWithPrimaryGID` から走査ループの複製 `testFindUsersWithPrimaryGID`（`:308`）を削除し、`scanPasswdFile` を直接呼ぶ形に置き換える
@@ -287,13 +390,32 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 **完了判定条件**
 
 - [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと）
+- [ ] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと。この確認は Phase 4b でのみ成立する）
 - [ ] **分類結果を強制した実行を、陽性対照つきで行う。** 本開発コンテナの `/etc/nsswitch.conf` は `files` のみであり実行ユーザーは非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` が常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時的にソースを改変し、`make unit-test-cgo0` を実行する。
       **陽性対照**: この状態で `manager_test.go:390` の `group_writable_member` が `ErrGroupMemberEnumerationIncomplete` の経路へ入ることを確認する。**入らない場合は、非 CGO 版 `getGroupMembers` の配線が欠けている証拠として扱い、ゲートを不合格とする**（「何も壊れなかった」を合格としない）。
-      あわせて `02_architecture.md` §3.7 が挙げた package 外の4ファイル（`internal/safefileio/safe_file_test.go`、`internal/runner/base/security/file_validation_test.go`、`internal/runner/base/security/destination_zoning_test.go`、`internal/runner/base/security/trusted_gids_linux_test.go`）の結果を確認し、破綻したテストを Phase 4 の作業として更新する。確認後に改変を戻す
-- [ ] `02_architecture.md` §7.3 の表のうち「分類」「読み取り失敗の扱い」「不正行の伝達」「対象エントリより後ろの不正行」「合成」の5行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §7.3 に無い追加の無効化確認を4件行い、同じくコミットメッセージに記す。(1) 行末 `#` の切り捨てを外す → `TestNSSSources` が失敗（AC-09）。(2) 空行・コメント行を不正行として数える → 該当テストが失敗（AC-13）。(3) `membership_files.go` の `slog.Warn` を削る → 警告のテストが失敗（AC-12）。(4) 分類表からプラットフォームの行を削る → `TestClassifyNSSCompleteness` が失敗（AC-06）
-- [ ] 警告の属性を `slog.Any("verdict", v)` の1つにまとめると `TestNSSCompletenessReporter_Report` が失敗することを確認する（`02_architecture.md` §4.4 の制約を、破れば落ちる形で固定できていることの確認）
+      **実行の記録を PR の説明に貼る**（改変内容・`make unit-test-cgo0` の出力・陽性対照の該当行・破綻した package 外のテスト名）。改変は実行後に戻すため、記録を残さないとレビュアはゲートが実施されたことを確認できない。
+      あわせて `02_architecture.md` §3.7 が挙げた package 外の4ファイル（`internal/safefileio/safe_file_test.go`、`internal/runner/base/security/file_validation_test.go`、`internal/runner/base/security/destination_zoning_test.go`、`internal/runner/base/security/trusted_gids_linux_test.go`）の結果を確認し、破綻したテストを Phase 4b の作業として更新する。確認後に改変を戻す
+- [ ] `02_architecture.md` §7.3 の表のうち「不正行の伝達」「対象エントリより後ろの不正行」「合成」の3行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
+- [ ] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 空行・コメント行を不正行として数える → 該当テストが失敗（AC-13）。(2) `membership_files.go` の `slog.Warn` を削る → 警告のテストが失敗（AC-12）
+- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+
+### PR-5 作成ポイント: malformed-line propagation and nocgo enumeration wiring
+
+**対象ステップ**: Phase 4b
+
+**推奨タイトル**: `feat(0168): propagate malformed lines and wire the nocgo verdict`
+
+**レビュー観点**: 対象エントリに一致してもファイル末尾まで読み切ること（打ち切りに戻すと不正行を見落とす） / `enumerateFromFiles` が分類を先に評価し `combine` で合成すること / Phase 1 の暫定 `completeVerdict()` が非 CGO 版から消えていること / 陽性対照つきの強制実行が「何も壊れなかった」で合格になっておらず、実行の記録が PR の説明にあること / 走査ループの複製が削除され production の `scanGroupFile`・`scanPasswdFile` を直接呼んでいること / 既存テストの緩和（`manager_test.go` の3件と package 外の最大4ファイル）が「不完全なら拒否」を無条件に許すところまで広がっていないこと
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: 非 CGO 版の配線がこの PR で初めて実際の拒否を発生させるセキュリティゲートであり、`mkplan.md` step 8 の「security-gate 相当の挙動引き上げ」と「重いテスト面」（package 外の4ファイルの破綻可能性、陽性対照つきの強制実行という外部ゲート）の双方に該当する。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書と監査記録（AC-23〜AC-33）
 
@@ -331,6 +453,23 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 - [ ] §3 の受け入れ基準検証表のうち AC-23〜AC-33 の確認がすべて期待どおりの結果になる
 - [ ] `git diff main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の差分が、D1 の節と分離した2件の追記だけに収まっている（AC-28）
 
+### PR-6 作成ポイント: user documentation and audit records
+
+**対象ステップ**: Phase 5
+
+**推奨タイトル**: `docs(0168): document fail-closed enumeration and close 0149 L-2/L-3`
+
+**レビュー観点**: `CHANGELOG` の「破壊的変更」項目と既存の「既知の制限」項目が同一リリース内で矛盾しないこと（AC-32・AC-33） / トラブルシューティングの原因3種（NSS 環境・不正行・macOS）が回復手段ごとに分けて書かれていること / 日本語版を先にコミットし英語版を `/mktrans` で反映した順序になっていること / `98_remaining_issues.md` の差分が D1 節と分離した2件に収まっていること（AC-28） / findings の所見原文が書き換えられていないこと（AC-27）
+
+**実装モデル要件**: standard
+
+**判定理由**: 文書更新と Issue 登録のみで production コードを触らず、`既存コード調査結果` にも競合する方針の併記は無い。外部依存は GitHub Issue の番号確定だけで、§6.2 に対策が置かれている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ## 3. 受け入れ基準の検証
 
 各受け入れ基準に対する検証を、`test`（実行可能・誤った挙動で失敗する）、`static`（コマンドの結果が機械的に判定できる）、`manual`（人による確認が必要）で分類する。テスト名は実装時に確定するため、下表の名称を実装の指針とする。
@@ -348,7 +487,7 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 | AC-04a | test | 同上 | `CGO_ENABLED=0 go test -tags test ./internal/runner/base/security/...` と `CGO_ENABLED=1 go test -tags test ./internal/runner/base/security/...` の双方が成功する。`internal/safefileio` については、`rejectionRule` への2行追加は診断のためであり判定ロジックを変えない（`02_architecture.md` §4.5）。`safe_file_test.go` の既存の行は変更しない |
 | AC-05 | test | `nsswitch.go` `classifyNSSCompleteness` | `nsswitch_test.go::TestClassifyNSSCompleteness`（`linux` かつ `files`／`files systemd` の行が「完全」になる） |
 | AC-05 | static | `membership_nocgo.go` `getGroupMembers` | 非 CGO 版の配線: `rg -c 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が `1`、かつ `rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0`（Phase 1 の暫定値が残っていないこと） |
-| AC-05 | manual | 同上 | Phase 4 の陽性対照つき強制実行（分類を「不完全」に固定したとき `manager_test.go:390` が拒否経路へ入ること）。自動テストで代替できないのは、強制の seam を production へ追加しない方針のため |
+| AC-05 | manual | 同上 | Phase 4b の陽性対照つき強制実行（分類を「不完全」に固定したとき `manager_test.go:390` が拒否経路へ入ること）。自動テストで代替できないのは、強制の seam を production へ追加しない方針のため |
 | AC-06 | test | `classifyNSSCompleteness` | `::TestClassifyNSSCompleteness`（`goos` が `darwin` および `linux` 以外のその他で `causeUnsupportedPlatform` の「不完全」になる行） |
 | AC-07 | test | `classifyNSSCompleteness` | 同上（`nsswitchAbsent` が「完全」、`nsswitchReadFailed`・`passwd` 行欠落・`group` 行欠落・ゼロ値 `nsswitchUnread` が「不完全」になる各行） |
 | AC-07 | test | `nsswitch.go` `readNsswitchSnapshotFrom` | `nsswitch_test.go::TestReadNsswitchSnapshotFrom`（不在 → `nsswitchAbsent`、`chmod 0000` → `nsswitchReadFailed`、通常 → `nsswitchRead`）。**読み取り失敗を不在と取り違えると「完全」の申告に化けるため、分類表だけでは AC-07 を検証したことにならない** |
@@ -367,10 +506,10 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 | AC-18 | test | `manager.go` のメッセージ生成、`safe_file.go:1187` | `manager_test.go::TestIncompleteEnumerationErrorMessage`（原因ごとに `user_database_source` の値が含まれ、`causeNSSSources` では `CGO_ENABLED=1` が回復手段として現れる）、`internal/safefileio/safe_file_test.go::TestRejectionRule`（新しい2つが `unknown` にならない） |
 | AC-18 | test | `nsswitch.go` `nssCompletenessReporter` | `nsswitch_test.go::TestNSSCompletenessReporter_Report`（`user_database_source`・`cause`・`detail` が個別の属性として記録される）、`::TestNSSCompletenessReporter_ReportsOnlyOnce`（1回限り）、`membership_nocgo_test.go::TestEnsurePermissionCheckUIDPrecomputesEnvironment`。**ロガーと verdict を引数で受ける型に切り出すため、実行環境の NSS 構成に依存せずに検証できる** |
 | AC-19 | test | `manager.go` `getGroupEnumeration` | `manager_test.go::TestCompletenessSurvivesCache`（同じ GID を2回呼び、2回目も同じ拒否になる。注入関数がクロージャで持つカウンタにより列挙が1回しか実行されないことも検証する） |
-| AC-20 | static | `membership_semantics_test.go` | §3.1 の `AC-20` のコマンドが `0` を返す |
+| AC-20 | static | `membership_semantics_test.go` | §3.1 の `AC-20` のコマンドが一致無しになる |
 | AC-20 | test | `nsswitch_test.go` | `::TestClassifyNSSCompleteness` が `02_architecture.md` §3.8 の対応表の10通りの環境をすべて含む |
-| AC-21 | static | 各 Phase のコミット | §3.1 の `AC-21` のコマンドが `3` 以上を返す（Phase 2・3・4 のコミット単位で数える） |
-| AC-21 | manual | 同上 | `02_architecture.md` §7.3 の10行に加え、本書が追加する5件（AC-06・AC-09・AC-12・AC-13・AC-18）の無効化確認を実施する（Phase 2・4 の完了判定条件に記載） |
+| AC-21 | static | 各 PR のブランチ | Phase 2・3・4a・4b の**各ブランチ上で**（マージ前に）§3.1 の `AC-21` のコマンドが `1` 以上を返す。**PR ごとに main へマージして次を新しいブランチで始めるため、`main..HEAD` には当該ブランチ分しか含まれない。** 全体での合計は取らず、各 PR の完了判定条件で個別に確認する |
+| AC-21 | manual | 同上 | `02_architecture.md` §7.3 の10行に加え、本書が追加する5件（AC-06・AC-09・AC-12・AC-13・AC-18）の無効化確認を実施する（Phase 2・4a・4b の完了判定条件に記載） |
 | AC-22 | static | — | `make test` の終了コードが 0（`CGO_ENABLED=1` と `CGO_ENABLED=0` の両方を実行する）。`make lint` の終了コードが 0（同じく両構成） |
 | AC-23 | static | `security-risk-assessment.ja.md`・`CHANGELOG.ja.md` | §3.1 の `AC-23` の3つのコマンド。前2つ（現状はいずれも1件）が一致無しになり、3つ目の陽性の裏取り（現状0件）が1件以上になる。**対象文書の現在の表記は「緩く（許可寄りに）評価される場合がある」であり、括弧が入るため `緩く評価` では一致しない。** 部分文字列を短く取ると作業前から一致無しになり検査が働かない |
 | AC-23 | manual | 同上 | 書き換えた「既知の制限」節を `nsswitch.go` の分類規則と突き合わせ、`files`・`systemd` のみの環境では従来どおり判定できるという記述が実装と一致することを確認する |
@@ -415,12 +554,14 @@ awk '/^## \[未リリース\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.ja.md \
 awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md \
   | rg -c '^#### Known limitation: official binaries'
 
-# AC-20: テスト専用の複製実装が残っていないこと。0 を返せば合格。
+# AC-20: テスト専用の複製実装が残っていないこと。一致無し（無出力・終了コード 1）で合格。
 #        `\|` と書くとリテラルのパイプを探すことになり、作業前でも 0 を返して検査が無効化される。
 rg -c 'shouldSkipSemanticsTest|func nssSources' \
   internal/groupmembership/membership_semantics_test.go
 
-# AC-21: 無効化確認を記録したコミットの「件数」。3 以上で合格。
+# AC-21: 作業中のブランチにある「無効化確認を記録したコミット」の件数。1 以上で合格。
+#        PR ごとに main へマージするため、main..HEAD は当該ブランチ分しか含まない。
+#        マージ後に走らせても 0 になるので、必ず PR を出す前のブランチ上で実行する。
 #        `rg -c` をストリームに掛けると一致した「行数」になり、1コミットでも条件を満たしてしまう。
 #        --no-show-signature は必須。本リポジトリは log.showSignature=true のため、
 #        付けないと署名検証行が %H の出力に混ざり、git show が「invalid object name」で失敗する。
@@ -461,10 +602,26 @@ rg -c "issues/(N1|N2)" \
 | M1: 完全性が型として存在する | Phase 1 | `completeness.go`、新しい戻り値・キャッシュ・差し替え点 | 外部から観測できる挙動が変わらないまま、2構成で `make test` と `make lint` が通る |
 | M2: 不完全が拒否になる | Phase 2 | `isUserOnlyGroupMember` の `switch`、sentinel 2つ、エラーメッセージ | 差し替え点へ不完全・未申告を注入したテストが拒否を確認する |
 | M3: 拒否が診断できる | Phase 3 | `%w` への修正、`rejectionRule` の2分岐、`dir_permissions_unix_test.go` | sentinel が `internal/security` と `internal/safefileio` の両境界を越えて辿れる |
-| M4: 実環境の条件で拒否に至る | Phase 4 | `nsswitch.go`、走査の分離と `malformedLines`、複製実装の削除、分類警告 | 陽性対照つきの強制実行を含め、2構成で `make test` と `make lint` が通る |
+| M4a: 環境の分類が実装される | Phase 4a | `nsswitch.go`、`nsswitchVerdict()` と `nssCompletenessReporter`、テスト専用の複製実装の削除 | 分類と警告のテストが2構成で通り、外部から観測できる挙動はまだ変わらない |
+| M4b: 実環境の条件で拒否に至る | Phase 4b | 走査の分離と `malformedLines`、`enumerateFromFiles` による合成、非 CGO 版の配線 | 陽性対照つきの強制実行を含め、2構成で `make test` と `make lint` が通る |
 | M5: 変更が文書と監査記録に反映される | Phase 5 | 利用者向け文書、`CHANGELOG`（新項目と既存の矛盾項目の解消）、0149 の残件一覧と findings、分離した2件の Issue | §3 の AC-23〜AC-31 の確認がすべて期待どおりになる |
 
-Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着手する（文面が実装のエラーメッセージと一致している必要があるため）。
+Phase 1・2・3・4a・4b はこの順に依存する。Phase 5 は Phase 4b の完了後に着手する（文面が実装のエラーメッセージと一致している必要があるため）。
+
+### 4.1 PR 構成
+
+PR の区切りは Phase の区切りに一致させる。ただし Phase 4 は変更量が大きいため、分類（4a）と走査・配線（4b）の2つの PR に分ける。各 PR の詳細は §2 の該当 Phase の直後に置いた `### PR-N 作成ポイント` を参照する。
+
+**節番号について**: `mkplan2` の雛形は本表を `### 3.2` に置くが、本書の §3 は受け入れ基準の検証であり、実装順序を扱う §4 のほうが適切なため §4.1 に置く。
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `completeness.go` の追加、`getGroupMembers` の戻り値・キャッシュ・差し替え点の型変更とその追随 | standard |
+| PR-2 | Phase 2 | sentinel 2つの追加、`isUserOnlyGroupMember` の完全性 `switch`、原因別のエラーメッセージ生成 | frontier-required |
+| PR-3 | Phase 3 | `internal/security` の `%w` 化と新規テスト、`internal/safefileio` の `rejectionRule` の2分岐 | standard |
+| PR-4 | Phase 4a | `nsswitch.go` の追加（読み取り・トークン化・分類）、`nsswitchVerdict()` と `nssCompletenessReporter`、テスト専用の複製実装の削除 | frontier-recommended |
+| PR-5 | Phase 4b | 走査の `io.Reader` 受け取りへの分離と `malformedLines`、`enumerateFromFiles` による合成、非 CGO 版の配線と暫定値の除去、実環境の列挙に依存する既存テストの緩和（`manager_test.go` の3件と、強制実行しだいで package 外の最大4ファイル） | frontier-required |
+| PR-6 | Phase 5 | 利用者向け文書と `CHANGELOG` の日英、0149 の残件一覧と findings、分離した2件の Issue 登録 | standard |
 
 ## 5. テスト戦略
 
@@ -491,14 +648,14 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 
 ### 5.3 分類結果を強制した実行と陽性対照
 
-`02_architecture.md` §7.5 が求める「非 CGO ビルドかつ分類が『不完全』となる状態でのテスト実行」を Phase 4 の完了判定条件として実施する。本コンテナは `/etc/nsswitch.conf` が `files` のみであり実行ユーザーが非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` の戻り値を一時的にソース上で固定する方法を採る。これは AC-21 の無効化確認と同じ手法であり、追加の仕組みを要さない。
+`02_architecture.md` §7.5 が求める「非 CGO ビルドかつ分類が『不完全』となる状態でのテスト実行」を Phase 4b の完了判定条件として実施する。本コンテナは `/etc/nsswitch.conf` が `files` のみであり実行ユーザーが非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` の戻り値を一時的にソース上で固定する方法を採る。これは AC-21 の無効化確認と同じ手法であり、追加の仕組みを要さない。
 
 **この実行には陽性対照を付ける。** 「何も壊れなかった」を合格とすると、非 CGO 版 `getGroupMembers` の配線が欠けている場合（Phase 1 の暫定の `completeVerdict()` が残っている場合）でも合格してしまい、ゲート自体が「主張する理由で失敗できない」ものになる。分類を「不完全」に固定したとき `manager_test.go:390` の `group_writable_member` が拒否経路へ入ることを確認し、入らなければ不合格とする。
 
 ### 5.4 後方互換性の確認
 
-- 公開 API `GetGroupMembers` のシグネチャが変わらないことを静的に確認する（§3 の AC-04a）。
-- `internal/runner/base/security` の **production コード**は変更しない。同パッケージのテストのうち実環境の列挙に依存するものは、Phase 4 の強制実行で破綻が判明した場合に `ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する。これは本タスクの挙動変更の当然の帰結であり、AC-04a が保証する「無変更」の対象は production コードとする。
+- 公開 API `GetGroupMembers` のシグネチャが変わらないことを静的に確認する（§3 の AC-04a）。**この確認は PR ごとに行う。** `main...HEAD` はマージのたびに基点が動くため、PR-1 で1度確認しただけでは以降の PR が同じ production コードへ触れても検出できない。
+- `internal/runner/base/security` の **production コード**は変更しない。同パッケージのテストのうち実環境の列挙に依存するものは、Phase 4b の強制実行で破綻が判明した場合に `ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する。これは本タスクの挙動変更の当然の帰結であり、AC-04a が保証する「無変更」の対象は production コードとする。
 - 完全性が「完全」である場合の `CanUserSafelyWriteFile`・`IsUserInGroup`・`CanCurrentUserSafelyReadFile` の判定結果が変わらないことを、既存テストの期待値を維持したまま確認する（AC-16・AC-17）。
 
 ## 6. リスク管理
@@ -508,12 +665,12 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 | リスク | 影響 | 対策 |
 |---|---|---|
 | `nsswitchVerdict()` は CGO 構成では呼び出し元を持たないため、`!cgo \|\| test` の `nsswitch.go` に置くと `unused`（`.golangci.yml:13` で有効）に報告されうる | `make lint` の CGO 構成が失敗する | `02_architecture.md` §2.2 の改訂により、`nsswitchVerdict()` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ置くことで、リスクの原因そのものを取り除いた。`nsswitch.go` に残るのは状態を持たない関数と型だけになる |
-| Phase 1 が非 CGO 版に暫定の `completeVerdict()` を置くため、Phase 4 でその差し替えを忘れても、注入側でテストしている全テストが通ってしまう | 本タスクが閉じようとしているフェイルオープンがそのまま残る | §3 の AC-05 に配線の静的確認（`enumerateFromFiles(gid, nsswitchVerdict())` が存在し `completeVerdict()` が残っていないこと）を置き、Phase 4 の強制実行に陽性対照を付ける（§5.3） |
-| `readNsswitchSnapshot()` がパスを受け取らないため、`fs.ErrNotExist` と他の失敗の判別をテストできない。この判別を誤ると読み取り失敗が「完全」の申告に化ける | AC-07 の中核が未検証のまま完了扱いになる | 非公開の `readNsswitchSnapshotFrom(path)` へ分離し、`t.TempDir` と `chmod 0000` で3分岐を検証する（Phase 4） |
-| 本コンテナの分類が「完全」であるため、`02_architecture.md` §3.7 が挙げた既存テストの破綻が手元で再現しない | CI で初めて破綻が現れ、Phase 4 の PR が差し戻される | Phase 4 の完了判定条件として、陽性対照つきの強制実行を必須にする（§5.3） |
-| `membership_nocgo_test.go` の走査ループの複製を残したまま signature だけ変えると、テストは通るが `malformedLines` が一度も検証されない | AC-11〜AC-13 が実質的に未検証のまま完了扱いになる | Phase 4 の作業項目で複製の削除を個別のチェックボックスにし、AC-21 の無効化確認（「不正行の伝達」「対象エントリより後ろの不正行」）で実効性を担保する |
-| `completenessVerdict`・`groupEnumeration` は全フィールドが非公開のため、`slog.Any` で渡すと `internal/redaction` の構造体走査が内容ごと `RedactionFailurePlaceholder` に置き換える | 拒否の原因と詳細がログから完全に失われ、`02_architecture.md` §1.1 原則6 に反する | Phase 2 の作業項目に個別のチェックボックスとして明記し、Phase 4 で属性を `slog.Any` にまとめると警告のテストが失敗することを確認する（破れば落ちる形で固定する） |
-| 分類がプロセス単位で1回だけ確定する（latch する）ため、`nsswitchVerdict()` 越しに警告を検証しようとすると、先に走ったテストが latch を消費して後続が1件も観測できない。加えて本コンテナの分類は「完全」であり警告自体が出ない | 警告のテストが記録0件のまま素通りし、「主張する理由で失敗できない」テストになる | 警告の生成を `nssCompletenessReporter` へ切り出し、ロガーと `completenessVerdict` を引数で受ける形にする（Phase 4）。テストは自前のインスタンスへ合成した `incompleteVerdict(...)` を渡すため、latch にも実行環境にも依存しない。既存の `sudoUIDAdoptionReporter` と同じ形であり、新しい仕組みを持ち込まない |
+| Phase 1 が非 CGO 版に暫定の `completeVerdict()` を置くため、Phase 4b でその差し替えを忘れても、注入側でテストしている全テストが通ってしまう | 本タスクが閉じようとしているフェイルオープンがそのまま残る | §3 の AC-05 に配線の静的確認（`enumerateFromFiles(gid, nsswitchVerdict())` が存在し `completeVerdict()` が残っていないこと）を置き、Phase 4b の強制実行に陽性対照を付ける（§5.3） |
+| `readNsswitchSnapshot()` がパスを受け取らないため、`fs.ErrNotExist` と他の失敗の判別をテストできない。この判別を誤ると読み取り失敗が「完全」の申告に化ける | AC-07 の中核が未検証のまま完了扱いになる | 非公開の `readNsswitchSnapshotFrom(path)` へ分離し、`t.TempDir` と `chmod 0000` で3分岐を検証する（Phase 4a） |
+| 本コンテナの分類が「完全」であるため、`02_architecture.md` §3.7 が挙げた既存テストの破綻が手元で再現しない | CI で初めて破綻が現れ、Phase 4b の PR が差し戻される | Phase 4b の完了判定条件として、陽性対照つきの強制実行を必須にする（§5.3） |
+| `membership_nocgo_test.go` の走査ループの複製を残したまま signature だけ変えると、テストは通るが `malformedLines` が一度も検証されない | AC-11〜AC-13 が実質的に未検証のまま完了扱いになる | Phase 4b の作業項目で複製の削除を個別のチェックボックスにし、AC-21 の無効化確認（「不正行の伝達」「対象エントリより後ろの不正行」）で実効性を担保する |
+| `completenessVerdict`・`groupEnumeration` は全フィールドが非公開のため、`slog.Any` で渡すと `internal/redaction` の構造体走査が内容ごと `RedactionFailurePlaceholder` に置き換える | 拒否の原因と詳細がログから完全に失われ、`02_architecture.md` §1.1 原則6 に反する | Phase 2 の作業項目に個別のチェックボックスとして明記し、Phase 4a で属性を `slog.Any` にまとめると警告のテストが失敗することを確認する（破れば落ちる形で固定する） |
+| 分類がプロセス単位で1回だけ確定する（latch する）ため、`nsswitchVerdict()` 越しに警告を検証しようとすると、先に走ったテストが latch を消費して後続が1件も観測できない。加えて本コンテナの分類は「完全」であり警告自体が出ない | 警告のテストが記録0件のまま素通りし、「主張する理由で失敗できない」テストになる | 警告の生成を `nssCompletenessReporter` へ切り出し、ロガーと `completenessVerdict` を引数で受ける形にする（Phase 4a）。テストは自前のインスタンスへ合成した `incompleteVerdict(...)` を渡すため、latch にも実行環境にも依存しない。既存の `sudoUIDAdoptionReporter` と同じ形であり、新しい仕組みを持ち込まない |
 | `internal/security/dir_permissions_unix_test.go` が存在しないため、`02_architecture.md` §3.10 の「変更」という記載どおりに進めると作業が漏れる | AC-15 の呼び出し元境界の検証が実装されない | §1.3 と Phase 3 の作業項目で「新規作成」とビルドタグを明記した |
 | `runner` の利用者向け文書には拒否への対処が追加されない。`EnsurePermissionCheckUID`（起動時の警告）を呼ぶのは `record`・`verify` のみであり、`runner` では `internal/security` のディレクトリ権限検査が実行前検証の段階で失敗して実行全体が中断する（`02_architecture.md` §5.5） | `runner` の運用者が最も厳しい失敗の仕方をするのに、警告もトラブルシューティング項目も得られない | AC-24 が対象を `record`・`verify` に限っているため本タスクでは範囲外とする。`CHANGELOG` の「破壊的変更」項目には `runner` への影響を明記し、`runner` 文書への追加は残件として記録する |
 
@@ -521,19 +678,20 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 
 | リスク | 対策 |
 |---|---|
-| `nsswitchVerdict()` の配置変更に伴い、`02_architecture.md` §2.2・§3.2・§3.10・§4.4 が更新済みである。実装がこの分担から外れると、設計文書と実装が食い違ったまま進む | Phase 4 の「ファイルの分担」の表を実装前に確認し、`make lint` を2構成で通す |
-| Phase 4 で package 外の4ファイルに想定外の破綻が見つかり、作業量が増える | 強制実行を Phase 4 の早い段階で行い、破綻の有無を把握する。破綻した場合はその更新も Phase 4 の作業に含める |
+| `nsswitchVerdict()` の配置変更に伴い、`02_architecture.md` §2.2・§3.2・§3.10・§4.4 が更新済みである。実装がこの分担から外れると、設計文書と実装が食い違ったまま進む | Phase 4a の「ファイルの分担」の表を Phase 4a・4b の実装前に確認し、`make lint` を2構成で通す |
+| Phase 4b で package 外の4ファイルに想定外の破綻が見つかり、作業量が増える | 強制実行を Phase 4b の早い段階で行い、破綻の有無を把握する。破綻した場合はその更新も Phase 4b の作業に含める |
 | Phase 5 の Issue 登録が外部依存（GitHub）であり、番号確定まで文書を確定できない | Issue 登録を Phase 5 の最初の作業とし、番号が出てから `01_requirements.md` と `98_remaining_issues.md` へ書き戻す |
 
 ## 7. 実装チェックリスト
 
-- [ ] **Phase 1**: 完全性の型と申告（AC-01, AC-02, AC-04, AC-04a）
-- [ ] **Phase 2**: 判定側のフェイルクローズド化（AC-03, AC-03a, AC-14〜AC-19）
-- [ ] **Phase 3**: 診断可能性（AC-15, AC-18）
-- [ ] **Phase 4**: 環境の分類と不正行（AC-05〜AC-13, AC-20）
-- [ ] **Phase 5**: 文書と監査記録（AC-23〜AC-33）
+- [ ] **PR-1** マージ済み（対象ステップ: Phase 1 — 完全性の型と申告。AC-01, AC-02, AC-04, AC-04a）
+- [ ] **PR-2** マージ済み（対象ステップ: Phase 2 — 判定側のフェイルクローズド化。AC-03, AC-03a, AC-14〜AC-19）
+- [ ] **PR-3** マージ済み（対象ステップ: Phase 3 — 診断可能性。AC-15, AC-18）
+- [ ] **PR-4** マージ済み（対象ステップ: Phase 4a — NSS 構成の分類と1回限りの警告。AC-05〜AC-10, AC-20）
+- [ ] **PR-5** マージ済み（対象ステップ: Phase 4b — 走査の分離・不正行の伝達・非 CGO 版の配線。AC-05 の配線, AC-11〜AC-13）
+- [ ] **PR-6** マージ済み（対象ステップ: Phase 5 — 文書と監査記録。AC-23〜AC-33）
 - [ ] **全体**: §3 の受け入れ基準検証表の全行が期待どおりの結果になる
-- [ ] **全体**: AC-21 の無効化確認を `02_architecture.md` §7.3 の10行と本書が追加する5件について実施し、コミットメッセージに英語で記した
+- [ ] **全体**: AC-21 の無効化確認を `02_architecture.md` §7.3 の10行と本書が追加する5件について実施し、コミットメッセージに英語で記した（件数の確認は PR-2・PR-3・PR-4・PR-5 の各ブランチ上で行う。マージ後の `main..HEAD` では数えられない）
 - [ ] **全体**: AC-22 の `make test`・`make lint` が2構成で通過した
 
 ## 8. 横断検索チェックリスト
@@ -549,7 +707,7 @@ Phase 1〜4 はこの順に依存する。Phase 5 は Phase 4 の完了後に着
 ## 9. 成功基準
 
 - **機能の完成度**: `01_requirements.md` の AC-01〜AC-33 がすべて実装され、§3 の検証表の全行が期待どおりの結果になる。
-- **品質**: `make test` と `make lint` が `CGO_ENABLED=1`・`CGO_ENABLED=0` の双方で通過する（AC-22）。新規追加した各テストが、`02_architecture.md` §7.3 と本書 Phase 2・4 が挙げる方法で無効化すると失敗する（AC-21）。
+- **品質**: `make test` と `make lint` が `CGO_ENABLED=1`・`CGO_ENABLED=0` の双方で通過する（AC-22）。新規追加した各テストが、`02_architecture.md` §7.3 と本書 Phase 2・4a・4b が挙げる方法で無効化すると失敗する（AC-21）。
 - **セキュリティ**: 不完全な列挙が書き込み許可へ到達する経路が残らない。ゼロ値・`switch` の `default`・`combine` の3点がいずれも拒否側に倒れることをテストで固定し、非 CGO 版の配線が実際に分類結果を使っていることを静的確認と陽性対照で担保する。
 - **後方互換性**: 完全性が「完全」である環境において、`CanUserSafelyWriteFile`・`IsUserInGroup`・`CanCurrentUserSafelyReadFile` の外部から観測できる挙動が本タスクの前後で変わらない。`internal/runner/base/security` の production コードは無変更のまま動作する。
 - **文書**: 利用者向け文書3点と `CHANGELOG` の日本語版・英語版が更新され、同一リリース内で矛盾する記述が残らない。0149 の残件一覧と findings が更新され、分離した2件が Issue として登録されている。
