@@ -277,7 +277,7 @@ type groupEnumeration struct {
 
 **3値にする理由**は要件書「決定事項」に述べたとおりである。設計上の帰結は次の2点である。ゼロ値が「未申告」であるため、`groupEnumeration{}` をそのまま返す実装の誤りは「完全」には決してならず（AC-03）、かつ環境要因による「不完全」とも取り違えられない（AC-03a）。また `completenessIncomplete` を作る経路が `incompleteVerdict(cause, detail)` に限られるため、「理由のない不完全」という値は構築されない。
 
-**構築関数を必須にする**のは、CLAUDE.md「Enforce invariants with the type, not with convention」に従い、原因の同伴を規約ではなく構築の形で保証するためである。`completeVerdict()` は原因を取らず、`incompleteVerdict(cause, detail)` は原因を必須の引数とする。フィールドはいずれも非公開であり、package 外からは構築も参照もできない。
+**構築関数を必須にする**のは、CLAUDE.md「Enforce invariants with the type, not with convention」に従い、原因の同伴を規約ではなく構築の形で保証するためである。`completeVerdict()` は原因を取らず、`incompleteVerdict(cause, detail)` は原因を必須の引数とする。フィールドはいずれも非公開であり、package 外からは構築も参照もできない。この非公開フィールドという性質はログ出力にも影響する。`completenessVerdict`・`groupEnumeration` を構造体のまま `slog.Any` へ渡してはならない理由を §4.4 に記す。
 
 **`String()` の用途**は次の2つである。`incompletenessCause.String()` は §3.8 の skip 理由の組み立てに使う。`enumerationCompleteness.String()` は、`isUserOnlyGroupMember` が「未申告」または想定外の値に到達したときに、その値をエラーメッセージへ載せるために使う（§4.3）。表示名は既存の `PermissionCheckUIDPolicy.String()` に倣い、想定外の値を `unknown(N)` の形で表す。
 
@@ -706,6 +706,8 @@ var ErrGroupMemberCompletenessUnstated = errors.New("group member enumeration co
 ### 4.4 記録（ログ）の方針
 
 **分類が「不完全」となったことは、プロセスにつき1回だけ `slog.Warn` で記録する。** 記録は `nsswitchVerdict` が分類を確定させる時点で行い、`user_database_source`・原因・`detail` を属性として持つ。この形は既存の `sudoUIDAdoptionReporter`（`manager.go`）に倣ったものである。これは採用事実をプロセスにつき1回だけ記録する仕組みである。
+
+**`completenessVerdict`・`groupEnumeration` を構造体のまま `slog.Any` などでログに渡してはならない。** 両者は §3.1 のとおり全フィールドが非公開であり、`internal/redaction` の構造体走査（`RedactingHandler.processStruct`）は reflection でエクスポート済みフィールドを列挙し、1つも無い場合は内容を見ずに `RedactionFailurePlaceholder`（`"[REDACTION FAILED - OUTPUT SUPPRESSED]"`）へ丸ごと置き換える（fail-secure）。したがって構造体をそのまま渡すと、`cause`・`detail` を含む診断情報が一切表示されないまま消える。これは値の一部を隠す通常の redact ではなく診断情報の完全な喪失であり、§1.1 原則6「拒否は診断できなければ意味がない」に反する。ここで述べた `user_database_source`・原因（`cause.String()`）・`detail` の3つを個別の属性として渡す形を必ず守る。
 
 拒否そのものを対象ファイルごとに記録しない理由は、書き込み判定が対象ファイルごとに実行されるため出力が大量になることである。一方で分類はプロセス内で1回しか起きず、しかも「このホストではこのビルドは group-writable の書き込みを承認できない」という、拒否が起きる前に運用者が知るべき事実そのものである。1回の記録であれば量の問題は生じない。
 
