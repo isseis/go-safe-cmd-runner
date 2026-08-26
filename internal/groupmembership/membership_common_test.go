@@ -52,20 +52,20 @@ func TestGetGroupMembers_Common(t *testing.T) {
 	currentGID := getCurrentUserGID(t)
 
 	// Test getting members of current user's primary group
-	members, err := getGroupMembers(currentGID)
+	enumeration, err := getGroupMembers(currentGID)
 	assert.NoError(t, err, "getGroupMembers should not return an error")
-	assert.NotNil(t, members, "getGroupMembers should return a slice")
+	assert.NotNil(t, enumeration.members, "getGroupMembers should return a slice")
 
 	// The result might be empty if the group has no explicit members
 	// (only primary group assignment), which is valid
-	t.Logf("Group %d has %d explicit members: %v", currentGID, len(members), members)
+	t.Logf("Group %d has %d explicit members: %v", currentGID, len(enumeration.members), enumeration.members)
 }
 
 func TestGetGroupMembers_InvalidGID_Common(t *testing.T) {
 	// Use a GID that's very unlikely to exist
 	const invalidGID = 99999
 
-	members, err := getGroupMembers(invalidGID)
+	enumeration, err := getGroupMembers(invalidGID)
 	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
-	assert.Empty(t, members, "getGroupMembers should return empty slice for non-existent group")
+	assert.Empty(t, enumeration.members, "getGroupMembers should return empty slice for non-existent group")
 }

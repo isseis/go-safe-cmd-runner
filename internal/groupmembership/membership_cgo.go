@@ -306,21 +306,33 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // Reverse acquisition is forbidden.
 var pwentMutex sync.Mutex
 
-func getGroupMembers(gid uint32) ([]string, error) {
+func getGroupMembers(gid uint32) (groupEnumeration, error) {
 	members, found, err := getExplicitGroupMembers(gid)
 	if err != nil {
-		return nil, err
+		return groupEnumeration{}, err
 	}
 	if !found {
-		return []string{}, nil
+		return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil
 	}
 
 	primary, err := getUsersWithPrimaryGID(gid)
 	if err != nil {
-		return nil, err
+		return groupEnumeration{}, err
 	}
 
-	return mergeGroupMembers(members, primary)
+	merged, err := mergeGroupMembers(members, primary)
+	if err != nil {
+		return groupEnumeration{}, err
+	}
+
+	return groupEnumeration{members: merged, verdict: completeVerdict()}, nil
+}
+
+// precomputeEnumerationEnvironment has nothing to resolve for the cgo build:
+// libc's NSS-backed lookups always report a complete enumeration on success
+// (see getGroupMembers above), so there is no environment fact to determine
+// ahead of the first enumeration.
+func precomputeEnumerationEnvironment() {
 }
 
 // getUsersWithPrimaryGID returns users whose primary GID matches the given GID.

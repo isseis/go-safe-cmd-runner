@@ -168,7 +168,7 @@ func TestGetGroupMembers_CGOAndNoCGOSemanticsMatch(t *testing.T) {
 		require.NoError(t, err, "CGO getGroupMembers(%d) failed", gid)
 
 		expected := fileExpectedMembers(t, gid)
-		assert.ElementsMatch(t, expected, cgoResult, "GID %d: CGO and file-based semantics differ", gid)
+		assert.ElementsMatch(t, expected, cgoResult.members, "GID %d: CGO and file-based semantics differ", gid)
 	}
 }
 

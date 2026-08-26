@@ -18,13 +18,13 @@ const userDatabaseSource = "passwd-file"
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
 // and /etc/passwd to find users with this GID as their primary group
 // This is a stateless function - caching is handled by the GroupMembership struct
-func getGroupMembers(gid uint32) ([]string, error) {
+func getGroupMembers(gid uint32) (groupEnumeration, error) {
 	groupEntry, err := findGroupByGID(gid)
 	if err != nil {
-		return nil, err
+		return groupEnumeration{}, err
 	}
 	if groupEntry == nil {
-		return []string{}, nil // Group not found
+		return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil // Group not found
 	}
 
 	// Start with explicit members from /etc/group
@@ -41,7 +41,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	// Find users with this GID as their primary group by parsing /etc/passwd
 	primaryUsers, err := findUsersWithPrimaryGID(gid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find users with primary GID %d: %w", gid, err)
+		return groupEnumeration{}, fmt.Errorf("failed to find users with primary GID %d: %w", gid, err)
 	}
 
 	// Add primary group users to the member set
@@ -55,5 +55,12 @@ func getGroupMembers(gid uint32) ([]string, error) {
 		result = append(result, member)
 	}
 
-	return result, nil
+	return groupEnumeration{members: result, verdict: completeVerdict()}, nil
+}
+
+// precomputeEnumerationEnvironment resolves whatever environment facts this
+// build needs before the first enumeration, so that a build unable to
+// enumerate every member says so at startup rather than at the first
+// group-writable file.
+func precomputeEnumerationEnvironment() {
 }
