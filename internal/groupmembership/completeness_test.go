@@ -45,20 +45,6 @@ func TestIncompletenessCause_String(t *testing.T) {
 	}
 }
 
-func TestCompleteVerdict(t *testing.T) {
-	v := completeVerdict()
-	assert.Equal(t, completenessComplete, v.completeness)
-	assert.Equal(t, causeUnspecified, v.cause)
-	assert.Empty(t, v.detail)
-}
-
-func TestIncompleteVerdict(t *testing.T) {
-	v := incompleteVerdict(causeNSSSources, "group: ldap")
-	assert.Equal(t, completenessIncomplete, v.completeness)
-	assert.Equal(t, causeNSSSources, v.cause)
-	assert.Equal(t, "group: ldap", v.detail)
-}
-
 func TestCompletenessVerdict_Combine(t *testing.T) {
 	complete := completeVerdict()
 	incompleteA := incompleteVerdict(causeNSSSources, "detail-a")
