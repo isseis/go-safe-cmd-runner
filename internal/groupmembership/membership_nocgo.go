@@ -18,16 +18,45 @@ import (
 // sources such as LDAP or SSSD are not consulted.
 const userDatabaseSource = "passwd-file"
 
-// getGroupMembers returns all members of a group given its GID by parsing /etc/group
-// and /etc/passwd to find users with this GID as their primary group
+// getGroupMembers returns all members of a group given its GID by parsing
+// /etc/group and /etc/passwd to find users with this GID as their primary
+// group. The completeness it states combines what this build's environment
+// already says about its ability to see every member with the lines the
+// scans had to skip.
 // This is a stateless function - caching is handled by the GroupMembership struct
 func getGroupMembers(gid uint32) (groupEnumeration, error) {
-	groupEntry, err := findGroupByGID(gid)
+	return enumerateFromFiles(gid, nsswitchVerdict())
+}
+
+// enumerateFromFiles lists the members of the group with the given GID from
+// /etc/group and /etc/passwd. nssVerdict is what this build's environment
+// already says about its ability to see every member; the returned
+// completeness combines it with the lines the scans had to skip. Taking the
+// verdict as a parameter is what lets a test drive the whole enumeration
+// with a chosen classification.
+func enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error) {
+	return enumerateFromSources(groupFileSource(), passwdFileSource(), gid, nssVerdict)
+}
+
+// enumerateFromSources is enumerateFromFiles over the given user database
+// sources, so that a test can drive the whole enumeration -- both scans and
+// the combination of every source of doubt -- from chosen contents.
+func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error) {
+	groupEntry, groupMalformed, err := findGroupByGID(groupSrc, gid)
 	if err != nil {
 		return groupEnumeration{}, err
 	}
+
+	// The classification is evaluated first so that, when both it and the
+	// skipped lines say incomplete, the cause reported is the environment
+	// one: rebuilding with cgo is the remediation that covers both.
+	verdict := nssVerdict.combine(groupMalformed.verdict())
+
 	if groupEntry == nil {
-		return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil // Group not found
+		// Group not found. The scan still ran to the end of the file, so
+		// its skipped-line record is what says whether the group is
+		// genuinely absent or merely unseen.
+		return groupEnumeration{members: []string{}, verdict: verdict}, nil
 	}
 
 	// Start with explicit members from /etc/group
@@ -42,10 +71,11 @@ func getGroupMembers(gid uint32) (groupEnumeration, error) {
 	}
 
 	// Find users with this GID as their primary group by parsing /etc/passwd
-	primaryUsers, err := findUsersWithPrimaryGID(gid)
+	primaryUsers, passwdMalformed, err := findUsersWithPrimaryGID(passwdSrc, gid)
 	if err != nil {
 		return groupEnumeration{}, fmt.Errorf("failed to find users with primary GID %d: %w", gid, err)
 	}
+	verdict = verdict.combine(passwdMalformed.verdict())
 
 	// Add primary group users to the member set
 	for _, user := range primaryUsers {
@@ -58,7 +88,7 @@ func getGroupMembers(gid uint32) (groupEnumeration, error) {
 		result = append(result, member)
 	}
 
-	return groupEnumeration{members: result, verdict: completeVerdict()}, nil
+	return groupEnumeration{members: result, verdict: verdict}, nil
 }
 
 // precomputeEnumerationEnvironment resolves whatever environment facts this

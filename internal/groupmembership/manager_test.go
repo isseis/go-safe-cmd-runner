@@ -271,7 +271,15 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		// The function can return (false, nil) if the user is not the exclusive group member
 		// or (true, nil) if the user is the exclusive group member
 		// We test both outcomes are handled correctly
-		assert.NoError(t, err, "Group membership check should not error for valid user and group")
+		if err != nil {
+			// A build that cannot enumerate every member of the group on
+			// this host denies instead of deciding. That is the only error
+			// the group membership check may report here.
+			require.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete,
+				"Group membership check should not error for valid user and group")
+			assert.False(t, canWrite, "An incomplete enumeration must not grant write access")
+			return
+		}
 
 		if canWrite {
 			t.Log("File owner is allowed (is exclusive group member)")
@@ -401,7 +409,14 @@ func TestCanCurrentUserSafelyWriteFile_AllPermissions(t *testing.T) {
 		}
 		// Current user owns the file, so they are in the group
 		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o660)
-		assert.NoError(t, err)
+		if err != nil {
+			// A build that cannot enumerate every member of the group on
+			// this host denies instead of granting. Nothing else may fail
+			// here.
+			require.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+			assert.False(t, canWrite, "An incomplete enumeration must not grant write access")
+			return
+		}
 		assert.True(t, canWrite, "Group member should be able to write to group-writable file")
 	})
 
@@ -454,21 +469,30 @@ func TestCanCurrentUserSafelyWriteFile_EdgeCases(t *testing.T) {
 			name      string
 			perm      os.FileMode
 			expectErr bool
+			// groupWritable marks the modes whose decision needs the group
+			// members. A build that cannot enumerate them all denies those
+			// modes rather than deciding, so only those rows may report
+			// ErrGroupMemberEnumerationIncomplete.
+			groupWritable bool
 		}{
-			{"owner_read_write", 0o644, false},
-			{"owner_only", 0o600, false},
-			{"group_read_write", 0o664, false},
-			{"execute_bit", 0o755, false},  // execute bits don't affect write check
-			{"minimal_perms", 0o400, true}, // no write permission
+			{name: "owner_read_write", perm: 0o644},
+			{name: "owner_only", perm: 0o600},
+			{name: "group_read_write", perm: 0o664, groupWritable: true},
+			{name: "execute_bit", perm: 0o755},                    // execute bits don't affect write check
+			{name: "minimal_perms", perm: 0o400, expectErr: true}, // no write permission
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, tt.perm)
-				if tt.expectErr {
+				switch {
+				case tt.expectErr:
 					assert.Error(t, err)
 					assert.False(t, canWrite)
-				} else {
+				case tt.groupWritable && err != nil:
+					require.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+					assert.False(t, canWrite, "An incomplete enumeration must not grant write access")
+				default:
 					assert.NoError(t, err)
 					// Note: result depends on ownership/group membership
 					t.Logf("Permission %o: can write=%v, err=%v", tt.perm, canWrite, err)

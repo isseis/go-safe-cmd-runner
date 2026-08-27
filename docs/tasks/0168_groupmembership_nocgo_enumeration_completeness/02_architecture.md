@@ -8,7 +8,7 @@
 | Created | 2026-08-26 |
 | Review date | 2026-08-26 |
 | Reviewer | issei |
-| Comments | 2026-08-27: Phase 4a の実装レビューで、`nssSources` が2つの構成を「完全」と誤分類しうることが判明した（閉じていない角括弧、同じデータベースを設定する2行目）。§3.2 の分類規則に2行を追加し、`nssSources` の戻り値に `nssLineDefect` を加えた。あわせて `initgroups` 行を分類の対象にしていないことを §5.4 の残存リスクへ記載した。判定の方針（許可リスト方式、`default` を拒否側に倒すこと）は変えていない。<br>2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
+| Comments | 2026-08-27: Phase 4b の実装で、`enumerateFromFiles` が固定パスしか読めないために §3.3 の「合成」がテストで一度も確かめられないことが判明した（合成を外しても全テストが通った）。§3.3 に `dbSource` と `enumerateFromSources` を追加し、列挙全体を入出力から切り離した。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-27: Phase 4a の実装レビューで、`nssSources` が2つの構成を「完全」と誤分類しうることが判明した（閉じていない角括弧、同じデータベースを設定する2行目）。§3.2 の分類規則に2行を追加し、`nssSources` の戻り値に `nssLineDefect` を加えた。あわせて `initgroups` 行を分類の対象にしていないことを §5.4 の残存リスクへ記載した。判定の方針（許可リスト方式、`default` を拒否側に倒すこと）は変えていない。<br>2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
 
 ## 0. 本書の位置づけ
 
@@ -425,12 +425,24 @@ func scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malform
 // format, whose primary GID is gid.
 func scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)
 
-// findGroupByGID searches /etc/group for the entry with the given GID.
-func findGroupByGID(gid uint32) (*groupEntry, malformedLines, error)
+// dbSource is one user database file: its name, and how to open it.
+type dbSource struct {
+	name string
+	open func() (io.ReadCloser, error)
+}
 
-// findUsersWithPrimaryGID returns the users whose primary GID is gid,
-// according to /etc/passwd.
-func findUsersWithPrimaryGID(gid uint32) ([]string, malformedLines, error)
+// groupFileSource and passwdFileSource return the two databases this build
+// reads: /etc/group and /etc/passwd.
+func groupFileSource() dbSource
+func passwdFileSource() dbSource
+
+// findGroupByGID searches src, a file in /etc/group format, for the entry
+// with the given GID.
+func findGroupByGID(src dbSource, gid uint32) (*groupEntry, malformedLines, error)
+
+// findUsersWithPrimaryGID returns the users in src, a file in /etc/passwd
+// format, whose primary group is the specified GID.
+func findUsersWithPrimaryGID(src dbSource, gid uint32) ([]string, malformedLines, error)
 
 // enumerateFromFiles lists the members of the group with the given GID from
 // /etc/group and /etc/passwd. nssVerdict is what this build's environment
@@ -439,11 +451,18 @@ func findUsersWithPrimaryGID(gid uint32) ([]string, malformedLines, error)
 // verdict as a parameter is what lets a test drive the whole enumeration
 // with a chosen classification.
 func enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)
+
+// enumerateFromSources is enumerateFromFiles over the given user database
+// sources, so that a test can drive the whole enumeration -- both scans and
+// the combination of every source of doubt -- from chosen contents.
+func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)
 ```
 
 読み飛ばした行が1行でもあれば、その列挙は「不完全」である（AC-11）。要件書「背景」に述べたとおり、パース不能になる主因は GID フィールドの解析失敗であり、その行がどの GID のものだったかは定義上わからない。したがって「対象 GID の行だったか」で絞り込むことはせず、走査全体を不完全として扱う。
 
 **走査は必ず最後まで読む。** 現行の `findGroupByGID` は対象 GID の行に一致した時点で `return` するため、その行より後ろにある不正行を見ない。この形のまま不正行を数えると、同じ `/etc/group` に対して「先頭寄りの GID は完全、末尾寄りの GID は不完全」という、ファイルの性質ではなく行の並びに依存する結果になる。同じ実行の中で再現しない拒否が生じ、§3.2 が `/etc/nsswitch.conf` について避けたのと同じ問題を招く。不正行を対象エントリより後ろに置くだけで検出を逃れられる点でも望ましくない。エントリ自体は一致した時点で保持し、走査はファイル末尾まで続ける。追加の費用は `/etc/group` 1回分の読み切りであり、結果は 30 秒キャッシュされる。
+
+**列挙全体も入出力から切り離す。** `enumerateFromFiles` は `/etc/group`・`/etc/passwd` の固定パスしか読めないため、そのままではテストが不正行を含む内容を与えられない。実行ホストのこれらのファイルは整形されているので、不正行を合成する経路は一度も通らず、「分類結果と不正行の記録を `combine` で合成する」という本節の要求が実装されているかをテストが確かめられない（実際、合成を外して分類結果だけを使う実装に戻しても、この分離の前はどのテストも失敗しなかった）。そこで読み取り対象を `dbSource`（名前と `open` 関数の組）として受け取る `enumerateFromSources` を本体とし、`enumerateFromFiles` はそれに `groupFileSource()`・`passwdFileSource()` を渡すだけの包みとする。`findGroupByGID`・`findUsersWithPrimaryGID` も同様に `dbSource` を受け取る。これは本節がすでに走査へ適用している原則5を、列挙全体へ広げたものである。`dbSource` は production の呼び出し元を持つ通常の引数であり、テスト専用の seam ではない（§5.3）。
 
 **入出力とパースを分ける**（§1.1 原則5）。`scanGroupFile`・`scanPasswdFile` が `io.Reader` を受け取り、`findGroupByGID`・`findUsersWithPrimaryGID` はファイルを開いてそれらに渡すだけの薄い包みになる。これは §7.4 に述べる理由から必須である。現在の `membership_nocgo_test.go` の各テストは、production の走査関数を呼ばずに走査ループをテスト内へ複製しており、この形のままでは新しい不正行の記録が production コードに対して一度も検証されない。
 

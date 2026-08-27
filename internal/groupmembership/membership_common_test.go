@@ -68,5 +68,13 @@ func TestGetGroupMembers_InvalidGID_Common(t *testing.T) {
 	enumeration, err := getGroupMembers(invalidGID)
 	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
 	assert.Empty(t, enumeration.members, "getGroupMembers should return empty slice for non-existent group")
-	assert.Equal(t, completeVerdict(), enumeration.verdict, "a non-existent group is still a complete enumeration of zero members")
+	// A group that is absent from the user database is an enumeration of
+	// zero members, not a reason to doubt the enumeration. The verdict is
+	// therefore whatever this build's environment already said; it must
+	// state something, and the absent group must not have added a
+	// skipped-line cause of its own.
+	assert.NotEqual(t, completenessUnstated, enumeration.verdict.completeness,
+		"an enumeration must always state its completeness")
+	assert.NotEqual(t, causeMalformedLine, enumeration.verdict.cause,
+		"a non-existent group is not itself an unparsable line")
 }
