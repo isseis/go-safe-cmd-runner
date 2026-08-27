@@ -494,7 +494,7 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **判定理由**: 文書更新と Issue 登録のみで production コードを触らず、`既存コード調査結果` にも競合する方針の併記は無い。外部依存は GitHub Issue の番号確定だけで、§6.2 に対策が置かれている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test`・`make lint` とも 0 issues。本 Phase は Go ファイルを変更していないため CGO_ENABLED の2構成での再実行は不要）
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
