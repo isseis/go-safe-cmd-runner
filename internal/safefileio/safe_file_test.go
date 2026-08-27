@@ -1248,6 +1248,8 @@ func TestRejectionRule(t *testing.T) {
 		{name: "permissions_exceed_maximum", operation: groupmembership.FileOpRead, cause: groupmembership.ErrPermissionsExceedMaximum, want: "permissions-exceed-maximum"},
 		{name: "not_owner", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotOwner, want: "not-owner"},
 		{name: "not_writable", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrFileNotWritable, want: "not-writable"},
+		{name: "enumeration_incomplete", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrGroupMemberEnumerationIncomplete, want: "enumeration-incomplete"},
+		{name: "completeness_unstated", operation: groupmembership.FileOpWrite, cause: groupmembership.ErrGroupMemberCompletenessUnstated, want: "completeness-unstated"},
 		// The write policy answers false with no error only when the file's
 		// group has a member besides its owner.
 		{name: "write_refused_without_a_cause", operation: groupmembership.FileOpWrite, cause: nil, want: "group-writable-not-sole-member"},

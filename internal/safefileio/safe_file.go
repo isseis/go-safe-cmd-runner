@@ -1196,6 +1196,10 @@ func rejectionRule(operation groupmembership.FileOperation, cause error) string 
 		return "not-owner"
 	case errors.Is(cause, groupmembership.ErrFileNotWritable):
 		return "not-writable"
+	case errors.Is(cause, groupmembership.ErrGroupMemberEnumerationIncomplete):
+		return "enumeration-incomplete"
+	case errors.Is(cause, groupmembership.ErrGroupMemberCompletenessUnstated):
+		return "completeness-unstated"
 	case cause == nil && operation == groupmembership.FileOpWrite:
 		return "group-writable-not-sole-member"
 	default:

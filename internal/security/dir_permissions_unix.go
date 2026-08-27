@@ -208,7 +208,7 @@ func validateGroupWritePermissions(dirPath string, info os.FileInfo, opts Direct
 
 	canSafelyWrite, err := opts.CanUserSafelyWrite(opts.RealUID, stat.Uid, stat.Gid, info.Mode())
 	if err != nil {
-		return fmt.Errorf("%w: directory %s failed security validation: %v", ErrInvalidDirPermissions, dirPath, err)
+		return fmt.Errorf("%w: directory %s failed security validation: %w", ErrInvalidDirPermissions, dirPath, err)
 	}
 	if !canSafelyWrite {
 		return fmt.Errorf("%w: directory %s - user UID %d cannot safely write to this directory", ErrInvalidDirPermissions, dirPath, opts.RealUID)
