@@ -217,7 +217,7 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 **判定理由**: `mkplan.md` step 8 のセキュリティゲートの引き金に該当する。書き込み許可の判定を fail-closed へ引き上げる中核であり、`switch` の `default`・ゼロ値・sentinel の切り分けを誤ると本タスクが閉じようとしているフェイルオープンがそのまま残る。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1061](https://github.com/isseis/go-safe-cmd-runner/pull/1061)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
