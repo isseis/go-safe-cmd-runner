@@ -436,6 +436,11 @@ func TestValidateFilePermissions(t *testing.T) {
 		operation   groupmembership.FileOperation
 		expectError bool
 		errorType   error
+		// allowIncompleteEnum marks the rows whose expected success needs
+		// the members of the file's group. A build that cannot enumerate
+		// them all on this host denies rather than deciding, so only those
+		// rows may report ErrGroupMemberEnumerationIncomplete.
+		allowIncompleteEnum bool
 	}{
 		{
 			name:        "normal permissions (644) for read",
@@ -494,10 +499,11 @@ func TestValidateFilePermissions(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "group writable (664) for write should succeed if user is only group member",
-			permissions: 0o664,
-			operation:   groupmembership.FileOpWrite,
-			expectError: false,
+			name:                "group writable (664) for write should succeed if user is only group member",
+			permissions:         0o664,
+			operation:           groupmembership.FileOpWrite,
+			expectError:         false,
+			allowIncompleteEnum: true,
 		},
 		{
 			name:        "world writable (666) should fail for read",
@@ -554,12 +560,22 @@ func TestValidateFilePermissions(t *testing.T) {
 				err = SafeWriteFileOverwrite(rp, []byte("new content"), tt.permissions)
 			}
 
-			if tt.expectError {
+			switch {
+			case tt.expectError:
 				assert.Error(t, err, "Expected error for permissions %o with operation %v", tt.permissions, tt.operation)
 				if tt.errorType != nil {
 					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type for permissions %o with operation %v", tt.permissions, tt.operation)
 				}
-			} else {
+			case tt.allowIncompleteEnum && err != nil:
+				// Whether the current user is the only member of the group
+				// can only be decided when this build can enumerate every
+				// member on this host. Where it cannot -- a no-cgo build on
+				// a host whose user databases are not files alone -- the
+				// write is denied instead, and that specific denial is the
+				// only error this row tolerates.
+				assert.ErrorIs(t, err, groupmembership.ErrGroupMemberEnumerationIncomplete,
+					"Expected no error for permissions %o with operation %v", tt.permissions, tt.operation)
+			default:
 				assert.NoError(t, err, "Expected no error for permissions %o with operation %v", tt.permissions, tt.operation)
 			}
 		})

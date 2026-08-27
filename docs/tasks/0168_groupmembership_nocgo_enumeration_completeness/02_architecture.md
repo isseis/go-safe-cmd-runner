@@ -8,7 +8,7 @@
 | Created | 2026-08-26 |
 | Review date | 2026-08-26 |
 | Reviewer | issei |
-| Comments | 2026-08-27: Phase 4a の実装レビューで、`nssSources` が2つの構成を「完全」と誤分類しうることが判明した（閉じていない角括弧、同じデータベースを設定する2行目）。§3.2 の分類規則に2行を追加し、`nssSources` の戻り値に `nssLineDefect` を加えた。あわせて `initgroups` 行を分類の対象にしていないことを §5.4 の残存リスクへ記載した。判定の方針（許可リスト方式、`default` を拒否側に倒すこと）は変えていない。<br>2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
+| Comments | 2026-08-27: Phase 4b の実装レビューで、(1) 同じ GID のエントリが複数ある場合にどちらが勝つかを定めていないこと、(2) 対象グループが不在のとき `/etc/passwd` を読まないため完全性が尋ねた GID に依存すること、の2点が判明した。§3.3 に「先頭が勝つ」「不在でも両方読む（ただしメンバー集合は変えない）」の2項を追加した。<br>2026-08-27: Phase 4b の実装で、`enumerateFromFiles` が固定パスしか読めないために §3.3 の「合成」がテストで一度も確かめられないことが判明した（合成を外しても全テストが通った）。§3.3 に `dbSource` と `enumerateFromSources` を追加し、列挙全体を入出力から切り離した。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-27: Phase 4a の実装レビューで、`nssSources` が2つの構成を「完全」と誤分類しうることが判明した（閉じていない角括弧、同じデータベースを設定する2行目）。§3.2 の分類規則に2行を追加し、`nssSources` の戻り値に `nssLineDefect` を加えた。あわせて `initgroups` 行を分類の対象にしていないことを §5.4 の残存リスクへ記載した。判定の方針（許可リスト方式、`default` を拒否側に倒すこと）は変えていない。<br>2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
 
 ## 0. 本書の位置づけ
 
@@ -425,12 +425,24 @@ func scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malform
 // format, whose primary GID is gid.
 func scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)
 
-// findGroupByGID searches /etc/group for the entry with the given GID.
-func findGroupByGID(gid uint32) (*groupEntry, malformedLines, error)
+// dbSource is one user database file: its name, and how to open it.
+type dbSource struct {
+	name string
+	open func() (io.ReadCloser, error)
+}
 
-// findUsersWithPrimaryGID returns the users whose primary GID is gid,
-// according to /etc/passwd.
-func findUsersWithPrimaryGID(gid uint32) ([]string, malformedLines, error)
+// groupFileSource and passwdFileSource return the two databases this build
+// reads: /etc/group and /etc/passwd.
+func groupFileSource() dbSource
+func passwdFileSource() dbSource
+
+// findGroupByGID searches src, a file in /etc/group format, for the entry
+// with the given GID.
+func findGroupByGID(src dbSource, gid uint32) (*groupEntry, malformedLines, error)
+
+// findUsersWithPrimaryGID returns the users in src, a file in /etc/passwd
+// format, whose primary group is the specified GID.
+func findUsersWithPrimaryGID(src dbSource, gid uint32) ([]string, malformedLines, error)
 
 // enumerateFromFiles lists the members of the group with the given GID from
 // /etc/group and /etc/passwd. nssVerdict is what this build's environment
@@ -439,11 +451,24 @@ func findUsersWithPrimaryGID(gid uint32) ([]string, malformedLines, error)
 // verdict as a parameter is what lets a test drive the whole enumeration
 // with a chosen classification.
 func enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)
+
+// enumerateFromSources is enumerateFromFiles over the given user database
+// sources, so that a test can drive the whole enumeration -- both scans and
+// the combination of every source of doubt -- from chosen contents.
+func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)
 ```
 
 読み飛ばした行が1行でもあれば、その列挙は「不完全」である（AC-11）。要件書「背景」に述べたとおり、パース不能になる主因は GID フィールドの解析失敗であり、その行がどの GID のものだったかは定義上わからない。したがって「対象 GID の行だったか」で絞り込むことはせず、走査全体を不完全として扱う。
 
 **走査は必ず最後まで読む。** 現行の `findGroupByGID` は対象 GID の行に一致した時点で `return` するため、その行より後ろにある不正行を見ない。この形のまま不正行を数えると、同じ `/etc/group` に対して「先頭寄りの GID は完全、末尾寄りの GID は不完全」という、ファイルの性質ではなく行の並びに依存する結果になる。同じ実行の中で再現しない拒否が生じ、§3.2 が `/etc/nsswitch.conf` について避けたのと同じ問題を招く。不正行を対象エントリより後ろに置くだけで検出を逃れられる点でも望ましくない。エントリ自体は一致した時点で保持し、走査はファイル末尾まで続ける。追加の費用は `/etc/group` 1回分の読み切りであり、結果は 30 秒キャッシュされる。
+
+**列挙全体も入出力から切り離す。** `enumerateFromFiles` は `/etc/group`・`/etc/passwd` の固定パスしか読めないため、そのままではテストが不正行を含む内容を与えられない。実行ホストのこれらのファイルは整形されているので、不正行を合成する経路は一度も通らず、「分類結果と不正行の記録を `combine` で合成する」という本節の要求が実装されているかをテストが確かめられない（実際、合成を外して分類結果だけを使う実装に戻しても、この分離の前はどのテストも失敗しなかった）。そこで読み取り対象を `dbSource`（名前と `open` 関数の組）として受け取る `enumerateFromSources` を本体とし、`enumerateFromFiles` はそれに `groupFileSource()`・`passwdFileSource()` を渡すだけの包みとする。`findGroupByGID`・`findUsersWithPrimaryGID` も同様に `dbSource` を受け取る。これは本節がすでに走査へ適用している原則5を、列挙全体へ広げたものである。`dbSource` は production の呼び出し元（`enumerateFromFiles`）を持つ通常の引数であり、テストのためだけに production へ足した分岐や差し替え点ではない。
+
+読み取り対象をパス文字列ではなく「名前と `open` 関数の組」で受け取るのは、テストが一時ファイルを作らずに内容を直接与えられるようにするためである。パスで受ける形でも同じ検証はできるが、その場合テストごとに一時ファイルの生成と後始末が要り、`os.Open` の失敗を誘発する手段も別に要る。`open` を関数にすると、内容を返す実装とエラーを返す実装のどちらもテスト側で直接書ける（§7.1）。
+
+**対象グループが不在でも両方のファイルを読む。** 完全性は「列挙が読んだファイルについて何が言えるか」であり、どの GID を尋ねたかで変わってはならない。走査を末尾まで読み切る理由と同じである。したがって `/etc/group` に該当エントリが無い場合も `/etc/passwd` の走査を行い、その不正行を完全性へ反映する。一方で**返すメンバー集合は変えない**。`/etc/group` にエントリの無いグループのメンバーは空であり、これは CGO 版が未知のグループに対して空集合を返すのと一致する（0151 §1.1 原則2 の意味論統一。§3.7 が「両実装が返すメンバー集合は同じ環境では一致する」と述べているのはこの点である）。
+
+**同じ GID のエントリが複数ある場合は先頭が勝つ。** `/etc/group` の書式はこれを禁じておらず、`getgrgid` は先頭の一致を返す。走査を末尾まで読み切るようにしたことで、この選択は暗黙ではなくなった——一致した時点で `return` していた頃は先頭が勝つことが構造上自明だったが、読み進める形では明示的に保持しなければ後方のエントリで上書きされる。後勝ちにすると同じファイルに対して非 CGO 版と CGO 版のメンバー集合が食い違い、後から追記した行のほうが優先されてしまう。
 
 **入出力とパースを分ける**（§1.1 原則5）。`scanGroupFile`・`scanPasswdFile` が `io.Reader` を受け取り、`findGroupByGID`・`findUsersWithPrimaryGID` はファイルを開いてそれらに渡すだけの薄い包みになる。これは §7.4 に述べる理由から必須である。現在の `membership_nocgo_test.go` の各テストは、production の走査関数を呼ばずに走査ループをテスト内へ複製しており、この形のままでは新しい不正行の記録が production コードに対して一度も検証されない。
 
@@ -629,7 +654,7 @@ classDiagram
 |---|---|---|---|
 | `internal/groupmembership/completeness.go` | 新規 | 完全性・原因・完全性判定・列挙結果の型と構築関数、合成 `combine`、`String()` | AC-01, AC-02 |
 | `internal/groupmembership/nsswitch.go` | 新規 | `/etc/nsswitch.conf` の読み取り（`readNsswitchSnapshot`）、分類（`classifyNSSCompleteness`、`nssSources`）、分類警告の生成。プロセス単位の状態は持たない（§2.2） | AC-05〜AC-10, AC-18 |
-| `internal/groupmembership/membership_nocgo.go` | 変更 | 非 CGO 版列挙。分類結果と不正行の記録を合成して完全性を申告（`enumerateFromFiles`）。`precomputeEnumerationEnvironment` の非 CGO 版実装。プロセス単位の分類の確定と1回限りの記録（`nsswitchVerdict`、§2.2） | AC-05, AC-11, AC-18 |
+| `internal/groupmembership/membership_nocgo.go` | 変更 | 非 CGO 版列挙。分類結果と不正行の記録を合成して完全性を申告（`enumerateFromSources` とその包み `enumerateFromFiles`）。`precomputeEnumerationEnvironment` の非 CGO 版実装。プロセス単位の分類の確定と1回限りの記録（`nsswitchVerdict`、§2.2） | AC-05, AC-11, AC-18 |
 | `internal/groupmembership/membership_files.go` | 変更 | 走査を `io.Reader` 受け取りに分離し、末尾まで読み切って `malformedLines` を返す。既存の `slog.Warn` は維持 | AC-11〜AC-13 |
 | `internal/groupmembership/membership_cgo.go` | 変更 | CGO 版列挙。成功時は常に「完全」を申告。`precomputeEnumerationEnvironment` の CGO 版実装（何もしない） | AC-02 |
 | `internal/groupmembership/manager.go` | 変更 | 列挙の差し替え点の型変更、キャッシュへの完全性の格納、`isUserOnlyGroupMember` の分岐、sentinel エラーとメッセージ、`EnsurePermissionCheckUID` からの `precomputeEnumerationEnvironment` 呼び出し | AC-03, AC-03a, AC-14〜AC-19 |
@@ -923,7 +948,7 @@ flowchart TD
 
 > 矢印 A → B は「A の次に B を実行する」ことを表す。菱形からの矢印のラベルは分岐の条件を表す。円柱形はデータ（読み取る情報源）を表す。凡例のノードは色分けの意味のみを示し、相互関係は表さない。
 > グループが存在しない場合、`findGroupByGID` は該当エントリなしを返し、`getGroupMembers` は空集合と当該ビルドの完全性をエラーなしで返す（0151 の契約、変更なし）。この分岐は図では「メンバー集合を合成」に含めている。
-> 「分類結果と不正行の記録を合成」は `enumerateFromFiles` が行う。この関数は分類結果を引数で受け取るため、テストが任意の分類結果を与えて列挙全体を駆動できる（§7.1）。
+> 「分類結果と不正行の記録を合成」は `enumerateFromSources` が行い、`enumerateFromFiles` はそれに実ファイルの `dbSource` を渡す包みである。`enumerateFromSources` は分類結果と読み取り対象の双方を引数で受け取るため、テストが任意の分類結果と任意の内容を与えて列挙全体を駆動できる（§3.3・§7.1）。
 
 ### 6.2 書き込み判定における完全性の分岐
 
@@ -970,7 +995,7 @@ flowchart TD
 | `nssSources` | 行末に `#` コメントが続く場合にコメントより後ろが無視されること（例: `files systemd # local users only` が `["files", "systemd"]` になること）、内部に空白を含む角括弧トークン（例: `[NOTFOUND=return UNAVAIL=continue]`）が1つのトークンとして除かれ、内部の空白で分割されないこと | AC-09 |
 | `combine`・構築関数・`String()` | 「1つでも不完全なら不完全」、先に評価した原因が残ること、`completeVerdict` が原因を持たないこと、想定外の値の表示 | AC-01 |
 | `scanGroupFile`・`scanPasswdFile` | 不正行を含む内容で `malformedLines` の件数と最初の位置が記録されること、**不正行が対象エントリより後ろにある場合も記録されること**、空行・コメント行が数えられないこと、NIS 互換エントリが不正行として数えられること、`slog.Warn` が従来どおり出力されること | AC-11〜AC-13 |
-| `enumerateFromFiles` | 分類結果と不正行の記録の合成が列挙結果に反映されること。分類が「完全」でも不正行があれば「不完全」になること、およびその逆 | AC-05, AC-11 |
+| `enumerateFromSources` | 分類結果と不正行の記録の合成が列挙結果に反映されること。分類が「完全」でも不正行があれば「不完全」になること、およびその逆。対象グループが不在でも両方のファイルを読み切り、その結果が完全性に反映されること | AC-05, AC-11 |
 | CGO 版 `getGroupMembers` | 成功時に「完全」を申告すること | AC-02 |
 | `isUserOnlyGroupMember` | 完全・不完全・未申告の3経路。不完全では本人が唯一の要素でも拒否されること、未申告が `ErrGroupMemberCompletenessUnstated` で判別できること | AC-03, AC-03a, AC-14 |
 | `CanUserSafelyWriteFile` | 不完全な列挙で `(false, non-nil error)` になり `errors.Is` で判別できること。完全な列挙では従来と同じ判定になること | AC-15, AC-16 |
@@ -979,7 +1004,7 @@ flowchart TD
 | キャッシュ | 2回目の呼び出し（キャッシュヒット）でも完全性が保たれ、同じ拒否になること | AC-19 |
 | エラーメッセージ | 原因ごとに `user_database_source` の値と回復手段が含まれること | AC-18 |
 
-不完全・未申告の経路は、列挙の差し替え点 `newWithEnumerator` に任意の完全性を持つ値を返させて到達する。列挙全体の合成は `enumerateFromFiles` に分類結果を直接渡して到達する。いずれも実行環境の NSS 構成に依存しない。
+不完全・未申告の経路は、列挙の差し替え点 `newWithEnumerator` に任意の完全性を持つ値を返させて到達する。列挙全体の合成は `enumerateFromSources` に分類結果と読み取り対象を直接渡して到達する。`enumerateFromFiles` は固定パスしか読めず、実行ホストの `/etc/group`・`/etc/passwd` は整形されているため、この関数を通しては不正行の経路に一度も入れない（§3.3）。いずれも実行環境の NSS 構成に依存しない。
 
 `scanGroupFile`・`scanPasswdFile` を `io.Reader` 受け取りにするのは、この行を実現するためである（§3.3）。
 
@@ -999,7 +1024,7 @@ flowchart TD
 | 読み取り失敗の扱い | `nsswitchReadFailed` を `nsswitchAbsent` と同じ扱いにする |
 | 不正行の伝達 | `malformedLines` の件数を常に 0 にする |
 | 対象エントリより後ろの不正行 | `scanGroupFile` を一致時点で `return` する形へ戻す |
-| 合成 | `enumerateFromFiles` で不正行の記録を無視し、分類結果だけを使う |
+| 合成 | `enumerateFromSources` で不正行の記録を無視し、分類結果だけを使う。**`enumerateFromFiles` を対象にしても失敗させられない**——実行ホストのファイルが整形されているため不正行の経路に入らない（§3.3） |
 | キャッシュを跨ぐ完全性 | キャッシュ格納時に完全性を `completenessComplete` で上書きする |
 | 読み取り経路の不変 | `IsUserInGroup` に完全性の分岐を加える |
 | sentinel の伝播 | `dir_permissions_unix.go` の `%w` を `%v` へ戻す |

@@ -54,7 +54,7 @@ func TestGetGroupMembers_CGOAndNoCGOSemanticsMatch(t *testing.T) {
 
 func fileExpectedMembers(t *testing.T, gid uint32) []string {
 	t.Helper()
-	entry, err := findGroupByGID(gid)
+	entry, _, err := findGroupByGID(groupFileSource(), gid)
 	require.NoError(t, err, "failed to find group by GID %d", gid)
 	if entry == nil {
 		return []string{}
@@ -69,7 +69,7 @@ func fileExpectedMembers(t *testing.T, gid uint32) []string {
 			}
 		}
 	}
-	primaryUsers, err := findUsersWithPrimaryGID(gid)
+	primaryUsers, _, err := findUsersWithPrimaryGID(passwdFileSource(), gid)
 	require.NoError(t, err, "failed to find users with primary GID %d", gid)
 	for _, u := range primaryUsers {
 		set[u] = struct{}{}

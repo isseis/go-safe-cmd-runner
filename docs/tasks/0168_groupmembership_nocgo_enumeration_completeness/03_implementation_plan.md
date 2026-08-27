@@ -349,8 +349,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make lint` は2構成とも 0 issues。`make test` は2構成とも合格するが、本開発コンテナでは `-p 4` の並列実行がメモリ不足で `test/security` のテストバイナリを OOM kill するため `-p 1` で実行した。この失敗は無改変の main でも再現し、本 PR の変更とは無関係）
 - [x] PR を作成した（[#1063](https://github.com/isseis/go-safe-cmd-runner/pull/1063)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4b: 走査の分離・不正行の伝達・非 CGO 版の配線（AC-05 の配線, AC-11〜AC-13）
 
@@ -365,43 +365,54 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **作業内容**
 
-- [ ] `membership_files.go` に `malformedLines`（`count int`、`first string`）と、その `verdict()` メソッドを定義する
-- [ ] `membership_files.go` の走査を `scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malformedLines, error)` へ切り出す。**対象エントリに一致してもファイル末尾まで読み切る**。一致したエントリは保持する
-- [ ] `membership_files.go` の走査を `scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)` へ切り出す
-- [ ] `findGroupByGID`・`findUsersWithPrimaryGID` を、ファイルを開いて上記へ渡すだけの薄い包みにする。戻り値に `malformedLines` を加える
-- [ ] 既存の `slog.Warn`（`membership_files.go:40`・`:101`）の出力内容（属性 `file`・`line`・`error`）を変えない
-- [ ] 空行と `#` で始まる行を不正行として数えない現行の扱いを維持する
-- [ ] `membership_nocgo.go` に `enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)` を実装し、分類結果と不正行の記録を `combine` で合成する。**分類を先に評価する**（両方が不完全な場合は分類の原因が残る）
-- [ ] `membership_nocgo.go` の `getGroupMembers` を `return enumerateFromFiles(gid, nsswitchVerdict())` の形にし、Phase 1 で置いた暫定の `completeVerdict()` を取り除く
+- [x] `membership_files.go` に `malformedLines`（`count int`、`first string`）を定義する。**`verdict()` メソッドは `membership_files_nocgo.go`（`!cgo`）へ置いた**。`membership_files.go` は `!cgo || test` であり CGO 構成でもコンパイルされるが、その構成には `verdict()` の呼び出し元が無く `unused`（`.golangci.yml:13`）に報告されるため（Phase 4a で `nsswitchVerdict` を移したのと同じ理由）。あわせて、この分割の理由を `malformedLines` の doc コメントに英語で記した
+- [x] `membership_files.go` の走査を `scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malformedLines, error)` へ切り出す。**対象エントリに一致してもファイル末尾まで読み切る**。一致したエントリは保持する
+- [x] `membership_files.go` の走査を `scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformedLines, error)` へ切り出す
+- [x] `findGroupByGID`・`findUsersWithPrimaryGID` を、ファイルを開いて上記へ渡すだけの薄い包みにする。戻り値に `malformedLines` を加える。**引数に読み取り対象を表す `dbSource`（名前と `open` 関数の組）を加えた**（固定パスを直接開く形にしない）。理由は下の `enumerateFromSources` の項に述べる
+- [x] 既存の `slog.Warn`（`membership_files.go:40`・`:101`）の出力内容（属性 `file`・`line`・`error`）を変えない（`file` には `dbSource.name` を渡す。production の呼び出しでは従来どおり `/etc/group`・`/etc/passwd` である）
+- [x] 空行と `#` で始まる行を不正行として数えない現行の扱いを維持する
+- [x] `membership_nocgo.go` に `enumerateFromFiles(gid uint32, nssVerdict completenessVerdict) (groupEnumeration, error)` を実装し、分類結果と不正行の記録を `combine` で合成する。**分類を先に評価する**（両方が不完全な場合は分類の原因が残る）
+- [x] **本体を `enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict completenessVerdict)` へ切り出し、`enumerateFromFiles` をそれに `groupFileSource()`・`passwdFileSource()` を渡すだけの包みにした。** 当初の計画にはこの分離が無かったが、§7.3 の「合成」の無効化確認（不正行の記録を無視し分類結果だけを使う）を行ったところ**どのテストも落ちなかった**。実行ホストの `/etc/group`・`/etc/passwd` は整形されているため、固定パスしか読めない `enumerateFromFiles` では不正行の経路を一度も通せず、合成が実装されているかをテストが確かめられていなかった。`combine` を直接呼ぶテストではこの欠落を捉えられない（CLAUDE.md「Every test must be able to fail for its stated reason」）。分離後は同じ無効化で `TestEnumerateCombinesEverySourceOfDoubt` の2件が失敗する。これは `02_architecture.md` §1.1 原則5（入出力と純粋な処理を分ける）を、走査だけでなく列挙全体へ広げたものである。`02_architecture.md` §3.3 も同じ内容に更新した
+- [x] `membership_nocgo.go` の `getGroupMembers` を `return enumerateFromFiles(gid, nsswitchVerdict())` の形にし、Phase 1 で置いた暫定の `completeVerdict()` を取り除く
 
 **テストの作業内容**
 
-- [ ] `manager_test.go:263` のサブテスト「group writable file - owner only allowed if exclusive group member」を、`ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する
-- [ ] `manager_test.go:390` のサブテスト「group_writable_member」を同様に更新する
-- [ ] `manager_test.go:457` の `various_permission_combinations` の行「group_read_write」（`0o664`）を同様に更新する
-- [ ] `membership_semantics_test.go:175` の `fileExpectedMembers` を、走査関数の戻り値変更に追随させる
-- [ ] `membership_nocgo_test.go:159` の `TestFindGroupByGID` から走査ループの複製 `testFindGroupByGID`（`:216`）を削除し、`scanGroupFile` を直接呼ぶ形に置き換える
-- [ ] `membership_nocgo_test.go:258` の `TestFindUsersWithPrimaryGID` から走査ループの複製 `testFindUsersWithPrimaryGID`（`:308`）を削除し、`scanPasswdFile` を直接呼ぶ形に置き換える
-- [ ] `membership_nocgo_test.go:351` の `TestFileReadingErrors` を、`scanGroupFile`・`scanPasswdFile` に読み取り中にエラーを返す `io.Reader`（`iotest.ErrReader`）を渡し、`scanner.Err()` の分岐が呼び出し元へ伝わることを検証する形へ書き換える。**現行の「存在しないパスを開く」検証は残さない**——`findGroupByGID`・`findUsersWithPrimaryGID` は `/etc/group`・`/etc/passwd` を固定で開く薄い包みになる。テストが動くホストではこれらのファイルは常に存在するため、open 失敗を誘発できないからである。書き換え後に `go tool cover -func` を実行し、`membership_files.go` の各関数のカバレッジが書き換え前から下がっていないことを確認する
-- [ ] `membership_nocgo_test.go` に、不正行を含む内容で `malformedLines` の件数と最初の位置（`file:line`）が記録されることを検証するテストを追加する
-- [ ] 同ファイルに、**不正行が対象エントリより後ろにある場合も記録される**ことを検証するテストを追加する。これは「走査を末尾まで読み切る」設計を、打ち切る実装に戻せば失敗する形で固定する
-- [ ] 同ファイルに、空行・コメント行が不正行として数えられないことを検証するテストを追加する
-- [ ] 同ファイルに、NIS 互換エントリ（`+`・`+@netgroup`・`-username` で始まる行）が不正行として数えられることを検証するテストを追加する
-- [ ] 同ファイルに、不正行に対する `slog.Warn` が属性 `file`・`line`・`error` を伴って従来どおり出力されることを検証するテストを追加する。`membership_files.go` はパッケージレベルの `slog.Warn` を呼ぶため、`slog.SetDefault` ＋ `t.Cleanup` で `tu.NewLogRecorder` を差し込み、`t.Parallel` を呼ばない
-- [ ] 同ファイルに、`enumerateFromFiles` へ「完全」の分類結果を渡しても不正行があれば「不完全」になること、およびその逆（分類が「不完全」なら不正行が無くても「不完全」）を検証するテストを追加する
+- [x] `manager_test.go:263` のサブテスト「group writable file - owner only allowed if exclusive group member」を、`ErrGroupMemberEnumerationIncomplete` を許容する形へ更新する（許容するのはこの sentinel だけであり、他のエラーは従来どおり失敗させる）
+- [x] `manager_test.go:390` のサブテスト「group_writable_member」を同様に更新する
+- [x] `manager_test.go:457` の `various_permission_combinations` の行「group_read_write」（`0o664`）を同様に更新する。表に `groupWritable` の列を足し、group-writable な行だけが sentinel を許容するようにした（他の行は従来どおりエラーなしを要求する）
+- [x] `membership_semantics_test.go:175` の `fileExpectedMembers` を、走査関数の戻り値・引数の変更に追随させる
+- [x] `membership_nocgo_test.go:159` の `TestFindGroupByGID` から走査ループの複製 `testFindGroupByGID`（`:216`）を削除し、`scanGroupFile` を直接呼ぶ形に置き換える
+- [x] `membership_nocgo_test.go:258` の `TestFindUsersWithPrimaryGID` から走査ループの複製 `testFindUsersWithPrimaryGID`（`:308`）を削除し、`scanPasswdFile` を直接呼ぶ形に置き換える
+- [x] `membership_nocgo_test.go:351` の `TestFileReadingErrors` を、`scanGroupFile`・`scanPasswdFile` に読み取り中にエラーを返す `io.Reader`（`iotest.ErrReader`）を渡し、`scanner.Err()` の分岐が呼び出し元へ伝わることを検証する形へ書き換える。**現行の「存在しないパスを開く」検証は残さない**——`findGroupByGID`・`findUsersWithPrimaryGID` は `/etc/group`・`/etc/passwd` を固定で開く薄い包みになる。テストが動くホストではこれらのファイルは常に存在するため、open 失敗を誘発できないからである。書き換え後に `go tool cover -func` を実行し、`membership_files.go` の各関数のカバレッジが書き換え前から下がっていないことを確認する。**確認済み**: 書き換え後の `membership_files.go` の各関数のカバレッジは、書き換え前（`record` 0.0%、`verdict` 66.7%、`scanGroupFile` 72.2%、`findGroupByGID` 80.0%、`parseGroupLine` 100%、`scanPasswdFile` 72.2%、`findUsersWithPrimaryGID` 80.0%、`parsePasswdLine` 100%）に対していずれも同等以上（`record` 100%、`verdict` 100%、`scanGroupFile` 100%、`findGroupByGID` 80.0%、`parseGroupLine` 100%、`scanPasswdFile` 100%、`findUsersWithPrimaryGID` 80.0%、`parsePasswdLine` 100%）。package 全体では 88.2% → 92.5%
+- [x] `membership_nocgo_test.go` に、不正行を含む内容で `malformedLines` の件数と最初の位置（`file:line`）が記録されることを検証するテストを追加する（`TestScanRecordsMalformedLines`）
+- [x] 同ファイルに、**不正行が対象エントリより後ろにある場合も記録される**ことを検証するテストを追加する（`TestScanGroupFileReadsPastTheMatch`）。これは「走査を末尾まで読み切る」設計を、打ち切る実装に戻せば失敗する形で固定する
+- [x] 同ファイルに、空行・コメント行が不正行として数えられないことを検証するテストを追加する（`TestScanIgnoresBlankAndCommentLines`）
+- [x] 同ファイルに、NIS 互換エントリ（`+`・`+@netgroup`・`-username` で始まる行）が不正行として数えられることを検証するテストを追加する（`TestScanCountsNISCompatibilityEntries`）
+- [x] 同ファイルに、不正行に対する `slog.Warn` が属性 `file`・`line`・`error` を伴って従来どおり出力されることを検証するテストを追加する。`membership_files.go` はパッケージレベルの `slog.Warn` を呼ぶため、`slog.SetDefault` ＋ `t.Cleanup` で `tu.NewLogRecorder` を差し込み、`t.Parallel` を呼ばない（`TestScanWarnsAboutMalformedLines`）
+- [x] 同ファイルに、`enumerateFromSources` へ「完全」の分類結果を渡しても不正行があれば「不完全」になること、およびその逆（分類が「不完全」なら不正行が無くても「不完全」）を検証するテストを追加する（`TestEnumerateCombinesEverySourceOfDoubt`。`/etc/group` 側・`/etc/passwd` 側の不正行を別の行として持つ）。**当初は `enumerateFromFiles` を対象にする計画だったが、固定パスしか読めない同関数では不正行の経路を通せないため、`enumerateFromSources` を対象にした**（上の実装ステップの項を参照）
+- [x] 同ファイルに、対象グループが存在しない場合でも環境の判定がそのまま申告されることを検証するテストを追加する（`TestEnumerateMissingGroupStatesTheEnvironmentVerdict`）
+- [x] **実装レビューを受けた追加**（いずれも無効化して該当テストが失敗することを確認済み）:
+    - `scanGroupFile` に「同じ GID のエントリが複数ある場合は先頭が勝つ」規則を明記し、`TestScanGroupFileKeepsTheFirstMatchingEntry` で固定した。走査を末尾まで読み切るようにしたことでこの選択が暗黙でなくなったが、当初はどのテストも後勝ちへの改変を捉えられなかった。後勝ちは CGO 版とメンバー集合が食い違い、後から追記した行が優先される
+    - 対象グループが `/etc/group` に無い場合も `/etc/passwd` を走査し、その不正行を完全性へ反映するようにした（`TestEnumerateMissingGroupStillReadsThePasswdDatabase`）。従来は尋ねた GID によって同じホストの完全性が変わっていた。**返すメンバー集合は空のままとし**、CGO 版が未知のグループへ空集合を返すのと一致させる（0151 §1.1 原則2）
+    - `dbSource.open` が失敗する経路のテストを追加した（`TestEnumerateReportsAnUnreadableDatabase`）。エラー時の `groupEnumeration{}` が「未申告」であり許可の根拠にならないことも併せて確認する
+    - `slog.Warn` の本文から固定パスの記述を外した。`file` 属性が任意の名前を運ぶようになったため、本文とパスが食い違いうる。AC-12 が定めるのは属性であり本文ではない
+    - `membership_common_test.go` の `TestGetGroupMembers_InvalidGID_Common` から `causeMalformedLine` に関する表明を外した。実行ホストの `/etc/group` に不正行がある場合（本機能が対象とする NIS 互換エントリを含む）に、主張と無関係な理由で失敗するため
+    - `02_architecture.md` の §3.3・§3.10・§6.1・§7.1・§7.3 を `enumerateFromSources` に合わせて更新した。当初は §3.3 のみを更新しており、特に §7.3 の「合成」の行が、この Phase で「失敗させられない」と判明した `enumerateFromFiles` を指したままだった
+    - §3.3 の「テスト専用の seam ではない」の根拠から §5.3 の参照を外した。§5.3 は副作用の範囲を扱う節であり、この方針を含まない
+- [x] `membership_common_test.go` の `TestGetGroupMembers_InvalidGID_Common` を更新する。同テストは存在しないグループに対して `completeVerdict()` を無条件に期待していたが、配線後の申告は環境の分類に依存する。「完全性を必ず申告すること」と「グループの不在それ自体は不正行の原因にならないこと」を確かめる形へ変えた
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと。この確認は Phase 4b でのみ成立する）
-- [ ] **分類結果を強制した実行を、陽性対照つきで行う。** 本開発コンテナの `/etc/nsswitch.conf` は `files` のみであり実行ユーザーは非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` が常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時的にソースを改変し、`make unit-test-cgo0` を実行する。
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも。`make test` は本開発コンテナのメモリ制約のため `-p 1` で実行した。PR-4 と同じ事情であり、無改変の main でも再現する）
+- [x] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと。この確認は Phase 4b でのみ成立する）
+- [x] **分類結果を強制した実行を、陽性対照つきで行う。** **実施結果**: `classifyNSSCompleteness` を常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時改変し、`CGO_ENABLED=0` で全 package のテストを実行した。**陽性対照は成立した**——`manager_test.go` の `group_writable_member` が実際に `ErrGroupMemberEnumerationIncomplete` の分岐へ入ったことを、その分岐へ一時的に置いた `t.Fatal` が発火することで確認した（「何も壊れなかった」ではない）。package 外の4ファイルのうち破綻したのは `internal/safefileio/safe_file_test.go` の `TestValidateFilePermissions/group writable (664) for write ...` のみで、本 Phase で更新した。`internal/runner/base/security` の3ファイルは無変更で通過した。残る失敗は `TestClassifyNSSCompleteness` のみであり、これは強制の対象そのものを検証するテストであるため想定内である。改変は実行後に戻し、`git diff` が空であることを確認した 本開発コンテナの `/etc/nsswitch.conf` は `files` のみであり実行ユーザーは非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` が常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時的にソースを改変し、`make unit-test-cgo0` を実行する。
       **陽性対照**: この状態で `manager_test.go:390` の `group_writable_member` が `ErrGroupMemberEnumerationIncomplete` の経路へ入ることを確認する。**入らない場合は、非 CGO 版 `getGroupMembers` の配線が欠けている証拠として扱い、ゲートを不合格とする**（「何も壊れなかった」を合格としない）。
       **実行の記録を PR の説明に貼る**（改変内容・`make unit-test-cgo0` の出力・陽性対照の該当行・破綻した package 外のテスト名）。改変は実行後に戻すため、記録を残さないとレビュアはゲートが実施されたことを確認できない。
       あわせて `02_architecture.md` §3.7 が挙げた package 外の4ファイル（`internal/safefileio/safe_file_test.go`、`internal/runner/base/security/file_validation_test.go`、`internal/runner/base/security/destination_zoning_test.go`、`internal/runner/base/security/trusted_gids_linux_test.go`）の結果を確認し、破綻したテストを Phase 4b の作業として更新する。確認後に改変を戻す
-- [ ] `02_architecture.md` §7.3 の表のうち「不正行の伝達」「対象エントリより後ろの不正行」「合成」の3行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 空行・コメント行を不正行として数える → 該当テストが失敗（AC-13）。(2) `membership_files.go` の `slog.Warn` を削る → 警告のテストが失敗（AC-12）
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `02_architecture.md` §7.3 の表のうち「不正行の伝達」「対象エントリより後ろの不正行」「合成」の3行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す。**「合成」は当初どのテストも落とせず**、その事実が `enumerateFromSources` の分離につながった（上の実装ステップを参照）
+- [x] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 空行・コメント行を不正行として数える → `TestScanIgnoresBlankAndCommentLines` が失敗（AC-13）。(2) `membership_files.go` の `slog.Warn` を削る → `TestScanWarnsAboutMalformedLines` が失敗（AC-12）
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す（`1` を返した）
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-5 作成ポイント: malformed-line propagation and nocgo enumeration wiring
 
@@ -415,8 +426,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **判定理由**: 非 CGO 版の配線がこの PR で初めて実際の拒否を発生させるセキュリティゲートであり、`mkplan.md` step 8 の「security-gate 相当の挙動引き上げ」と「重いテスト面」（package 外の4ファイルの破綻可能性、陽性対照つきの強制実行という外部ゲート）の双方に該当する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make lint` は2構成とも 0 issues。`make test` は2構成とも合格。PR-4 と同じく、本開発コンテナのメモリ制約のため `-p 1` で実行した）
+- [x] PR を作成した（[#1066](https://github.com/isseis/go-safe-cmd-runner/pull/1066)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -514,9 +525,9 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 | AC-09 | test | `nsswitch.go` `nssSources` | `nsswitch_test.go::TestNSSSources`（行末コメントと内部に空白を含む角括弧トークン）、`::TestClassifyNSSCompleteness`（`group: files [NOTFOUND=continue]` が「完全」、`group: [NOTFOUND=return]` が「不完全」） |
 | AC-10 | test | `classifyNSSCompleteness` | `::TestClassifyNSSCompleteness` が `nsswitchSnapshot` を組み立てて渡すだけで全条件を網羅する（ファイルを作らず `t.TempDir` も使わない）。ファイルを使うのは `TestReadNsswitchSnapshotFrom` のみ |
 | AC-10 | manual | 同上 | `classifyNSSCompleteness` と `nssSources` の本体を読み、`os.` の呼び出しが無いこと（ファイルに触れるのは `readNsswitchSnapshotFrom` だけであること）を確認する。固定行数の `rg -A` は関数長が変われば隣の関数へはみ出すため使わない |
-| AC-11 | test | `membership_files.go` `scanGroupFile`・`scanPasswdFile` | `membership_nocgo_test.go::TestScanGroupFile_MalformedLines`（件数と最初の位置）、`::TestScanGroupFile_MalformedLineAfterMatch`（対象エントリより後ろの不正行）、`::TestScanPasswdFile_MalformedLines`、`::TestScanGroupFile_NISCompatEntries` |
-| AC-12 | test | `membership_files.go:40`・`:101` | `membership_nocgo_test.go::TestScanGroupFile_WarnsOnMalformedLine`。`tu.NewLogRecorder` を `slog.SetDefault` ＋ `t.Cleanup` で差し込み、属性 `file`・`line`・`error` を検証する（`t.Parallel` を呼ばない） |
-| AC-13 | test | `scanGroupFile`・`scanPasswdFile` | `::TestScanGroupFile_BlankAndCommentLines`（空行と `#` 行が `malformedLines.count` を増やさず、結果が「完全」のままであること） |
+| AC-11 | test | `membership_files.go` `scanGroupFile`・`scanPasswdFile` | `membership_nocgo_test.go::TestScanRecordsMalformedLines`（件数と最初の位置。`group`・`passwd` の2サブテスト）、`::TestScanGroupFileReadsPastTheMatch`（対象エントリより後ろの不正行）、`::TestScanCountsNISCompatibilityEntries`、`::TestMalformedLinesVerdict`（記録から判定への変換） |
+| AC-12 | test | `membership_files.go` の `scanGroupFile`・`scanPasswdFile` 内の `slog.Warn` | `membership_nocgo_test.go::TestScanWarnsAboutMalformedLines`。`tu.NewLogRecorder` を `slog.SetDefault` ＋ `t.Cleanup` で差し込み、属性 `file`・`line`・`error` を検証する（`t.Parallel` を呼ばない）。AC-12 が求めるのは属性であり、メッセージ本文は対象外である（本文からは固定パスの記述を外し、パスは `file` 属性が担う） |
+| AC-13 | test | `scanGroupFile`・`scanPasswdFile` | `::TestScanIgnoresBlankAndCommentLines`（空行と `#` 行が `malformedLines.count` を増やさず、`verdict()` が「完全」のままであること。`group`・`passwd` の2サブテスト） |
 | AC-14 | test | `isUserOnlyGroupMember` | `manager_test.go::TestIsUserOnlyGroupMember_Completeness` のうち、メンバー集合が本人1名のみでも「不完全」なら拒否される行 |
 | AC-15 | test | `manager.go`・`dir_permissions_unix.go:211` | `manager_test.go::TestCanUserSafelyWriteFile_IncompleteEnumeration`（`(false, non-nil error)` と `errors.Is`）、`internal/security/dir_permissions_unix_test.go::TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel`（包装を越えて辿れること） |
 | AC-16 | test | `CanUserSafelyWriteFile` | `manager_test.go::TestCanUserSafelyWriteFile`（world-writable・非所有者・owner-writable・group-writable かつ唯一のメンバーの各分岐が従来どおり）。「完全」を注入した状態で既存の期待が変わらないことを確認する |

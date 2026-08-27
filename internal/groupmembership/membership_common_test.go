@@ -68,5 +68,13 @@ func TestGetGroupMembers_InvalidGID_Common(t *testing.T) {
 	enumeration, err := getGroupMembers(invalidGID)
 	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
 	assert.Empty(t, enumeration.members, "getGroupMembers should return empty slice for non-existent group")
-	assert.Equal(t, completeVerdict(), enumeration.verdict, "a non-existent group is still a complete enumeration of zero members")
+	// A group that is absent from the user database is an enumeration of
+	// zero members, not a reason to doubt the enumeration. What the verdict
+	// says beyond that depends on the host this runs on -- a host whose own
+	// /etc/group holds an unparsable line is incomplete for every GID -- so
+	// only the environment-independent part is asserted here. That an absent
+	// group adds no cause of its own is pinned deterministically by
+	// TestEnumerateMissingGroupStatesTheEnvironmentVerdict.
+	assert.NotEqual(t, completenessUnstated, enumeration.verdict.completeness,
+		"an enumeration must always state its completeness")
 }
