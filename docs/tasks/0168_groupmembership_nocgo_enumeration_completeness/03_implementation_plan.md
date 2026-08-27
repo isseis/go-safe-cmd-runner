@@ -234,22 +234,22 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **作業内容**
 
-- [ ] `dir_permissions_unix.go` の `validateGroupWritePermissions` 内の包装を次のとおり書き換える。
+- [x] `dir_permissions_unix.go` の `validateGroupWritePermissions` 内の包装を次のとおり書き換える。
       変更前: `return fmt.Errorf("%w: directory %s failed security validation: %v", ErrInvalidDirPermissions, dirPath, err)`
       変更後: `return fmt.Errorf("%w: directory %s failed security validation: %w", ErrInvalidDirPermissions, dirPath, err)`
-- [ ] `dir_permissions_unix_test.go` を新規作成する。ビルドタグは `//go:build !windows && test`（同パッケージの慣行と対象ファイルの `!windows` の両方に合わせる。先例は `internal/runner/base/privilege/unix_privilege_test.go`）
-- [ ] 同ファイルに `TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel` を書く。`CanUserSafelyWrite` が `ErrGroupMemberEnumerationIncomplete` を返す `DirectoryPermCheckOptions` を与え、`ValidateDirectoryPermissionsWithOptions` の返すエラーから `errors.Is` でその sentinel を辿れることを検証する
-- [ ] 同じテストの中で、既存の `ErrInvalidDirPermissions` に対する `errors.Is` が引き続き成立することを併せて検証する
-- [ ] `safe_file.go:1187` の `rejectionRule` の `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberEnumerationIncomplete)` → `"enumeration-incomplete"` の分岐を追加する
-- [ ] 同じ `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberCompletenessUnstated)` → `"completeness-unstated"` の分岐を追加する
-- [ ] `safe_file_test.go:1239` の `TestRejectionRule` のテーブルに、上記2つの sentinel に対する行を追加する
+- [x] `dir_permissions_unix_test.go` を新規作成する。ビルドタグは `//go:build !windows && test`（同パッケージの慣行と対象ファイルの `!windows` の両方に合わせる。先例は `internal/runner/base/privilege/unix_privilege_test.go`）
+- [x] 同ファイルに `TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel` を書く。`CanUserSafelyWrite` が `ErrGroupMemberEnumerationIncomplete` を返す `DirectoryPermCheckOptions` を与え、`ValidateDirectoryPermissionsWithOptions` の返すエラーから `errors.Is` でその sentinel を辿れることを検証する
+- [x] 同じテストの中で、既存の `ErrInvalidDirPermissions` に対する `errors.Is` が引き続き成立することを併せて検証する
+- [x] `safe_file.go:1187` の `rejectionRule` の `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberEnumerationIncomplete)` → `"enumeration-incomplete"` の分岐を追加する
+- [x] 同じ `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberCompletenessUnstated)` → `"completeness-unstated"` の分岐を追加する
+- [x] `safe_file_test.go:1239` の `TestRejectionRule` のテーブルに、上記2つの sentinel に対する行を追加する
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] `02_architecture.md` §7.3 の表の「sentinel の伝播」の行について、`%w` を `%v` へ戻すと `dir_permissions_unix_test.go` のテストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [x] `02_architecture.md` §7.3 の表の「sentinel の伝播」の行について、`%w` を `%v` へ戻すと `dir_permissions_unix_test.go` のテストが失敗することを確認し、コミットメッセージに英語で記す
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-3 作成ポイント: sentinel diagnosability at caller boundaries
 
