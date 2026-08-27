@@ -141,8 +141,8 @@ func TestParsePasswdLine(t *testing.T) {
 	}
 }
 
-// TestFindGroupByGID tests group lookup against the production scan
-func TestFindGroupByGID(t *testing.T) {
+// TestScanGroupFile tests group lookup against the production scan
+func TestScanGroupFile(t *testing.T) {
 	t.Parallel()
 
 	groupContent := `# System groups
@@ -211,9 +211,9 @@ staff:x:1000:
 	}
 }
 
-// TestFindUsersWithPrimaryGID tests finding users with a specific primary GID
+// TestScanPasswdFile tests finding users with a specific primary GID
 // against the production scan
-func TestFindUsersWithPrimaryGID(t *testing.T) {
+func TestScanPasswdFile(t *testing.T) {
 	t.Parallel()
 
 	passwdContent := `# System users
@@ -290,20 +290,22 @@ func TestFileReadingErrors(t *testing.T) {
 		t.Parallel()
 
 		entry, malformed, err := scanGroupFile(
-			io.MultiReader(strings.NewReader("root:x:0:\n"), iotest.ErrReader(readErr)), "group", 100)
+			io.MultiReader(strings.NewReader("root:x:0:\nbroken\n"), iotest.ErrReader(readErr)), "group", 100)
 		require.ErrorIs(t, err, readErr)
 		assert.Nil(t, entry)
-		assert.Zero(t, malformed.count)
+		// What the scan managed to record before failing is still returned,
+		// so a caller that logs the error can say where it got to.
+		assert.Equal(t, 1, malformed.count)
 	})
 
 	t.Run("passwd file read error", func(t *testing.T) {
 		t.Parallel()
 
 		users, malformed, err := scanPasswdFile(
-			io.MultiReader(strings.NewReader("root:x:0:0:root:/root:/bin/bash\n"), iotest.ErrReader(readErr)), "passwd", 0)
+			io.MultiReader(strings.NewReader("root:x:0:0:root:/root:/bin/bash\nbroken\n"), iotest.ErrReader(readErr)), "passwd", 0)
 		require.ErrorIs(t, err, readErr)
 		assert.Nil(t, users)
-		assert.Zero(t, malformed.count)
+		assert.Equal(t, 1, malformed.count)
 	})
 }
 
@@ -354,6 +356,63 @@ func TestScanGroupFileReadsPastTheMatch(t *testing.T) {
 	assert.Equal(t, "/etc/group:2", malformed.first)
 }
 
+// TestScanGroupFileKeepsTheFirstMatchingEntry verifies that when the group
+// database holds more than one entry with the target GID -- which the format
+// permits -- the first one wins, as it does for getgrgid. Reading on past
+// the match is what makes this a choice, so the choice needs pinning: taking
+// the last entry instead would give the no-cgo build a different member set
+// than the cgo build for the same file, and could hand a write to whoever
+// appended the later line.
+func TestScanGroupFileKeepsTheFirstMatchingEntry(t *testing.T) {
+	t.Parallel()
+
+	content := "users:x:100:alice\nusurper:x:100:mallory\n"
+	entry, malformed, err := scanGroupFile(strings.NewReader(content), "/etc/group", 100)
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assert.Equal(t, "users", entry.name)
+	assert.Equal(t, "alice", entry.members)
+	assert.Zero(t, malformed.count, "a second entry for the same GID is well formed, not malformed")
+}
+
+// TestEnumerateReportsAnUnreadableDatabase verifies that a database that
+// cannot be opened fails the enumeration rather than yielding a short member
+// set. Both databases are checked: a caller that saw only /etc/group open
+// successfully must not be handed a set missing every primary member.
+func TestEnumerateReportsAnUnreadableDatabase(t *testing.T) {
+	t.Parallel()
+
+	openErr := errors.New("injected open failure")
+	failing := dbSource{
+		name: "unreadable",
+		open: func() (io.ReadCloser, error) { return nil, openErr },
+	}
+	good := stringSource(testGroupFile, "users:x:100:alice\n")
+	goodPasswd := stringSource(testPasswdFile, "bob:x:1:100:Bob:/home/bob:/bin/sh\n")
+
+	tests := []struct {
+		name      string
+		groupSrc  dbSource
+		passwdSrc dbSource
+	}{
+		{name: "group database unreadable", groupSrc: failing, passwdSrc: goodPasswd},
+		{name: "passwd database unreadable", groupSrc: good, passwdSrc: failing},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			enumeration, err := enumerateFromSources(tt.groupSrc, tt.passwdSrc, 100, completeVerdict())
+			require.ErrorIs(t, err, openErr)
+			// The failed enumeration states nothing, so a caller that
+			// ignored the error still could not use it to grant access.
+			assert.Equal(t, completenessUnstated, enumeration.verdict.completeness)
+			assert.Empty(t, enumeration.members)
+		})
+	}
+}
+
 // TestScanIgnoresBlankAndCommentLines verifies that blank lines and comments
 // are not counted as malformed. Counting them would make every stock
 // /etc/group incomplete, and every enumeration on every host a denial.
@@ -369,6 +428,8 @@ func TestScanIgnoresBlankAndCommentLines(t *testing.T) {
 		require.NotNil(t, entry)
 		assert.Zero(t, malformed.count)
 		assert.Empty(t, malformed.first)
+		assert.Equal(t, completeVerdict(), malformed.verdict(),
+			"blank and comment lines must leave the scan complete")
 	})
 
 	t.Run("passwd", func(t *testing.T) {
@@ -380,6 +441,8 @@ func TestScanIgnoresBlankAndCommentLines(t *testing.T) {
 		assert.Equal(t, []string{"john"}, users)
 		assert.Zero(t, malformed.count)
 		assert.Empty(t, malformed.first)
+		assert.Equal(t, completeVerdict(), malformed.verdict(),
+			"blank and comment lines must leave the scan complete")
 	})
 }
 
@@ -453,8 +516,7 @@ func TestMalformedLinesVerdict(t *testing.T) {
 	v := malformedLines{count: 2, first: "/etc/group:7"}.verdict()
 	assert.Equal(t, completenessIncomplete, v.completeness)
 	assert.Equal(t, causeMalformedLine, v.cause)
-	assert.Contains(t, v.detail, "/etc/group:7")
-	assert.Contains(t, v.detail, "2")
+	assert.Equal(t, "2 line(s) skipped, first at /etc/group:7", v.detail)
 }
 
 // stringSource returns a dbSource that serves the given contents, so that a
@@ -556,18 +618,42 @@ func TestEnumerateCombinesEverySourceOfDoubt(t *testing.T) {
 // TestEnumerateMissingGroupStatesTheEnvironmentVerdict verifies that a group
 // absent from the database is an enumeration of zero members that still
 // carries the environment's verdict, rather than a complete one.
+//
+// The member set stays empty even though a user names the GID as their
+// primary group: the cgo build reports the same empty set for an unknown
+// group, and the two builds must not disagree about members.
 func TestEnumerateMissingGroupStatesTheEnvironmentVerdict(t *testing.T) {
 	t.Parallel()
 
 	nss := incompleteVerdict(causeNSSSources, "group: sss")
 	enumeration, err := enumerateFromSources(
 		stringSource(testGroupFile, "root:x:0:\n"),
-		stringSource(testPasswdFile, "root:x:0:0:root:/root:/bin/sh\n"),
+		stringSource(testPasswdFile, "ghost:x:1:9999:Ghost:/home/ghost:/bin/sh\n"),
 		9999, nss)
 	require.NoError(t, err)
 
 	assert.Empty(t, enumeration.members)
 	assert.Equal(t, nss, enumeration.verdict)
+}
+
+// TestEnumerateMissingGroupStillReadsThePasswdDatabase verifies that an
+// absent group does not shorten the scan. Completeness describes the files
+// the enumeration read, so a skipped line in the passwd database must reach
+// the verdict whether or not the group itself was found; otherwise the same
+// host would call one GID complete and another incomplete.
+func TestEnumerateMissingGroupStillReadsThePasswdDatabase(t *testing.T) {
+	t.Parallel()
+
+	enumeration, err := enumerateFromSources(
+		stringSource(testGroupFile, "root:x:0:\n"),
+		stringSource(testPasswdFile, "root:x:0:0:root:/root:/bin/sh\nbroken\n"),
+		9999, completeVerdict())
+	require.NoError(t, err)
+
+	assert.Empty(t, enumeration.members)
+	assert.Equal(t,
+		incompleteVerdict(causeMalformedLine, "1 line(s) skipped, first at "+testPasswdFile+":2"),
+		enumeration.verdict)
 }
 
 // resetNsswitchClassification clears the process-wide classification latch

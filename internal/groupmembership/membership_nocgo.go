@@ -47,15 +47,26 @@ func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict c
 		return groupEnumeration{}, err
 	}
 
-	// The classification is evaluated first so that, when both it and the
-	// skipped lines say incomplete, the cause reported is the environment
-	// one: rebuilding with cgo is the remediation that covers both.
-	verdict := nssVerdict.combine(groupMalformed.verdict())
+	// Both databases are scanned even when the group is absent from the
+	// first. Completeness describes the files the enumeration had to read,
+	// so it must not depend on which GID was asked about -- the same reason
+	// the scans read past their matching entry. The members are a separate
+	// question, decided below.
+	primaryUsers, passwdMalformed, err := findUsersWithPrimaryGID(passwdSrc, gid)
+	if err != nil {
+		return groupEnumeration{}, fmt.Errorf("failed to find users with primary GID %d: %w", gid, err)
+	}
+
+	// The classification is evaluated first so that, when more than one of
+	// these says incomplete, the cause reported is the environment one:
+	// rebuilding with cgo is the remediation that covers all of them.
+	verdict := nssVerdict.combine(groupMalformed.verdict()).combine(passwdMalformed.verdict())
 
 	if groupEntry == nil {
-		// Group not found. The scan still ran to the end of the file, so
-		// its skipped-line record is what says whether the group is
-		// genuinely absent or merely unseen.
+		// A group with no entry in the group database has no members, even
+		// if some user names it as their primary GID. The cgo build reports
+		// the same empty set for an unknown group, and the two builds must
+		// agree on the members they return.
 		return groupEnumeration{members: []string{}, verdict: verdict}, nil
 	}
 
@@ -70,14 +81,7 @@ func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict c
 		}
 	}
 
-	// Find users with this GID as their primary group by parsing /etc/passwd
-	primaryUsers, passwdMalformed, err := findUsersWithPrimaryGID(passwdSrc, gid)
-	if err != nil {
-		return groupEnumeration{}, fmt.Errorf("failed to find users with primary GID %d: %w", gid, err)
-	}
-	verdict = verdict.combine(passwdMalformed.verdict())
-
-	// Add primary group users to the member set
+	// Add the users holding this GID as their primary group.
 	for _, user := range primaryUsers {
 		memberSet[user] = struct{}{}
 	}

@@ -50,11 +50,7 @@ type groupEntry struct {
 	members string
 }
 
-// malformedLines records the lines a scan skipped as unparsable. Its
-// verdict method lives in membership_files_nocgo.go: only the file-based
-// enumeration turns a skipped line into a completeness verdict, and a
-// method with no caller in the cgo build is reported as unused there.
-// Only the
+// malformedLines records the lines a scan skipped as unparsable. Only the
 // position of the first one is kept: an error message needs to point the
 // operator at the line to fix first, while the full list is what the
 // per-line slog.Warn records already carry.
@@ -94,7 +90,7 @@ func scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malform
 
 		entry, err := parseGroupLine(line)
 		if err != nil {
-			slog.Warn("skipping malformed line while searching /etc/group for group membership",
+			slog.Warn("skipping malformed line while searching the group database for group membership",
 				slog.String("file", source),
 				slog.Int("line", lineNum),
 				slog.Any("error", err),
@@ -103,6 +99,9 @@ func scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malform
 			continue // Skip malformed lines
 		}
 
+		// The first entry with the matching GID wins, as it does for
+		// getgrgid. Reading on past the match is what makes this a
+		// decision at all, so it is stated rather than left to the loop.
 		if found == nil && entry.gid == gid {
 			found = entry
 		}
@@ -167,7 +166,7 @@ func scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformed
 
 		user, userGID, err := parsePasswdLine(line)
 		if err != nil {
-			slog.Warn("skipping malformed line while searching /etc/passwd for primary group members",
+			slog.Warn("skipping malformed line while searching the passwd database for primary group members",
 				slog.String("file", source),
 				slog.Int("line", lineNum),
 				slog.Any("error", err),
