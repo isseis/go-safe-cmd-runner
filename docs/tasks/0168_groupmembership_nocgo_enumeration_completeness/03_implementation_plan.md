@@ -496,8 +496,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test`・`make lint` とも 0 issues。本 Phase は Go ファイルを変更していないため CGO_ENABLED の2構成での再実行は不要）
 - [x] PR を作成した（[#1068](https://github.com/isseis/go-safe-cmd-runner/pull/1068)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 受け入れ基準の検証
 
