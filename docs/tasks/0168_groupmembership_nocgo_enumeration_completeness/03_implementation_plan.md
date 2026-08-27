@@ -263,8 +263,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **判定理由**: 変更は包装の動詞1つと `switch` の2分岐、およびそれを固定するテストに限られる。設計判断は `02_architecture.md` §4.5 で確定済みで、panel-mode の引き金にも複数の Conditional checks にも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1062](https://github.com/isseis/go-safe-cmd-runner/pull/1062)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
