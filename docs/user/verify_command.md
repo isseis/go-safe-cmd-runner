@@ -783,11 +783,15 @@ WARN Permission check UID taken from SUDO_UID instead of the real UID; if this p
 
 **Symptom**
 
-If a path component of the hash directory, or of an ancestor directory of a file being
-verified, is group-writable, and this host cannot confirm that group member enumeration is
-complete, the write-safety check is denied and `verify` exits without verifying any target
-file. This check used to be evaluated more permissively and allow the write; it now denies it.
-This is a different check from the SUDO_UID existence check in 5.7.
+If a path component of the hash directory is group-writable, and this host cannot confirm that
+group member enumeration is complete, the write-safety check is denied and `verify` exits
+without verifying any target file. This check used to be evaluated more permissively and allow
+the write; it now denies it. This is a different check from the SUDO_UID existence check in 5.7.
+
+**Ancestor directories of the file being verified are not covered by this.** Unlike the hash
+directory, which is the root of trust, a group-writable ancestor of a target file is exactly the
+condition `verify` exists to detect, so that path still only logs a warning and continues
+verification as before (the exit code is unchanged).
 
 **Error Messages**
 
