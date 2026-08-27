@@ -339,10 +339,17 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (riskt
 
 **既知の制限（`CGO_ENABLED=0` ビルド）**: 非 CGO ビルドはグループメンバー・プライマリグループの列挙を
 `/etc/group` と `/etc/passwd` の直接パースのみで行い、LDAP/SSSD 等の NSS（Name Service Switch）
-ディレクトリサービスは参照しない。プロジェクトが配布する公式バイナリは `CGO_ENABLED=0` でビルドされて
-いるため、NSS でのみ管理されているグループメンバーは列挙結果に現れず、group-writable なファイルに
-対する書き込み安全性判定が実際より緩く（許可寄りに）評価される場合がある。NSS 経由のグループ管理に
-依存する環境（LDAP/SSSD 等）でこのツールを使う場合は、`CGO_ENABLED=1` でのセルフビルドを検討すること。
+ディレクトリサービスは参照しない。`/etc/nsswitch.conf` の `passwd`・`group` 行が `files`・`systemd`
+のみを参照する構成（Ubuntu の既定を含む）では、この直接パースだけで列挙は過不足なく行えるため、
+group-writable なファイルへの書き込み安全性判定は従来どおり判定できる。一方、それ以外のソース
+（LDAP/SSSD 等、ドメイン参加ホストの既定である `passwd: files sss` を含む）が設定されている場合、
+または `/etc/passwd`・`/etc/group` にパース不能な行がある場合は、列挙が完全であることを保証できない
+ため、当該の書き込み安全性判定は「緩く評価される」のではなく**拒否される**（fail-closed）。
+
+なお CGO ビルドにも既知の制限がある。SSSD の `enumerate = False`（既定）や `ignore_group_members =
+True` を設定した環境では、libc の NSS lookup がエラーを返さないまま部分的なメンバー集合を返すことが
+あり、この場合は CGO ビルドでも書き込み安全性判定が実際より緩く評価される可能性がある。詳細は
+[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) を参照。
 
 ### 4. 安全な端末出力制御 (`internal/terminal/`, `internal/ansicolor/`)
 

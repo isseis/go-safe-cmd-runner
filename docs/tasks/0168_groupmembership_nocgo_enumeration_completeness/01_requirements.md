@@ -71,8 +71,8 @@ L-2 も L-3 も、`getGroupMembers` が `(members, nil)` を返しながら `mem
 ### 対象外
 
 - **`IsUserInGroup` および読み取り判定（`CanCurrentUserSafelyReadFile`）の変更**。上記「背景」のとおり、不完全な列挙はこの経路では既に拒否側に働く。
-- **CGO 版における `getpwent` の列挙不完全性**。SSSD は既定で `enumerate = false` であり、その構成では `getpwent` がディレクトリ管理ユーザーを返さない。つまり CGO 版の「プライマリ GID 一致ユーザー」の収集も NSS バックエンドの設定次第で不完全になりうる。これは L-2 と同じ性質の残存リスクだが、`/etc/nsswitch.conf` からは判定できず、バックエンドごとの設定調査を要する。本タスクでは扱わず、新規 Issue として分離する。
-- **リリースビルドを `CGO_ENABLED=1` に変更すること**。cgo でのクロスコンパイルには target ごとのツールチェーンが必要であり、リリースワークフローの構成変更は本タスクの範囲を超える。なお [release.yml](../../../.github/workflows/release.yml) は `darwin/arm64` も `CGO_ENABLED: 0` でビルドしている一方、[Makefile:147-148](../../../Makefile#L147-L148) は「macOS はグループメンバーシップに CGO を要するため `CGO_ENABLED=0` を検査しない」としており、両者は整合していない。この不整合の扱いも新規 Issue として分離する。本タスクは、その darwin 非 CGO バイナリが列挙を不完全と申告して fail-closed になることまでを保証する（AC-06）。
+- **CGO 版における `getpwent` の列挙不完全性**。SSSD は既定で `enumerate = false` であり、その構成では `getpwent` がディレクトリ管理ユーザーを返さない。つまり CGO 版の「プライマリ GID 一致ユーザー」の収集も NSS バックエンドの設定次第で不完全になりうる。これは L-2 と同じ性質の残存リスクだが、`/etc/nsswitch.conf` からは判定できず、バックエンドごとの設定調査を要する。本タスクでは扱わず、新規 Issue として分離する（[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)。同 Issue は `ignore_group_members = True` による `gr_mem` 側の欠落も併せて扱う）。
+- **リリースビルドを `CGO_ENABLED=1` に変更すること**。cgo でのクロスコンパイルには target ごとのツールチェーンが必要であり、リリースワークフローの構成変更は本タスクの範囲を超える。なお [release.yml](../../../.github/workflows/release.yml) は `darwin/arm64` も `CGO_ENABLED: 0` でビルドしている一方、[Makefile:147-148](../../../Makefile#L147-L148) は「macOS はグループメンバーシップに CGO を要するため `CGO_ENABLED=0` を検査しない」としており、両者は整合していない。この不整合の扱いも新規 Issue として分離する（[#1067](https://github.com/isseis/go-safe-cmd-runner/issues/1067)）。本タスクは、その darwin 非 CGO バイナリが列挙を不完全と申告して fail-closed になることまでを保証する（AC-06）。
 - **D1 L-1（`GetGroupMembers` がキャッシュ内部のスライスをそのまま返す）**。キャッシュの構造に触れる点で本タスクと近接するが、原因も影響も別である。残件一覧に残す。
 - **D1 L-4（判定 API が `(false, nil)` と `(false, err)` を混在して返す）**。API 形状の統一であり、本タスクが追加する拒否経路もこの既存の形状に従う。残件一覧に残す。
 - **`internal/safefileio` 等の呼び出し元パッケージの変更**。本タスクは `(bool, error)` の契約を変えないため、呼び出し元は無変更で新しい拒否を受け取る。
