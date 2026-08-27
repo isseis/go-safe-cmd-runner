@@ -39,19 +39,16 @@ func (f fakeDirInfo) Sys() any           { return &syscall.Stat_t{Uid: f.uid, Gi
 func TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel(t *testing.T) {
 	// "/target" is group-writable, owned by a non-root, non-caller UID, so
 	// validateGroupWritePermissions delegates to CanUserSafelyWrite instead of
-	// taking the root/trusted-group or "owned by caller" shortcuts.
+	// taking the root/trusted-group or "owned by caller" shortcuts. The
+	// CanUserSafelyWrite failure returns before the hierarchy walk would ever
+	// reach "/", so no fixture for it is needed here.
 	target := fakeDirInfo{name: "target", mode: os.ModeDir | 0o030, uid: 2000, gid: 2000}
-	root := fakeDirInfo{name: "/", mode: os.ModeDir | 0o755, uid: UIDRoot, gid: GIDRoot}
 
 	lstat := func(path string) (os.FileInfo, error) {
-		switch path {
-		case "/target":
+		if path == "/target" {
 			return target, nil
-		case "/":
-			return root, nil
-		default:
-			return nil, fmt.Errorf("unexpected path %s", path)
 		}
+		return nil, fmt.Errorf("unexpected path %s", path)
 	}
 
 	cause := fmt.Errorf("enumeration incomplete: %w", groupmembership.ErrGroupMemberEnumerationIncomplete)
