@@ -107,7 +107,7 @@ while [ -n "$p" ]; do
 done
 ```
 
-1・2 で `files`・`systemd` 以外のソースまたは不正行が見つからず、かつ 3 で group-writable な構成要素が見つからなければ、アップグレード後も影響はありません。該当する場合は、`record`・`verify` を1回実行して起動時警告（`GROUP_ENUMERATION_INCOMPLETE` 相当）が出るかを確認してください。
+1・2 で `files`・`systemd` 以外のソースまたは不正行が見つからず、かつ 3 で group-writable な構成要素が見つからなければ、アップグレード後も影響はありません。該当する場合は、`record`・`verify` を1回実行して起動時警告 `This build cannot enumerate every member of a group on this host` が出るかを確認してください。
 
 **回復手段:** (a) `CGO_ENABLED=1` でビルドし直す。(b) 対象パスの group-writable ビットを落とす（`chmod` で `0755` 等にする）。(c) 不正行が書式の誤りであれば `/etc/passwd`・`/etc/group` を修正する。
 

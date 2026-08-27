@@ -457,7 +457,7 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 - [x] `verify_command.ja.md` のトラブルシューティングに同じ項目を追加する
 - [x] `CHANGELOG.ja.md` の「未リリース」→「破壊的変更」に項目を追加する。書式は同節の既存項目（とくに `verify`: ハッシュディレクトリの権限違反を fail-closed 化）に揃え、見出しで対象範囲を示し、`**影響範囲:**` を設け、アップグレード前に影響有無を判定する手順（`/etc/nsswitch.conf` の `passwd`・`group` 行、`/etc/passwd`・`/etc/group` の不正行の有無、対象パスの group-writable な構成要素の3点）と回復手段・切り戻し方法を添える
 - [x] 上記の日本語版をまとめてコミットする
-- [ ] `/mktrans` で `security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md` へ反映する。`CHANGELOG.md:110-112` の英語版の項目 "Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership" も日本語版と同じ扱いで解消する（AC-33）
+- [x] `/mktrans` で `security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md` へ反映する。`CHANGELOG.md:110-112` の英語版の項目 "Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership" も日本語版と同じ扱いで解消する（AC-33）
 - [x] `98_remaining_issues.md` §2「D1（groupmembership）」から L-2（47行）・L-3（48行）の箇条書きと、49行の `- → [#976](…) を作成済み。` を除く
 - [x] 同文書に `> **D1 L-2/L-3 について**:` の引用ブロックを追加する。同文書の既存の引用ブロック（15・17・19・53・57・59・101行）と同じ形式にし、#976 への参照を中へ畳み込む。L-3 について、所見の推奨（対象 GID の行がパース不能ならエラー）をそのままではなく「不完全性の申告」に置き換えて close したことと、その理由（不正行がどの GID のものかは原理的に判定できない）が読み取れるようにする
 - [x] `98_remaining_issues.md` の **§2 の D1 の節に**、分離した2件の Issue を追加する。E1・B2・C1・C2・C3・A3・A7 の各節には触れない（AC-28）。#1064 の項目は以下の本文で入れる。**所見 ID を振らない**——本件は 0149 監査の所見ではなく本タスクの調査中に派生したもので、`findings/D1_groupmembership.md` に対応する原文が無い。ID を振ると同文書 8 行目の「番号・記号は `findings/*.md` の所見 ID に対応する」という宣言と食い違う
@@ -479,8 +479,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **完了判定条件**
 
-- [ ] §3 の受け入れ基準検証表のうち AC-23〜AC-33 の確認がすべて期待どおりの結果になる
-- [ ] `git diff main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の差分が、D1 の節と分離した2件の追記だけに収まっている（AC-28）
+- [x] §3 の受け入れ基準検証表のうち AC-23〜AC-33 の確認がすべて期待どおりの結果になる
+- [x] `git diff main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の差分が、D1 の節と分離した2件の追記だけに収まっている（AC-28）
 
 ### PR-6 作成ポイント: user documentation and audit records
 
