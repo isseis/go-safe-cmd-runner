@@ -395,16 +395,16 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと。この確認は Phase 4b でのみ成立する）
-- [ ] **分類結果を強制した実行を、陽性対照つきで行う。** 本開発コンテナの `/etc/nsswitch.conf` は `files` のみであり実行ユーザーは非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` が常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時的にソースを改変し、`make unit-test-cgo0` を実行する。
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも。`make test` は本開発コンテナのメモリ制約のため `-p 1` で実行した。PR-4 と同じ事情であり、無改変の main でも再現する）
+- [x] 非 CGO 版の配線が残っていることを静的に確認する: `rg -n 'enumerateFromFiles\(gid, nsswitchVerdict\(\)\)' internal/groupmembership/membership_nocgo.go` が1件一致し、`rg -c 'completeVerdict\(\)' internal/groupmembership/membership_nocgo.go` が `0` を返す（Phase 1 の暫定値が確実に置き換わったこと。この確認は Phase 4b でのみ成立する）
+- [x] **分類結果を強制した実行を、陽性対照つきで行う。** **実施結果**: `classifyNSSCompleteness` を常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時改変し、`CGO_ENABLED=0` で全 package のテストを実行した。**陽性対照は成立した**——`manager_test.go` の `group_writable_member` が実際に `ErrGroupMemberEnumerationIncomplete` の分岐へ入ったことを、その分岐へ一時的に置いた `t.Fatal` が発火することで確認した（「何も壊れなかった」ではない）。package 外の4ファイルのうち破綻したのは `internal/safefileio/safe_file_test.go` の `TestValidateFilePermissions/group writable (664) for write ...` のみで、本 Phase で更新した。`internal/runner/base/security` の3ファイルは無変更で通過した。残る失敗は `TestClassifyNSSCompleteness` のみであり、これは強制の対象そのものを検証するテストであるため想定内である。改変は実行後に戻し、`git diff` が空であることを確認した 本開発コンテナの `/etc/nsswitch.conf` は `files` のみであり実行ユーザーは非 root であるため、設定ファイルの書き換えでは強制できない。`classifyNSSCompleteness` が常に `incompleteVerdict(causeNSSSources, ...)` を返すよう一時的にソースを改変し、`make unit-test-cgo0` を実行する。
       **陽性対照**: この状態で `manager_test.go:390` の `group_writable_member` が `ErrGroupMemberEnumerationIncomplete` の経路へ入ることを確認する。**入らない場合は、非 CGO 版 `getGroupMembers` の配線が欠けている証拠として扱い、ゲートを不合格とする**（「何も壊れなかった」を合格としない）。
       **実行の記録を PR の説明に貼る**（改変内容・`make unit-test-cgo0` の出力・陽性対照の該当行・破綻した package 外のテスト名）。改変は実行後に戻すため、記録を残さないとレビュアはゲートが実施されたことを確認できない。
       あわせて `02_architecture.md` §3.7 が挙げた package 外の4ファイル（`internal/safefileio/safe_file_test.go`、`internal/runner/base/security/file_validation_test.go`、`internal/runner/base/security/destination_zoning_test.go`、`internal/runner/base/security/trusted_gids_linux_test.go`）の結果を確認し、破綻したテストを Phase 4b の作業として更新する。確認後に改変を戻す
-- [ ] `02_architecture.md` §7.3 の表のうち「不正行の伝達」「対象エントリより後ろの不正行」「合成」の3行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 空行・コメント行を不正行として数える → 該当テストが失敗（AC-13）。(2) `membership_files.go` の `slog.Warn` を削る → 警告のテストが失敗（AC-12）
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `02_architecture.md` §7.3 の表のうち「不正行の伝達」「対象エントリより後ろの不正行」「合成」の3行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す。**「合成」は当初どのテストも落とせず**、その事実が `enumerateFromSources` の分離につながった（上の実装ステップを参照）
+- [x] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 空行・コメント行を不正行として数える → `TestScanIgnoresBlankAndCommentLines` が失敗（AC-13）。(2) `membership_files.go` の `slog.Warn` を削る → `TestScanWarnsAboutMalformedLines` が失敗（AC-12）
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す（`1` を返した）
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-5 作成ポイント: malformed-line propagation and nocgo enumeration wiring
 
