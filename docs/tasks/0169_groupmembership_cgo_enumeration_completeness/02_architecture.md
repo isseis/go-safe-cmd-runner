@@ -321,6 +321,12 @@ func precomputeEnumerationEnvironment()
 | 行の形が読めない（重複・角括弧未閉じ・行が無い・ソース名が無い） | 何が設定されているか判定できない | 同左 | 不完全 |
 | `GOOS` が `linux` 以外 | `/etc/nsswitch.conf` を持たないため判定材料が無い | 同左（§3.4） | 不完全 |
 
+**分類が見るのは `passwd` と `group` の2行だけである。** 同じファイルにある `netgroup`・`shadow`・`hosts` などの行は、本タスクの列挙に寄与しないため対象外とする。とくに `netgroup` は `group` と名前が似ているが別の名前空間である。ネットグループは `(ホスト, ユーザー, ドメイン)` の三つ組の集合に名前を付けたものであり、GID を持たないため、ファイルの `st_gid` に現れることも `getgrgid_r` が返すこともない。Ubuntu の既定は `netgroup: nis` であるが、これを理由に「不完全」と判定することはない。
+
+ネットグループが `group` データベースへ混入する経路は、`nss_compat` が `/etc/group` の `+@netgroup` 行を展開する場合だけである。これには `group: compat` の構成が要り、`compat` は許可リストに無いため、その構成は入口で「不完全」になる。すなわちネットグループ経由の混入が「完全」の申告に到達する経路は存在しない。
+
+`initgroups` は事情が異なる。補助グループの所属に実際に効くため、対象外としていることは受容した穴である（§5.4）。
+
 **`/etc/nsswitch.conf` が存在しない場合の扱いは、本設計で唯一の未検証事項である。** 非 CGO 版の根拠——「ファイルが無ければ他の参照先を設定する手段が無い」——は、自分でファイルを読む非 CGO 版にしか当てはまらない。CGO ビルドではこの場合 glibc がコンパイル時の既定構成にフォールバックし、その既定が `files` のみである保証を本設計は確認していない。歴史的に glibc の既定には `compat` が含まれ、`nss_compat` は `passwd_compat` の設定が無い場合に NIS を参照しうる。すなわち、この分岐は分類の中で唯一の許可側の既定でありながら、CGO ビルドでの根拠がもっとも弱い。
 
 この扱いは AC-03 が「`/etc/nsswitch.conf` が存在しない場合は `files` とみなして「完全」と申告する」と明示しているため、設計の裁量で変えられない。**対応方針は次のとおりとする。**
@@ -485,9 +491,9 @@ classDiagram
 | `internal/groupmembership/membership_nocgo_test.go` | 変更 | `resetNsswitchClassification` と `TestEnsurePermissionCheckUIDPrecomputesEnvironment` を送り出す。非 CGO 固有のテストは残す |
 | `internal/groupmembership/manager_test.go` | 変更 | 上記の移設先。両ビルドで動く完全性判定まわりのテスト（AC-09・AC-15・AC-16）をここに置く。ビルドタグを持たないため両ビルドで実行される |
 | `internal/groupmembership/nsswitch_test.go` | 変更 | ビルドタグを外し、CGO ビルドでも分類器のテーブルテストが動くようにする |
-| `docs/user/security-risk-assessment.ja.md` | 変更 | §3 の CGO ビルドに関する「既知の制限」を本タスク後の挙動へ更新（AC-24） |
-| `docs/user/record_command.ja.md`・`docs/user/verify_command.ja.md` | 変更 | CGO ビルドで拒否に遭遇した場合のトラブルシューティング項目を追加（AC-25） |
-| `docs/user/security-risk-assessment.md`・`record_command.md`・`verify_command.md` | 変更 | 上記の英語版を `/mktrans` で反映（AC-26） |
+| `docs/user/security-risk-assessment.ja.md` | 変更 | §3 の CGO ビルドに関する「既知の制限」を本タスク後の挙動へ更新（AC-24）。判定が `passwd`・`group` の2行だけを見ることを明記（AC-30） |
+| `docs/user/record_command.ja.md`・`docs/user/verify_command.ja.md` | 変更 | CGO ビルドで拒否に遭遇した場合のトラブルシューティング項目を追加（AC-25）。`netgroup` 行が判定の対象外であることを明記（AC-30） |
+| `docs/user/security-risk-assessment.md`・`record_command.md`・`verify_command.md` | 変更 | 上記の英語版を `/mktrans` で反映（AC-26、AC-30） |
 | `CHANGELOG.ja.md`・`CHANGELOG.md` | 変更 | 「未リリース」→「破壊的変更」への項目追加と、その英語版（AC-27） |
 | `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` | 変更 | §2 D1 の当該項目を解消済みへ更新し、`internal/runner/base/security` の誤検知を残件として追加（AC-28、AC-29） |
 
@@ -526,6 +532,7 @@ classDiagram
 | AC-17, AC-18, AC-19 | §5.3 |
 | AC-20, AC-21, AC-22, AC-23 | §7 |
 | AC-24〜AC-29 | §3.6、§5.5 |
+| AC-30 | §3.2.1（判定が見る行の範囲）、§3.6、§5.5 |
 
 ---
 
@@ -776,7 +783,9 @@ flowchart TD
 
 **変更履歴への記載**（AC-27）: [CHANGELOG.ja.md](../../../CHANGELOG.ja.md) の「未リリース」→「破壊的変更」に、0168 の項目（`CHANGELOG.ja.md:79`「非CGOビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化」）とは**別項目**として追加する。両項目は対象ビルドが異なり、回復手段も異なるため、統合すると読み手がどちらの案内に従うべきか判別できなくなる。新項目には、0168 の項目と対をなすものであること（同じ完全性判定を非 CGO ビルドと CGO ビルドの双方へ適用したこと）を明記する。書式は同節の既存項目に揃え、見出しで対象範囲を示し、`**影響範囲:**` で該当するホストを述べ、アップグレード前に影響有無を判定する手順を添える。
 
-**利用者向け文書**（AC-24、AC-25）: [security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) §3 の「なお CGO ビルドにも既知の制限がある……実際より緩く評価される可能性がある」という記述は、本タスク後は事実でなくなる。同じ環境で「拒否される」ようになったことへ書き換え、#1064 への参照は解消済みとして扱う。`record_command.ja.md`・`verify_command.ja.md` のトラブルシューティングには、既存の非 CGO ビルド向けの項目（`user_database_source=passwd-file` の例）と並べて、`user_database_source=nss` の例と、回復手段が異なることを示す項目を追加する。両者が混同されないよう、各例に対象ビルドを明記する。あわせて、§4.1 が示した「ディレクトリ権限検査の拒否は構造化された記録を持たない」ことと、上記の中断からの復旧手順も記す。
+**利用者向け文書**（AC-24、AC-25、AC-30）: [security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) §3 の「なお CGO ビルドにも既知の制限がある……実際より緩く評価される可能性がある」という記述は、本タスク後は事実でなくなる。同じ環境で「拒否される」ようになったことへ書き換え、#1064 への参照は解消済みとして扱う。`record_command.ja.md`・`verify_command.ja.md` のトラブルシューティングには、既存の非 CGO ビルド向けの項目（`user_database_source=passwd-file` の例）と並べて、`user_database_source=nss` の例と、回復手段が異なることを示す項目を追加する。両者が混同されないよう、各例に対象ビルドを明記する。あわせて、§4.1 が示した「ディレクトリ権限検査の拒否は構造化された記録を持たない」ことと、上記の中断からの復旧手順も記す。
+
+**判定が見る行の範囲も利用者向け文書に明記する**（AC-30）。完全性の判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、`netgroup` 行は影響しない（§3.2.1）。Ubuntu の既定はこのファイルに `netgroup: nis` を含むため、ファイル全体を眺めた利用者が `nis` を見て自ホストが該当すると誤認しうる。既存の記述と `CHANGELOG.ja.md` の事前確認手順はいずれも `passwd`・`group` に限定した `grep` を示しているが、そう限定してよい理由は書かれていない。この1点を補う。
 
 ---
 
@@ -943,7 +952,7 @@ func resetNsswitchClassification(t *testing.T)
 
 ### 7.6 静的な確認
 
-文書に関する AC（AC-24〜AC-29）は、対応する記述の有無で確認する。AC-29（`98_remaining_issues.md` の D1 以外の残件が増減していないこと）は、当該ファイルの差分が D1 節と新規追加分に限られることを確認する。
+文書に関する AC（AC-24〜AC-30）は、対応する記述の有無で確認する。AC-29（`98_remaining_issues.md` の D1 以外の残件が増減していないこと）は、当該ファイルの差分が D1 節と新規追加分に限られることを確認する。
 
 ---
 
@@ -965,7 +974,7 @@ func resetNsswitchClassification(t *testing.T)
 
 Phase 1 の移設によって成立しているため、この段階では検証のみを行う。CGO ビルドで `EnsurePermissionCheckUID` が完全性判定を確定させ、警告が1回だけ出ることを確認する。`cmd/runner` が対象外であること（§4.4）を前提とした検証範囲とする。
 
-### Phase 5: 文書と残件一覧（AC-24〜AC-29）
+### Phase 5: 文書と残件一覧（AC-24〜AC-30）
 
 日本語版の利用者向け文書と `CHANGELOG.ja.md` を先に更新・コミットし、英語版を `/mktrans` で反映する。`98_remaining_issues.md` の D1 を解消済みへ更新し、`internal/runner/base/security` の誤検知を残件として追加する。
 

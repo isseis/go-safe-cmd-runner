@@ -8,7 +8,7 @@
 | Created | 2026-08-27 |
 | Review date | 2026-08-27 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-08-27: 設計レビュー中の指摘により AC-30（`netgroup` 行が判定の対象外であることの利用者向け文書への明記）を追加。要承認 |
 
 ## 関連 Issue
 
@@ -162,6 +162,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 - **AC-27**: [CHANGELOG.ja.md](../../../CHANGELOG.ja.md) の「未リリース」→「破壊的変更」に本変更の項目が追加され、その英語版が [CHANGELOG.md](../../../CHANGELOG.md) に `/mktrans` により反映されている。項目からは、拒否が起きる条件（CGO ビルドかつ許可リスト外の NSS ソースが構成されたホスト、および非 linux）、影響を受ける構成、回復手段、切り戻し方法が読み取れる。同節の既存項目の書式（対象範囲を示す見出し、`**影響範囲:**`、アップグレード前に影響有無を判定する手順）に揃える。既存の非 CGO ビルド向けの項目（`CHANGELOG.ja.md:79`）とは別項目とし、両者の関係が読み取れるようにする。
 - **AC-28**: [98_remaining_issues.md](../0149_security_code_smell_audit_fable/98_remaining_issues.md) §2 D1 の「（新規）CGO ビルドの列挙完全性」が解消済みとして更新され、同節が既に用いている引用ブロック（`> **… について**`）の形式で本タスクと #1064 への参照が記載されている。あわせて、「対象外」節で分離した `internal/runner/base/security` の誤検知が残件として追加されている。
 - **AC-29**: `98_remaining_issues.md` の D1 以外の残件の記述が、本タスクの書き換えによって増減していない。
+- **AC-30**: `record_command.ja.md`・`verify_command.ja.md`・[security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) の該当箇所に、完全性の判定が `/etc/nsswitch.conf` の `passwd`・`group` の2行だけを見ること、および `netgroup` 行は判定に影響しないことが明記されている。Ubuntu の既定である `netgroup: nis` を見た利用者が、自ホストが該当すると誤認しないことが読み取れる。その英語版が `/mktrans` により反映されている。
 
 ## Success Criteria（要件レベル）
 
