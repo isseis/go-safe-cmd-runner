@@ -349,8 +349,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make lint` は2構成とも 0 issues。`make test` は2構成とも合格するが、本開発コンテナでは `-p 4` の並列実行がメモリ不足で `test/security` のテストバイナリを OOM kill するため `-p 1` で実行した。この失敗は無改変の main でも再現し、本 PR の変更とは無関係）
 - [x] PR を作成した（[#1063](https://github.com/isseis/go-safe-cmd-runner/pull/1063)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4b: 走査の分離・不正行の伝達・非 CGO 版の配線（AC-05 の配線, AC-11〜AC-13）
 
