@@ -496,8 +496,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test`・`make lint` とも 0 issues。本 Phase は Go ファイルを変更していないため CGO_ENABLED の2構成での再実行は不要）
 - [x] PR を作成した（[#1068](https://github.com/isseis/go-safe-cmd-runner/pull/1068)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 受け入れ基準の検証
 
@@ -713,25 +713,25 @@ PR の区切りは Phase の区切りに一致させる。ただし Phase 4 は�
 
 ## 7. 実装チェックリスト
 
-- [ ] **PR-1** マージ済み（対象ステップ: Phase 1 — 完全性の型と申告。AC-01, AC-02, AC-04, AC-04a）
-- [ ] **PR-2** マージ済み（対象ステップ: Phase 2 — 判定側のフェイルクローズド化。AC-03, AC-03a, AC-14〜AC-19）
-- [ ] **PR-3** マージ済み（対象ステップ: Phase 3 — 診断可能性。AC-15, AC-18）
-- [ ] **PR-4** マージ済み（対象ステップ: Phase 4a — NSS 構成の分類と1回限りの警告。AC-05〜AC-10, AC-20）
-- [ ] **PR-5** マージ済み（対象ステップ: Phase 4b — 走査の分離・不正行の伝達・非 CGO 版の配線。AC-05 の配線, AC-11〜AC-13）
-- [ ] **PR-6** マージ済み（対象ステップ: Phase 5 — 文書と監査記録。AC-23〜AC-33）
-- [ ] **全体**: §3 の受け入れ基準検証表の全行が期待どおりの結果になる
-- [ ] **全体**: AC-21 の無効化確認を `02_architecture.md` §7.3 の10行と本書が追加する5件について実施し、コミットメッセージに英語で記した（件数の確認は PR-2・PR-3・PR-4・PR-5 の各ブランチ上で行う。マージ後の `main..HEAD` では数えられない）
-- [ ] **全体**: AC-22 の `make test`・`make lint` が2構成で通過した
+- [x] **PR-1** マージ済み（対象ステップ: Phase 1 — 完全性の型と申告。AC-01, AC-02, AC-04, AC-04a）
+- [x] **PR-2** マージ済み（対象ステップ: Phase 2 — 判定側のフェイルクローズド化。AC-03, AC-03a, AC-14〜AC-19）
+- [x] **PR-3** マージ済み（対象ステップ: Phase 3 — 診断可能性。AC-15, AC-18）
+- [x] **PR-4** マージ済み（対象ステップ: Phase 4a — NSS 構成の分類と1回限りの警告。AC-05〜AC-10, AC-20）
+- [x] **PR-5** マージ済み（対象ステップ: Phase 4b — 走査の分離・不正行の伝達・非 CGO 版の配線。AC-05 の配線, AC-11〜AC-13）
+- [x] **PR-6** マージ済み（対象ステップ: Phase 5 — 文書と監査記録。AC-23〜AC-33）
+- [x] **全体**: §3 の受け入れ基準検証表の全行が期待どおりの結果になる
+- [x] **全体**: AC-21 の無効化確認を `02_architecture.md` §7.3 の10行と本書が追加する5件について実施し、コミットメッセージに英語で記した（件数の確認は PR-2・PR-3・PR-4・PR-5 の各ブランチ上で行う。マージ後の `main..HEAD` では数えられない）
+- [x] **全体**: AC-22 の `make test`・`make lint` が2構成で通過した
 
 ## 8. 横断検索チェックリスト
 
 `make lint` と `make test` が検出できない項目に限る。§3 の受け入れ基準検証表に既にあるコマンドは重複させない。
 
-- [ ] `rg -c 'testFindGroupByGID|testFindUsersWithPrimaryGID' internal/groupmembership/membership_nocgo_test.go` が `0`（走査ループの複製が残っていない）
-- [ ] `rg -n 'shouldSkipSemanticsTest' -g '!docs/**'` が0件一致（削除した関数への参照がコードとコメントに残っていない）
-- [ ] `rg -n 'groupMemberCache\{' --type go` の一致がすべて新しいフィールド構成を使っている
-- [ ] `rg -n '既知の制限' docs/user/security-risk-assessment.md` の英語版の見出しが日本語版の書き換えに追随している（`/mktrans` の反映漏れの検出）
-- [ ] `rg -n '列挙の完全性|完全性判定|未申告' docs/tasks/0168_groupmembership_nocgo_enumeration_completeness/` の用語が `02_architecture.md`「用語」節の定義と一致している
+- [x] `rg -c 'testFindGroupByGID|testFindUsersWithPrimaryGID' internal/groupmembership/membership_nocgo_test.go` が `0`（走査ループの複製が残っていない）
+- [x] `rg -n 'shouldSkipSemanticsTest' -g '!docs/**'` が0件一致（削除した関数への参照がコードとコメントに残っていない）
+- [x] `rg -n 'groupMemberCache\{' --type go` の一致がすべて新しいフィールド構成を使っている
+- [x] `rg -n '既知の制限' docs/user/security-risk-assessment.md` の英語版の見出しが日本語版の書き換えに追随している（`/mktrans` の反映漏れの検出）
+- [x] `rg -n '列挙の完全性|完全性判定|未申告' docs/tasks/0168_groupmembership_nocgo_enumeration_completeness/` の用語が `02_architecture.md`「用語」節の定義と一致している
 
 ## 9. 成功基準
 
@@ -744,7 +744,7 @@ PR の区切りは Phase の区切りに一致させる。ただし Phase 4 は�
 
 ## 10. 次のステップ
 
-- [ ] 本計画書のレビューを受け、status を `approved` へ更新する
-- [ ] `approved` 後に Phase 1 から実装へ着手する
-- [ ] 実装中は各作業項目のチェックボックスをその都度更新する
+- [x] 本計画書のレビューを受け、status を `approved` へ更新する
+- [x] `approved` 後に Phase 1 から実装へ着手する
+- [x] 実装中は各作業項目のチェックボックスをその都度更新する
 - [ ] Phase 5 完了後、`98_remaining_issues.md` に残る D1 L-1・L-4 と、`runner` 文書への拒否対処の追加を、別タスクとして検討する
