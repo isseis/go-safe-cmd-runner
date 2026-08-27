@@ -1,5 +1,3 @@
-//go:build !windows && test
-
 package security
 
 import (
