@@ -818,7 +818,7 @@ flowchart TD
 不完全性が許可へ抜ける経路が残らないことを、次の3点で担保する。
 
 1. **ゼロ値が安全側である**: `enumerationCompleteness` のゼロ値は「未申告」であり、「完全」ではない。完全性を設定し忘れた実装は許可を得られない。同様に `nsswitchState` のゼロ値「未読」も「不完全」に分類される。
-2. **`default` が安全側である**: `isUserOnlyGroupMember` の `switch`、`classifyNSSCompleteness` の分類、メッセージ生成のいずれも `default` が拒否側に倒れる。列挙値が将来増えても既定の扱いは拒否である。
+2. **`default` が安全側である**: `isUserOnlyGroupMember` の `switch`、`classifyNSSCompleteness` の分類、`classifyNSSSources` の `nssLineDefect` の `switch`、メッセージ生成のいずれも `default` が拒否側に倒れる。列挙値が将来増えても既定の扱いは拒否である。
 3. **合成が安全側である**: `combine` は「1つでも不完全なら不完全」であり、完全へ戻る経路がない。
 
 例外は1つだけある。`/etc/nsswitch.conf` が存在しない場合を「完全」とする分岐であり、これは分類の中で唯一の許可側の既定である（§5.4）。

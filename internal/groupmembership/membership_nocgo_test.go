@@ -465,7 +465,7 @@ func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
 		"the startup warning must be emitted exactly when the classification is not complete")
 }
 
-// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
+// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
 // startup entry point settles the NSS classification, so that a host this
 // build cannot enumerate says so when record or verify starts rather than at
 // the first group-writable file. It lives here rather than in manager_test.go
