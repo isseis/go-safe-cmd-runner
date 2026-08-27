@@ -147,6 +147,27 @@ func TestClassifyNSSCompleteness(t *testing.T) {
 			wantCause: causeNSSSources,
 		},
 		{
+			name:      "a bracket that is never closed hides whatever follows it",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files\n\ngroup: files [NOTFOUND=return sss\n"},
+			goos:      "linux",
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:      "a second line for the same database is not silently resolved",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files\n\ngroup: files\ngroup: sss\n"},
+			goos:      "linux",
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:      "a second line naming the same sources is still two lines",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files\npasswd: files\n\ngroup: files\n"},
+			goos:      "linux",
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
 			name:      "the zero value means the file was never read",
 			snapshot:  nsswitchSnapshot{state: nsswitchUnread},
 			goos:      "linux",
@@ -177,41 +198,67 @@ func TestClassifyNSSCompleteness(t *testing.T) {
 	}
 }
 
-// TestNSSSources covers the two ways a source list carries text that is not a
-// source name: a comment running to the end of the line, and a bracketed
-// action token whose interior spaces must not split it.
+// TestNSSSources covers the ways a source list carries text that is not a
+// source name -- a comment running to the end of the line, a bracketed action
+// token whose interior spaces must not split it -- and the two shapes that
+// are reported as defects rather than read as written.
 func TestNSSSources(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		content  string
-		database string
-		want     []string
+		name       string
+		content    string
+		database   string
+		want       []string
+		wantDefect nssLineDefect
 	}{
 		{
-			name:     "trailing comment is not a source",
-			content:  "passwd: files systemd # local users only\n",
-			database: "passwd",
-			want:     []string{"files", "systemd"},
+			name:       "trailing comment is not a source",
+			content:    "passwd: files systemd # local users only\n",
+			database:   "passwd",
+			want:       []string{"files", "systemd"},
+			wantDefect: nssLineWellFormed,
 		},
 		{
-			name:     "action token with interior spaces stays whole",
-			content:  "group: files [NOTFOUND=return UNAVAIL=continue] systemd\n",
-			database: "group",
-			want:     []string{"files", "systemd"},
+			name:       "action token with interior spaces stays whole",
+			content:    "group: files [NOTFOUND=return UNAVAIL=continue] systemd\n",
+			database:   "group",
+			want:       []string{"files", "systemd"},
+			wantDefect: nssLineWellFormed,
 		},
 		{
-			name:     "commented-out line is not a database line",
-			content:  "# group: files sss\ngroup: files\n",
-			database: "group",
-			want:     []string{"files"},
+			name:       "commented-out line is not a database line",
+			content:    "# group: files sss\ngroup: files\n",
+			database:   "group",
+			want:       []string{"files"},
+			wantDefect: nssLineWellFormed,
 		},
 		{
-			name:     "database without a line has no sources",
-			content:  "passwd: files\n",
-			database: "group",
-			want:     nil,
+			name:       "database without a line",
+			content:    "passwd: files\n",
+			database:   "group",
+			wantDefect: nssLineMissing,
+		},
+		{
+			name:       "line naming no source at all",
+			content:    "group: [NOTFOUND=return]\n",
+			database:   "group",
+			wantDefect: nssLineNoSources,
+		},
+		{
+			// Splitting this on whitespace would leave the trailing source
+			// inside the unterminated action token, hiding it from the
+			// allowlist.
+			name:       "bracket that is never closed",
+			content:    "group: files [NOTFOUND=return sss\n",
+			database:   "group",
+			wantDefect: nssLineUnbalancedBracket,
+		},
+		{
+			name:       "two lines for one database",
+			content:    "group: files\ngroup: sss\n",
+			database:   "group",
+			wantDefect: nssLineDuplicated,
 		},
 	}
 
@@ -219,7 +266,10 @@ func TestNSSSources(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, tt.want, nssSources(tt.content, tt.database))
+			sources, defect := nssSources(tt.content, tt.database)
+
+			assert.Equal(t, tt.want, sources)
+			assert.Equal(t, tt.wantDefect, defect)
 		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -378,17 +379,99 @@ func TestFileReadingErrors(t *testing.T) {
 	})
 }
 
-// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
+// resetNsswitchClassification clears the process-wide classification latch
+// and the reporter that shares its lifetime, so that a test can observe the
+// first classification of the process. It clears them again afterwards so
+// that a value one test planted cannot be read by the next.
+//
+// Callers must not run in parallel with each other: the latch is
+// process-wide, and clearing it mid-run would let another test observe a
+// classification that is being settled a second time.
+func resetNsswitchClassification(t *testing.T) {
+	t.Helper()
+
+	reset := func() {
+		nsswitchVerdictMu.Lock()
+		defer nsswitchVerdictMu.Unlock()
+		nsswitchVerdictResolved = false
+		nsswitchVerdictValue = completenessVerdict{}
+		processNSSCompletenessReporter.reported.Store(false)
+	}
+
+	reset()
+	t.Cleanup(reset)
+}
+
+// TestNsswitchVerdictSettlesOncePerProcess verifies that the classification
+// is settled once and reused. Re-reading /etc/nsswitch.conf per call would
+// let a permission decision change halfway through a run, which is a denial
+// the operator cannot reproduce.
+func TestNsswitchVerdictSettlesOncePerProcess(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	// Plant a value the host itself could never produce: a second call that
+	// classified again would overwrite it and return the host's own answer.
+	planted := incompleteVerdict(causeUnsupportedPlatform, "planted by TestNsswitchVerdictSettlesOncePerProcess")
+	require.NotEqual(t, planted, settled)
+	nsswitchVerdictMu.Lock()
+	nsswitchVerdictValue = planted
+	nsswitchVerdictMu.Unlock()
+
+	assert.Equal(t, planted, nsswitchVerdict())
+}
+
+// TestNsswitchVerdictAgreesAcrossGoroutines verifies that concurrent callers
+// all receive the classification that was settled, whichever of them settled
+// it.
+func TestNsswitchVerdictAgreesAcrossGoroutines(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	const callers = 16
+	verdicts := make([]completenessVerdict, callers)
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := range callers {
+		go func() {
+			defer wg.Done()
+			verdicts[i] = nsswitchVerdict()
+		}()
+	}
+	wg.Wait()
+
+	for _, v := range verdicts {
+		assert.Equal(t, verdicts[0], v)
+	}
+}
+
+// TestNsswitchVerdictReportsWhatItSettled verifies that settling the
+// classification is what drives the startup warning, and that it drives it
+// exactly when the classification is not complete.
+//
+// On a host this build can enumerate exhaustively the expectation is that
+// nothing was recorded, which alone would also hold if the reporter were
+// never called at all. The reverse direction -- that an incomplete
+// classification does produce the record -- is what the forced run described
+// in the plan confirms, since forcing it from inside the test would require
+// a seam in production code that exists only for tests.
+func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	assert.Equal(t, settled.completeness != completenessComplete,
+		processNSSCompletenessReporter.reported.Load(),
+		"the startup warning must be emitted exactly when the classification is not complete")
+}
+
+// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
 // startup entry point settles the NSS classification, so that a host this
 // build cannot enumerate says so when record or verify starts rather than at
 // the first group-writable file. It lives here rather than in manager_test.go
 // because the cgo build has no classification to settle.
 func TestEnsurePermissionCheckUIDPrecomputesEnvironment(t *testing.T) {
-	// The classification latch is process-wide state, so this test neither
-	// runs in parallel nor leaves the latch cleared behind it.
-	nsswitchVerdictMu.Lock()
-	nsswitchVerdictResolved = false
-	nsswitchVerdictMu.Unlock()
+	resetNsswitchClassification(t)
 
 	// The UID resolution may legitimately fail on some hosts; what is under
 	// test is that the classification was settled before that could matter.

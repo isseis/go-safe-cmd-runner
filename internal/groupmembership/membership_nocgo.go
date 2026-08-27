@@ -89,13 +89,26 @@ var (
 // classifies on first call, records an incomplete classification once, and
 // reuses the result thereafter.
 func nsswitchVerdict() completenessVerdict {
+	verdict, justSettled := settleNsswitchVerdict()
+	if justSettled {
+		// The record is emitted outside the lock: a log handler is
+		// arbitrary code, and one that reached back into this package
+		// would deadlock on a lock that is not reentrant.
+		processNSSCompletenessReporter.report(slog.Default(), verdict)
+	}
+	return verdict
+}
+
+// settleNsswitchVerdict returns the classification for this process and
+// whether this call is the one that settled it.
+func settleNsswitchVerdict() (completenessVerdict, bool) {
 	nsswitchVerdictMu.Lock()
 	defer nsswitchVerdictMu.Unlock()
 
-	if !nsswitchVerdictResolved {
-		nsswitchVerdictValue = classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)
-		nsswitchVerdictResolved = true
-		processNSSCompletenessReporter.report(slog.Default(), nsswitchVerdictValue)
+	if nsswitchVerdictResolved {
+		return nsswitchVerdictValue, false
 	}
-	return nsswitchVerdictValue
+	nsswitchVerdictValue = classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)
+	nsswitchVerdictResolved = true
+	return nsswitchVerdictValue, true
 }

@@ -52,7 +52,30 @@ var completeNSSSources = map[string]struct{}{
 
 // nssCompletenessMessage is the warning emitted once per process when this
 // build cannot see every member of a group on this host.
-const nssCompletenessMessage = "This build cannot enumerate every member of a group on this host, so write access to group-writable files will be denied"
+const nssCompletenessMessage = "This build cannot enumerate every member of a group on this host"
+
+// nssLineDefect says what the configuration lines for one database amount to.
+// Its zero value says nothing was examined, so a database whose lines no
+// branch classified never reads as usable.
+type nssLineDefect int
+
+const (
+	// nssLineUnexamined is the zero value: the lines were not examined.
+	nssLineUnexamined nssLineDefect = iota
+	// nssLineWellFormed means exactly one line configures the database and
+	// its source list could be read as written.
+	nssLineWellFormed
+	// nssLineMissing means no line configures the database.
+	nssLineMissing
+	// nssLineNoSources means the line configures the database but names no
+	// source to look in.
+	nssLineNoSources
+	// nssLineUnbalancedBracket means an action token on the line was opened
+	// and never closed, so where the source names end cannot be told.
+	nssLineUnbalancedBracket
+	// nssLineDuplicated means more than one line configures the database.
+	nssLineDuplicated
+)
 
 // readNsswitchSnapshot reads /etc/nsswitch.conf. It reports the outcome
 // through the returned snapshot and never returns an error of its own.
@@ -95,11 +118,11 @@ func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenes
 	case nsswitchRead:
 		return classifyNSSSources(snapshot.content)
 	case nsswitchReadFailed:
-		detail := nsswitchPath + " could not be read"
 		if snapshot.err != nil {
-			detail += ": " + snapshot.err.Error()
+			// The error names the path itself, so it stands alone.
+			return incompleteVerdict(causeNSSSources, snapshot.err.Error())
 		}
-		return incompleteVerdict(causeNSSSources, detail)
+		return incompleteVerdict(causeNSSSources, nsswitchPath+" could not be read")
 	case nsswitchUnread:
 		return incompleteVerdict(causeNSSSources, nsswitchPath+" was not read")
 	default:
@@ -109,30 +132,56 @@ func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenes
 }
 
 // classifyNSSSources judges the passwd and group lines of an nsswitch
-// configuration. Both databases must name at least one source, and every
-// source they name must be one this build can enumerate exhaustively.
+// configuration. Both databases must be configured by exactly one line that
+// can be read as written and names at least one source, and every source
+// they name must be one this build can enumerate exhaustively.
 func classifyNSSSources(content string) completenessVerdict {
 	for _, database := range []string{"passwd", "group"} {
-		sources := nssSources(content, database)
-		if len(sources) == 0 {
-			return incompleteVerdict(causeNSSSources, database+": no source names configured")
-		}
-		for _, source := range sources {
-			if _, ok := completeNSSSources[source]; !ok {
-				return incompleteVerdict(causeNSSSources, database+": "+source)
+		sources, defect := nssSources(content, database)
+		switch defect {
+		case nssLineWellFormed:
+			for _, source := range sources {
+				if _, ok := completeNSSSources[source]; !ok {
+					return incompleteVerdict(causeNSSSources, database+": "+source)
+				}
 			}
+		case nssLineMissing:
+			return incompleteVerdict(causeNSSSources, database+": no line configures this database")
+		case nssLineNoSources:
+			return incompleteVerdict(causeNSSSources, database+": the line names no source")
+		case nssLineUnbalancedBracket:
+			return incompleteVerdict(causeNSSSources, database+": an action token on the line is never closed")
+		case nssLineDuplicated:
+			return incompleteVerdict(causeNSSSources, database+": more than one line configures this database")
+		case nssLineUnexamined:
+			return incompleteVerdict(causeNSSSources, database+": the line was not examined")
+		default:
+			// Any defect a later change adds denies until it is classified.
+			return incompleteVerdict(causeNSSSources, database+": the line has a defect this build does not recognize")
 		}
 	}
 	return completeVerdict()
 }
 
 // nssSources returns the source names listed for one database in the
-// contents of /etc/nsswitch.conf. A trailing "#" comment on the database
-// line is stripped before tokenizing, and a bracketed action token --
-// including one containing internal whitespace, such as
+// contents of /etc/nsswitch.conf, together with what stands in the way of
+// reading them. A trailing "#" comment on the database line is stripped
+// before tokenizing, and a bracketed action token -- including one
+// containing internal whitespace, such as
 // "[NOTFOUND=return UNAVAIL=continue]" -- is removed as a single unit rather
 // than split on its interior spaces.
-func nssSources(content, database string) []string {
+//
+// Two shapes are reported as defects rather than repaired. A bracket that is
+// never closed would otherwise swallow the rest of the line, hiding whatever
+// source names follow it; and a second line for the same database would
+// otherwise be decided by guessing which of the two the C library honours.
+// Both are answered with a defect so that the caller denies instead.
+func nssSources(content, database string) ([]string, nssLineDefect) {
+	var (
+		sources []string
+		defect  = nssLineMissing
+	)
+
 	for line := range strings.SplitSeq(content, "\n") {
 		// A "#" starts a comment that runs to the end of the line, whether
 		// it opens the line or follows a source list. Bracketed action
@@ -143,9 +192,16 @@ func nssSources(content, database string) []string {
 		if !found || strings.TrimSpace(name) != database {
 			continue
 		}
+		if defect != nssLineMissing {
+			return nil, nssLineDuplicated
+		}
 
-		var sources []string
-		for _, token := range splitNSSTokens(rest) {
+		tokens, balanced := splitNSSTokens(rest)
+		if !balanced {
+			defect = nssLineUnbalancedBracket
+			continue
+		}
+		for _, token := range tokens {
 			// A bracketed token specifies how to act on the preceding
 			// source's outcome; it is not itself a place to look.
 			if strings.HasPrefix(token, "[") {
@@ -153,14 +209,24 @@ func nssSources(content, database string) []string {
 			}
 			sources = append(sources, token)
 		}
-		return sources
+		if len(sources) == 0 {
+			defect = nssLineNoSources
+			continue
+		}
+		defect = nssLineWellFormed
 	}
-	return nil
+
+	if defect != nssLineWellFormed {
+		return nil, defect
+	}
+	return sources, defect
 }
 
 // splitNSSTokens splits a source list on whitespace, keeping each bracketed
-// action token whole even when it contains spaces of its own.
-func splitNSSTokens(sourceList string) []string {
+// action token whole even when it contains spaces of its own. It reports
+// whether every bracket it opened was closed; when it was not, the tokens it
+// returns are not what the line says.
+func splitNSSTokens(sourceList string) ([]string, bool) {
 	var (
 		tokens  []string
 		current strings.Builder
@@ -191,7 +257,7 @@ func splitNSSTokens(sourceList string) []string {
 	}
 	flush()
 
-	return tokens
+	return tokens, depth == 0
 }
 
 // nssCompletenessReporter emits the record that this build cannot enumerate
