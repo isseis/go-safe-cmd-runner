@@ -35,7 +35,7 @@ func (f fakeDirInfo) Sys() any           { return &syscall.Stat_t{Uid: f.uid, Gi
 // TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel
 // verifies that a sentinel returned by CanUserSafelyWrite survives the
 // wrapping done by validateGroupWritePermissions, so a caller can still tell
-// with errors.Is why the directory was refused (AC-15, AC-18).
+// with errors.Is why the directory was refused.
 func TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel(t *testing.T) {
 	// "/target" is group-writable, owned by a non-root, non-caller UID, so
 	// validateGroupWritePermissions delegates to CanUserSafelyWrite instead of
