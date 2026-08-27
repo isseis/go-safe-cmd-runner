@@ -297,40 +297,40 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **作業内容**
 
-- [ ] `nsswitch.go` に `nsswitchState`（`nsswitchUnread` をゼロ値とする4値）と `nsswitchSnapshot` を定義する
-- [ ] `nsswitch.go` に `readNsswitchSnapshotFrom(path string) nsswitchSnapshot` を実装し、`readNsswitchSnapshot()` を「`/etc/nsswitch.conf` を渡して呼ぶだけ」の包みにする。`02_architecture.md` §3.2 が宣言する `readNsswitchSnapshot()` のシグネチャはそのまま残る（パス受け取りは非公開の下位関数として追加するだけであり、設計の変更にはあたらない）。**この分離が無いと、読み取り失敗と不在の判別をテストできない**
-- [ ] `readNsswitchSnapshotFrom` で、**「存在しない」と見なす条件を `errors.Is(err, fs.ErrNotExist)` に限り**、それ以外の失敗はすべて `nsswitchReadFailed` に落とす
-- [ ] `nsswitch.go` に `nssSources(content, database string) []string` を実装する。データベース行のトークン化の前に行末の `#` コメントを切り捨て、角括弧の対応（`[` から対応する `]` まで）を1つのトークンとして扱い内部の空白で分割しない（`02_architecture.md` §3.2）
-- [ ] `nsswitch.go` に `classifyNSSCompleteness(snapshot, goos)` を実装する。分類規則は `02_architecture.md` §3.2 の表に上から順で従い、`switch` の `default` を「不完全」へ倒す。**ファイルシステムに触れない**
-- [ ] 許可リストを `files`・`systemd` の2つに限る。`compat`・`db`・`ldap`・`sss`・`nis`・`winbind` および未知の名前をすべて「不完全」とする（ブロックリスト方式にしない）
-- [ ] **`membership_nocgo.go`** に `nsswitchVerdict()` を実装する。最初の呼び出しで読み取りと分類を行い、以後は同じ結果を返す。`nsswitch.go` には置かない（上記「ファイルの分担」）
-- [ ] 警告の生成を `nsswitchVerdict()` から切り離し、既存の `sudoUIDAdoptionReporter`（`manager.go:414`）と同じ形の小さな型 `nssCompletenessReporter` に持たせる。`atomic.Bool` で1回限りを保証し、`report(logger *slog.Logger, v completenessVerdict)` の形で**ロガーを引数で受け取る**。production では package レベルの共有インスタンスを `nsswitchVerdict()` の確定時に呼ぶ。**この形にする理由**: `nsswitchVerdict()` はプロセス単位で latch するうえ、警告は分類が「不完全」のときしか出ない。本コンテナの分類は「完全」で、かつ production へ強制用の seam を足さない方針（§5.3）のため、`nsswitchVerdict()` 越しにテストすると記録が1件も出ないまま素通りする。型を分ければテストが自前のインスタンスと自前のロガーに任意の `incompleteVerdict(...)` を渡せる
-- [ ] `nssCompletenessReporter.report` が、分類が「不完全」の場合に `user_database_source`・`cause.String()`・`detail` の3つを**個別の属性として**持つ `slog.Warn` を1件出す。「完全」の場合は何も出さない
-- [ ] `membership_nocgo.go` の `precomputeEnumerationEnvironment()` の本体を `nsswitchVerdict()` の呼び出しに差し替える。`EnsurePermissionCheckUID` からの呼び出しは Phase 1 で既に入っているため、本 Phase では `manager.go` に触れない
+- [x] `nsswitch.go` に `nsswitchState`（`nsswitchUnread` をゼロ値とする4値）と `nsswitchSnapshot` を定義する
+- [x] `nsswitch.go` に `readNsswitchSnapshotFrom(path string) nsswitchSnapshot` を実装し、`readNsswitchSnapshot()` を「`/etc/nsswitch.conf` を渡して呼ぶだけ」の包みにする。`02_architecture.md` §3.2 が宣言する `readNsswitchSnapshot()` のシグネチャはそのまま残る（パス受け取りは非公開の下位関数として追加するだけであり、設計の変更にはあたらない）。**この分離が無いと、読み取り失敗と不在の判別をテストできない**
+- [x] `readNsswitchSnapshotFrom` で、**「存在しない」と見なす条件を `errors.Is(err, fs.ErrNotExist)` に限り**、それ以外の失敗はすべて `nsswitchReadFailed` に落とす
+- [x] `nsswitch.go` に `nssSources(content, database string) []string` を実装する。データベース行のトークン化の前に行末の `#` コメントを切り捨て、角括弧の対応（`[` から対応する `]` まで）を1つのトークンとして扱い内部の空白で分割しない（`02_architecture.md` §3.2）
+- [x] `nsswitch.go` に `classifyNSSCompleteness(snapshot, goos)` を実装する。分類規則は `02_architecture.md` §3.2 の表に上から順で従い、`switch` の `default` を「不完全」へ倒す。**ファイルシステムに触れない**
+- [x] 許可リストを `files`・`systemd` の2つに限る。`compat`・`db`・`ldap`・`sss`・`nis`・`winbind` および未知の名前をすべて「不完全」とする（ブロックリスト方式にしない）
+- [x] **`membership_nocgo.go`** に `nsswitchVerdict()` を実装する。最初の呼び出しで読み取りと分類を行い、以後は同じ結果を返す。`nsswitch.go` には置かない（上記「ファイルの分担」）
+- [x] 警告の生成を `nsswitchVerdict()` から切り離し、既存の `sudoUIDAdoptionReporter`（`manager.go:414`）と同じ形の小さな型 `nssCompletenessReporter` に持たせる。`atomic.Bool` で1回限りを保証し、`report(logger *slog.Logger, v completenessVerdict)` の形で**ロガーを引数で受け取る**。production では package レベルの共有インスタンスを `nsswitchVerdict()` の確定時に呼ぶ。**この形にする理由**: `nsswitchVerdict()` はプロセス単位で latch するうえ、警告は分類が「不完全」のときしか出ない。本コンテナの分類は「完全」で、かつ production へ強制用の seam を足さない方針（§5.3）のため、`nsswitchVerdict()` 越しにテストすると記録が1件も出ないまま素通りする。型を分ければテストが自前のインスタンスと自前のロガーに任意の `incompleteVerdict(...)` を渡せる
+- [x] `nssCompletenessReporter.report` が、分類が「不完全」の場合に `user_database_source`・`cause.String()`・`detail` の3つを**個別の属性として**持つ `slog.Warn` を1件出す。「完全」の場合は何も出さない
+- [x] `membership_nocgo.go` の `precomputeEnumerationEnvironment()` の本体を `nsswitchVerdict()` の呼び出しに差し替える。`EnsurePermissionCheckUID` からの呼び出しは Phase 1 で既に入っているため、本 Phase では `manager.go` に触れない
 
 **テストの作業内容**
 
-- [ ] `nsswitch_test.go` に `TestClassifyNSSCompleteness` を書く。`membership_semantics_test.go:69` の7行を移設したうえで、`02_architecture.md` §3.8 の対応表が挙げる10通りの環境を網羅する（`darwin`／`linux` 以外のその他／不在／読み取り失敗／`files` のみ／`files systemd`／`sss` や `ldap` を含む／`passwd` または `group` の行が無い／角括弧トークン付随／角括弧のみでソース名なし）。ゼロ値 `nsswitchUnread` の行も加え、`nsswitchState` の4値すべてを覆う
-- [ ] `nsswitch_test.go` に `TestNSSSources` を書く。行末コメント（`files systemd # local users only` が `["files", "systemd"]` になること）と、内部に空白を含む角括弧トークン（`files [NOTFOUND=return UNAVAIL=continue] systemd` が `["files", "systemd"]` になること）を検証する
-- [ ] `nsswitch_test.go` に `TestReadNsswitchSnapshotFrom` を書く。`t.TempDir()` 配下で、(1) 存在しないパス → `nsswitchAbsent`、(2) `chmod 0000` したファイル → `nsswitchReadFailed`（非 root で実行されるため再現できる）、(3) 読める内容のファイル → `nsswitchRead` と内容の一致、の3件を検証する
-- [ ] `nsswitch_test.go` に `TestNSSCompletenessReporter_Report` を書く。自前の `nssCompletenessReporter` の値と `tu.NewLogRecorder`（`internal/testutil/handlers.go:41`）のロガーへ、合成した `incompleteVerdict(causeNSSSources, ...)` を渡し、属性が `user_database_source`・`cause`・`detail` の**個別のキー**として記録されることを検証する。雛形は `manager_test.go:1005` の `TestSudoUIDAdoptionReporter_Report`。ロガーを引数で受けるため `t.Parallel` を使ってよい
-- [ ] `nsswitch_test.go` に `TestNSSCompletenessReporter_ReportsOnlyOnce` を書く。同じインスタンスへ3回渡して記録が1件であることを検証する。雛形は `manager_test.go:1031` の `TestSudoUIDAdoptionReporter_ReportsOnlyOnce`
-- [ ] `nsswitch_test.go` に、分類が「完全」の場合に `report` が何も記録しないことを検証するテストを書く
-- [ ] `membership_nocgo_test.go`（`//go:build !cgo`）に、`EnsurePermissionCheckUID()` が `precomputeEnumerationEnvironment()` を経由して分類を評価することを検証するテストを追加する。**`manager_test.go` ではなくこのファイルに置く**——`manager_test.go` はビルドタグを持たず CGO 構成でも走るが、CGO 版の `precomputeEnumerationEnvironment()` は設計上なにもしないため（`02_architecture.md` §2.2）、そこに置くと CGO 構成で意味を失う
-- [ ] `membership_semantics_test.go:16` の `shouldSkipSemanticsTest` を削除する
-- [ ] `membership_semantics_test.go:42` の `nssSources` を削除する
-- [ ] `membership_semantics_test.go:69` の `TestShouldSkipSemanticsTest` を削除する（移設先は `nsswitch_test.go`）
-- [ ] `membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` を、`readNsswitchSnapshot` と `classifyNSSCompleteness` を呼び、結果が「完全」でない場合に skip する形へ書き換える。skip の理由は `incompletenessCause.String()` と `detail` から組み立てる
+- [x] `nsswitch_test.go` に `TestClassifyNSSCompleteness` を書く。`membership_semantics_test.go:69` の7行を移設したうえで、`02_architecture.md` §3.8 の対応表が挙げる10通りの環境を網羅する（`darwin`／`linux` 以外のその他／不在／読み取り失敗／`files` のみ／`files systemd`／`sss` や `ldap` を含む／`passwd` または `group` の行が無い／角括弧トークン付随／角括弧のみでソース名なし）。ゼロ値 `nsswitchUnread` の行も加え、`nsswitchState` の4値すべてを覆う
+- [x] `nsswitch_test.go` に `TestNSSSources` を書く。行末コメント（`files systemd # local users only` が `["files", "systemd"]` になること）と、内部に空白を含む角括弧トークン（`files [NOTFOUND=return UNAVAIL=continue] systemd` が `["files", "systemd"]` になること）を検証する
+- [x] `nsswitch_test.go` に `TestReadNsswitchSnapshotFrom` を書く。`t.TempDir()` 配下で、(1) 存在しないパス → `nsswitchAbsent`、(2) `chmod 0000` したファイル → `nsswitchReadFailed`（非 root で実行されるため再現できる）、(3) 読める内容のファイル → `nsswitchRead` と内容の一致、の3件を検証する
+- [x] `nsswitch_test.go` に `TestNSSCompletenessReporter_Report` を書く。自前の `nssCompletenessReporter` の値と `tu.NewLogRecorder`（`internal/testutil/handlers.go:41`）のロガーへ、合成した `incompleteVerdict(causeNSSSources, ...)` を渡し、属性が `user_database_source`・`cause`・`detail` の**個別のキー**として記録されることを検証する。雛形は `manager_test.go:1005` の `TestSudoUIDAdoptionReporter_Report`。ロガーを引数で受けるため `t.Parallel` を使ってよい
+- [x] `nsswitch_test.go` に `TestNSSCompletenessReporter_ReportsOnlyOnce` を書く。同じインスタンスへ3回渡して記録が1件であることを検証する。雛形は `manager_test.go:1031` の `TestSudoUIDAdoptionReporter_ReportsOnlyOnce`
+- [x] `nsswitch_test.go` に、分類が「完全」の場合に `report` が何も記録しないことを検証するテストを書く
+- [x] `membership_nocgo_test.go`（`//go:build !cgo`）に、`EnsurePermissionCheckUID()` が `precomputeEnumerationEnvironment()` を経由して分類を評価することを検証するテストを追加する。**`manager_test.go` ではなくこのファイルに置く**——`manager_test.go` はビルドタグを持たず CGO 構成でも走るが、CGO 版の `precomputeEnumerationEnvironment()` は設計上なにもしないため（`02_architecture.md` §2.2）、そこに置くと CGO 構成で意味を失う
+- [x] `membership_semantics_test.go:16` の `shouldSkipSemanticsTest` を削除する
+- [x] `membership_semantics_test.go:42` の `nssSources` を削除する
+- [x] `membership_semantics_test.go:69` の `TestShouldSkipSemanticsTest` を削除する（移設先は `nsswitch_test.go`）
+- [x] `membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` を、`readNsswitchSnapshot` と `classifyNSSCompleteness` を呼び、結果が「完全」でない場合に skip する形へ書き換える。skip の理由は `incompletenessCause.String()` と `detail` から組み立てる
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] §3.1 の `AC-20` のコマンドが一致無し（無出力・終了コード 1）になる（テスト専用の複製実装が残っていない）
-- [ ] `02_architecture.md` §7.3 の表のうち「分類」「読み取り失敗の扱い」の2行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 行末 `#` の切り捨てを外す → `TestNSSSources` が失敗（AC-09）。(2) 分類表からプラットフォームの行を削る → `TestClassifyNSSCompleteness` が失敗（AC-06）
-- [ ] 警告の属性を `slog.Any("verdict", v)` の1つにまとめると `TestNSSCompletenessReporter_Report` が失敗することを確認する（`02_architecture.md` §4.4 の制約を、破れば落ちる形で固定できていることの確認）
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [x] §3.1 の `AC-20` のコマンドが一致無し（無出力・終了コード 1）になる（テスト専用の複製実装が残っていない）
+- [x] `02_architecture.md` §7.3 の表のうち「分類」「読み取り失敗の扱い」の2行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
+- [x] §7.3 に無い追加の無効化確認を2件行い、同じくコミットメッセージに記す。(1) 行末 `#` の切り捨てを外す → `TestNSSSources` が失敗（AC-09）。(2) 分類表からプラットフォームの行を削る → `TestClassifyNSSCompleteness` が失敗（AC-06）
+- [x] 警告の属性を `slog.Any("verdict", v)` の1つにまとめると `TestNSSCompletenessReporter_Report` が失敗することを確認する（`02_architecture.md` §4.4 の制約を、破れば落ちる形で固定できていることの確認）
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-4 作成ポイント: nsswitch classification and one-shot warning
 

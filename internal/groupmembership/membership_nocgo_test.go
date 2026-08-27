@@ -377,3 +377,24 @@ func TestFileReadingErrors(t *testing.T) {
 		require.ErrorIs(t, err, fs.ErrNotExist)
 	})
 }
+
+// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
+// startup entry point settles the NSS classification, so that a host this
+// build cannot enumerate says so when record or verify starts rather than at
+// the first group-writable file. It lives here rather than in manager_test.go
+// because the cgo build has no classification to settle.
+func TestEnsurePermissionCheckUIDPrecomputesEnvironment(t *testing.T) {
+	// The classification latch is process-wide state, so this test neither
+	// runs in parallel nor leaves the latch cleared behind it.
+	nsswitchVerdictMu.Lock()
+	nsswitchVerdictResolved = false
+	nsswitchVerdictMu.Unlock()
+
+	// The UID resolution may legitimately fail on some hosts; what is under
+	// test is that the classification was settled before that could matter.
+	_ = New().EnsurePermissionCheckUID()
+
+	nsswitchVerdictMu.Lock()
+	defer nsswitchVerdictMu.Unlock()
+	assert.True(t, nsswitchVerdictResolved, "EnsurePermissionCheckUID must settle the NSS classification")
+}
