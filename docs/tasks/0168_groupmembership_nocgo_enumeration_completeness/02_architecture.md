@@ -8,7 +8,7 @@
 | Created | 2026-08-26 |
 | Review date | 2026-08-26 |
 | Reviewer | issei |
-| Comments | 2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
+| Comments | 2026-08-27: Phase 4a の実装レビューで、`nssSources` が2つの構成を「完全」と誤分類しうることが判明した（閉じていない角括弧、同じデータベースを設定する2行目）。§3.2 の分類規則に2行を追加し、`nssSources` の戻り値に `nssLineDefect` を加えた。あわせて `initgroups` 行を分類の対象にしていないことを §5.4 の残存リスクへ記載した。判定の方針（許可リスト方式、`default` を拒否側に倒すこと）は変えていない。<br>2026-08-26: `03_implementation_plan.md` の作成時のレビューで、`nsswitch.go`（`!cgo \|\| test`）が CGO ビルドでもコンパイルされる一方、その構成には `nsswitchVerdict` を呼ぶ production コードが無く、有効な `unused` linter に報告されうることが判明した。§2.2 のコンポーネント配置を改め、`nsswitchVerdict` と警告レポータの共有インスタンスを `membership_nocgo.go`（`!cgo`）へ移した（§2.2・§3.2・§3.10・§4.4 を更新）。判定の内容と受け入れ基準への対応は変えていない。<br>2026-08-26: `CHANGELOG` の既存の未リリース項目との矛盾に対応するため、§3.10・§3.11・§5.5 に AC-32・AC-33 を反映した。 |
 
 ## 0. 本書の位置づけ
 
@@ -327,13 +327,27 @@ func readNsswitchSnapshot() nsswitchSnapshot
 // files.
 func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenessVerdict
 
+// nssLineDefect says what the configuration lines for one database amount
+// to. Its zero value says nothing was examined.
+type nssLineDefect int
+
+const (
+	nssLineUnexamined nssLineDefect = iota
+	nssLineWellFormed
+	nssLineMissing
+	nssLineNoSources
+	nssLineUnbalancedBracket
+	nssLineDuplicated
+)
+
 // nssSources returns the source names listed for one database in the
-// contents of /etc/nsswitch.conf. A trailing "#" comment on the database
-// line is stripped before tokenizing, and a bracketed action token —
-// including one containing internal whitespace, such as
+// contents of /etc/nsswitch.conf, together with what stands in the way of
+// reading them. A trailing "#" comment on the database line is stripped
+// before tokenizing, and a bracketed action token — including one
+// containing internal whitespace, such as
 // "[NOTFOUND=return UNAVAIL=continue]" — is removed as a single unit rather
 // than split on its interior spaces.
-func nssSources(content string, database string) []string
+func nssSources(content string, database string) ([]string, nssLineDefect)
 
 // nsswitchVerdict returns the classification for this process. It reads and
 // classifies on first call and reuses the result for the lifetime of the
@@ -358,6 +372,8 @@ func nsswitchVerdict() completenessVerdict
 | `state` が `nsswitchRead` かつ `passwd`・`group` 両方にソース名が1つ以上あり、いずれも `files`・`systemd` のみ | 完全 | — |
 | `state` が `nsswitchRead` かつ `passwd` または `group` の行が無い、またはその行にソース名が1つも残らない | 不完全 | `causeNSSSources` |
 | `state` が `nsswitchRead` かつ許可リスト外のソースを含む | 不完全 | `causeNSSSources` |
+| `state` が `nsswitchRead` かつ `passwd` または `group` の行に閉じていない角括弧がある | 不完全 | `causeNSSSources` |
+| `state` が `nsswitchRead` かつ同じデータベースを設定する行が2行以上ある | 不完全 | `causeNSSSources` |
 | `state` が `nsswitchReadFailed` | 不完全 | `causeNSSSources` |
 | 上記以外（`nsswitchUnread` および想定外の値） | 不完全 | `causeNSSSources` |
 
@@ -368,6 +384,8 @@ func nsswitchVerdict() completenessVerdict
 **角括弧トークンの扱い**は、`[NOTFOUND=continue]` のような動作指定をソース名から除くことである（AC-09）。これらはソースではなく、直前のソースに対する動作の指定であり、それ自体が参照先を増やすことはない。したがって `group: files [NOTFOUND=continue]` は「完全」である。ただし `group: [NOTFOUND=return]` のようにソース名が1つも残らない行は、行が無いのと同じく「不完全」とする。AC-09 が禁じているのは「角括弧トークンがそれ自体で不完全の理由になること」であり、ソース名を1つも持たない行を不完全とすることはこれに反しない。当該データベースの参照先が読み取れない以上、網羅性を保証できないためである。
 
 角括弧トークンは `[NOTFOUND=return UNAVAIL=continue]` のように内部に空白を含みうる（nsswitch.conf(5)）。空白区切りでトークン化してから `[` で始まるものだけを除く実装では、この閉じ括弧より前で区切られてしまい、`UNAVAIL=continue]` の部分が素性不明のソース名として残る。`nssSources` は角括弧の対応（`[` から対応する `]` まで）を1つのトークンとして扱い、内部の空白で分割しない。
+
+**修復せずに拒否する形が2つある**（CLAUDE.md「Reject, don't normalize」）。第一に、閉じていない角括弧である。括弧を1つのトークンとして扱う実装は、閉じ括弧が無ければ行末までを1つの角括弧トークンとみなすため、`group: files [NOTFOUND=return sss` の `sss` が許可リストの検査に掛からないまま「完全」になる。手書きの脱字1つで本タスクが閉じる穴が開くことになるため、対応の取れない角括弧は `nssLineUnbalancedBracket` として不完全に倒す。第二に、同じデータベースを設定する行が2行以上ある場合である。どちらの行を libc が採るかを推測して先頭の行だけを見ると、`group: files` の後ろに `group: sss` が追記された構成が「完全」になる。これは SSSD の参加処理が行を編集せず追記した場合に生じうる形であり、かつ本タスクの環境では nsswitch.conf(5) の現物で優先順位を確認できない（§1.3 の「外部前提の検証結果」）。推測せず `nssLineDuplicated` として不完全に倒す。
 
 **行末コメントの扱い**は、`group: files systemd # local users only` のように許可された構成のあとに `#` コメントが続く行を、コメントを除いた `files systemd` として分類することである。`nssSources` はデータベース行を1行ずつ処理し、トークン化の前に `#` 以降を切り捨てる。`#` が角括弧トークンの内部（`[...]`）に現れることは nsswitch.conf の文法上ない。コメントを切り捨てずにトークン化すると、`#` 自身と後続の語がすべて素性不明のソース名として残り、本来「完全」であるべき構成が「不完全」に分類される。
 
@@ -800,7 +818,7 @@ flowchart TD
 不完全性が許可へ抜ける経路が残らないことを、次の3点で担保する。
 
 1. **ゼロ値が安全側である**: `enumerationCompleteness` のゼロ値は「未申告」であり、「完全」ではない。完全性を設定し忘れた実装は許可を得られない。同様に `nsswitchState` のゼロ値「未読」も「不完全」に分類される。
-2. **`default` が安全側である**: `isUserOnlyGroupMember` の `switch`、`classifyNSSCompleteness` の分類、メッセージ生成のいずれも `default` が拒否側に倒れる。列挙値が将来増えても既定の扱いは拒否である。
+2. **`default` が安全側である**: `isUserOnlyGroupMember` の `switch`、`classifyNSSCompleteness` の分類、`classifyNSSSources` の `nssLineDefect` の `switch`、メッセージ生成のいずれも `default` が拒否側に倒れる。列挙値が将来増えても既定の扱いは拒否である。
 3. **合成が安全側である**: `combine` は「1つでも不完全なら不完全」であり、完全へ戻る経路がない。
 
 例外は1つだけある。`/etc/nsswitch.conf` が存在しない場合を「完全」とする分岐であり、これは分類の中で唯一の許可側の既定である（§5.4）。
@@ -821,6 +839,7 @@ flowchart TD
 |---|---|---|
 | `systemd` を許可リストに含めたこと | `systemd-homed` のユーザーが保護対象ファイルのグループを共有する構成では、非 CGO ビルドがそのメンバーを列挙しないまま「完全」と申告する | 受容する。要件書「決定事項」のとおり、`systemd` を除外すると Ubuntu の既定構成で常に拒否となる。findings に記録する（AC-27） |
 | `/etc/nsswitch.conf` 不在を「完全」とすること | 分類の中で唯一の許可側の既定である。ファイルを持たない最小構成のコンテナイメージが該当する。glibc の既定に従った判断だが、musl など他の libc での既定は本タスクでは検証していない | 受容する。ファイルが無い環境ではローカルファイル以外の参照先を設定する手段も無いため、実害は生じにくい。読み取り失敗と厳密に区別する（§3.2） |
+| `initgroups` 行を分類の対象にしていないこと | 分類が見るのは `passwd`・`group` の2行である。`group: files` かつ `initgroups: sss` という構成では、ディレクトリ側のユーザーがログイン時に当該 GID を補助グループとして得る一方、`/etc/group` にも libc のグループ列挙にも現れない。分類は「完全」と申告するが、そのグループに書き込みうる主体は本当に網羅できていない | 本タスクでは扱わない。CGO 版も同じ穴を持つため、非 CGO 版だけの問題ではない。分類の対象を広げるかどうかは別途判断する |
 | CGO 版 `getpwent` の列挙不完全性 | SSSD の既定 `enumerate = false` では、CGO 版のプライマリメンバー収集もディレクトリ管理ユーザーを含まない。それでも本設計は「完全」と申告する | 本タスクでは扱わない。新規 Issue として分離する（AC-29） |
 | macOS 配布バイナリの一律拒否 | `release.yml` は `darwin/arm64` を `CGO_ENABLED: 0` でビルドしており、分類は常に「不完全」となる。`isTrustedGroup` が許す root 所有かつ `admin`（GID 80）のパス以外、group-writable な構成要素はすべて拒否される | 受容し、文書化する（§5.5、AC-24）。恒久的な対処は `release.yml` を cgo でビルドすることであり、要件書「対象外」が分離した Issue の対象である |
 | プロセス単位の分類の確定 | `/etc/nsswitch.conf` が危険側へ変更されても、プロセスが終わるまで観測しない。窓に上限はなく、`ClearCache()` でも解除されない | 受容する。実行内で判定が一貫することを優先した（§3.2） |
