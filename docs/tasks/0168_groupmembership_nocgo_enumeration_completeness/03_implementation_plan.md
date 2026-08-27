@@ -265,8 +265,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1062](https://github.com/isseis/go-safe-cmd-runner/pull/1062)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4a: NSS 構成の分類と1回限りの警告（AC-05〜AC-10, AC-20）
 
