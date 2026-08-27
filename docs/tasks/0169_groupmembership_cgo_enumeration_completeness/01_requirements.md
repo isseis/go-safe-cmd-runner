@@ -70,6 +70,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 - **SSSD の設定内容そのものの確認**。`/etc/sssd/sssd.conf` は root 専用、`sssctl` にも権限が要るため、`enumerate`・`ignore_group_members` の値を外から確かめる手段は事実上ない。この確認不能性こそが本タスクの前提である。
 - **group-writable の緩和そのものの廃止**。UPG（`user:user` の 0664/0775）は Debian/Ubuntu・RHEL とも既定であり、ローカルユーザーだけのホストまで巻き込むため採らない（Issue の案3）。
 - **リリースビルドの `CGO_ENABLED` 構成の変更**（[#1067](https://github.com/isseis/go-safe-cmd-runner/issues/1067)）。
+- **[Makefile:147-148](../../../Makefile#L147-L148) のコメントの是正**。同コメントは「macOS はグループメンバーシップに CGO を要するため `CGO_ENABLED=0` の構成検査を macOS では行わない」と述べるが、上記「決定事項」のとおり `os/user` は darwin では非 CGO でも Directory Services を引くため、この根拠は `os/user` については成り立たない（成り立つのは本リポジトリ自身の `getGroupMembers` に限られる）。同じコメントを対象とする [#1067](https://github.com/isseis/go-safe-cmd-runner/issues/1067) の守備範囲であるため、本タスクでは触れず申し送りとする。
 
 ## 決定事項
 
@@ -81,8 +82,10 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 
 - **`GOOS` が `linux` 以外の場合、CGO ビルドでも「不完全」と申告する。** これは現在の挙動（macOS の CGO ビルドは常に「完全」）を変える。理由は次のとおりである。
   - `/etc/nsswitch.conf` を持たないプラットフォームでは、ユーザーデータベースの構成を判定する手段が無い。Open Directory が AD にバインドされた macOS には SSSD と同じ部分列挙のリスクがあり、外から確かめられない点も同じである。「確かめられないものを完全と申告しない」という 0168 の方針をここで曲げる根拠が無い。
-  - 実際の代償は小さい。macOS のローカルユーザーのプライマリグループは全員 `staff` であり、UPG は既定ではない。「メンバーが自分ひとりのグループ」が group-writable な保護対象ファイルに付いている構成は稀であり、その構成では現在も緩和が効いていない可能性が高い。
-  - **確認事項**: 代替として「非 linux の CGO ビルドは現状どおり完全と申告する」も採りうる（macOS の CGO ビルドはグループメンバーシップの解決に CGO を要する唯一の構成であり、本タスクの動機である SSSD は Linux の問題であるため）。過剰拒否を避ける観点からこちらを採る場合は、その旨をレビューで指示されたい。
+  - **「macOS ではディレクトリを引くのに CGO が要る」という反論は成り立たない。** Go の `os/user` は darwin だけ build tag が `cgo` ではなく `!osusergo && darwin` であり（[`cgo_lookup_syscall.go`](https://github.com/golang/go/blob/master/src/os/user/cgo_lookup_syscall.go)・[`getgrouplist_syscall.go`](https://github.com/golang/go/blob/master/src/os/user/getgrouplist_syscall.go)）、libSystem を直接 syscall linkage で呼ぶ。`CGO_ENABLED=0` でも macOS の `user.LookupId`・`GroupIds()` は Directory Services を引く。したがって macOS で `CGO_ENABLED=1` が非 CGO ビルドに対して追加するのは、本リポジトリ自身の `getGroupMembers`（`membership_cgo.go`）だけである。
+  - **その `getGroupMembers` の消費者のうち、本 AC が影響するのは緩和の側だけである。** 消費者は3つある。(1) `isUserOnlyGroupMember`（本 AC が拒否側へ倒す）、(2) `IsUserInGroup` の最終フォールバック（プライマリ GID と `GroupIds()`＝`getgrouplist` で先に決着するため、darwin では非 CGO でも同じ結論になる）、(3) 公開 `GetGroupMembers` を引く [`file_validation.go:319`](../../../internal/runner/base/security/file_validation.go#L319)。macOS の `/etc/passwd` にはシステムアカウントしか無いため (3) は非 CGO 版で正当なメンバーを取りこぼすが、これは「対象外」に置いた誤検知（AC-28）そのものであり、本 AC が作る問題ではない。
+  - 実際の代償は小さい。本 AC は「macOS の CGO ビルドの書き込み緩和を、非 CGO ビルドと同じ状態にする」だけの変更である（0168 の AC-06 が非 CGO の darwin を既に「不完全」としている）。加えて macOS のローカルユーザーのプライマリグループは全員 `staff` であり、UPG は既定ではない。「メンバーが自分ひとりのグループ」が group-writable な保護対象ファイルに付いている構成は稀である。
+  - **確認事項**: 代替として「非 linux の CGO ビルドは現状どおり完全と申告する」も採りうる。ただしその場合、緩和の正しさは Open Directory が網羅的なメンバー一覧を返すことに依拠し、それは SSSD と同じく外から確かめられない。過剰拒否を避ける観点からこちらを採る場合は、その旨をレビューで指示されたい。
 
 - **受容する副作用は過剰拒否である。** `ignore_group_members` を設定しておらず `gr_mem` が正しく返っている SSSD 環境も拒否する。さらに、判定はホスト単位であるため、**ローカルの `/etc/group` にしか存在しないグループが付いた group-writable ファイルも拒否される**。影響を受けるのは「ディレクトリ統合ホストで group-writable な保護対象ファイルを扱う」構成に限られ、そもそも推奨されない構成である。
 
