@@ -428,8 +428,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make lint` は2構成とも 0 issues。`make test` は2構成とも合格。PR-4 と同じく、本開発コンテナのメモリ制約のため `-p 1` で実行した）
 - [x] PR を作成した（[#1066](https://github.com/isseis/go-safe-cmd-runner/pull/1066)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書と監査記録（AC-23〜AC-33）
 
