@@ -779,6 +779,65 @@ An example of the output is shown below (the timestamp that the default log hand
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
 
+### 5.8 Hash Directory Write-Safety Check Denied (Enumeration Incomplete)
+
+**Symptom**
+
+If a path component of the hash directory is group-writable, and this host cannot confirm that
+group member enumeration is complete, the write-safety check is denied and `verify` exits
+without verifying any target file. This check used to be evaluated more permissively and allow
+the write; it now denies it. This is a different check from the SUDO_UID existence check in 5.7.
+
+**Ancestor directories of the file being verified are not covered by this.** Unlike the hash
+directory, which is the root of trust, a group-writable ancestor of a target file is exactly the
+condition `verify` exists to detect, so that path still only logs a warning and continues
+verification as before (the exit code is unchanged).
+
+**Error Messages**
+
+There are three causes for the denial, each identified by the sentinel text
+`group member enumeration is incomplete` and a `cause=` attribute.
+
+```text
+Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a user database source this build cannot consult, or could not be read (user_database_source=passwd-file, cause=nss-sources); check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted: group member enumeration is incomplete
+```
+
+`cause=nss-sources` means an NSS environment is the cause: the `passwd`/`group` lines of
+`/etc/nsswitch.conf` name a source other than `files`/`systemd` (LDAP/SSSD, etc.), or that file
+could not be read.
+
+```text
+Error: cannot confirm the members of group GID 1000: a line of the user database files could not be parsed and was skipped, so the members listed there are unknown (user_database_source=passwd-file, cause=malformed-line, detail=...); check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1: group member enumeration is incomplete
+```
+
+`cause=malformed-line` means a malformed line in `/etc/passwd`/`/etc/group` is the cause. In this
+case, a separate `slog.Warn` recording the file name and line number is emitted to standard error.
+
+```text
+Error: cannot confirm the members of group GID 1000: this build cannot enumerate all members of a group on this platform (user_database_source=passwd-file, cause=unsupported-platform); rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc: group member enumeration is incomplete
+```
+
+`cause=unsupported-platform` means the official macOS binary is the cause: a non-CGO `darwin`
+binary has no `/etc/nsswitch.conf`, so it is always judged incomplete.
+
+**Remediation**
+
+| Cause (`cause=`) | Remediation |
+|---|---|
+| `nss-sources` (NSS environment) | Rebuild with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (e.g. `chmod 0755`) |
+| `malformed-line` (malformed line) | Fix the line the warning log points to. If it is a NIS compatibility entry (starting with `+`/`-`), rebuild with `CGO_ENABLED=1` |
+| `unsupported-platform` (macOS) | Rebuild yourself with `CGO_ENABLED=1`, or remove the group-writable bit from the target path |
+
+**Detecting This in Advance**
+
+When the enumeration is judged incomplete, the following warning is emitted to standard error
+exactly once at process startup, before the actual denial occurs. Running `verify` once on the
+target host lets you detect in advance whether the denial would occur.
+
+```text
+WARN This build cannot enumerate every member of a group on this host user_database_source=passwd-file cause=nss-sources detail=...
+```
+
 ## 6. Related Documentation
 
 ### Command-Line Tools

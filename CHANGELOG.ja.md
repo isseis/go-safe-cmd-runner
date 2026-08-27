@@ -76,6 +76,45 @@ done
 
 実体パスが指定したパスと同じであれば、影響はありません。異なる場合は、列挙された祖先ディレクトリに他者からの書き込み許可（`o+w`）や、所有者以外のメンバーがいるグループへの書き込み許可（`g+w`）が付いていないかを確認し、付いていれば `chmod go-w` で是正してください。
 
+#### `groupmembership`: 非CGOビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化
+
+非CGOビルド（公式配布バイナリはこれに該当）は、グループメンバー・プライマリグループの列挙が過不足なく行えるかどうかを、`/etc/nsswitch.conf` の内容とプラットフォームから判定するようになりました。列挙が完全であると判定できない場合、group-writable なファイル・ディレクトリへの書き込み安全性判定（`CanUserSafelyWriteFile`）は、従来は許可寄りに判定されていましたが、エラーで拒否されるようになりました（読み取り安全性判定は影響を受けません）。
+
+**影響範囲:** 次のいずれかに該当するホストが対象です。
+
+- `GOOS` が `linux` 以外（配布 macOS バイナリなど）。
+- `/etc/nsswitch.conf` の `passwd`・`group` 行が `files`・`systemd` 以外のソースを含む（ドメイン参加ホストの既定である `passwd: files sss` を含む）。
+- `/etc/passwd`・`/etc/group` にパース不能な行が1行以上ある。
+
+これらのホストで、`0775 user:group` の共有ディレクトリ配下にハッシュディレクトリや設定を置くなど、group-writable な構成要素を経由する検査・書き込みが行われる場合、アップグレード後にその処理が失敗します。
+
+**アップグレード前に影響有無を判定する手順:**
+
+```bash
+# 1. NSS のソース構成を確認する（files・systemd 以外が含まれていないか）
+grep -E '^(passwd|group):' /etc/nsswitch.conf
+
+# 2. ユーザー・グループデータベースの不正行の有無を確認する
+getent passwd >/dev/null; echo "passwd: $?"
+getent group >/dev/null; echo "group: $?"
+
+# 3. 対象パスの構成要素に group-writable なものがないか確認する
+p=$(readlink -m <対象パス>)
+while [ -n "$p" ]; do
+    ls -ld "$p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+1・2 で `files`・`systemd` 以外のソースまたは不正行が見つからず、かつ 3 で group-writable な構成要素が見つからなければ、アップグレード後も影響はありません。該当する場合は、`record`・`verify` を1回実行して起動時警告 `This build cannot enumerate every member of a group on this host` が出るかを確認してください。
+
+**macOS の場合の注記:** 上記の影響範囲のとおり `GOOS` が `linux` 以外の環境は常に該当するため、macOS では手順1・2を実行する必要はありません。手順3（group-writable な構成要素の確認）を実行したい場合、`readlink -m` は GNU 拡張であり macOS には標準で存在しないため、Homebrew の `coreutils` に含まれる `greadlink -m`、または `python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" <対象パス>` のような一行スクリプトを代わりに使ってください。
+
+**回復手段:** (a) `CGO_ENABLED=1` でビルドし直す。(b) 対象パスの group-writable ビットを落とす（`chmod` で `0755` 等にする）。(c) 不正行が書式の誤りであれば `/etc/passwd`・`/etc/group` を修正する。
+
+**切り戻し:** 直前のリリースへ戻すことで従来の挙動に戻ります。ハッシュファイルや設定の形式は変わらないため、追加の作業は不要です。
+
 ### 変更
 
 #### ログファイル名のタイムスタンプが UTC になりました
@@ -106,10 +145,6 @@ done
 #### `groupmembership`: `/etc/group`・`/etc/passwd` の不正形式行をログに記録
 
 非 CGO フォールバック実装（`internal/groupmembership`）は、これまで `/etc/group`・`/etc/passwd` の不正形式行を黙って読み飛ばしていました。現在はファイル名と行番号を添えて `slog.Warn` を出力するため、グループメンバーを隠してしまう破損・手編集ミスのエントリがログで検知できるようになりました（以前は「メンバー 0 人」判定に静かに縮退していました）。
-
-#### 既知の制限: 公式バイナリ（`CGO_ENABLED=0`）はグループメンバーシップで NSS を参照しない
-
-公式リリースバイナリは `CGO_ENABLED=0` でビルドされているため（`.github/workflows/release.yml` 参照）、`internal/groupmembership` はグループメンバーとプライマリグループのユーザーを `/etc/group`・`/etc/passwd` の直接パースのみで列挙します。LDAP や SSSD などの NSS（Name Service Switch）ディレクトリサービスは参照しません。グループメンバーシップを NSS のみで管理している環境では、ローカルファイルに現れないメンバーがカウントされず、group-writable なファイルの書き込み安全性判定（`CanUserSafelyWriteFile`）が実際より緩く評価されることがあります。NSS 管理のグループメンバーシップに依存する環境では、`CGO_ENABLED=1` でのセルフビルドを検討してください。詳細は [security-risk-assessment.ja.md](docs/user/security-risk-assessment.ja.md) を参照してください。
 
 ## [1.1.1] - 2026-08-03
 

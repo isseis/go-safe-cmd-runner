@@ -76,6 +76,45 @@ done
 
 If the real path is the same as the specified path, there is no impact. If it differs, check whether any of the listed ancestor directories grant write permission to others (`o+w`) or to a group that has members other than the owner (`g+w`), and if so, correct them with `chmod go-w`.
 
+#### `groupmembership`: fail-closed on group-writable writes when enumeration is incomplete on non-CGO builds
+
+The non-CGO build now determines, from the contents of `/etc/nsswitch.conf` and the platform, whether it can enumerate group members and primary-group membership without omission. When the enumeration cannot be determined to be complete, the write-safety check for group-writable files and directories (`CanUserSafelyWriteFile`) — which used to be evaluated more permissively — is now denied with an error (the read-safety check is unaffected).
+
+**Impact:** Any host matching one of the following is affected.
+
+- `GOOS` is other than `linux` (e.g. the distributed macOS binary).
+- The `passwd`/`group` lines of `/etc/nsswitch.conf` name a source other than `files`/`systemd` (including `passwd: files sss`, the default on domain-joined hosts).
+- `/etc/passwd`/`/etc/group` contains at least one line that cannot be parsed.
+
+On these hosts, checks or writes that go through a group-writable path component — for example, a hash directory or configuration placed under a shared `0775 user:group` directory — will fail after upgrading.
+
+**Steps to assess impact before upgrading:**
+
+```bash
+# 1. Check the NSS source configuration (whether anything other than files/systemd is present)
+grep -E '^(passwd|group):' /etc/nsswitch.conf
+
+# 2. Check for malformed lines in the user/group databases
+getent passwd >/dev/null; echo "passwd: $?"
+getent group >/dev/null; echo "group: $?"
+
+# 3. Check whether any path component of the target path is group-writable
+p=$(readlink -m <target-path>)
+while [ -n "$p" ]; do
+    ls -ld "$p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+If 1 and 2 find no source other than `files`/`systemd` and no malformed lines, and 3 finds no group-writable path component, there is no impact after upgrading. If any of these apply, run `record`/`verify` once and check whether the startup warning `This build cannot enumerate every member of a group on this host` appears.
+
+**Note for macOS:** since the impact list above already always applies when `GOOS` is other than `linux`, steps 1 and 2 do not need to be run on macOS. If you still want to run step 3 to check for group-writable path components, note that `readlink -m` is a GNU extension not available on macOS by default; use `greadlink -m` (from Homebrew's `coreutils`) or a short one-liner such as `python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" <target-path>` instead.
+
+**Remediation:** (a) rebuild with `CGO_ENABLED=1`. (b) remove the group-writable bit from the target path (e.g. `chmod 0755`). (c) if a malformed line is a formatting mistake, fix `/etc/passwd`/`/etc/group`.
+
+**Rollback:** reverting to the previous release restores the old behavior. The hash file and configuration formats are unchanged, so no additional work is needed.
+
 ### Changed
 
 #### Log file name timestamps are now UTC
@@ -106,10 +145,6 @@ The rules that determine a violation, the log levels, and the exit codes are unc
 #### `groupmembership`: malformed `/etc/group` / `/etc/passwd` lines are now logged
 
 The non-CGO fallback implementation (`internal/groupmembership`) previously skipped malformed lines in `/etc/group` and `/etc/passwd` silently. It now emits a `slog.Warn` with the file name and line number attached, so a corrupted or hand-edited entry that hides group members can be detected in the logs (previously it silently degraded to a "zero members" verdict).
-
-#### Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership
-
-The official release binaries are built with `CGO_ENABLED=0` (see `.github/workflows/release.yml`), so `internal/groupmembership` enumerates group members and primary-group users only by directly parsing `/etc/group` and `/etc/passwd`. It does not consult NSS (Name Service Switch) directory services such as LDAP or SSSD. In environments where group membership is managed only through NSS, members not present in the local files are not counted, and the group-writable-file write-safety check (`CanUserSafelyWriteFile`) can be evaluated more permissively than the actual membership. In environments that depend on NSS-managed group membership, consider building with `CGO_ENABLED=1` yourself. See [security-risk-assessment.md](docs/user/security-risk-assessment.md) for details.
 
 ## [1.1.1] - 2026-08-03
 

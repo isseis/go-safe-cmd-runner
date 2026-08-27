@@ -349,12 +349,20 @@ execution time while still detecting dangerous behavior.
 
 **Known limitation (`CGO_ENABLED=0` builds)**: The non-CGO build enumerates group members and
 primary-group membership only by directly parsing `/etc/group` and `/etc/passwd`; it does not
-consult NSS (Name Service Switch) directory services such as LDAP/SSSD. Because the official
-binaries the project distributes are built with `CGO_ENABLED=0`, group members managed only
-through NSS do not appear in the enumeration result, and the write-safety check for
-group-writable files can be evaluated more permissively (leaning toward allow) than it actually
-is. If you use this tool in an environment that depends on NSS-based group management
-(LDAP/SSSD, etc.), consider building it yourself with `CGO_ENABLED=1`.
+consult NSS (Name Service Switch) directory services such as LDAP/SSSD. In a configuration where
+the `passwd` and `group` lines of `/etc/nsswitch.conf` name only `files` and `systemd` (including
+Ubuntu's default), this direct parsing alone enumerates without omission, so the write-safety
+check for group-writable files can be determined as before. On the other hand, when another
+source is configured (LDAP/SSSD, etc., including `passwd: files sss`, the default on
+domain-joined hosts), or when `/etc/passwd`/`/etc/group` contains a line that cannot be parsed,
+the enumeration cannot be guaranteed complete, so the write-safety check in question is not
+"evaluated more permissively" — it is **denied** (fail-closed).
+
+CGO builds have a known limitation too. In an environment configured with SSSD's
+`enumerate = False` (the default) or `ignore_group_members = True`, libc's NSS lookup can return
+a partial member set without returning an error, in which case the write-safety check can be
+evaluated more permissively than it actually is even on a CGO build. See
+[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) for details.
 
 ### 4. Safe Terminal Output Control (`internal/terminal/`, `internal/ansicolor/`)
 

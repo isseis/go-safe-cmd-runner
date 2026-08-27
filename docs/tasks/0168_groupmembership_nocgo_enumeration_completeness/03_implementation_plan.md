@@ -428,8 +428,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make lint` は2構成とも 0 issues。`make test` は2構成とも合格。PR-4 と同じく、本開発コンテナのメモリ制約のため `-p 1` で実行した）
 - [x] PR を作成した（[#1066](https://github.com/isseis/go-safe-cmd-runner/pull/1066)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書と監査記録（AC-23〜AC-33）
 
@@ -447,20 +447,20 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **作業内容**
 
-- [ ] **最初に** 「対象外」で分離した2件を GitHub Issue として登録する。以降の文書作業で番号を参照するため先に行う
+- [x] **最初に** 「対象外」で分離した2件を GitHub Issue として登録する。以降の文書作業で番号を参照するため先に行う
   - CGO 版 `getpwent` の列挙不完全性 → **[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) で登録済み。** 同 Issue は `enumerate = False` による `getpwent` 側の欠落（`01_requirements.md:74` が対象外とした本件）に加え、`ignore_group_members = True` による `gr_mem` 側の欠落も扱う。後者は `02_architecture.md:456` が想定していない経路であり、本タスクの調査中に判明した。**別 Issue を立て直さず #1064 を AC-29 の登録先とする**
   - `release.yml` の darwin 非 CGO ビルドと `Makefile` の不整合 → 未登録。本 Phase で登録する
-- [ ] `security-risk-assessment.ja.md:340-345` の「既知の制限（`CGO_ENABLED=0` ビルド）」を書き換える。NSS 環境の非 CGO ビルドでは group-writable ファイルへの書き込みが「緩く評価される場合がある」のではなく「拒否される」こと、および `files`・`systemd` のみの環境では従来どおり判定できることが読み取れるようにする
-- [ ] **同節の末尾（`security-risk-assessment.ja.md:344-345`）が対処として推奨する「`CGO_ENABLED=1` でのセルフビルドを検討すること」を是正する。** この推奨は SSSD 環境では成り立たない（[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)）。非 CGO ビルドの制限だけを書き換えると「CGO 版なら完全」と読める記述が残るため、CGO ビルドにも既知の制限がある旨まで広げ、#1064 を参照する
-- [ ] **`CHANGELOG.ja.md:110-112` の「既知の制限: 公式バイナリ（`CGO_ENABLED=0`）はグループメンバーシップで NSS を参照しない」を解消する（AC-32）。** これは同じ `## [未リリース]` ブロックの `### セキュリティ` 節にあり、本タスクが解消する制限を「実際より緩く評価されることがあります」と述べているため、放置すると同一リリースの中で新しい「破壊的変更」項目と矛盾する。新項目へ統合して削除するか、本タスク後の挙動に合わせて書き換える。まだリリースされていない記述であるため、履歴として残す必要はない
-- [ ] `record_command.ja.md` のトラブルシューティングに、AC-15 の拒否に遭遇した場合の項目を追加する。原因は NSS 環境・不正行・macOS の3種であり、回復手段がそれぞれ異なるため項目を分けて書く。既存の `user_database_source` に関する記述と重複させない
-- [ ] `verify_command.ja.md` のトラブルシューティングに同じ項目を追加する
-- [ ] `CHANGELOG.ja.md` の「未リリース」→「破壊的変更」に項目を追加する。書式は同節の既存項目（とくに `verify`: ハッシュディレクトリの権限違反を fail-closed 化）に揃え、見出しで対象範囲を示し、`**影響範囲:**` を設け、アップグレード前に影響有無を判定する手順（`/etc/nsswitch.conf` の `passwd`・`group` 行、`/etc/passwd`・`/etc/group` の不正行の有無、対象パスの group-writable な構成要素の3点）と回復手段・切り戻し方法を添える
-- [ ] 上記の日本語版をまとめてコミットする
-- [ ] `/mktrans` で `security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md` へ反映する。`CHANGELOG.md:110-112` の英語版の項目 "Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership" も日本語版と同じ扱いで解消する（AC-33）
-- [ ] `98_remaining_issues.md` §2「D1（groupmembership）」から L-2（47行）・L-3（48行）の箇条書きと、49行の `- → [#976](…) を作成済み。` を除く
-- [ ] 同文書に `> **D1 L-2/L-3 について**:` の引用ブロックを追加する。同文書の既存の引用ブロック（15・17・19・53・57・59・101行）と同じ形式にし、#976 への参照を中へ畳み込む。L-3 について、所見の推奨（対象 GID の行がパース不能ならエラー）をそのままではなく「不完全性の申告」に置き換えて close したことと、その理由（不正行がどの GID のものかは原理的に判定できない）が読み取れるようにする
-- [ ] `98_remaining_issues.md` の **§2 の D1 の節に**、分離した2件の Issue を追加する。E1・B2・C1・C2・C3・A3・A7 の各節には触れない（AC-28）。#1064 の項目は以下の本文で入れる。**所見 ID を振らない**——本件は 0149 監査の所見ではなく本タスクの調査中に派生したもので、`findings/D1_groupmembership.md` に対応する原文が無い。ID を振ると同文書 8 行目の「番号・記号は `findings/*.md` の所見 ID に対応する」という宣言と食い違う
+- [x] `security-risk-assessment.ja.md:340-345` の「既知の制限（`CGO_ENABLED=0` ビルド）」を書き換える。NSS 環境の非 CGO ビルドでは group-writable ファイルへの書き込みが「緩く評価される場合がある」のではなく「拒否される」こと、および `files`・`systemd` のみの環境では従来どおり判定できることが読み取れるようにする
+- [x] **同節の末尾（`security-risk-assessment.ja.md:344-345`）が対処として推奨する「`CGO_ENABLED=1` でのセルフビルドを検討すること」を是正する。** この推奨は SSSD 環境では成り立たない（[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)）。非 CGO ビルドの制限だけを書き換えると「CGO 版なら完全」と読める記述が残るため、CGO ビルドにも既知の制限がある旨まで広げ、#1064 を参照する
+- [x] **`CHANGELOG.ja.md:110-112` の「既知の制限: 公式バイナリ（`CGO_ENABLED=0`）はグループメンバーシップで NSS を参照しない」を解消する（AC-32）。** これは同じ `## [未リリース]` ブロックの `### セキュリティ` 節にあり、本タスクが解消する制限を「実際より緩く評価されることがあります」と述べているため、放置すると同一リリースの中で新しい「破壊的変更」項目と矛盾する。新項目へ統合して削除するか、本タスク後の挙動に合わせて書き換える。まだリリースされていない記述であるため、履歴として残す必要はない
+- [x] `record_command.ja.md` のトラブルシューティングに、AC-15 の拒否に遭遇した場合の項目を追加する。原因は NSS 環境・不正行・macOS の3種であり、回復手段がそれぞれ異なるため項目を分けて書く。既存の `user_database_source` に関する記述と重複させない
+- [x] `verify_command.ja.md` のトラブルシューティングに同じ項目を追加する
+- [x] `CHANGELOG.ja.md` の「未リリース」→「破壊的変更」に項目を追加する。書式は同節の既存項目（とくに `verify`: ハッシュディレクトリの権限違反を fail-closed 化）に揃え、見出しで対象範囲を示し、`**影響範囲:**` を設け、アップグレード前に影響有無を判定する手順（`/etc/nsswitch.conf` の `passwd`・`group` 行、`/etc/passwd`・`/etc/group` の不正行の有無、対象パスの group-writable な構成要素の3点）と回復手段・切り戻し方法を添える
+- [x] 上記の日本語版をまとめてコミットする
+- [x] `/mktrans` で `security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md` へ反映する。`CHANGELOG.md:110-112` の英語版の項目 "Known limitation: official binaries (`CGO_ENABLED=0`) do not consult NSS for group membership" も日本語版と同じ扱いで解消する（AC-33）
+- [x] `98_remaining_issues.md` §2「D1（groupmembership）」から L-2（47行）・L-3（48行）の箇条書きと、49行の `- → [#976](…) を作成済み。` を除く
+- [x] 同文書に `> **D1 L-2/L-3 について**:` の引用ブロックを追加する。同文書の既存の引用ブロック（15・17・19・53・57・59・101行）と同じ形式にし、#976 への参照を中へ畳み込む。L-3 について、所見の推奨（対象 GID の行がパース不能ならエラー）をそのままではなく「不完全性の申告」に置き換えて close したことと、その理由（不正行がどの GID のものかは原理的に判定できない）が読み取れるようにする
+- [x] `98_remaining_issues.md` の **§2 の D1 の節に**、分離した2件の Issue を追加する。E1・B2・C1・C2・C3・A3・A7 の各節には触れない（AC-28）。#1064 の項目は以下の本文で入れる。**所見 ID を振らない**——本件は 0149 監査の所見ではなく本タスクの調査中に派生したもので、`findings/D1_groupmembership.md` に対応する原文が無い。ID を振ると同文書 8 行目の「番号・記号は `findings/*.md` の所見 ID に対応する」という宣言と食い違う
 
   ```markdown
   - **（新規）CGO ビルドの列挙完全性**: `CGO_ENABLED=1` ビルドは `/etc/nsswitch.conf` を読まず、
@@ -472,15 +472,15 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
     影響を受けない。0168 は非 CGO ビルドのみを対象としたため対象外。
     → [#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) を作成済み。
   ```
-- [ ] `02_architecture.md` §5.4（`:456`・`:458`）に、`ignore_group_members = True` を追記する。`:456` は「libc の `getgrgid_r`・`getpwent` は NSS を経由するため、設定されたすべてのソースを参照する」と述べるが、この設定は `getgrgid_r` が返す `gr_mem` を空にするため `:458` の `enumerate = False` では覆えない。CGO 版の `precomputeEnumerationEnvironment()` が「常に完全」と申告する前提が破れる条件を2つとも明文化しないと、次に読む人が同じ結論を再導出する。`:843` の残存リスク表も同様に揃える。**`membership_cgo.go:331` の doc コメントには触れない**——PR-6 は production コードを変更しない構成であり（本 PR の「判定理由」）、当該コメントの是正は #1064 の実装時に行う
-- [ ] `findings/D1_groupmembership.md` の L-2 に `- **対応状況**:` の箇条書きを追記する（`A1_privilege.md:57` の太字形式に統一）。**所見の原文は書き換えない**
-- [ ] 同文書の L-3 に同様に追記する。あわせて `systemd` を許可リストに含めたことによる残存リスク（`systemd-homed` のユーザーが保護対象ファイルのグループを共有する構成）を記録する
-- [ ] 登録した2件の Issue 番号を `01_requirements.md` の「対象外」節へ追記する
+- [x] `02_architecture.md` §5.4（`:456`・`:458`）に、`ignore_group_members = True` を追記する。`:456` は「libc の `getgrgid_r`・`getpwent` は NSS を経由するため、設定されたすべてのソースを参照する」と述べるが、この設定は `getgrgid_r` が返す `gr_mem` を空にするため `:458` の `enumerate = False` では覆えない。CGO 版の `precomputeEnumerationEnvironment()` が「常に完全」と申告する前提が破れる条件を2つとも明文化しないと、次に読む人が同じ結論を再導出する。`:843` の残存リスク表も同様に揃える。**`membership_cgo.go:331` の doc コメントには触れない**——PR-6 は production コードを変更しない構成であり（本 PR の「判定理由」）、当該コメントの是正は #1064 の実装時に行う
+- [x] `findings/D1_groupmembership.md` の L-2 に `- **対応状況**:` の箇条書きを追記する（`A1_privilege.md:57` の太字形式に統一）。**所見の原文は書き換えない**
+- [x] 同文書の L-3 に同様に追記する。あわせて `systemd` を許可リストに含めたことによる残存リスク（`systemd-homed` のユーザーが保護対象ファイルのグループを共有する構成）を記録する
+- [x] 登録した2件の Issue 番号を `01_requirements.md` の「対象外」節へ追記する
 
 **完了判定条件**
 
-- [ ] §3 の受け入れ基準検証表のうち AC-23〜AC-33 の確認がすべて期待どおりの結果になる
-- [ ] `git diff main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の差分が、D1 の節と分離した2件の追記だけに収まっている（AC-28）
+- [x] §3 の受け入れ基準検証表のうち AC-23〜AC-33 の確認がすべて期待どおりの結果になる
+- [x] `git diff main...HEAD -- docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` の差分が、D1 の節と分離した2件の追記だけに収まっている（AC-28）
 
 ### PR-6 作成ポイント: user documentation and audit records
 
@@ -494,8 +494,8 @@ production の `nssSources`（`nsswitch.go`、`!cgo || test`）とテスト専�
 
 **判定理由**: 文書更新と Issue 登録のみで production コードを触らず、`既存コード調査結果` にも競合する方針の併記は無い。外部依存は GitHub Issue の番号確定だけで、§6.2 に対策が置かれている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した（`make test`・`make lint` とも 0 issues。本 Phase は Go ファイルを変更していないため CGO_ENABLED の2構成での再実行は不要）
+- [x] PR を作成した（[#1068](https://github.com/isseis/go-safe-cmd-runner/pull/1068)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

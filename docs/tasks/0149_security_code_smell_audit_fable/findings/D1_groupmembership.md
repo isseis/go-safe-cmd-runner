@@ -85,12 +85,14 @@
 - 該当箇所: `internal/groupmembership/membership_nocgo.go:68-97, 121-151`
 - 問題: ディレクトリサービス管理のユーザー/グループメンバーはローカルファイルに現れないため、実際にはグループに他メンバーがいるのに「唯一のメンバー」と判定され、group-writable ファイルへの書き込みが許可され得る（fail-open）。CGO 版（NSS 経由）との差異は M-2 とも関連。
 - 推奨対応: 非 CGO ビルドでの利用は NSS 未使用環境に限る旨をドキュメント化する、または非 CGO 版では group-writable の許可判定を常に拒否（fail-closed）に倒すことを検討する。
+- **対応状況**: [0168](../../0168_groupmembership_nocgo_enumeration_completeness/03_implementation_plan.md) で対応した（[#976](https://github.com/isseis/go-safe-cmd-runner/issues/976)）。非 CGO ビルドが「完全」と申告してよい条件を `/etc/nsswitch.conf` の内容とプラットフォームから定め、それ以外（LDAP/SSSD 等の NSS ソースを含む構成、または `linux` 以外のプラットフォーム）では「不完全」の申告により group-writable なファイルへの書き込みを fail-closed にした。`systemd` を許可リストに含めたことによる残存リスクとして、`systemd-homed` のユーザーが保護対象ファイルのグループを共有する構成では、非 CGO ビルドがそのメンバーを列挙しないまま「完全」と申告する点が残る（受容する。要件定義書「決定事項」参照）。
 
 ### L-3: 非 CGO 版パーサが不正行を黙って読み飛ばす
 
 - 該当箇所: `internal/groupmembership/membership_nocgo.go:82-85, 136-139`
 - 問題: `parseGroupLine`/`parsePasswdLine` の失敗行を `continue` で無視する。対象グループの行が（破損・手編集ミスで）不正だった場合「グループなし＝メンバー 0 人」となり、H-1/M-1 と同じ経路で fail-open に合流する。ログも出ないため運用上検知できない。
 - 推奨対応: 少なくとも `slog.Warn` で不正行を記録する。対象 GID の行がパース不能だった場合はエラーを返すことを検討する。
+- **対応状況**: [0168](../../0168_groupmembership_nocgo_enumeration_completeness/03_implementation_plan.md) で、推奨とは異なる形で close した（[#976](https://github.com/isseis/go-safe-cmd-runner/issues/976)）。不正行は `slog.Warn` でファイル名・行番号とともに記録するようにしたが、「対象 GID の行がパース不能だった場合はエラーを返す」という推奨はそのまま採らなかった。パース不能になるのは GID フィールド自体の解析失敗が主因であり、その行がどの GID のものだったかは原理的に判定できないため、対象を絞った拒否は実装できない。かわりに走査全体を「不完全」と申告し、group-writable なファイルへの書き込みを fail-closed にすることで、対象を絞れないという制約を型で表現した。
 
 ### L-4: 判定 API が「(false, nil)」と「(false, err)」を混在して返す
 

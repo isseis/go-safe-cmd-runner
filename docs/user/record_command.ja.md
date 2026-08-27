@@ -728,6 +728,50 @@ sudo env -u SUDO_UID record ...
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
 
+### 5.7 group-writable なファイルの書き込みが拒否される（列挙不完全）
+
+**症状**
+
+ハッシュディレクトリ、または記録対象ファイルの祖先ディレクトリの構成要素が group-writable であり、かつこのホスト上でグループメンバーの列挙が完全であることを確認できない場合、その書き込み安全性判定が拒否され、`record` は対象ファイルを1件も記録せずに終了します。この判定は以前は「実際より緩く評価される」ことで許可されていましたが、現在は拒否されます。5.6 の `SUDO_UID` の実在確認とは異なる判定です。
+
+**エラーメッセージ**
+
+拒否の原因は3種類あり、いずれもセンチネル文言 `group member enumeration is incomplete` と、原因を示す `cause=` 属性を含みます。
+
+```text
+Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a user database source this build cannot consult, or could not be read (user_database_source=passwd-file, cause=nss-sources); check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted: group member enumeration is incomplete
+```
+
+`cause=nss-sources` は NSS 環境が原因です。`/etc/nsswitch.conf` の `passwd`・`group` 行が `files`・`systemd` 以外のソース（LDAP/SSSD 等）を含む、または同ファイルの読み取りに失敗しています。
+
+```text
+Error: cannot confirm the members of group GID 1000: a line of the user database files could not be parsed and was skipped, so the members listed there are unknown (user_database_source=passwd-file, cause=malformed-line, detail=...); check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1: group member enumeration is incomplete
+```
+
+`cause=malformed-line` は `/etc/passwd`・`/etc/group` の不正行が原因です。この場合は標準エラー出力に別途 `slog.Warn` で該当ファイル名・行番号が記録されます。
+
+```text
+Error: cannot confirm the members of group GID 1000: this build cannot enumerate all members of a group on this platform (user_database_source=passwd-file, cause=unsupported-platform); rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc: group member enumeration is incomplete
+```
+
+`cause=unsupported-platform` は macOS 配布バイナリが原因です。非 CGO ビルドの `darwin` バイナリは、`/etc/nsswitch.conf` を持たないため常に不完全と判定されます。
+
+**対処法**
+
+| 原因（`cause=`） | 対処 |
+|---|---|
+| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod` で `0755` 等にする） |
+| `malformed-line`（不正行） | 警告ログが指す行を修正する。NIS 互換行（`+`・`-` で始まる）であれば `CGO_ENABLED=1` でビルドし直す |
+| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す |
+
+**事前の検知**
+
+列挙が不完全と判定されると、プロセス起動時に一度だけ次の警告が標準エラー出力に出ます。実際に拒否が起きる前に出力されるため、対象ホストで書き込み対象を含まない試験的な `record` 実行を1回行えば、拒否が起きるかどうかを事前に検知できます。
+
+```text
+WARN This build cannot enumerate every member of a group on this host user_database_source=passwd-file cause=nss-sources detail=...
+```
+
 ## 6. 関連ドキュメント
 
 ### コマンドラインツール
