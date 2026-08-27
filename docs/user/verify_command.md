@@ -779,7 +779,7 @@ An example of the output is shown below (the timestamp that the default log hand
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
 
-### 5.8 Write to a Group-Writable File Is Denied (Enumeration Incomplete)
+### 5.8 Hash Directory Write-Safety Check Denied (Enumeration Incomplete)
 
 **Symptom**
 

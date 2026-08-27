@@ -778,7 +778,7 @@ sudo env -u SUDO_UID verify ...
 WARN Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment permission_check_uid=1000 real_uid=0 source_env_var=SUDO_UID permission_check_uid_policy=sudo-uid-aware user_database_source=nss
 ```
 
-### 5.8 group-writable なファイルの書き込みが拒否される（列挙不完全）
+### 5.8 ハッシュディレクトリの書き込み安全性判定が拒否される（列挙不完全）
 
 **症状**
 

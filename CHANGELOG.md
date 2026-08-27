@@ -109,6 +109,8 @@ done
 
 If 1 and 2 find no source other than `files`/`systemd` and no malformed lines, and 3 finds no group-writable path component, there is no impact after upgrading. If any of these apply, run `record`/`verify` once and check whether the startup warning `This build cannot enumerate every member of a group on this host` appears.
 
+**Note for macOS:** since the impact list above already always applies when `GOOS` is other than `linux`, steps 1 and 2 do not need to be run on macOS. If you still want to run step 3 to check for group-writable path components, note that `readlink -m` is a GNU extension not available on macOS by default; use `greadlink -m` (from Homebrew's `coreutils`) or a short one-liner such as `python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" <target-path>` instead.
+
 **Remediation:** (a) rebuild with `CGO_ENABLED=1`. (b) remove the group-writable bit from the target path (e.g. `chmod 0755`). (c) if a malformed line is a formatting mistake, fix `/etc/passwd`/`/etc/group`.
 
 **Rollback:** reverting to the previous release restores the old behavior. The hash file and configuration formats are unchanged, so no additional work is needed.

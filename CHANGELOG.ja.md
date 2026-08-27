@@ -109,6 +109,8 @@ done
 
 1・2 で `files`・`systemd` 以外のソースまたは不正行が見つからず、かつ 3 で group-writable な構成要素が見つからなければ、アップグレード後も影響はありません。該当する場合は、`record`・`verify` を1回実行して起動時警告 `This build cannot enumerate every member of a group on this host` が出るかを確認してください。
 
+**macOS の場合の注記:** 上記の影響範囲のとおり `GOOS` が `linux` 以外の環境は常に該当するため、macOS では手順1・2を実行する必要はありません。手順3（group-writable な構成要素の確認）を実行したい場合、`readlink -m` は GNU 拡張であり macOS には標準で存在しないため、Homebrew の `coreutils` に含まれる `greadlink -m`、または `python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" <対象パス>` のような一行スクリプトを代わりに使ってください。
+
 **回復手段:** (a) `CGO_ENABLED=1` でビルドし直す。(b) 対象パスの group-writable ビットを落とす（`chmod` で `0755` 等にする）。(c) 不正行が書式の誤りであれば `/etc/passwd`・`/etc/group` を修正する。
 
 **切り戻し:** 直前のリリースへ戻すことで従来の挙動に戻ります。ハッシュファイルや設定の形式は変わらないため、追加の作業は不要です。
