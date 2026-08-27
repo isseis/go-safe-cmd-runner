@@ -71,7 +71,7 @@
 | 対象 | 現状 | 変更内容 |
 |---|---|---|
 | `internal/security/dir_permissions_unix.go:211` | `CanUserSafelyWrite` のエラーを `%v` で整形するため、新しい sentinel が `errors.Is` で辿れない | `%v` を `%w` に改める（Phase 3 に完全な前後の文字列を記す） |
-| `internal/security/dir_permissions_unix_test.go` | **存在しない**（`internal/security` にあるのは `dir_permissions_audit_test.go` ほか5ファイル）。`02_architecture.md` §3.10 はこのファイルを「変更」と記しているが、実際には新規作成になる | 新規作成する。ビルドタグは `//go:build !windows && test`（同パッケージの `_test.go` は全て `//go:build test` を持ち、対象の `dir_permissions_unix.go` は `//go:build !windows`。同じ組み合わせの先例は `internal/runner/base/privilege/unix_privilege_test.go`） |
+| `internal/security/dir_permissions_unix_test.go` | **存在しない**（`internal/security` にあるのは `dir_permissions_audit_test.go` ほか5ファイル）。`02_architecture.md` §3.10 はこのファイルを「変更」と記しているが、実際には新規作成になる | 新規作成する。ビルドタグは付けない。Windows は本リポジトリのサポート対象外であり `!windows` を持ち込まない（対象の `dir_permissions_unix.go` 自体の `//go:build !windows` は既存のまま変更しない）。`//go:build test` は test helper ファイル向けの規約であり、通常の `_test.go` には不要（レビュー時の指摘を反映） |
 | `internal/safefileio/safe_file.go:1187` `rejectionRule` | 既知の sentinel を列挙する `switch`。新しい2つは `default` の `unknown` に落ちる | 分岐を2つ加える |
 | `internal/safefileio/safe_file_test.go:1239` `TestRejectionRule` | 既存のテーブルテスト | 新しい2行を加える |
 | `internal/runner/base/output/manager.go:257` | `analysis.ErrorMessage = fmt.Sprintf("Permission check failed: %v", err)` | **変更しない。** `02_architecture.md` §5.5 が挙げる3経路の1つだが、値を dry-run の表示メッセージへ描画するだけで `errors.Is` による判別には使わないため、`%v` のままで支障がない。調査済みであることを記録として残す |
@@ -218,8 +218,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1061](https://github.com/isseis/go-safe-cmd-runner/pull/1061)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 診断可能性（AC-15, AC-18）
 
@@ -228,28 +228,28 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 **変更するファイル**
 
 - `internal/security/dir_permissions_unix.go`
-- `internal/security/dir_permissions_unix_test.go`（新規、`//go:build !windows && test`）
+- `internal/security/dir_permissions_unix_test.go`（新規、ビルドタグなし）
 - `internal/safefileio/safe_file.go`
 - `internal/safefileio/safe_file_test.go`
 
 **作業内容**
 
-- [ ] `dir_permissions_unix.go` の `validateGroupWritePermissions` 内の包装を次のとおり書き換える。
+- [x] `dir_permissions_unix.go` の `validateGroupWritePermissions` 内の包装を次のとおり書き換える。
       変更前: `return fmt.Errorf("%w: directory %s failed security validation: %v", ErrInvalidDirPermissions, dirPath, err)`
       変更後: `return fmt.Errorf("%w: directory %s failed security validation: %w", ErrInvalidDirPermissions, dirPath, err)`
-- [ ] `dir_permissions_unix_test.go` を新規作成する。ビルドタグは `//go:build !windows && test`（同パッケージの慣行と対象ファイルの `!windows` の両方に合わせる。先例は `internal/runner/base/privilege/unix_privilege_test.go`）
-- [ ] 同ファイルに `TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel` を書く。`CanUserSafelyWrite` が `ErrGroupMemberEnumerationIncomplete` を返す `DirectoryPermCheckOptions` を与え、`ValidateDirectoryPermissionsWithOptions` の返すエラーから `errors.Is` でその sentinel を辿れることを検証する
-- [ ] 同じテストの中で、既存の `ErrInvalidDirPermissions` に対する `errors.Is` が引き続き成立することを併せて検証する
-- [ ] `safe_file.go:1187` の `rejectionRule` の `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberEnumerationIncomplete)` → `"enumeration-incomplete"` の分岐を追加する
-- [ ] 同じ `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberCompletenessUnstated)` → `"completeness-unstated"` の分岐を追加する
-- [ ] `safe_file_test.go:1239` の `TestRejectionRule` のテーブルに、上記2つの sentinel に対する行を追加する
+- [x] `dir_permissions_unix_test.go` を新規作成する。ビルドタグは付けない（Windows は本リポジトリのサポート対象外のため `!windows` は不要、`//go:build test` は test helper ファイル向けの規約であり通常の `_test.go` には不要。レビュー時の指摘を反映）
+- [x] 同ファイルに `TestValidateDirectoryPermissionsWithOptions_PropagatesEnumerationSentinel` を書く。`CanUserSafelyWrite` が `ErrGroupMemberEnumerationIncomplete` を返す `DirectoryPermCheckOptions` を与え、`ValidateDirectoryPermissionsWithOptions` の返すエラーから `errors.Is` でその sentinel を辿れることを検証する
+- [x] 同じテストの中で、既存の `ErrInvalidDirPermissions` に対する `errors.Is` が引き続き成立することを併せて検証する
+- [x] `safe_file.go:1187` の `rejectionRule` の `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberEnumerationIncomplete)` → `"enumeration-incomplete"` の分岐を追加する
+- [x] 同じ `switch` に、`errors.Is(cause, groupmembership.ErrGroupMemberCompletenessUnstated)` → `"completeness-unstated"` の分岐を追加する
+- [x] `safe_file_test.go:1239` の `TestRejectionRule` のテーブルに、上記2つの sentinel に対する行を追加する
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] `02_architecture.md` §7.3 の表の「sentinel の伝播」の行について、`%w` を `%v` へ戻すと `dir_permissions_unix_test.go` のテストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [x] `02_architecture.md` §7.3 の表の「sentinel の伝播」の行について、`%w` を `%v` へ戻すと `dir_permissions_unix_test.go` のテストが失敗することを確認し、コミットメッセージに英語で記す
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-3 作成ポイント: sentinel diagnosability at caller boundaries
 
@@ -257,14 +257,14 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **推奨タイトル**: `feat(0168): propagate enumeration sentinels across caller boundaries`
 
-**レビュー観点**: `%w` を2つ持つ包装で `ErrInvalidDirPermissions` と新しい sentinel の双方が `errors.Is` で辿れること / `dir_permissions_unix_test.go` のビルドタグが `//go:build !windows && test` であること / `rejectionRule` の2分岐が既存の判定ロジックを変えていないこと
+**レビュー観点**: `%w` を2つ持つ包装で `ErrInvalidDirPermissions` と新しい sentinel の双方が `errors.Is` で辿れること / `dir_permissions_unix_test.go` にビルドタグが無いこと(Windows 非サポート・test helper 以外への `//go:build test` 不要という規約に合わせる) / `rejectionRule` の2分岐が既存の判定ロジックを変えていないこと
 
 **実装モデル要件**: standard
 
 **判定理由**: 変更は包装の動詞1つと `switch` の2分岐、およびそれを固定するテストに限られる。設計判断は `02_architecture.md` §4.5 で確定済みで、panel-mode の引き金にも複数の Conditional checks にも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1062](https://github.com/isseis/go-safe-cmd-runner/pull/1062)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -642,7 +642,7 @@ PR の区切りは Phase の区切りに一致させる。ただし Phase 4 は�
 |---|---|---|---|
 | `completeness.go`・`completeness_test.go` | なし | 両方 | 両ビルドが同じ型を使う |
 | `nsswitch.go`・`nsswitch_test.go` | `//go:build !cgo \|\| test` | 両方（`make test`・`make lint` は常に `test` タグを付けるため） | `02_architecture.md` §2.2。同じタグの `membership_files.go` に倣う |
-| `internal/security/dir_permissions_unix_test.go` | `//go:build !windows && test` | 両方 | 同パッケージの `_test.go` は全て `//go:build test`、対象の `dir_permissions_unix.go` は `//go:build !windows`。同じ組み合わせの先例は `internal/runner/base/privilege/unix_privilege_test.go` |
+| `internal/security/dir_permissions_unix_test.go` | なし | 両方 | Windows は本リポジトリのサポート対象外のため `!windows` は不要。`//go:build test` は test helper ファイル向けの規約であり通常の `_test.go` には不要（レビュー時の指摘を反映） |
 
 `membership_nocgo_test.go`（`//go:build !cgo`）に追加する走査のテストは `CGO_ENABLED=0` の実行でのみ走る。走査の挙動は cgo の有無で変わらないため、この範囲で十分である。この配置は `02_architecture.md` §3.10 の割り当てに従う。
 
