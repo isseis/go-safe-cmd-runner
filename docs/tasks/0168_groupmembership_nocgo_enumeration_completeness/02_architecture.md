@@ -667,14 +667,13 @@ classDiagram
 `manager.go` に既存の sentinel エラーと並べて2つを追加する。
 
 ```go
-// ErrGroupMemberEnumerationIncomplete is returned when a group member
-// enumeration could not cover all members of the group, so its result must
-// not be used as grounds for granting write access.
+// ErrGroupMemberEnumerationIncomplete denies write access: a result that may
+// omit members cannot establish that the user is the group's only member.
 var ErrGroupMemberEnumerationIncomplete = errors.New("group member enumeration is incomplete")
 
-// ErrGroupMemberCompletenessUnstated is returned when an enumeration result
-// carries no completeness statement. This is a defect in the enumeration
-// implementation, not an environment condition.
+// ErrGroupMemberCompletenessUnstated marks a defect in the enumeration
+// implementation rather than a condition of the host, so no operator action
+// resolves it.
 var ErrGroupMemberCompletenessUnstated = errors.New("group member enumeration completeness was not stated")
 ```
 

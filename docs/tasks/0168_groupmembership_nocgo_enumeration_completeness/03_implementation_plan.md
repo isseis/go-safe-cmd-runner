@@ -171,8 +171,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（[#1060](https://github.com/isseis/go-safe-cmd-runner/pull/1060)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 判定側のフェイルクローズド化（AC-03, AC-03a, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19）
 
@@ -183,26 +183,26 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **作業内容**
 
-- [ ] `manager.go` の既存 sentinel 定義の並びに `ErrGroupMemberEnumerationIncomplete` を追加する
-- [ ] 同じ並びに `ErrGroupMemberCompletenessUnstated` を追加する
-- [ ] `isUserOnlyGroupMember` を `getGroupEnumeration` の呼び出しに切り替え、完全性の `switch` を判定より手前に置く。分岐の対応は `02_architecture.md` §3.6 の表に従う。`default` は `ErrGroupMemberCompletenessUnstated` 側へ倒す
-- [ ] 不完全時のエラーメッセージ生成を、`incompletenessCause` に対する `switch` で組み立てる。文字列の内容から分岐させない。`user_database_source` の値を必ず含める。文面の方針と原因ごとの回復手段は `02_architecture.md` §4.3 の表に従う
-- [ ] 「未申告」のメッセージに `enumerationCompleteness.String()` の値を載せ、環境要因ではなく実装の誤りであることを示す
-- [ ] **`completenessVerdict`・`groupEnumeration` を構造体のまま `slog.Any` へ渡さない**（`02_architecture.md` §4.4）。ログに出すのは `user_database_source`・`cause.String()`・`detail` の個別属性とする
-- [ ] `manager_test.go` に、`newWithEnumerator` へ「不完全」を申告する値を注入し、`isUserOnlyGroupMember` が本人が唯一の要素であっても拒否することを検証するテストを追加する
-- [ ] `manager_test.go` に、「未申告」（`groupEnumeration{}` をそのまま返す）を注入し、`ErrGroupMemberCompletenessUnstated` が返ることと、`ErrGroupMemberEnumerationIncomplete` とは `errors.Is` で区別できることを検証するテストを追加する。未定義の `enumerationCompleteness` 値を注入して `default` 分岐にも到達させる
-- [ ] `manager_test.go` に、不完全な列挙で `CanUserSafelyWriteFile` が `(false, non-nil error)` を返し、`errors.Is` で sentinel を判別できることを検証するテストを追加する
-- [ ] `manager_test.go` に `TestIncompleteEnumerationErrorMessage` を追加する。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の各原因について、メッセージに `user_database_source` の値が含まれること、および `causeNSSSources` では回復手段として `CGO_ENABLED=1` が現れることを検証する
-- [ ] `manager_test.go` に、キャッシュヒット時（同じ GID を2回呼ぶ）にも完全性が保たれ、同じ拒否になることを検証するテストを追加する。注入する関数にクロージャで呼び出し回数のカウンタを持たせ、2回目が列挙を再実行していないことも併せて検証する
-- [ ] `manager_test.go` に、不完全な列挙を注入しても `IsUserInGroup` と `CanCurrentUserSafelyReadFile` の結果が完全な列挙の場合と一致することを検証するテストを追加する
+- [x] `manager.go` の既存 sentinel 定義の並びに `ErrGroupMemberEnumerationIncomplete` を追加する
+- [x] 同じ並びに `ErrGroupMemberCompletenessUnstated` を追加する
+- [x] `isUserOnlyGroupMember` を `getGroupEnumeration` の呼び出しに切り替え、完全性の `switch` を判定より手前に置く。分岐の対応は `02_architecture.md` §3.6 の表に従う。`default` は `ErrGroupMemberCompletenessUnstated` 側へ倒す
+- [x] 不完全時のエラーメッセージ生成を、`incompletenessCause` に対する `switch` で組み立てる。文字列の内容から分岐させない。`user_database_source` の値を必ず含める。文面の方針と原因ごとの回復手段は `02_architecture.md` §4.3 の表に従う
+- [x] 「未申告」のメッセージに `enumerationCompleteness.String()` の値を載せ、環境要因ではなく実装の誤りであることを示す
+- [x] **`completenessVerdict`・`groupEnumeration` を構造体のまま `slog.Any` へ渡さない**（`02_architecture.md` §4.4）。ログに出すのは `user_database_source`・`cause.String()`・`detail` の個別属性とする
+- [x] `manager_test.go` に、`newWithEnumerator` へ「不完全」を申告する値を注入し、`isUserOnlyGroupMember` が本人が唯一の要素であっても拒否することを検証するテストを追加する
+- [x] `manager_test.go` に、「未申告」（`groupEnumeration{}` をそのまま返す）を注入し、`ErrGroupMemberCompletenessUnstated` が返ることと、`ErrGroupMemberEnumerationIncomplete` とは `errors.Is` で区別できることを検証するテストを追加する。未定義の `enumerationCompleteness` 値を注入して `default` 分岐にも到達させる
+- [x] `manager_test.go` に、不完全な列挙で `CanUserSafelyWriteFile` が `(false, non-nil error)` を返し、`errors.Is` で sentinel を判別できることを検証するテストを追加する
+- [x] `manager_test.go` に `TestIncompleteEnumerationErrorMessage` を追加する。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の各原因について、メッセージに `user_database_source` の値が含まれること、および `causeNSSSources` では回復手段として `CGO_ENABLED=1` が現れることを検証する
+- [x] `manager_test.go` に、キャッシュヒット時（同じ GID を2回呼ぶ）にも完全性が保たれ、同じ拒否になることを検証するテストを追加する。注入する関数にクロージャで呼び出し回数のカウンタを持たせ、2回目が列挙を再実行していないことも併せて検証する
+- [x] `manager_test.go` に、不完全な列挙を注入しても `IsUserInGroup` と `CanCurrentUserSafelyReadFile` の結果が完全な列挙の場合と一致することを検証するテストを追加する
 
 **完了判定条件**
 
-- [ ] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
-- [ ] `02_architecture.md` §7.3 の表のうち「不完全での拒否」「未申告での拒否」「キャッシュを跨ぐ完全性」「読み取り経路の不変」の4行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
-- [ ] §7.3 に無い追加の無効化確認: エラーメッセージ生成から `user_database_source` を落とすと `TestIncompleteEnumerationErrorMessage` が失敗する（AC-18）
-- [ ] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
-- [ ] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
+- [x] `make fmt` → `make test` → `make lint` がいずれも成功する（2構成とも）
+- [x] `02_architecture.md` §7.3 の表のうち「不完全での拒否」「未申告での拒否」「キャッシュを跨ぐ完全性」「読み取り経路の不変」の4行について、分岐を無効化して該当テストが失敗することを確認し、コミットメッセージに英語で記す
+- [x] §7.3 に無い追加の無効化確認: エラーメッセージ生成から `user_database_source` を落とすと `TestIncompleteEnumerationErrorMessage` が失敗する（AC-18）
+- [x] §3.1 の `AC-21` のコマンドを**本ブランチ上で**実行し、`1` 以上を返す
+- [x] `git diff --stat main...HEAD -- internal/runner/base/security ':!*_test.go'` が空である（AC-04a の不変条件は PR ごとに確認する）
 
 ### PR-2 作成ポイント: fail-closed group membership decision
 
@@ -216,8 +216,8 @@ Phase の区切りと順序は `02_architecture.md` §8 の実装優先順位に
 
 **判定理由**: `mkplan.md` step 8 のセキュリティゲートの引き金に該当する。書き込み許可の判定を fail-closed へ引き上げる中核であり、`switch` の `default`・ゼロ値・sentinel の切り分けを誤ると本タスクが閉じようとしているフェイルオープンがそのまま残る。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（[#1061](https://github.com/isseis/go-safe-cmd-runner/pull/1061)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

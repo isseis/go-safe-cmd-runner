@@ -17,6 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// unrelatedGID is a GID the test user is neither a primary nor a secondary
+// member of, so that a membership decision for it rests on the enumerated
+// member set rather than on the credentials of the running process.
+const unrelatedGID uint32 = 99999
+
 // TestGroupMembership tests the new GroupMembership struct
 func TestGroupMembership(t *testing.T) {
 	t.Run("New creates instance", func(t *testing.T) {
@@ -401,9 +406,7 @@ func TestCanCurrentUserSafelyWriteFile_AllPermissions(t *testing.T) {
 	})
 
 	t.Run("group_writable_non_member", func(t *testing.T) {
-		// Use a GID that the current user is not a member of
-		// GID 99999 is unlikely to exist and user won't be a member
-		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, 99999, 0o660)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, unrelatedGID, 0o660)
 		// This may error or return false depending on system configuration
 		// Just verify it doesn't panic and returns a boolean
 		assert.IsType(t, false, canWrite)
@@ -496,8 +499,7 @@ func TestCanCurrentUserSafelyReadFile_AllPermissions(t *testing.T) {
 	})
 
 	t.Run("group_writable_non_member", func(t *testing.T) {
-		// Use a GID that the current user is not a member of
-		canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)
+		canRead, err := gm.CanCurrentUserSafelyReadFile(unrelatedGID, 0o660)
 		// Should error because user is not in group and file is group writable
 		assert.Error(t, err)
 		assert.False(t, canRead)
@@ -957,7 +959,7 @@ func TestIsUserInGroup_NoRegressionWithPrimaryMembers(t *testing.T) {
 		gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
 			return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil
 		})
-		isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
+		isMember, err := gm.IsUserInGroup(uint32(currentUID), unrelatedGID)
 		assert.NoError(t, err)
 		assert.False(t, isMember)
 	})
@@ -976,7 +978,7 @@ func TestIsUserInGroup_EnumerationError(t *testing.T) {
 		return groupEnumeration{}, sentinelErr
 	})
 
-	isMember, err := gm.IsUserInGroup(uint32(currentUID), 99999)
+	isMember, err := gm.IsUserInGroup(uint32(currentUID), unrelatedGID)
 	assert.False(t, isMember)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
@@ -990,10 +992,327 @@ func TestCanCurrentUserSafelyReadFile_EnumerationError(t *testing.T) {
 		return groupEnumeration{}, sentinelErr
 	})
 
-	canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)
+	canRead, err := gm.CanCurrentUserSafelyReadFile(unrelatedGID, 0o660)
 	assert.False(t, canRead)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// completenessOutOfRange is an enumerationCompleteness value that no constant
+// defines. It reaches the default branch of the completeness switch, which
+// must deny exactly as the zero value does.
+const completenessOutOfRange enumerationCompleteness = 99
+
+// causeOutOfRange is an incompletenessCause value that no constant defines. It
+// reaches the default branch of the denial-message switch, which must still
+// produce a message an operator can act on.
+const causeOutOfRange incompletenessCause = 99
+
+// TestIsUserOnlyGroupMember_Completeness verifies that the completeness of an
+// enumeration decides before its contents do: every case below enumerates the
+// current user as the sole member, which is the one shape that grants access,
+// so any denial can only come from the completeness check.
+func TestIsUserOnlyGroupMember_Completeness(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+	currentPrimaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		verdict      completenessVerdict
+		wantIsOnly   bool
+		wantErrIs    error
+		wantNotErrIs error
+	}{
+		{
+			name:       "complete verdict decides on the member set",
+			verdict:    completeVerdict(),
+			wantIsOnly: true,
+		},
+		{
+			name:         "incomplete verdict denies the sole member",
+			verdict:      incompleteVerdict(causeNSSSources, "group: files sss"),
+			wantErrIs:    ErrGroupMemberEnumerationIncomplete,
+			wantNotErrIs: ErrGroupMemberCompletenessUnstated,
+		},
+		{
+			name:         "zero value denies as unstated",
+			verdict:      completenessVerdict{},
+			wantErrIs:    ErrGroupMemberCompletenessUnstated,
+			wantNotErrIs: ErrGroupMemberEnumerationIncomplete,
+		},
+		{
+			name:         "undefined completeness denies as unstated",
+			verdict:      completenessVerdict{completeness: completenessOutOfRange},
+			wantErrIs:    ErrGroupMemberCompletenessUnstated,
+			wantNotErrIs: ErrGroupMemberEnumerationIncomplete,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gm := newWithFixedEnumeration([]string{currentUser.Username}, tt.verdict)
+
+			isOnly, err := gm.isUserOnlyGroupMember(currentUID, uint32(currentPrimaryGID))
+
+			assert.Equal(t, tt.wantIsOnly, isOnly)
+			if tt.wantErrIs == nil {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.wantErrIs)
+			// The two sentinels separate an environment condition from a
+			// defect in the enumeration implementation, so each denial must
+			// match one of them and not the other.
+			assert.NotErrorIs(t, err, tt.wantNotErrIs)
+		})
+	}
+}
+
+// TestCanUserSafelyWriteFile_IncompleteEnumeration verifies that the denial
+// reaches the public write-safety decision and stays identifiable there.
+func TestCanUserSafelyWriteFile_IncompleteEnumeration(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	gm := newWithFixedEnumeration(
+		[]string{currentUser.Username},
+		incompleteVerdict(causeMalformedLine, "/etc/group:12"),
+	)
+
+	canWrite, err := gm.CanUserSafelyWriteFile(currentUID, uint32(currentUID), unrelatedGID, 0o660)
+
+	assert.False(t, canWrite)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+}
+
+// TestCanUserSafelyWriteFile_CompleteEnumeration verifies that a complete
+// verdict leaves the group-writable decision as it was: the sole member is
+// granted and a shared group is denied without an error. The verdict is
+// injected rather than read from the host, so this guard holds on a host
+// whose own enumeration is incomplete.
+func TestCanUserSafelyWriteFile_CompleteEnumeration(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		members      []string
+		wantCanWrite bool
+	}{
+		{
+			name:         "sole member is granted",
+			members:      []string{currentUser.Username},
+			wantCanWrite: true,
+		},
+		{
+			name:         "shared group is denied",
+			members:      []string{currentUser.Username, "other-user"},
+			wantCanWrite: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gm := newWithFixedEnumeration(tt.members, completeVerdict())
+
+			canWrite, err := gm.CanUserSafelyWriteFile(currentUID, uint32(currentUID), unrelatedGID, 0o660)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantCanWrite, canWrite)
+		})
+	}
+}
+
+// TestIncompleteEnumerationErrorMessage verifies that the denial message names
+// the user database this build consults and offers the remediation that fits
+// the recorded cause, so that an operator can act on it without reading code.
+func TestIncompleteEnumerationErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		verdict         completenessVerdict
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name:    "unsupported platform",
+			verdict: incompleteVerdict(causeUnsupportedPlatform, "goos=darwin"),
+			wantContains: []string{
+				"user_database_source=" + userDatabaseSource,
+				"cause=" + causeUnsupportedPlatform.String(),
+				"goos=darwin",
+				"CGO_ENABLED=1",
+			},
+			wantNotContains: []string{"/etc/nsswitch.conf"},
+		},
+		{
+			name:    "nss sources",
+			verdict: incompleteVerdict(causeNSSSources, "group: files sss"),
+			wantContains: []string{
+				"user_database_source=" + userDatabaseSource,
+				"cause=" + causeNSSSources.String(),
+				"group: files sss",
+				"/etc/nsswitch.conf",
+				"CGO_ENABLED=1",
+			},
+		},
+		{
+			name:    "malformed line",
+			verdict: incompleteVerdict(causeMalformedLine, "1 line skipped, first at /etc/group:12"),
+			wantContains: []string{
+				"user_database_source=" + userDatabaseSource,
+				"cause=" + causeMalformedLine.String(),
+				"first at /etc/group:12",
+				// Deleting the offending line is the obvious response and the
+				// wrong one for a NIS compatibility entry, where the line is
+				// correct and only this build cannot follow it.
+				"NIS",
+				"CGO_ENABLED=1",
+			},
+			wantNotContains: []string{"/etc/nsswitch.conf"},
+		},
+		// The two cases below are unreachable while incompleteVerdict is the
+		// only way to build an incomplete verdict. They are covered so that
+		// growing the cause enum cannot silently leave the message half
+		// empty.
+		{
+			name:    "cause left unspecified",
+			verdict: completenessVerdict{completeness: completenessIncomplete, cause: causeUnspecified},
+			wantContains: []string{
+				"user_database_source=" + userDatabaseSource,
+				"cause=" + causeUnspecified.String(),
+				"defect",
+			},
+		},
+		{
+			name:    "cause outside the defined range",
+			verdict: completenessVerdict{completeness: completenessIncomplete, cause: causeOutOfRange},
+			wantContains: []string{
+				"user_database_source=" + userDatabaseSource,
+				"cause=" + causeOutOfRange.String(),
+				"defect",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := incompleteEnumerationError(unrelatedGID, tt.verdict)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+
+			message := err.Error()
+			for _, want := range tt.wantContains {
+				assert.Contains(t, message, want)
+			}
+			for _, notWant := range tt.wantNotContains {
+				assert.NotContains(t, message, notWant)
+			}
+		})
+	}
+}
+
+// TestUnstatedCompletenessErrorMessage verifies that the unstated denial names
+// the value it saw, so that the message points at the enumeration
+// implementation rather than at the operator's environment.
+func TestUnstatedCompletenessErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	for _, completeness := range []enumerationCompleteness{completenessUnstated, completenessOutOfRange} {
+		t.Run(completeness.String(), func(t *testing.T) {
+			t.Parallel()
+
+			err := unstatedCompletenessError(unrelatedGID, completeness)
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrGroupMemberCompletenessUnstated)
+			assert.Contains(t, err.Error(), completeness.String())
+			assert.Contains(t, err.Error(), "user_database_source="+userDatabaseSource)
+		})
+	}
+}
+
+// TestCompletenessSurvivesCache verifies that the completeness of an
+// enumeration is cached alongside its members, so that a cache hit denies for
+// the same reason the first lookup did.
+func TestCompletenessSurvivesCache(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+	currentPrimaryGID, err := strconv.ParseUint(currentUser.Gid, 10, 32)
+	require.NoError(t, err)
+
+	calls := 0
+	gm := newWithEnumerator(func(uint32) (groupEnumeration, error) {
+		calls++
+		return groupEnumeration{
+			members: []string{currentUser.Username},
+			verdict: incompleteVerdict(causeNSSSources, "group: files sss"),
+		}, nil
+	})
+
+	for attempt := range 2 {
+		isOnly, err := gm.isUserOnlyGroupMember(currentUID, uint32(currentPrimaryGID))
+
+		assert.False(t, isOnly, "attempt %d", attempt)
+		require.Error(t, err, "attempt %d", attempt)
+		assert.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete, "attempt %d", attempt)
+	}
+
+	// One call for two lookups: the second denial came from the cached entry,
+	// which is the entry the completeness had to survive in.
+	assert.Equal(t, 1, calls)
+}
+
+// TestReadPathIgnoresCompleteness verifies that the read-side decisions do not
+// consult completeness. An incomplete enumeration already fails closed there,
+// since a member missing from the set is judged a non-member.
+func TestReadPathIgnoresCompleteness(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
+	require.NoError(t, err)
+
+	type outcome struct {
+		inGroup       bool
+		inGroupFailed bool
+		canRead       bool
+		canReadFailed bool
+	}
+	observe := func(verdict completenessVerdict) outcome {
+		gm := newWithFixedEnumeration([]string{currentUser.Username}, verdict)
+		inGroup, inGroupErr := gm.IsUserInGroup(uint32(currentUID), unrelatedGID)
+		canRead, canReadErr := gm.CanCurrentUserSafelyReadFile(unrelatedGID, 0o660)
+		return outcome{
+			inGroup:       inGroup,
+			inGroupFailed: inGroupErr != nil,
+			canRead:       canRead,
+			canReadFailed: canReadErr != nil,
+		}
+	}
+
+	complete := observe(completeVerdict())
+	// Anchor the comparison: without this the two sides could agree by both
+	// failing for an unrelated reason.
+	require.Equal(t, outcome{inGroup: true, canRead: true}, complete)
+
+	incomplete := observe(incompleteVerdict(causeNSSSources, "group: files ldap"))
+
+	assert.Equal(t, complete, incomplete)
 }
 
 // adoptionRecordMessage is the exact warning message emitted by
