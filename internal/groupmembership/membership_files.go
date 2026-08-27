@@ -67,6 +67,18 @@ func (m *malformedLines) record(source string, lineNum int) {
 	}
 }
 
+// maxDBLineLen bounds one user-database line. A group with many members can
+// exceed bufio.Scanner's default 64KB limit, which would abort the scan with
+// bufio.ErrTooLong and hide members rather than report them.
+const maxDBLineLen = 1024 * 1024
+
+// newDBScanner returns a scanner over r that tolerates such long lines.
+func newDBScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxDBLineLen) //nolint:mnd
+	return scanner
+}
+
 // scanGroupFile searches r, whose contents are in /etc/group format, for the
 // entry with the given GID. source names r in log records and in the
 // recorded position of skipped lines. It reads r to the end so that the
@@ -79,7 +91,7 @@ func scanGroupFile(r io.Reader, source string, gid uint32) (*groupEntry, malform
 		malformed malformedLines
 	)
 
-	scanner := bufio.NewScanner(r)
+	scanner := newDBScanner(r)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
@@ -155,7 +167,7 @@ func scanPasswdFile(r io.Reader, source string, gid uint32) ([]string, malformed
 		malformed malformedLines
 	)
 
-	scanner := bufio.NewScanner(r)
+	scanner := newDBScanner(r)
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
