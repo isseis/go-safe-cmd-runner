@@ -127,12 +127,15 @@ flowchart LR
         MGR["manager.go<br>GroupMembership"]
         CMP["completeness.go<br>列挙結果と完全性の型"]
         NSW["nsswitch.go<br>分類・完全性判定の確定・起動時警告"]
-        NOC["membership_nocgo.go<br>getGroupMembers（非 CGO 版）"]
         FIL["membership_files.go<br>/etc/group・/etc/passwd の走査"]
-        CGO["membership_cgo.go<br>getGroupMembers（CGO 版）"]
         ADV["incompleteness_advice.go<br>事実と回復手段の型・共通分岐"]
         ADC["incompleteness_advice_cgo.go<br>CGO 版の事実と回復手段"]
         ADN["incompleteness_advice_nocgo.go<br>非 CGO 版の事実と回復手段"]
+
+        subgraph ENUMG["getGroupMembers の実装（ビルドタグでどちらか一方だけが含まれる）"]
+            NOC["membership_nocgo.go<br>非 CGO 版"]
+            CGO["membership_cgo.go<br>CGO 版"]
+        end
     end
 
     MGR --> CMP
@@ -141,19 +144,14 @@ flowchart LR
     MGR --> ADN
     ADC --> ADV
     ADN --> ADV
-    NOC --> CMP
-    NOC --> NSW
+    ENUMG --> CMP
+    ENUMG --> NSW
     NOC --> FIL
-    CGO --> CMP
-    CGO --> NSW
-    NSW -.->|"userDatabaseSource<br>（ビルドごとに一方が定義）"| NOC
-    NSW -.->|"userDatabaseSource<br>（ビルドごとに一方が定義）"| CGO
-    MGR -->|"ビルドに応じて<br>どちらか一方を束ねる"| NOC
-    MGR -->|"ビルドに応じて<br>どちらか一方を束ねる"| CGO
+    NSW -.->|"userDatabaseSource<br>（ビルドごとに一方が定義）"| ENUMG
+    MGR -->|"列挙を束ねる"| ENUMG
 
-    class SFIO,DPC,RSV,FIL,NOC process
-    class RUN enhanced
-    class NSW,CGO,MGR,CMP enhanced
+    class SFIO,DPC,RSV,FIL process
+    class RUN,NSW,CGO,NOC,MGR,CMP enhanced
     class ADV,ADC,ADN newpkg
 
     subgraph Legend["凡例"]
@@ -168,6 +166,7 @@ flowchart LR
 > 実線矢印 A → B は「A が B を呼び出す、または B に依存する」ことを表す。破線矢印 A ⇢ B は「A がコンパイルされるために、B が定義するビルド固有の識別子を必要とする」ことを表す。矢印のラベルは呼び出す関数名、依存の性質、または必要とする識別子である。凡例のノードは色分けの意味のみを示し、相互関係は表さない。
 > `newpkg`（紫）は [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) では「新規追加パッケージまたは型」を指すが、本図では新規追加ファイルに用いる。本タスクは新しいパッケージを追加しないため、パッケージ内の新旧を区別する用途に転用している。
 > `manager.go` から `incompleteness_advice_cgo.go`・`incompleteness_advice_nocgo.go` への2本の実線矢印は、`manager.go` が同名の関数を呼び、その実体をビルドタグがどちらか一方に決めることを表す。
+> **枠に出入りする矢印は、その枠に含まれる実装のどちらにも同じように当てはまることを表す。** `getGroupMembers の実装` の枠が受け、または出す矢印は、CGO 版・非 CGO 版のいずれにも成り立つ。枠の内側の `membership_files.go` への矢印だけが非 CGO 版に固有である。
 > **ビルドをまたぐ識別子の不変条件**: `nsswitch.go` と `manager.go` はビルドタグを持たないが、それぞれ `userDatabaseSource` と `adviseIncompleteness` というビルドごとに定義が分かれる識別子を参照する。どのビルド構成でも、これらがちょうど1つずつ定義されていなければコンパイルが通らない。この関係を破線矢印で示している。
 > `internal/safefileio`・`internal/security`・`internal/runner/base/security` はいずれも無変更である（AC-18）。`cmd/runner` は起動処理から完全性判定の確定を呼ぶ1行だけを変更する（AC-31、§4.4）。判定ロジックには触れない。
 
