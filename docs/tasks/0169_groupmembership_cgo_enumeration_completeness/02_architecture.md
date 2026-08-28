@@ -133,7 +133,6 @@ flowchart LR
         ADV["incompleteness_advice.go<br>事実と回復手段の型・共通分岐"]
         ADC["incompleteness_advice_cgo.go<br>CGO 版の事実と回復手段"]
         ADN["incompleteness_advice_nocgo.go<br>非 CGO 版の事実と回復手段"]
-        THL["test_helpers.go<br>完全性判定を固定する補助関数"]
     end
 
     MGR --> CMP
@@ -149,13 +148,12 @@ flowchart LR
     CGO --> NSW
     NSW -.->|"userDatabaseSource<br>（ビルドごとに一方が定義）"| NOC
     NSW -.->|"userDatabaseSource<br>（ビルドごとに一方が定義）"| CGO
-    THL -.->|"完全性判定を固定する"| NSW
     MGR -->|"ビルドに応じて<br>どちらか一方を束ねる"| NOC
     MGR -->|"ビルドに応じて<br>どちらか一方を束ねる"| CGO
 
     class SFIO,DPC,RSV,FIL,NOC process
     class RUN enhanced
-    class NSW,CGO,MGR,CMP,THL enhanced
+    class NSW,CGO,MGR,CMP enhanced
     class ADV,ADC,ADN newpkg
 
     subgraph Legend["凡例"]
@@ -166,6 +164,7 @@ flowchart LR
     end
 ```
 
+> **この図は production の構成のみを示す。** `//go:build test` のファイル（`test_helpers.go`）とテストファイルは、production のバイナリに含まれないため図には載せない。それらの変更内容は §2.2 と §3.6 の表に記す。
 > 実線矢印 A → B は「A が B を呼び出す、または B に依存する」ことを表す。破線矢印 A ⇢ B は「A がコンパイルされるために、B が定義するビルド固有の識別子を必要とする」ことを表す。矢印のラベルは呼び出す関数名、依存の性質、または必要とする識別子である。凡例のノードは色分けの意味のみを示し、相互関係は表さない。
 > `newpkg`（紫）は [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) では「新規追加パッケージまたは型」を指すが、本図では新規追加ファイルに用いる。本タスクは新しいパッケージを追加しないため、パッケージ内の新旧を区別する用途に転用している。
 > `manager.go` から `incompleteness_advice_cgo.go`・`incompleteness_advice_nocgo.go` への2本の実線矢印は、`manager.go` が同名の関数を呼び、その実体をビルドタグがどちらか一方に決めることを表す。
