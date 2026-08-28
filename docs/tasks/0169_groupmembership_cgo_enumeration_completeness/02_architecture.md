@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-08-27 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-08-28 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 0. 本書の位置づけ
