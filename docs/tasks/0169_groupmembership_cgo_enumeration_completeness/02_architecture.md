@@ -128,7 +128,7 @@ flowchart LR
         CMP["completeness.go<br>列挙結果と完全性の型"]
         NSW["nsswitch.go<br>分類・完全性判定の確定・起動時警告"]
         FIL["membership_files.go<br>/etc/group・/etc/passwd の走査"]
-        ADV["incompleteness_advice.go<br>事実と回復手段の型・共通分岐"]
+        ADV["incompleteness_advice.go<br>ビルド共通の分岐"]
 
         subgraph ENUMG["getGroupMembers の実装（ビルドタグでどちらか一方だけが含まれる）"]
             NOC["membership_nocgo.go<br>非 CGO 版"]
