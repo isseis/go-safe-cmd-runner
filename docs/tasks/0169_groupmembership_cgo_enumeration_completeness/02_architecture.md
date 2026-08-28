@@ -125,7 +125,6 @@ flowchart LR
 
     subgraph GMP["internal/groupmembership"]
         MGR["manager.go<br>GroupMembership"]
-        CMP["completeness.go<br>列挙結果と完全性の型"]
         NSW["nsswitch.go<br>分類・完全性判定の確定・起動時警告"]
         FIL["membership_files.go<br>/etc/group・/etc/passwd の走査"]
         ADV["incompleteness_advice.go<br>ビルド共通の分岐"]
@@ -141,17 +140,15 @@ flowchart LR
         end
     end
 
-    MGR --> CMP
     MGR -->|"precomputeEnumerationEnvironment"| NSW
     MGR -->|"adviseIncompleteness"| ADVG
     ADVG -->|"implementationDefectAdvice"| ADV
-    ENUMG --> CMP
     ENUMG -->|"nsswitchVerdict"| NSW
-    NOC --> FIL
+    NOC -->|"findGroupByGID /<br>findUsersWithPrimaryGID"| FIL
     MGR -->|"getGroupMembers"| ENUMG
 
     class SFIO,DPC,RSV,FIL process
-    class RUN,NSW,CGO,NOC,MGR,CMP enhanced
+    class RUN,NSW,CGO,NOC,MGR enhanced
     class ADV,ADC,ADN newpkg
 
     style ENUMG fill:transparent,stroke:#5b6b7a,stroke-width:2px,stroke-dasharray:5 3;
@@ -165,8 +162,8 @@ flowchart LR
     end
 ```
 
-> **この図は production の構成のみを示す。** `//go:build test` のファイル（`test_helpers.go`）とテストファイルは、production のバイナリに含まれないため図には載せない。それらの変更内容は §2.2 と §3.6 の表に記す。
-> 矢印 A → B は「A が B を呼び出す、または B に依存する」ことを表す。ラベルは呼び出す関数名である。凡例のノードは色分けの意味のみを示し、相互関係は表さない。
+> **この図は production の呼び出し関係のみを示す。** 次の2種類は図に載せず、変更内容は §2.2 と §3.6 の表に記す。`//go:build test` のファイル（`test_helpers.go`）とテストファイルは、production のバイナリに含まれないため。型定義だけを持つファイル（`completeness.go`）は、呼び出し関係を持たないため。
+> 矢印 A → B は「A が B を呼び出す」ことを表し、ラベルは呼び出す関数名である。凡例のノードは色分けの意味のみを示し、相互関係は表さない。
 > `newpkg`（紫）は [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) では「新規追加パッケージまたは型」を指すが、本図では新規追加ファイルに用いる。本タスクは新しいパッケージを追加しないため、パッケージ内の新旧を区別する用途に転用している。
 > **破線の枠は、同名の実装をビルドタグが選ぶ対を表す。** `getGroupMembers の実装` と `adviseIncompleteness の実装` の2つがそれにあたる。枠はコンポーネントではなくまとまりを表すものであり、凡例の色分けとは別の記法である。
 > **枠に出入りする矢印は、その枠に含まれる実装のどちらにも同じように当てはまる。** `manager.go` から枠への矢印は「そのビルドに存在するほうを呼ぶ」ことを表す（`getGroupMembers` の場合は `New()` が `enumerateGroupMembers` フィールドに保持し、キャッシュ層がそれを呼ぶ）。枠の内側から出る `membership_files.go` への矢印だけが、枠の一方——非 CGO 版——に固有である。
