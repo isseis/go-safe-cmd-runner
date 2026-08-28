@@ -6,9 +6,9 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-08-27 |
-| Review date | 2026-08-27 |
+| Review date | 2026-08-28 |
 | Reviewer | isseis |
-| Comments | 2026-08-27: 設計レビュー中の指摘により AC-30（`netgroup` 行が判定の対象外であることの利用者向け文書への明記）を追加。要承認 |
+| Comments | 2026-08-28: 設計レビューの結果を反映して承認。AC-30（`netgroup` 行が判定の対象外であることの明記）と AC-31（`cmd/runner` の起動時確定）を追加し、AC-21 の文言を実装構造に合わせて差し替えた。`/etc/nsswitch.conf` 不在時の扱いは AC-03 のまま据え置く |
 
 ## 関連 Issue
 
@@ -56,7 +56,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 1. CGO 版 `precomputeEnumerationEnvironment()` を空実装から `/etc/nsswitch.conf` の分類へ変え、CGO 版 `getGroupMembers` が返す `groupEnumeration` の完全性にその判定を反映すること。
 2. `nsswitch.go` の分類器（`classifyNSSCompleteness`・`classifyNSSSources`・`nssSources`・`splitNSSTokens`・`completeNSSSources`）と、プロセス単位で判定を1度だけ確定させる仕組み（`nsswitchVerdict` とその memo、`nssCompletenessReporter`）を、両ビルドが共有する位置へ移すこと。
 3. 不完全と判定した場合のエラーメッセージの「事実」と「回復手段」を、ビルドごとに正しい内容にすること。
-4. 起動時（`EnsurePermissionCheckUID` 経由）に、CGO ビルドでもプロセス1回きりの警告を出すこと。
+4. 起動時に、CGO ビルドでもプロセス1回きりの警告を出すこと。`record`・`verify` は既存の `EnsurePermissionCheckUID` 経由で、`runner` は完全性判定の確定だけを行う入口を新たに設けて行う。
 5. [`membership_cgo.go:331`](../../../internal/groupmembership/membership_cgo.go#L331) の doc コメント（「libc の NSS lookup は成功時つねに完全」）の是正。0168 の PR-6 が意図的に残した箇所である。
 6. 利用者向け文書の更新。[security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) §3 の CGO ビルドに関する「既知の制限」、および `record_command.ja.md`・`verify_command.ja.md` のトラブルシューティング。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 7. `CHANGELOG.ja.md`／`CHANGELOG.md` への破壊的変更の記載。
@@ -134,6 +134,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 
 - **AC-15**: CGO ビルドでも `EnsurePermissionCheckUID` の呼び出しにより、最初の group-writable ファイルに到達する前に完全性の判定が確定する。列挙が不完全と判定された場合、プロセスにつき1回だけ警告が記録される。
 - **AC-16**: AC-15 の警告は、非 CGO 版が出力するものと同じメッセージ・同じ属性名（`user_database_source`・`cause`・`detail`）を用いる。`user_database_source` の値はビルドに応じて `nss`／`passwd-file` になる。
+- **AC-31**: `cmd/runner` も起動時に完全性判定を確定させる。最初の group-writable な構成要素の判定に到達する前に、列挙が不完全であれば AC-15・AC-16 と同じ警告が記録される。この入口は完全性判定の確定だけを行い、基準UIDの解決を伴わない——`EnsurePermissionCheckUID` を呼ばせると `SUDO_UID` を検証できない場合の失敗が `runner` の起動時に新たに加わるためである。`record`・`verify` の挙動は変わらない。
 
 #### F-005: 影響範囲の限定
 
@@ -148,7 +149,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 **Acceptance Criteria**:
 
 - **AC-20**: AC-01〜AC-05 を検証するテストが、実行ホストの `/etc/nsswitch.conf` の内容に依存せず、与えられた内容だけから判定できる形で書かれている。CGO ビルドでも、SSSD が構成されたホストを模した内容に対する判定が検証できる。
-- **AC-21**: F-001・F-003 の各 AC を検証するテストが、検証対象の分岐を無効化すると失敗する（CLAUDE.md「テストは主張する理由で失敗できること」）。無効化の方法と失敗を確認した旨をコミットメッセージに記す。とくに AC-02 は、`precomputeEnumerationEnvironment()` を空実装に戻すと失敗しなければならない。
+- **AC-21**: F-001・F-003 の各 AC を検証するテストが、検証対象の分岐を無効化すると失敗する（CLAUDE.md「テストは主張する理由で失敗できること」）。無効化の方法と失敗を確認した旨をコミットメッセージに記す。とくに AC-02 は CGO 版 `getGroupMembers` が完全性判定ではなく `completeVerdict()` を載せるように戻すと、AC-15 は完全性判定を確定させる処理を空実装に戻すと、それぞれ失敗しなければならない。
 - **AC-22**: [`membership_semantics_test.go`](../../../internal/groupmembership/membership_semantics_test.go) の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` が対象とする環境集合が本タスクの前後で変わらない。同テストが比較するのはメンバー集合であり、完全性の申告を加えたことによって skip 条件が変わることはない。
 - **AC-23**: CGO ビルド・非 CGO ビルドの双方で `make test` と `make lint` が通過する。
 

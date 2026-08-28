@@ -12,9 +12,9 @@
 
 ## 0. 本書の位置づけ
 
-本書は [`01_requirements.md`](01_requirements.md)（status: `approved`）が定めた振る舞い（WHAT）を、実現機構（HOW）へ落とし込む設計文書である。対象は [#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)（CGO ビルドが SSSD 環境で group-writable の書き込みを許可してしまうこと）であり、要件 F-001〜F-007（AC-01〜AC-29）に対応する。
+本書は [`01_requirements.md`](01_requirements.md)（status: `approved`）が定めた振る舞い（WHAT）を、実現機構（HOW）へ落とし込む設計文書である。対象は [#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)（CGO ビルドが SSSD 環境で group-writable の書き込みを許可してしまうこと）であり、要件 F-001〜F-007（AC-01〜AC-31）に対応する。
 
-設計の中心は `internal/groupmembership` にある。公開 API のシグネチャは変えないため、他のパッケージには一切手を入れない。先行タスク 0168 が非 CGO ビルドについて作った仕組み——`/etc/nsswitch.conf` の分類、完全性判定のプロセス単位での確定、起動時の警告、拒否メッセージの組み立て——を、CGO ビルドからも使える位置へ移し、CGO 版の列挙にその完全性判定を反映させることが本タスクの実体である。
+設計の中心は `internal/groupmembership` にある。既存の公開 API のシグネチャは変えない。パッケージ外の変更は、`cmd/runner` の起動処理から完全性判定の確定を呼ぶ1箇所だけである（§4.4）。先行タスク 0168 が非 CGO ビルドについて作った仕組み——`/etc/nsswitch.conf` の分類、完全性判定のプロセス単位での確定、起動時の警告、拒否メッセージの組み立て——を、CGO ビルドからも使える位置へ移し、CGO 版の列挙にその完全性判定を反映させることが本タスクの実体である。
 
 要件書が設計に委ねた論点と、本書で結論を確定する箇所は次のとおりである。
 
@@ -24,11 +24,7 @@
 - 拒否メッセージの文面をビルドごとに分ける機構 → §3.3、§4.3
 - CGO ビルドで新たに拒否が起きることの影響範囲と移行 → §5.5
 
-**本書がレビューでの判断を求める事項**は3つある。いずれも該当箇所で詳述する。
-
-1. `/etc/nsswitch.conf` が存在しない場合を「完全」とする分岐の、CGO ビルドにおける根拠が未検証であること（§3.2.1、§5.4）。
-2. `cmd/runner` が起動時の完全性判定の確定を行わないこと（§4.4、§5.4）。
-3. AC-21 の文言が本設計の構造と噛み合わないこと（§7.2）。
+設計レビューで論点となった3件は 2026-08-28 に決着し、本文はその結論を反映している。経緯は付録A に記す。
 
 ## 用語
 
@@ -125,6 +121,7 @@ flowchart LR
     SFIO["internal/safefileio<br>canSafelyAccessFile"] -->|"CanCurrentUserSafelyWriteFile /<br>CanCurrentUserSafelyReadFile"| MGR
     DPC["internal/security<br>validateGroupWritePermissions"] -->|"CanUserSafelyWriteFile"| MGR
     RSV["internal/runner/base/security<br>Validator"] -->|"GetGroupMembers /<br>CanUserSafelyWriteFile"| MGR
+    RUN["cmd/runner<br>起動処理"] -->|"PrecomputeEnumerationEnvironment"| NSW
 
     subgraph GMP["internal/groupmembership"]
         MGR["manager.go<br>GroupMembership"]
@@ -157,6 +154,7 @@ flowchart LR
     MGR -->|"ビルドに応じて<br>どちらか一方を束ねる"| CGO
 
     class SFIO,DPC,RSV,FIL,NOC process
+    class RUN enhanced
     class NSW,CGO,MGR,CMP,THL enhanced
     class ADV,ADC,ADN newpkg
 
@@ -172,14 +170,14 @@ flowchart LR
 > `newpkg`（紫）は [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) では「新規追加パッケージまたは型」を指すが、本図では新規追加ファイルに用いる。本タスクは新しいパッケージを追加しないため、パッケージ内の新旧を区別する用途に転用している。
 > `manager.go` から `incompleteness_advice_cgo.go`・`incompleteness_advice_nocgo.go` への2本の実線矢印は、`manager.go` が同名の関数を呼び、その実体をビルドタグがどちらか一方に決めることを表す。
 > **ビルドをまたぐ識別子の不変条件**: `nsswitch.go` と `manager.go` はビルドタグを持たないが、それぞれ `userDatabaseSource` と `adviseIncompleteness` というビルドごとに定義が分かれる識別子を参照する。どのビルド構成でも、これらがちょうど1つずつ定義されていなければコンパイルが通らない。この関係を破線矢印で示している。
-> `internal/safefileio`・`internal/security`・`internal/runner/base/security` はいずれも無変更である（AC-18）。
+> `internal/safefileio`・`internal/security`・`internal/runner/base/security` はいずれも無変更である（AC-18）。`cmd/runner` は起動処理から完全性判定の確定を呼ぶ1行だけを変更する（AC-31、§4.4）。判定ロジックには触れない。
 
 ### 2.2 コンポーネント配置
 
 | ファイル | ビルドタグ | 本タスクでの変更 |
 |---|---|---|
 | `completeness.go` | なし | `causeNSSSources` の doc コメントを両ビルドで正しい表現へ改める（後述）。型そのものは変更しない |
-| `nsswitch.go` | **なし**（`//go:build !cgo \|\| test` を外す） | 完全性判定をプロセス単位で確定させる仕組み（`nsswitchVerdict`・その memo・警告レポータの共有インスタンス）と `precomputeEnumerationEnvironment` を `membership_nocgo.go` から移設する。分類の規則は変えないが、doc コメントを両ビルドで正しい表現へ改める（後述） |
+| `nsswitch.go` | **なし**（`//go:build !cgo \|\| test` を外す） | 完全性判定をプロセス単位で確定させる仕組み（`nsswitchVerdict`・その memo・警告レポータの共有インスタンス）と `precomputeEnumerationEnvironment` を `membership_nocgo.go` から移設する。`cmd/runner` 向けの公開の入口 `PrecomputeEnumerationEnvironment` を追加する。分類の規則は変えないが、doc コメントを両ビルドで正しい表現へ改める（後述） |
 | `membership_nocgo.go` | `//go:build !cgo` | 上記の移設分を取り除く。非 CGO 版 `getGroupMembers` の挙動は変えない |
 | `membership_cgo.go` | `//go:build cgo` | `getGroupMembers` が `nsswitchVerdict()` の完全性判定を申告に反映する。空実装の `precomputeEnumerationEnvironment` を削除する（移設先へ集約）。doc コメントを是正する（AC-07）。ロック順序の注記に `nsswitchVerdictMu` を加える |
 | `manager.go` | なし | `incompleteEnumerationError` が、事実と回復手段の文面の決定をビルド別の関数へ委譲する。組み立てと `switch` の構造は現行のまま |
@@ -250,7 +248,7 @@ sequenceDiagram
 ```
 
 > 実線矢印は呼び出し、破線矢印は戻り値を表す。
-> **この図は `record`・`verify` の流れである。`runner` は `EnsurePermissionCheckUID` を呼ばないため、最初の枠（起動時の確定と警告）を持たない。** `runner` では完全性判定が最初の列挙の時点で確定する。この差の影響は §4.4 と §5.4 に述べる。
+> この図は `record`・`verify` の流れである。`runner` は `EnsurePermissionCheckUID` ではなく `PrecomputeEnumerationEnvironment()` を起動処理から呼ぶため、最初の枠は同じだが、基準UIDの解決を伴わない（§4.4、AC-31）。
 
 ---
 
@@ -317,7 +315,7 @@ func precomputeEnumerationEnvironment()
 | `files` | `/etc/passwd`・`/etc/group` を自分で全行走査する | glibc の `nss_files` は同じ2ファイルを全行走査する。列挙を抑止する設定項目を持たない | 完全 |
 | `systemd` | このソースは無視され、ファイル走査の結果だけが残る | `nss-systemd` は `getpwent`・`getgrent` に応答するが、`systemd-homed` のユーザーは動的に現れるため網羅性は保証されない。**受容している既知の穴である**（§5.4） | 完全（受容） |
 | `sss`・`ldap`・`nis`・`winbind`・`compat`・`db`・未知の名前 | このビルドが自力で読めない | libc は読めるが、網羅的に列挙される保証が無い。SSSD の `enumerate = False`・`ignore_group_members = True` が代表例であり、いずれもエラーを伴わない | 不完全 |
-| `/etc/nsswitch.conf` が存在しない | ファイルが無ければ `files` 以外の参照先を設定する手段が無い | **未検証**（下記） | 完全（AC-03） |
+| `/etc/nsswitch.conf` が存在しない | ファイルが無ければ `files` 以外の参照先を設定する手段が無い | glibc のコンパイル時の既定構成に依存する。決定的な確認は取れていないが、受容できる根拠がある（下記） | 完全（AC-03） |
 | 行の形が読めない（重複・角括弧未閉じ・行が無い・ソース名が無い） | 何が設定されているか判定できない | 同左 | 不完全 |
 | `GOOS` が `linux` 以外 | `/etc/nsswitch.conf` を持たないため判定材料が無い | 同左（§3.4） | 不完全 |
 
@@ -327,13 +325,22 @@ func precomputeEnumerationEnvironment()
 
 `initgroups` は事情が異なる。補助グループの所属に実際に効くため、対象外としていることは受容した穴である（§5.4）。
 
-**`/etc/nsswitch.conf` が存在しない場合の扱いは、本設計で唯一の未検証事項である。** 非 CGO 版の根拠——「ファイルが無ければ他の参照先を設定する手段が無い」——は、自分でファイルを読む非 CGO 版にしか当てはまらない。CGO ビルドではこの場合 glibc がコンパイル時の既定構成にフォールバックし、その既定が `files` のみである保証を本設計は確認していない。歴史的に glibc の既定には `compat` が含まれ、`nss_compat` は `passwd_compat` の設定が無い場合に NIS を参照しうる。すなわち、この分岐は分類の中で唯一の許可側の既定でありながら、CGO ビルドでの根拠がもっとも弱い。
+**`/etc/nsswitch.conf` が存在しない場合を「完全」とする根拠は、ビルドによって強さが違う。** 非 CGO 版の根拠——「ファイルが無ければ他の参照先を設定する手段が無い」——は、自分でファイルを読む非 CGO 版にしか当てはまらない。CGO ビルドではこの場合 glibc がコンパイル時の既定構成にフォールバックするため、その既定が何であるかに依存する。歴史的に glibc の既定には `compat` が含まれ、`nss_compat` は `passwd_compat` の設定が無い場合に NIS を参照しうる。
 
-この扱いは AC-03 が「`/etc/nsswitch.conf` が存在しない場合は `files` とみなして「完全」と申告する」と明示しているため、設計の裁量で変えられない。**対応方針は次のとおりとする。**
+この点について、Ubuntu 26.04（glibc 2.43, aarch64）で次を確認した。
 
-1. 実装時に、対象とする glibc バージョンの既定構成を一次情報（glibc の `nss/nss_database.c` の既定テーブル）で確認し、結果を本節に追記する。
-2. 確認の結果、既定が `files` のみでないことが判明した場合は、`/etc/nsswitch.conf` 不在を CGO ビルドでのみ「不完全」に倒す変更を提案する。これは AC-03 の変更にあたるため、要件書の改訂を伴う（レビューでの判断を求める事項1）。
-3. 確認できないまま実装を進める場合は、受容する fail-open として §5.4 に残し、利用者向け文書にも記載する。
+| 調べたこと | 結果 |
+|---|---|
+| `libc.so.6` に埋め込まれた既定構成の文字列 | `compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` のいずれも存在しない。NSS ソース名として現れる裸の文字列は `files` のみ |
+| マウント名前空間で `/etc/nsswitch.conf` を隠した状態での実挙動 | **確認できず**。検証環境で `unshare` が `Operation not permitted` となる |
+
+文字列の証拠は「既定は `files`」を示唆するが、決定的ではない。**それでも本設計は AC-03 のまま「完全」と申告する。** 理由は次のとおりである。
+
+- fail-open が成立するには、「`/etc/nsswitch.conf` が無い」「compat/NIS が実際に機能している」「group-writable な保護対象ファイルがある」の3つが同時に必要である。SSSD も NIS も、導入すればこのファイルを書く。3条件が揃う構成は事実上存在しない。
+- 仮に既定が `compat` であっても、`/etc/passwd` に `+`・`-` 行が無く NIS ドメインが未設定であれば、挙動は `files` と同一である。
+- 逆に「不在ならば不完全」へ倒すと、`/etc/nsswitch.conf` を持たない最小構成のコンテナイメージがすべて、group-writable なパスで拒否される。頻度が高いのはこちらであり、得られる安全性はほぼ無い。
+
+実装時に、対象とする glibc バージョンの既定テーブル（upstream の `nss/nss_database.c`）を一度読んで結果を本節に追記する（§7.5）。確認の結果が上記と食い違った場合にのみ、AC-03 の改訂を提案する。
 
 **musl 環境の注記**: musl libc は NSS を持たず `/etc/nsswitch.conf` を読まない。musl 上の CGO ビルドは、libc が参照しないファイルの内容から分類することになる。この乖離は過剰拒否の方向にしか働かない（musl は常に `files` 相当であるのに、設定に `sss` があれば「不完全」と判定する）ため安全側だが、Alpine 系のコンテナでは想定外の拒否として現れうる。§5.4 に残存リスクとして記録する。
 
@@ -478,7 +485,7 @@ classDiagram
 
 | ファイル | 区分 | 責務と本タスクでの変更点 |
 |---|---|---|
-| `internal/groupmembership/nsswitch.go` | 変更 | ビルドタグを外す。`nsswitchVerdict`・`settleNsswitchVerdict`・memo 変数・`processNSSCompletenessReporter`・`precomputeEnumerationEnvironment` を受け入れる。分類の規則は無変更、doc コメント4箇所を是正（§2.2） |
+| `internal/groupmembership/nsswitch.go` | 変更 | ビルドタグを外す。`nsswitchVerdict`・`settleNsswitchVerdict`・memo 変数・`processNSSCompletenessReporter`・`precomputeEnumerationEnvironment` を受け入れる。公開の入口 `PrecomputeEnumerationEnvironment` を追加する（AC-31、§4.4）。分類の規則は無変更、doc コメント4箇所を是正（§2.2） |
 | `internal/groupmembership/membership_cgo.go` | 変更 | `getGroupMembers` が完全性判定を全成功経路に載せる。空実装の `precomputeEnumerationEnvironment` を削除。`getGroupMembers` の doc コメントに完全性の申告を明記。ロック順序の注記を更新（§2.2） |
 | `internal/groupmembership/membership_nocgo.go` | 変更 | 移設分を取り除く。列挙の挙動は無変更 |
 | `internal/groupmembership/completeness.go` | 変更 | `causeNSSSources` の doc コメントを是正（§2.2） |
@@ -487,6 +494,7 @@ classDiagram
 | `internal/groupmembership/incompleteness_advice_cgo.go` | 新規 | CGO 版の `adviseIncompleteness` |
 | `internal/groupmembership/incompleteness_advice_nocgo.go` | 新規 | 非 CGO 版の `adviseIncompleteness`（0168 の文面を移設） |
 | `internal/groupmembership/test_helpers.go` | 変更 | 完全性判定を固定・復元する補助関数を置く（`resetNsswitchClassification` を吸収） |
+| `cmd/runner/main.go` | 変更 | 起動処理から `PrecomputeEnumerationEnvironment()` を呼ぶ。ログ設定の後、最初の検証の前（AC-31、§4.4） |
 | `internal/groupmembership/membership_cgo_test.go` | 変更 | `TestGetGroupMembers_StatesComplete` を改める（§7.3）。AC-01〜AC-05・AC-11・AC-12 のテストを追加 |
 | `internal/groupmembership/membership_nocgo_test.go` | 変更 | `resetNsswitchClassification` と `TestEnsurePermissionCheckUIDPrecomputesEnvironment` を送り出す。非 CGO 固有のテストは残す |
 | `internal/groupmembership/manager_test.go` | 変更 | 上記の移設先。両ビルドで動く完全性判定まわりのテスト（AC-09・AC-15・AC-16）をここに置く。ビルドタグを持たないため両ビルドで実行される |
@@ -521,14 +529,14 @@ classDiagram
 | AC | 設計上の対応箇所 |
 |---|---|
 | AC-01, AC-02 | §3.1、§3.2、§3.2.1、§6.1 |
-| AC-03 | §3.2.1（不在・行の形の各扱いと、不在の扱いの未検証事項） |
+| AC-03 | §3.2.1（不在・行の形の各扱いと、不在の扱いを受容する根拠） |
 | AC-04 | §3.4 |
 | AC-05 | §3.1（`isUserOnlyGroupMember` の既存分岐が CGO ビルドでも到達する）、§6.2 |
 | AC-06 | §3.1（キャッシュ） |
 | AC-07 | §3.6（充足の内訳） |
 | AC-08, AC-09, AC-10 | §2.2、§3.2 |
 | AC-11, AC-12, AC-13, AC-14 | §3.3、§4.3 |
-| AC-15, AC-16 | §2.3、§4.4（`cmd/runner` の例外を含む）、§6.2 |
+| AC-15, AC-16, AC-31 | §2.3、§4.4、§6.2 |
 | AC-17, AC-18, AC-19 | §5.3 |
 | AC-20, AC-21, AC-22, AC-23 | §7 |
 | AC-24〜AC-29 | §3.6、§5.5 |
@@ -602,7 +610,7 @@ cannot confirm the members of group GID <gid>: <事実> (user_database_source=<�
 
 **非 CGO ビルドの事実と回復手段**（AC-13）: 0168 の `02_architecture.md` §4.3 が定めた表をそのまま維持する。文面の文字列は `incompleteness_advice_nocgo.go` へ移設するだけであり、1文字も変えない。上記の `causeNSSSources` の表現の見直しは CGO 版にのみ適用し、非 CGO 版には及ぼさない。両ビルドで同じ表現に揃えるほうが望ましくはあるが、AC-13 が非 CGO 版の文面の維持を明示的に求めているためである。この差は既知の分岐として本節に記録する。移設後も文面が同じであることは、既存のテストがそのまま通ることで確認する（§7.3）。
 
-### 4.4 記録（ログ）の方針（AC-15、AC-16）
+### 4.4 記録（ログ）の方針（AC-15、AC-16、AC-31）
 
 **完全性判定が「不完全」となったことは、プロセスにつき1回だけ `slog.Warn` で記録する。** この仕組み（`nssCompletenessReporter` と、その共有インスタンス）は 0168 が実装済みであり、本タスクでは `nsswitch.go` へ移設するだけである。移設によって CGO ビルドからも同じコードが呼ばれるため、メッセージ本文と属性名は自動的に一致する（AC-16）。
 
@@ -613,21 +621,34 @@ cannot confirm the members of group GID <gid>: <事実> (user_database_source=<�
 | 属性 `cause` | `incompletenessCause.String()`（`nss-sources`・`unsupported-platform`） |
 | 属性 `detail` | 分類器が付けた詳細（`passwd: sss`・`goos=darwin` など） |
 
-**記録の時点はバイナリによって異なる。** ここが本設計で運用上もっとも注意を要する点である。
+**3つのバイナリすべてで、警告は拒否に先行する。**
 
-| バイナリ | `EnsurePermissionCheckUID` の呼び出し | 完全性判定が確定する時点 |
+| バイナリ | 確定を起こす呼び出し | 完全性判定が確定する時点 |
 |---|---|---|
-| `cmd/record` | あり | 起動時。最初の group-writable ファイルに到達する前（AC-15） |
-| `cmd/verify` | あり | 同上 |
-| `cmd/runner` | **無い** | 最初の列挙の時点。すなわち最初の group-writable な構成要素の判定と同時 |
+| `cmd/record` | `EnsurePermissionCheckUID`（既存） | 起動時。最初の group-writable ファイルに到達する前（AC-15） |
+| `cmd/verify` | `EnsurePermissionCheckUID`（既存） | 同上 |
+| `cmd/runner` | `PrecomputeEnumerationEnvironment`（本タスクで追加） | 同上（AC-31） |
 
-`cmd/runner` は `SetProcessPermissionCheckUIDPolicy` のみを呼び、`EnsurePermissionCheckUID` を呼ばない。これは 0168 以前からの状態であり、本タスクが作る差ではないが、本タスクによって CGO ビルドでも拒否が起きるようになるため、影響を受ける利用者が増える。帰結は3つある。
+`cmd/runner` は従来 `SetProcessPermissionCheckUIDPolicy` のみを呼び、完全性判定を確定させる呼び出しを持たなかった。0168 以前からの状態であるが、本タスクによって CGO ビルドでも拒否が起きるようになるため、そのまま出荷すると3つの不都合が生じる。
 
-1. **警告が拒否に先行しない。** §5.5 の影響範囲の表が最大の失敗として挙げる「実行前検証が止まり、コマンドを1つも実行しないまま実行全体が中断する」経路は `runner` のものである。この経路では、警告と拒否が同時に出る。
-2. **記録の生成が `cacheMutex` の内側になる。** `getGroupEnumeration` は `cacheMutex` の書き込みロックを保持したまま列挙関数を呼ぶため、`runner` では `nsswitchVerdict()` の初回確定——したがって `slog.Warn` の発行——がそのロックの内側で起きる。0168 は、ログハンドラが任意のコードであることを理由に、記録を `nsswitchVerdictMu` の外で行う設計にしていた。`runner` ではその配慮が `cacheMutex` については効かない。プロセスにつき1回であり、ハンドラがこのパッケージを呼び返さない限り停止には至らないが、Slack ハンドラのように送信を伴うハンドラでは、その1回のあいだ `cacheMutex` が保持される。
-3. **AC-15 のテストが `runner` の挙動を固定しない。** テストが検証するのは `EnsurePermissionCheckUID` の側である。
+1. **警告が拒否に先行しない。** §5.5 の影響範囲の表が最大の失敗として挙げる「実行前検証が止まり、コマンドを1つも実行しないまま実行全体が中断する」経路は `runner` のものである。確定が遅延すると、警告と拒否が同時に出る。起動時警告の目的（拒否が起きる前に該当ホストを検知する）が、もっとも影響の大きいバイナリで果たされない。
+2. **記録の生成が `cacheMutex` の内側になる。** `getGroupEnumeration` は `cacheMutex` の書き込みロックを保持したまま列挙関数を呼ぶため、遅延確定では `slog.Warn` の発行がそのロックの内側で起きる。0168 は、ログハンドラが任意のコードであることを理由に、記録を `nsswitchVerdictMu` の外で行う設計にしていた。その配慮が `cacheMutex` については効かない。プロセスにつき1回とはいえ、送信を伴うハンドラでは、そのあいだ書き込みロックが保持される。
+3. **テストが `runner` の挙動を固定しない。** AC-15 のテストが検証するのは `EnsurePermissionCheckUID` の側である。
 
-**本タスクでの扱い**: 要件書「スコープ」4 は起動時の警告を「`EnsurePermissionCheckUID` 経由」と定めており、`cmd/runner` への呼び出し追加は範囲外である。加えて `EnsurePermissionCheckUID` は権限検査 UID の解決も行い、`SUDO_UID` が検証できない場合に失敗を返すため、`runner` に足すことは起動時の失敗条件を増やす変更でもある。したがって本設計では **`cmd/runner` を対象外とし、上記の帰結を残存リスクとして記録する**（§5.4）。恒久的な対処としては、完全性判定の確定だけを行う公開の入口を設けて `runner` の起動処理から呼ぶ形が考えられる。採否はレビューでの判断を求める事項2である。
+**したがって、完全性判定の確定だけを行う入口をパッケージに設け、`cmd/runner` の起動処理から呼ぶ**（AC-31）。
+
+```go
+// PrecomputeEnumerationEnvironment settles the completeness verdict for
+// this process, so that a build that cannot enumerate every member on this
+// host says so at startup rather than at the first group-writable path.
+// It resolves no UID and returns no error; EnsurePermissionCheckUID calls
+// it too, so record and verify need no change.
+func PrecomputeEnumerationEnvironment()
+```
+
+**`EnsurePermissionCheckUID` を `runner` に呼ばせる形は採らない。** あれは基準UIDの解決も行い、`SUDO_UID` が検証できない場合に失敗を返す。`runner` に足すと、本タスクと無関係な起動時失敗条件が増える。新しい入口は完全性判定の確定だけを行い、戻り値を持たない。
+
+この入口は非 CGO ビルドでも同じように働くため、配布バイナリが持っていた同じ欠落もあわせて解消する。呼び出し位置は、ログ設定が完了した後（警告が出力先に届くこと）かつ最初の検証が始まる前である。
 
 **「完全」と判定した場合は何も記録しない。** これは現行の挙動であり、本タスクでも変えない。結果として、拒否が起きなかったホストには、何をどう分類したかの痕跡が残らない。「ホスト A は許可し、ホスト B は拒否した。なぜか」という問いに対して、A 側の証拠が無いことになる。`slog.Debug` で確定した完全性判定を常に1行記録すれば解消するが、要件書に対応する AC が無いため本タスクでは加えず、§9 の拡張候補として記録する。
 
@@ -704,7 +725,7 @@ flowchart TD
 3. **合成が安全側である**: `combine` は「1つでも不完全なら不完全」であり、完全へ戻る経路がない。
 4. **CGO 版の成功経路が漏れなく完全性判定を載せる**: グループが存在しない場合を含め、`getGroupMembers` が返すすべての `groupEnumeration` に完全性判定が載る（§3.1）。`completeVerdict()` を直に書く分岐は CGO 版に残らない。
 
-**例外は1つだけある。** `/etc/nsswitch.conf` が存在しない場合を「完全」とする分岐であり、これは分類の中で唯一の許可側の既定である。非 CGO ビルドではこの分岐に確かな根拠があるが、CGO ビルドでの根拠は未検証である（§3.2.1）。本設計で最も注意を要する一点であり、実装時の確認事項として §3.2.1 に手順を定めた。
+**例外は1つだけある。** `/etc/nsswitch.conf` が存在しない場合を「完全」とする分岐であり、これは分類の中で唯一の許可側の既定である。非 CGO ビルドではこの分岐に確かな根拠があるのに対し、CGO ビルドでの根拠は glibc の既定構成に依存する。受容する判断とその理由は §3.2.1 に述べた。
 
 ### 5.3 副作用の範囲（AC-17〜AC-19）
 
@@ -738,8 +759,7 @@ flowchart TD
 
 | リスク | 内容 | 扱い |
 |---|---|---|
-| `/etc/nsswitch.conf` 不在を CGO ビルドでも「完全」とすること | 分類の中で唯一の許可側の既定であり、CGO ビルドでの根拠が未検証である（§3.2.1）。glibc の既定構成が `files` のみでない場合、この分岐は fail-open になる。ファイルを持たない最小構成のコンテナイメージや chroot が該当する | 実装時に glibc の既定構成を確認し、結果を §3.2.1 に追記する。`files` のみでない場合は AC-03 の改訂を提案する（レビューでの判断を求める事項1） |
-| `cmd/runner` に起動時の警告が無い | `runner` は `EnsurePermissionCheckUID` を呼ばないため、完全性判定は最初の列挙の時点で確定する。警告が拒否に先行せず、記録の生成が `cacheMutex` の内側で起きる（§4.4） | 本タスクでは対象外とする。恒久的な対処は `runner` の起動処理から完全性判定の確定を呼ぶことであり、採否はレビューでの判断を求める（事項2） |
+| `/etc/nsswitch.conf` 不在を CGO ビルドでも「完全」とすること | 分類の中で唯一の許可側の既定である。CGO ビルドでの根拠は glibc の既定構成に依存し、決定的な確認は取れていない（§3.2.1） | 受容する。fail-open の成立には「ファイルが無い」「compat/NIS が機能している」「group-writable な保護対象ファイルがある」の3条件が同時に要り、事実上存在しない。逆に倒すと最小構成のコンテナが一律に拒否される。実装時に glibc の既定テーブルを一度確認する（§7.5） |
 | `internal/security` の拒否に構造化された記録が無い | `runner` の実行前検証が止まる経路で、`slog` の記録も規則名も出ない（§4.1） | 本タスクでは変更しない（AC-18）。運用者向けの手順を AC-25 の文書に書く |
 | 過剰拒否（`gr_mem` が正しい SSSD 環境） | `ignore_group_members` を設定しておらず `enumerate = True` である SSSD 環境も、`sss` が構成されている時点で拒否される | 受容する。要件書「決定事項」のとおり、SSSD の設定を外から確かめる手段が無い以上、構成名から区別できない |
 | 過剰拒否（ローカルグループ） | 分類はホスト単位であるため、`/etc/group` にしか存在しないグループが付いた group-writable ファイルも、ディレクトリ統合ホストでは拒否される | 受容する。影響を受けるのは「ディレクトリ統合ホストで group-writable な保護対象ファイルを扱う」構成に限られ、そもそも推奨されない |
@@ -906,6 +926,7 @@ func resetNsswitchClassification(t *testing.T)
 | CGO 版 `incompleteEnumerationError` | メッセージが `user_database_source=nss`・`cause=`・`detail=` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること | AC-11 |
 | 非 CGO 版のメッセージ | 0168 が定めた文面が本タスクの前後で一致すること（既存テストをそのまま維持し、移設によって壊れないことを確認する） | AC-13 |
 | `EnsurePermissionCheckUID` | CGO ビルドでも呼び出し後に完全性判定が確定していること、および「不完全」の場合に警告が1回だけ記録され、属性が `user_database_source=nss`・`cause`・`detail` であること | AC-15, AC-16 |
+| `cmd/runner` の起動処理 | 起動処理が `PrecomputeEnumerationEnvironment()` を、ログ設定の後かつ最初の検証の前に呼ぶこと。呼び出し後に完全性判定が確定していること | AC-31 |
 | 読み取り判定 | 「不完全」を固定した状態でも `IsUserInGroup`・`CanCurrentUserSafelyReadFile` の結果が変わらないこと | AC-17 |
 | 完全な環境での書き込み判定 | 「完全」を固定した状態で、world-writable の拒否・非所有者の拒否・owner-writable の許可・唯一のメンバーの許可が従来どおりであること | AC-19 |
 
@@ -916,13 +937,14 @@ func resetNsswitchClassification(t *testing.T)
 | 無効化する内容 | 失敗するはずのテスト |
 |---|---|
 | CGO 版 `getGroupMembers` が `nsswitchVerdict()` ではなく `completeVerdict()` を載せるようにする | AC-01・AC-02 のテスト |
-| `precomputeEnumerationEnvironment` を空実装に戻す | AC-15 の `EnsurePermissionCheckUID` のテスト |
+| `precomputeEnumerationEnvironment` を空実装に戻す | AC-15 の `EnsurePermissionCheckUID` のテスト、および AC-31 のテスト |
+| `cmd/runner` の起動処理から `PrecomputeEnumerationEnvironment()` の呼び出しを外す | AC-31 のテスト |
 | `isUserOnlyGroupMember` の `completenessIncomplete` の枝を削り `default` へ倒す | AC-05 のテスト（返る sentinel が変わるため失敗する） |
 | CGO 版 `adviseIncompleteness` の文面を非 CGO 版のものに差し替える | AC-12 のテスト |
 | `classifyNSSCompleteness` の `goos != "linux"` の分岐を削る | AC-04 のテスト |
 | `resetNsswitchClassification` の呼び出しを AC-15・AC-16 のテストから外す | 実行順序によって空振りするようになる。§7.1 の独立性の要請を確かめる |
 
-> **AC-21 の文言との差**: AC-21 は「とくに AC-02 は、`precomputeEnumerationEnvironment()` を空実装に戻すと失敗しなければならない」と述べているが、本設計では成り立たない。完全性判定は `nsswitchVerdict()` が遅延して確定させるため、`precomputeEnumerationEnvironment` を空にしても最初の列挙の時点で確定し、AC-02 のテストは通る。AC-21 の文言どおりにするには、完全性判定を「`precomputeEnumerationEnvironment` が設定した変数」からしか読まない構成にする必要があるが、それは正しさを初期化順序の慣習に依存させることであり、CLAUDE.md「Enforce invariants with the type, not with convention」に反する。**AC-21 は要件書の改訂により、AC-02 を上表の1行目で、`precomputeEnumerationEnvironment` の空実装化を AC-15 で捉える形に改めることを提案する**（レビューでの判断を求める事項3）。改訂までの間は、上表が実際に確認する内容である。
+> AC-21 は 2026-08-28 の改訂で、AC-02 を上表の1行目が、完全性判定の確定処理の空実装化を AC-15・AC-31 の行が捉える形になった。改訂前の文言とその理由は付録A に記す。
 
 ### 7.3 更新が必要な既存テスト
 
@@ -970,9 +992,9 @@ func resetNsswitchClassification(t *testing.T)
 
 `incompletenessAdvice`・`implementationDefectAdvice`・`adviseIncompleteness` を導入し、`incompleteEnumerationError` を委譲する形に改める。非 CGO 版の文面は移設のみで変更しない。
 
-### Phase 4: 起動時の警告（AC-15、AC-16）
+### Phase 4: 起動時の警告（AC-15、AC-16、AC-31）
 
-Phase 1 の移設によって成立しているため、この段階では検証のみを行う。CGO ビルドで `EnsurePermissionCheckUID` が完全性判定を確定させ、警告が1回だけ出ることを確認する。`cmd/runner` が対象外であること（§4.4）を前提とした検証範囲とする。
+`record`・`verify` については Phase 1 の移設によって成立しているため、検証のみを行う。あわせて公開の入口 `PrecomputeEnumerationEnvironment` を追加し、`cmd/runner` の起動処理から呼ぶ。3つのバイナリすべてで、警告が最初の group-writable な判定に先行して1回だけ出ることを確認する。この Phase は他と独立しているため、単独の PR として切り出せる。
 
 ### Phase 5: 文書と残件一覧（AC-24〜AC-30）
 
@@ -982,7 +1004,6 @@ Phase 1 の移設によって成立しているため、この段階では検証
 
 ## 9. 将来の拡張性
 
-- **`cmd/runner` の起動時確定**: 完全性判定の確定だけを行う公開の入口を設け、`runner` の起動処理から呼ぶ。§4.4 が挙げた3つの帰結——警告が拒否に先行しないこと、記録の生成が `cacheMutex` の内側になること、テストが `runner` の挙動を固定しないこと——がまとめて解消する。本タスクの範囲外だが、優先度は高い。
 - **「完全」と判定した場合の記録**: 確定した完全性判定を `slog.Debug` で常に1行記録すれば、拒否が起きなかったホストでも分類の結果が追える（§4.4）。追加は1行であり、`nssCompletenessReporter` の内側で完結する。
 - **不完全時の列挙の短絡**: 「不完全」が確定しているホストでは、`isUserOnlyGroupMember` が列挙を呼ばずに拒否できる（§5.3）。実測に基づく別タスク・別コミットとして扱う。
 - **`initgroups` 行の分類**: 分類の対象を `passwd`・`group` の2行から `initgroups` へ広げる余地がある。両ビルドが同じ穴を持つため、広げる場合も分類器1箇所の変更で両ビルドに反映される。本設計の共有化はその前提を整えている。
@@ -1001,4 +1022,8 @@ Phase 1 の移設によって成立しているため、この段階では検証
   - 0168 の `02_architecture.md` §2.2 は、`nsswitch.go` に `!cgo || test` を付けた理由として「CGO ビルドでのみ有効な意味論一致テストが分類関数を呼ぶため」を、`nsswitchVerdict` を `membership_nocgo.go` に置いた理由として「CGO ビルドに production の呼び出し元が無く `unused` が報告しうるため」を挙げていた。本タスクで CGO 版の production コードが両者の呼び出し元になるため、どちらの理由も失効した（§2.2）。
   - 0168 の §3.4 は「CGO 版は libc の NSS を通じて列挙するため分類を必要としない」と述べ、§5.4 は SSSD 設定依存の不完全性を「本タスクでは扱わない」残存リスクとして記録していた。本タスクはその残存リスクへの対応であり、§3.4 の記述は本設計により置き換えられる。
 - **本タスクで退けた案**: 要件書「決定事項」のとおり、案2（`getUsersWithPrimaryGID` の `getpwent` 依存の解消）は代替 API が存在しないため成立せず、案3（group-writable の緩和そのものの廃止）はローカルユーザーだけのホストまで巻き込むため採らず、案4（警告のみ）は判定が `completeVerdict()` のままとなり fail-open が残るため単独では不十分である。案1（nsswitch 分類を CGO ビルドにも通す）を採り、案4 を起動時の警告として併走させた。
+- **2026-08-28 の設計レビューで決着した3件**:
+  - **`/etc/nsswitch.conf` 不在時の扱い**: 草案は、CGO ビルドにおける根拠が未検証であることを理由に「本設計で唯一の未検証事項」として扱い、確認結果しだいで AC-03 の改訂を提案するとしていた。Ubuntu 26.04（glibc 2.43）で `libc.so.6` に既定構成の文字列が無いことを確認し、加えて fail-open の成立に必要な3条件が事実上揃わないこと、逆に倒すと最小構成のコンテナが一律に拒否されることから、AC-03 のまま据え置き、根拠を示したうえで受容する残存リスクへ格下げした（§3.2.1、§5.4）。
+  - **`cmd/runner` の起動時確定**: 草案は要件書「スコープ」4 の文言（「`EnsurePermissionCheckUID` 経由」）を理由に対象外としていた。本タスクが `runner` の CGO ビルドに新たな拒否をもたらす以上、事前警告なしで出荷する組み合わせが最も悪いという判断により、スコープを広げて AC-31 を追加した（§4.4）。`EnsurePermissionCheckUID` を呼ばせる案は、基準UIDの解決に伴う起動時失敗条件が増えるため採らなかった。
+  - **AC-21 の文言**: 改訂前は「AC-02 は `precomputeEnumerationEnvironment()` を空実装に戻すと失敗しなければならない」と述べていた。完全性判定を遅延確定させる本設計では成り立たず、文言どおりにするには正しさを初期化順序の慣習に依存させることになる（CLAUDE.md「Enforce invariants with the type, not with convention」に反する）。AC-02 は完全性判定の載せ方で、確定処理の空実装化は AC-15・AC-31 で捉える形に改めた（§7.2）。
 - **非 linux プラットフォームの扱いの代替案**: 要件書「決定事項」は AC-04 の代替として「非 linux の CGO ビルドは現状どおり完全と申告する」を挙げ、採否をレビューに委ねていた。`approved` となった要件書の本文が「不完全」を採っているため、本設計はそれに従う（§3.4）。代替案を採る場合、緩和の正しさは Open Directory が網羅的なメンバー一覧を返すことに依拠し、それは SSSD と同じく外から確かめられない。
