@@ -712,7 +712,7 @@ flowchart TD
 
 **変更後**: `/etc/nsswitch.conf` が `sss` を指定している時点で列挙が「不完全」を申告するため、集合の中身によらず拒否される。攻撃者が集合に現れるかどうかは判定に影響しない。
 
-**この図が主張する範囲**: 上の閉鎖は `internal/groupmembership` の書き込み判定（`CanUserSafelyWriteFile` の group-writable 分岐）に限る。`internal/runner/base/security` の `Validator.checkWritePermission` は、非所有かつ group-writable なファイルについて「呼び出し元がグループのメンバーである」ことだけを根拠に書き込みを承認しており、唯一性も完全性も見ていない。この経路は列挙が縮むと拒否側に倒れるため新たな穴は生じないが、上の攻撃者像がこの経路で塞がれているわけではない。要件書「対象外」に従い本タスクでは扱わず、残件として記録する（AC-28）。
+**この図が主張する範囲**: 上の閉鎖は `internal/groupmembership` の書き込み判定（`CanUserSafelyWriteFile` の group-writable 分岐）に限る。`internal/runner/base/security` の `Validator.checkWritePermission` は、非所有かつ group-writable なファイルについて「呼び出し元がグループのメンバーである」ことだけを根拠に書き込みを承認しており、唯一性も完全性も見ていない。この経路は列挙が縮むと拒否側に倒れるため新たな穴は生じないが、上の攻撃者像がこの経路で塞がれているわけではない。要件書「対象外」に従い本タスクでは扱わず、[#1070](https://github.com/isseis/go-safe-cmd-runner/issues/1070) として分離した。方向が逆の誤検知（同じ関数が `GroupIds()` を使わないこと）は別件であり、AC-28 が残件として記録する。
 
 ### 5.2 フェイルクローズドの成立条件
 
@@ -768,7 +768,7 @@ flowchart TD
 | 完全性判定のプロセス単位の確定 | `/etc/nsswitch.conf` が危険側へ変更されても、プロセスが終わるまで観測しない。窓に上限はなく、`ClearCache()` でも解除されない | 受容する（0168 から継続）。実行内で判定が一貫することを優先した |
 | `/etc/nsswitch.conf` の記述と実際の参照先の乖離 | 設定ファイルの記述と libc が実際に読み込む NSS モジュールが一致しない構成では、分類が実態と食い違いうる。CGO ビルドでは libc が実際にそのモジュールを使うため、この乖離は非 CGO ビルドより直接的に効く | 受容する。分類の材料は設定ファイルのみであり、実際のモジュール読み込みを検査する手段は持たない。<br>乖離が「実際は `sss` を引くのに設定には無い」方向であれば分類は誤って「完全」と申告する。ただし、その状態を作れるのは `/etc/nsswitch.conf` を書き換えられる者だけであり、同じ権限があれば `/etc/group` を直接書き換えるほうが単純である |
 | 「完全」と判定した場合に痕跡が残らないこと | 拒否が起きなかったホストでは、何をどう分類したかがログから追えない（§4.4） | 本タスクでは加えない。`slog.Debug` での常時記録を §9 の拡張候補とする |
-| `Validator.checkWritePermission` の非唯一性許可 | 呼び出し元パッケージの別経路では、グループのメンバーであることだけを根拠に書き込みを承認する | 本タスクでは扱わない（§5.1）。要件書「対象外」に従う |
+| `Validator.checkWritePermission` の非唯一性許可 | 呼び出し元パッケージの別経路では、グループのメンバーであることだけを根拠に書き込みを承認する。列挙の完全性とは独立した方針の問題であり、完全な列挙のもとでも成立する | 本タスクでは扱わない（§5.1）。[#1070](https://github.com/isseis/go-safe-cmd-runner/issues/1070) として分離済み |
 | `internal/runner/base/security` の誤検知 | `file_validation.go` の `isUserInGroup` が `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境では正当なメンバーが「非メンバー」と判定される | 本タスクでは扱わない。安全側に倒れる誤検知であり方向が逆である。残件として記録する（AC-28） |
 
 ### 5.5 影響範囲と移行
