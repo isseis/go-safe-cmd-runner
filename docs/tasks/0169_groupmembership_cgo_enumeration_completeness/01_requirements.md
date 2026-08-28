@@ -66,7 +66,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 
 - **`IsUserInGroup` および読み取り判定（`CanCurrentUserSafelyReadFile`）の変更**。上記「背景」のとおり、この経路は initgroups を用いるため (a)・(b) の影響を受けない。列挙の完全性を読み取り側の判定材料に加えると、影響のない経路に過剰な拒否を持ち込むことになる。
 - **公開 API `GetGroupMembers` の戻り値の変更**。0168 の判断（完全性を表す型は package 内に閉じる）をそのまま踏襲する。
-- **`internal/runner/base/security` の誤検知の是正**。[`file_validation.go:319`](../../../internal/runner/base/security/file_validation.go#L319) の `isUserInGroup` は `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境では正当なメンバーが「非メンバー」と判定され、[`checkWritePermission`](../../../internal/runner/base/security/file_validation.go#L244) が正当なアクセスを `ErrInvalidFilePermissions` で弾く。安全側に倒れる誤検知であり、本タスクの fail-open とは方向が逆である。原因（`GroupIds()` を使っていないこと）も別であるため分離し、残件として記録する（AC-28）。
+- **`internal/runner/base/security` の誤検知の是正**。[`file_validation.go:319`](../../../internal/runner/base/security/file_validation.go#L319) の `isUserInGroup` は `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境では正当なメンバーが「非メンバー」と判定され、[`checkWritePermission`](../../../internal/runner/base/security/file_validation.go#L244) が正当なアクセスを `ErrInvalidFilePermissions` で弾く。安全側に倒れる誤検知であり、本タスクの fail-open とは方向が逆である。原因（`GroupIds()` を使っていないこと）も別であるため分離し、[#1071](https://github.com/isseis/go-safe-cmd-runner/issues/1071) として起票のうえ残件として記録する（AC-28）。
 - **SSSD の設定内容そのものの確認**。`/etc/sssd/sssd.conf` は root 専用、`sssctl` にも権限が要るため、`enumerate`・`ignore_group_members` の値を外から確かめる手段は事実上ない。この確認不能性こそが本タスクの前提である。
 - **group-writable の緩和そのものの廃止**。UPG（`user:user` の 0664/0775）は Debian/Ubuntu・RHEL とも既定であり、ローカルユーザーだけのホストまで巻き込むため採らない（Issue の案3）。
 - **リリースビルドの `CGO_ENABLED` 構成の変更**（[#1067](https://github.com/isseis/go-safe-cmd-runner/issues/1067)）。
