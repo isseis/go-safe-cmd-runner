@@ -351,7 +351,7 @@
 **判定理由**: 「孤立した高リスク・複雑なステップ」の枝に該当する。`nsswitchVerdict` が記録を出すのは latch が `false → true` に遷移した回だけであり、この状態遷移を取り違えると、書いたテストが**通るのに何も証明しない**（`useNsswitchVerdict` が latch を確定させるため `justSettled` が偽になり、記録が0件になる。Phase 1 の注記）。同じ罠を実際に一度踏んでいる。加えて本タスクで唯一 `cmd/runner` に配線を入れる Phase であり、順序の主張は AST 走査でしか確かめられない。**Conditional checks には該当しない**——新規の非 `_test.go` ソースはビルドタグを持たず（`nsswitch.go`・`cmd/runner/main.go` はいずれもタグ無し）、`identitymutationguard` の API 確認は cleanup/close/logout のライフサイクル呼び出しではなく、プロセス内のパッケージ変数は「外部の長寿命な状態」ではない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1076）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
