@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && test
 
 package groupmembership
 
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"os/user"
+	"runtime"
 	"strconv"
 	"syscall"
 	"testing"
@@ -178,14 +179,63 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 	assert.Contains(t, enumeration.members, currentUser.Username)
 }
 
-// TestGetGroupMembers_StatesComplete verifies that the cgo getGroupMembers
-// always reports a complete enumeration on success.
-func TestGetGroupMembers_StatesComplete(t *testing.T) {
+// TestGetGroupMembers_StatesTheHostVerdict verifies that the verdict the cgo
+// getGroupMembers reports agrees with how this host's own user database
+// configuration classifies. The expectation is derived from the classifier
+// rather than restated, so the rule lives in one place.
+//
+// On a host whose configuration classifies as complete this cannot fail, so
+// it is a host-agreement check rather than evidence that the settled verdict
+// is carried; TestGetGroupMembers_CarriesTheSettledVerdict covers that.
+func TestGetGroupMembers_StatesTheHostVerdict(t *testing.T) {
+	resetNsswitchClassification(t)
+
 	currentGID := getCurrentUserGID(t)
 
 	enumeration, err := getGroupMembers(currentGID)
 	require.NoError(t, err)
-	assert.Equal(t, completeVerdict(), enumeration.verdict)
+	assert.Equal(t, classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS), enumeration.verdict)
+}
+
+// TestGetGroupMembers_CarriesTheSettledVerdict verifies that whatever verdict
+// is settled for this process reaches the caller unchanged, both for a group
+// that exists and for one that does not. The verdicts planted here do not
+// come from this host, so an implementation that stated a fixed
+// completeVerdict() would fail on any host.
+func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
+	// Plants process-wide state, so no t.Parallel() here or in the subtests.
+	existingGID := getCurrentUserGID(t)
+
+	verdicts := []struct {
+		name    string
+		verdict completenessVerdict
+	}{
+		{name: "complete", verdict: completeVerdict()},
+		// A host running SSSD: libc returns members without error, but the
+		// source gives no guarantee that they are every member.
+		{name: "incomplete_nss_sources", verdict: incompleteVerdict(causeNSSSources, "passwd: sss")},
+		// The verdict a non-linux platform is classified with.
+		{name: "incomplete_unsupported_platform", verdict: incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")},
+	}
+	gids := []struct {
+		name string
+		gid  uint32
+	}{
+		{name: "group_exists", gid: existingGID},
+		{name: "group_does_not_exist", gid: unrelatedGID},
+	}
+
+	for _, v := range verdicts {
+		for _, g := range gids {
+			t.Run(v.name+"/"+g.name, func(t *testing.T) {
+				useNsswitchVerdict(t, v.verdict)
+
+				enumeration, err := getGroupMembers(g.gid)
+				require.NoError(t, err)
+				assert.Equal(t, v.verdict, enumeration.verdict)
+			})
+		}
+	}
 }
 
 func TestGetGroupMembers_MergedCountExceedsMaximum(t *testing.T) {

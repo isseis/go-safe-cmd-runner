@@ -294,25 +294,33 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 	return members, true, nil
 }
 
-// getGroupMembers returns all members of a group given its GID.
-//
-// Result is the union of explicit members (gr_mem) and users whose primary
-// GID matches the requested GID. This matches the non-CGO implementation
-// semantics.
-//
 // pwentMutex serialises all setpwent/getpwent/endpwent calls within this
 // package. It is held inside getUsersWithPrimaryGID.
-// Lock ordering: GroupMembership.cacheMutex -> pwentMutex.
+// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.
 // Reverse acquisition is forbidden.
 var pwentMutex sync.Mutex
 
+// getGroupMembers returns all members of a group given its GID, together
+// with what this host's user database configuration says about whether
+// libc enumerates them exhaustively.
+//
+// The member set is the union of explicit members (gr_mem) and users whose
+// primary GID matches the requested GID. This matches the non-CGO
+// implementation semantics. The completeness is the verdict settled for
+// this process: libc resolves every configured source, but a source such as
+// sss gives no guarantee that what it returns is every member.
 func getGroupMembers(gid uint32) (groupEnumeration, error) {
+	// Every path that returns successfully carries this one verdict:
+	// completeness is a property of the host's configuration, not of the
+	// GID that was asked about.
+	verdict := nsswitchVerdict()
+
 	members, found, err := getExplicitGroupMembers(gid)
 	if err != nil {
 		return groupEnumeration{}, err
 	}
 	if !found {
-		return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil
+		return groupEnumeration{members: []string{}, verdict: verdict}, nil
 	}
 
 	primary, err := getUsersWithPrimaryGID(gid)
@@ -325,7 +333,7 @@ func getGroupMembers(gid uint32) (groupEnumeration, error) {
 		return groupEnumeration{}, err
 	}
 
-	return groupEnumeration{members: merged, verdict: completeVerdict()}, nil
+	return groupEnumeration{members: merged, verdict: verdict}, nil
 }
 
 // getUsersWithPrimaryGID returns users whose primary GID matches the given GID.

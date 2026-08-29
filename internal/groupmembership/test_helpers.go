@@ -45,3 +45,27 @@ func resetNsswitchClassification(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
 }
+
+// useNsswitchVerdict fixes the completeness verdict for this process for the
+// duration of one test and clears it again afterwards, so that a test can
+// drive a whole enumeration from a chosen verdict without depending on the
+// host's own /etc/nsswitch.conf.
+//
+// Callers must not run in parallel with each other: the verdict it plants is
+// process-wide.
+//
+// Its callers are the cgo build's tests, which is why the linter's
+// CGO_ENABLED=0 run sees no caller. The helper stays here rather than in a
+// cgo-tagged file so that both builds' tests fix the verdict the same way.
+//
+//nolint:unused // only the cgo build's tests call this today
+func useNsswitchVerdict(t *testing.T, v completenessVerdict) {
+	t.Helper()
+
+	resetNsswitchClassification(t)
+
+	nsswitchVerdictMu.Lock()
+	defer nsswitchVerdictMu.Unlock()
+	nsswitchVerdictValue = v
+	nsswitchVerdictResolved = true
+}
