@@ -23,17 +23,14 @@ func newWithFixedEnumeration(members []string, verdict completenessVerdict) *Gro
 
 // resetNsswitchClassification clears the process-wide classification latch
 // and the reporter that shares its lifetime, so that a test can observe the
-// first classification of the process. It clears them again afterwards so
-// that a value one test planted cannot be read by the next.
+// first classification of the process -- including the reporter's one
+// emission per process, which an earlier test would otherwise have consumed.
+// It clears them again afterwards so that a value one test planted cannot be
+// read by the next.
 //
 // Callers must not run in parallel with each other: the latch is
 // process-wide, and clearing it mid-run would let another test observe a
 // classification that is being settled a second time.
-//
-// A test that asserts the startup warning is emitted must start here: the
-// reporter emits at most once per process, so any earlier test that settled
-// the classification would otherwise consume the single emission and leave
-// the assertion silently observing nothing.
 func resetNsswitchClassification(t *testing.T) {
 	t.Helper()
 

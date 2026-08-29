@@ -40,17 +40,15 @@ type nsswitchSnapshot struct {
 }
 
 // completeNSSSources is the allowlist of source names whose enumeration is
-// taken to be exhaustive on the strength of the configuration alone, on
-// either build. It is an allowlist rather than a list of dangerous names so
-// that a source neither build has heard of counts against completeness
-// instead of for it. "compat" is deliberately absent: it pulls NIS entries in
-// through the "+" and "-" lines, and neither build can confirm that those
-// entries are enumerated in full.
+// taken to be exhaustive from the configuration alone, on either build. It
+// is an allowlist rather than a list of dangerous names so that a source
+// neither build has heard of counts against completeness instead of for it.
+// "compat" is deliberately absent: it pulls NIS entries in through the "+"
+// and "-" lines, and neither build can confirm that those entries are
+// enumerated in full.
 //
-// "systemd" is an accepted gap rather than a confirmed case. Without cgo the
-// source is ignored and the file scan stands on its own, but under cgo
-// nss-systemd answers getpwent and getgrent, and systemd-homed users appear
-// dynamically, so its exhaustiveness is assumed and not established.
+// "systemd" is assumed rather than established: under cgo, nss-systemd
+// answers getpwent and getgrent, but systemd-homed users appear dynamically.
 var completeNSSSources = map[string]struct{}{
 	"files":   {},
 	"systemd": {},
@@ -107,28 +105,24 @@ func readNsswitchSnapshotFrom(path string) nsswitchSnapshot {
 // classifyNSSCompleteness decides whether this host's user database
 // configuration establishes that all members of a group are enumerated,
 // given the contents of /etc/nsswitch.conf and the target platform. Both
-// builds share this rule; what differs is why a source fails it, which each
-// build states in its own advice. It touches no files.
+// builds share this rule. It touches no files.
 func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenessVerdict {
 	// No platform other than Linux exposes its user database configuration in
-	// a form either build can classify, so every other platform is
-	// unclassifiable and therefore incomplete.
+	// a form either build can classify.
 	if goos != "linux" {
 		return incompleteVerdict(causeUnsupportedPlatform, "goos="+goos)
 	}
 
 	switch snapshot.state {
 	case nsswitchAbsent:
-		// Without cgo this is airtight: no file means no way to configure a
-		// source other than the local files. Under cgo it is a judgement
-		// call, because glibc falls back to a compile-time default whose
-		// contents are not established here. It is answered the same way
-		// because falling open needs three things at once -- no
-		// configuration file, a compat or NIS setup that actually resolves,
-		// and a group-writable protected file -- and anything that
-		// configures such a source writes this file. Denying instead would
-		// reject every minimal container image that ships without one, which
-		// is the far more common case and buys almost no safety.
+		// Without cgo this is airtight: no file, no way to name a source
+		// other than the local files. Under cgo it is a judgement call,
+		// since glibc falls back to a compile-time default not established
+		// here. Both are answered "complete" because falling open needs no
+		// configuration file AND a working compat or NIS setup AND a
+		// group-writable protected file, while anything configuring such a
+		// source writes this file -- whereas denying would reject every
+		// minimal container image that ships without one.
 		return completeVerdict()
 	case nsswitchRead:
 		return classifyNSSSources(snapshot.content)
