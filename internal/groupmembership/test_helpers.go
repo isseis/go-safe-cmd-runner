@@ -59,22 +59,18 @@ func clearNsswitchClassificationLocked() {
 // host's own /etc/nsswitch.conf.
 //
 // Callers must not run in parallel with each other: the verdict it plants is
-// process-wide. Planting happens in one critical section, so no other caller
-// can observe the moment between clearing and planting.
+// process-wide.
 //
 // The planted verdict is never reported: nothing settles it, so
 // processNSSCompletenessReporter stays unfired. A test that asserts on the
 // startup warning must instead call resetNsswitchClassification and let the
 // host's own classification settle.
 //
-// Only the cgo build calls this, and permanently so: the non-cgo build drives
-// the verdict through enumerateFromFiles, which takes it as an argument
-// because it has to combine it with the malformed lines it saw. That is why
-// the linter's CGO_ENABLED=0 run reports no caller. The helper stays beside
-// resetNsswitchClassification, whose state it manipulates, rather than moving
-// to a cgo-tagged file that would separate the two.
+// Only the cgo build will ever call this: the non-cgo build takes the verdict
+// as an argument to enumerateFromFiles, which has to combine it with the
+// malformed lines it saw. Hence the suppression below, which is permanent.
 //
-//nolint:unused // called only from //go:build cgo && test files; see above
+//nolint:unused // called only from //go:build cgo && test files
 func useNsswitchVerdict(t *testing.T, v completenessVerdict) {
 	t.Helper()
 

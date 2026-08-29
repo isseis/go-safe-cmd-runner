@@ -58,12 +58,10 @@ func TestAdviseIncompleteness_NoCGO(t *testing.T) {
 		},
 	}
 
-	// The causes this build reaches from a host condition are the ones above;
-	// causeUnspecified and an out-of-range value are covered through
-	// incompleteEnumerationError by manager_test.go. Checking the two sets
-	// against allIncompletenessCauses means a cause added later fails here
-	// instead of falling silently into the switch's default, where a host
-	// condition would be reported to the operator as a defect.
+	// The rows above are the causes a host condition produces; causeUnspecified
+	// and an out-of-range value are covered through incompleteEnumerationError
+	// by manager_test.go. The loop below enforces that between them they cover
+	// every defined cause.
 	covered := map[incompletenessCause]struct{}{causeUnspecified: {}}
 	for _, tt := range tests {
 		covered[tt.cause] = struct{}{}

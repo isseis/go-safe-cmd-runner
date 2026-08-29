@@ -8,8 +8,7 @@ type incompletenessAdvice struct {
 }
 
 // implementationDefectAdvice is the advice for a cause that no environment can
-// produce, so it is the same on every build: the denial points at the
-// enumeration implementation rather than at the host.
+// produce, so it is the same on every build.
 func implementationDefectAdvice(what string) incompletenessAdvice {
 	return incompletenessAdvice{
 		fact:        what,

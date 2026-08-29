@@ -180,14 +180,14 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 	assert.Contains(t, enumeration.members, currentUser.Username)
 }
 
-// TestGetGroupMembers_StatesTheHostVerdict verifies that the verdict the cgo
-// getGroupMembers reports agrees with how this host's own user database
-// configuration classifies. The expectation is derived from the classifier
-// rather than restated, so the rule lives in one place.
+// TestGetGroupMembers_StatesTheHostVerdict verifies that what the cgo
+// getGroupMembers reports agrees with how this host is classified. The
+// expectation comes from the classifier rather than being restated, so the
+// rule lives in one place.
 //
-// On a host whose configuration classifies as complete this cannot fail, so
-// it is a host-agreement check rather than evidence that the settled verdict
-// is carried; TestGetGroupMembers_CarriesTheSettledVerdict covers that.
+// On a host that classifies as complete this cannot fail, so it checks
+// agreement only; TestGetGroupMembers_CarriesTheSettledVerdict is what covers
+// the verdict being carried.
 func TestGetGroupMembers_StatesTheHostVerdict(t *testing.T) {
 	resetNsswitchClassification(t)
 
@@ -215,7 +215,6 @@ func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
 		// A host running SSSD: libc returns members without error, but the
 		// source gives no guarantee that they are every member.
 		{name: "incomplete_nss_sources", verdict: incompleteVerdict(causeNSSSources, "passwd: sss")},
-		// The verdict a non-linux platform is classified with.
 		{name: "incomplete_unsupported_platform", verdict: incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")},
 	}
 	gids := []struct {
@@ -232,11 +231,9 @@ func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
 				useNsswitchVerdict(t, v.verdict)
 
 				if g.gid == unrelatedGID {
-					// The row exists to reach the not-found return, which is
-					// the branch that used to state a fixed complete verdict.
-					// On a host where this GID does name a group it would
-					// silently become a copy of the row above, so say so
-					// rather than pass for the wrong reason.
+					// This row exists to reach the not-found return. On a host
+					// where the GID does name a group it would quietly become a
+					// copy of the row above, so fail instead.
 					_, found, err := getExplicitGroupMembers(g.gid)
 					require.NoError(t, err)
 					require.False(t, found, "this row needs a GID that names no group")
@@ -251,12 +248,12 @@ func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
 }
 
 // TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator verifies that a
-// settled incomplete verdict denies a group-writable path on a cgo build with
-// the production wiring in place. Every other test of the denial reaches it by
-// replacing GroupMembership.enumerateGroupMembers with a closure, so the cgo
+// settled incomplete verdict denies a group-writable path with the production
+// wiring in place. Every other test of the denial replaces
+// GroupMembership.enumerateGroupMembers with a closure, so the cgo
 // getGroupMembers is never on the stack there and could stop carrying the
-// verdict without any of them failing. The second call re-decides from the
-// membership cache, so the verdict survives a cache hit as well.
+// verdict without any of them failing. The second call answers from the
+// membership cache, so the verdict survives a cache hit too.
 func TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator(t *testing.T) {
 	// Plants process-wide state, so no t.Parallel().
 	useNsswitchVerdict(t, incompleteVerdict(causeNSSSources, "passwd: sss"))

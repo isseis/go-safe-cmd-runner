@@ -297,11 +297,9 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // pwentMutex serialises all setpwent/getpwent/endpwent calls within this
 // package. It is held inside getUsersWithPrimaryGID.
 // Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.
-// Reverse acquisition is forbidden. Today the last two are never nested:
-// nsswitchVerdict releases nsswitchVerdictMu before returning, and only then
-// is pwentMutex taken. cacheMutex, however, is held across the whole
-// enumeration by getGroupEnumeration; see the comment on nsswitchVerdict for
-// what that means for a log handler.
+// Reverse acquisition is forbidden. The last two are never nested today, since
+// nsswitchVerdict releases its lock before returning; cacheMutex is held
+// across the whole enumeration, which the comment on nsswitchVerdict covers.
 var pwentMutex sync.Mutex
 
 // getGroupMembers returns all members of a group given its GID, together
@@ -314,9 +312,8 @@ var pwentMutex sync.Mutex
 // this process: libc resolves every configured source, but a source such as
 // sss gives no guarantee that what it returns is every member.
 func getGroupMembers(gid uint32) (groupEnumeration, error) {
-	// Every path that returns successfully carries this one verdict:
-	// completeness is a property of the host's configuration, not of the
-	// GID that was asked about.
+	// Read up here so that every successful return below carries this one
+	// value: completeness is a property of the host, not of the GID asked about.
 	verdict := nsswitchVerdict()
 
 	members, found, err := getExplicitGroupMembers(gid)

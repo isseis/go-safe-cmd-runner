@@ -7,8 +7,6 @@ package groupmembership
 // through libc, so building with cgo is not a remediation it can offer: what
 // is left is to stop relying on the group for the path, or to configure the
 // user database with sources whose enumeration is exhaustive.
-//
-// The cause alone selects the advice: the detail text is never inspected.
 func adviseIncompleteness(cause incompletenessCause) incompletenessAdvice {
 	switch cause {
 	case causeUnsupportedPlatform:
@@ -17,10 +15,9 @@ func adviseIncompleteness(cause incompletenessCause) incompletenessAdvice {
 			remediation: "clear the group-writable bit on the path (chmod g-w)",
 		}
 	case causeNSSSources:
-		// One cause covers every shape of this defect, so the fact names them
-		// all and the detail says which one it was. The remediation says
-		// "only": adding files beside sss leaves the line unusable, because
-		// every source named has to be one whose enumeration is exhaustive.
+		// The remediation says "only" because every source named on the line
+		// has to be one whose enumeration is exhaustive: adding files beside
+		// sss leaves the line as unusable as it was.
 		return incompletenessAdvice{
 			fact:        "/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which",
 			remediation: "clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd)",

@@ -6,8 +6,6 @@ package groupmembership
 // offer for the given cause. This build scans the user database files itself,
 // so every cause it can reach is also resolved by building with cgo, where
 // libc consults whatever the host has configured.
-//
-// The cause alone selects the advice: the detail text is never inspected.
 func adviseIncompleteness(cause incompletenessCause) incompletenessAdvice {
 	switch cause {
 	case causeUnsupportedPlatform:
