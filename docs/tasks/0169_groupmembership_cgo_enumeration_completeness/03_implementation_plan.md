@@ -221,8 +221,10 @@
 
 > **Phase 2 で `cacheMutex` を保持したままログハンドラを呼ぶ経路が CGO ビルドにも生じる（レビュー指摘）。** `manager.go` の `getGroupEnumeration` は `cacheMutex.Lock()` を保持したまま `gm.enumerateGroupMembers(gid)` を呼ぶ。本 Phase で CGO 版 `getGroupMembers` が `nsswitchVerdict()` を呼ぶようになると、その中の `processNSSCompletenessReporter.report(slog.Default(), verdict)` が `cacheMutex`（再入不可の `sync.RWMutex`）の下で実行される。ハンドラは任意のコードであり、`safefileio` 経由で `CanCurrentUserSafelyWriteFile` → `getGroupEnumeration` へ戻るものがあれば自己デッドロックする。`nsswitchVerdict` の既存コメントは「記録はロックの外で出す」と述べているが、その対象は `nsswitchVerdictMu` だけであり `cacheMutex` を名指ししていない。なお本経路は非 CGO ビルドには既に存在する（`getGroupMembers` が `nsswitchVerdict()` を呼ぶため）ので、本 Phase が新設する欠陥ではなく CGO ビルドへ拡げるものである。通常の起動では `precomputeEnumerationEnvironment()` が先に確定させるため `justSettled` が偽になり `report` は呼ばれないが、その入口を通らない利用（ライブラリとしての利用、テスト）では成立しうる。本 Phase で次の2点を行う。ロック順序の注記の更新（`cacheMutex` → `nsswitchVerdictMu` → `pwentMutex`）とは別の問題であり、順序ではなく「ロック下で任意のコードを呼ぶこと」を扱う。
 
-- [ ] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。
-- [ ] `report` の呼び出しが `cacheMutex` の臨界区間の外で起きるようにする（`getGroupEnumeration` がキャッシュ書き込みロックを取る前に確定させる、など）。設計上の選択は実装時に決め、`02_architecture.md` §2.2 のロック順序の注記とあわせて記す。
+**対処は Phase 4 の作り替えに委ね、本 Phase では回避策を作らない**（2026-08-29 決定。下記「latch の作り替え」を参照）。遅延確定をやめて起動時の1回に固定すれば `report` は起動時＝ロックの外でしか走らなくなり、この経路自体が消えるためである。回避策を先に入れると、Phase 4 でそれを捨てることになる。
+
+- [ ] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。Phase 4 までの暫定の記録であり、作り替えの際にコメントごと消える。
+- [ ] Phase 2〜3 の間はこの経路が生きていることを受容する。**踏むには「`GroupMembership` へ戻る `slog` ハンドラ」が要るが、そのようなハンドラは現在存在しない**（production の goroutine は Slack 送信の2箇所のみで、いずれも群所属を参照しない）。
 
 ### Phase 3: 拒否メッセージのビルド別化（AC-11〜AC-14）
 
@@ -314,6 +316,16 @@
   - [ ] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "NewVerificationManager"}`
   - [ ] 既存の `onlyCallSite` を使い、3件がいずれもちょうど1件であること（空振りしないこと）と、位置が `SetupLogging` < `PrecomputeEnumerationEnvironment` < `NewVerificationManager` の順であることを検証する。
   - [ ] 既存の `TestStartupPrivilegeDropOrder` が持つ「control」サブテストに倣い、順序を入れ替えたソース文字列を `identitymutationguard.RefsInSourceWithOptions` に与えて、走査が実際に順序を見ていることを確かめるサブテストを置く。
+
+- [ ] **latch を作り替える（2026-08-29 決定。mutex を外し、起動時の1回に固定する）。** 本 Phase で3つのバイナリすべてが起動時に確定させるようになるため、ここが厳密化の自然な置き場である。Phase 3 以前に入れると、`cmd/runner` がまだ確定させないため group-writable なパスを全部拒否してしまう。
+  - [ ] 根拠: 現在のフローに `nsswitchVerdict()` を並行に呼ぶ経路は無い。production の `go`／`wg.Go` は Slack 送信の2箇所（`internal/logging/slack_sender.go`・`internal/runner/bootstrap/logger.go`）だけで、いずれも群所属を参照しない。コマンド実行は逐次である。したがって `nsswitchVerdictMu` は何も守っていない。
+  - [ ] `nsswitchVerdictMu`・`nsswitchVerdictResolved`・`settleNsswitchVerdict`（と `justSettled`）を削除する。`nsswitchVerdictValue` は「起動時に goroutine が存在しないうちに1回だけ書き、以後は読むだけ」の変数にし、その旨を英語のコメントで宣言する。
+  - [ ] `precomputeEnumerationEnvironment` が分類と `report` の両方を行い、`nsswitchVerdict()` は `nsswitchVerdictValue` を返すだけにする。「記録はロックの外で出す」というコメントは、ロックが無くなるため削除する。
+  - [ ] **未確定のまま列挙へ到達した場合は拒否する。** 追加のコードは不要である: ゼロ値 `completenessUnstated` が `manager.go` の `switch` の `default` に落ち、`unstatedCompletenessError` で拒否される。この「起動時に確定していなければ拒否」が成り立つことをテストで固定する。
+  - [ ] `TestNsswitchVerdictAgreesAcrossGoroutines` を削除する（守るべき並行性が無くなるため）。削除後に `go tool cover -func` が両構成で関数ごとに不変であることを確認する。
+  - [ ] `resetNsswitchClassification`・`useNsswitchVerdict` を、mutex を使わない形へ書き換える。
+  - [ ] `02_architecture.md` の §2.2（ロック順序の注記）・§3.2（`settleNsswitchVerdict` を含む3シンボルの提示）・§7.1 を、作り替え後の姿へ改訂する。改訂は本 Phase の実装と同じコミットで行う。
+  - [ ] §5.3 に無効化確認の行を足す: 起動時の確定を外した状態で、「未確定なら拒否される」ことを主張するテストが失敗すること。
 
 **完了判定条件**
 
