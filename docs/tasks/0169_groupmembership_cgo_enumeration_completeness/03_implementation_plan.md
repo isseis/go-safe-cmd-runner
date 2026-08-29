@@ -179,7 +179,7 @@
 **判定理由**: 「孤立した高リスク・複雑なステップ（並行制御）」の枝に該当する。プロセス全体で1つの latch（`nsswitchVerdictMu` と `processNSSCompletenessReporter.reported` の CAS）が、これまで一度も実行してこなかった CGO ビルドの実行経路に入る。しかもそれは `-race` つきで走る構成である。同時に、この活性化によって CGO ビルドの `record`・`verify` が起動時警告を出すようになる（Phase 1 冒頭の注記）——「移設するだけ」では済まない外部から観測できる変化であり、その意味を取り違えたまま「挙動は変わらない」と判断されると、警告の増加が回帰として扱われかねない。あわせて Conditional check の「ビルドタグ下でのコンパイル確認」にも該当する（`useNsswitchVerdict` を `//go:build test` の `test_helpers.go` に置く）。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1073）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
