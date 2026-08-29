@@ -17,13 +17,13 @@ func adviseIncompleteness(cause incompletenessCause) incompletenessAdvice {
 			remediation: "clear the group-writable bit on the path (chmod g-w)",
 		}
 	case causeNSSSources:
-		// The fact is worded to cover every shape this cause is attached to --
-		// a source that guarantees nothing, a line that cannot be read as
-		// written, a missing line, and a file that could not be read. Which
-		// one it was is what the detail says.
+		// One cause covers every shape of this defect, so the fact names them
+		// all and the detail says which one it was. The remediation says
+		// "only": adding files beside sss leaves the line unusable, because
+		// every source named has to be one whose enumeration is exhaustive.
 		return incompletenessAdvice{
-			fact:        "/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), its lines could not be read as written, or the file could not be read",
-			remediation: "clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with sources whose enumeration is exhaustive (files, systemd)",
+			fact:        "/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which",
+			remediation: "clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd)",
 		}
 	case causeMalformedLine:
 		// Only a build that scans the user database files itself can attach

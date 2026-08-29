@@ -50,6 +50,18 @@ const (
 	causeMalformedLine
 )
 
+// allIncompletenessCauses lists every defined cause. Advice for a cause is
+// build-specific and chosen by a switch in each build, so the tests range over
+// this rather than over a list of their own: a cause added above and left
+// unclassified would otherwise fall silently into a switch's default and tell
+// the operator to report their own host configuration as a defect.
+var allIncompletenessCauses = []incompletenessCause{
+	causeUnspecified,
+	causeUnsupportedPlatform,
+	causeNSSSources,
+	causeMalformedLine,
+}
+
 // String returns the cause name, used in error messages and skip reasons.
 func (c incompletenessCause) String() string {
 	switch c {
