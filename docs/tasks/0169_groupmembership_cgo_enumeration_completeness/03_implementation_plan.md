@@ -464,7 +464,7 @@
 | AC-18 | static | `internal/runner/base/security`・`internal/safefileio` | §3.1 の `AC-18` のコマンド（両パッケージの production コードに差分が無いこと）。実環境の列挙に依存するテストの更新は本タスクの挙動変更の当然の帰結であり、この保証の対象外とする |
 | AC-19 | test | `CanUserSafelyWriteFile` | `manager_test.go::TestCanUserSafelyWriteFile_CompleteEnumeration`（既存。「完全」を注入し、唯一のメンバーの許可と共有グループの拒否）、`::TestCanUserSafelyWriteFile`（既存。world-writable の一律拒否・非所有者の拒否・owner-writable の許可。`New()` を使うが権限ビットが group-writable でないため列挙に到達しない。§1.3(c)） |
 | AC-20 | test | `useNsswitchVerdict` を用いる各テスト | `membership_cgo_test.go::TestGetGroupMembers_CarriesTheSettledVerdict` が `useNsswitchVerdict` で完全性判定を固定し、実行ホストの `/etc/nsswitch.conf` を読まずに判定を検証する |
-| AC-20 | static | `nsswitch_test.go`・`membership_cgo_test.go` | §3.1 の `AC-20` のコマンド。2つの関数の**実在を確かめてから**、その本体にファイルを開く呼び出しが無いこと（ファイルに触れるのは `TestReadNsswitchSnapshotFrom` だけであること）を確認する。**実在の確認は省けない**——`awk` が関数を見つけられなければ空の入力が `rg` に渡り、テストを1行も書いていない状態で「一致無し」＝合格になる |
+| AC-20 | static | `nsswitch_test.go`・`membership_cgo_test.go` | §3.1 の `AC-20` のコマンド。2つの関数の**実在を確かめてから**、その本体にファイルを開く呼び出しが無いことを確認する。**この検査が言うのは対象の2関数についてだけである**——`membership_cgo_test.go::TestGetGroupMembers_StatesTheHostVerdict` は期待値を得るために `readNsswitchSnapshot()` を呼ぶため実行ホストの `/etc/nsswitch.conf` を読む。同テストはホストの分類との一致を確かめるものであり、完全性判定を固定して検証する側ではない。**実在の確認は省けない**——`awk` が関数を見つけられなければ空の入力が `rg` に渡り、テストを1行も書いていない状態で「一致無し」＝合格になる |
 | AC-21 | static | PR-1〜PR-3 の各ブランチ | §3.1 の `AC-21` のコマンドが `1` 以上を返す。**PR ごとに main へマージして次を新しいブランチで始めるため、`main..HEAD` には当該ブランチ分しか含まれない。** 各 Phase の完了判定条件で個別に確認する。PR-4（Phase 5）は §5.3 に担当行を持たないため対象外である |
 | AC-21 | manual | 同上 | §5.3 の `X1`〜`X9` の無効化確認を実施し、対応するテストが実際に失敗することを確かめる。各行の担当 Phase は同表の「実施する Phase」列が定める |
 | AC-22 | static | `membership_semantics_test.go` | §3.1 の `AC-22` のコマンド（同ファイルに差分が無いこと） |
@@ -778,5 +778,5 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 - [ ] 本計画書のレビューを受け、status を `approved` へ更新する
 - [ ] `approved` 後に Phase 1 から実装へ着手する
 - [ ] 実装中は各作業項目のチェックボックスをその都度更新する
-- [ ] Phase 2 で確認した glibc の既定構成の結果を `02_architecture.md` §3.2.1 へ追記する
+- [x] Phase 2 で確認した glibc の既定構成の結果を `02_architecture.md` §3.2.1 へ追記する
 - [ ] Phase 5 完了後、`02_architecture.md` §9 が挙げる拡張候補（「完全」と判定した場合の `slog.Debug` 記録、不完全時の列挙の短絡、`initgroups` 行の分類）を別タスクとして検討する

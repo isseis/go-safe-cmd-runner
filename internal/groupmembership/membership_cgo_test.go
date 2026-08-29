@@ -5,6 +5,7 @@ package groupmembership
 import (
 	"errors"
 	"math"
+	"os"
 	"os/user"
 	"runtime"
 	"strconv"
@@ -230,11 +231,45 @@ func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
 			t.Run(v.name+"/"+g.name, func(t *testing.T) {
 				useNsswitchVerdict(t, v.verdict)
 
+				if g.gid == unrelatedGID {
+					// The row exists to reach the not-found return, which is
+					// the branch that used to state a fixed complete verdict.
+					// On a host where this GID does name a group it would
+					// silently become a copy of the row above, so say so
+					// rather than pass for the wrong reason.
+					_, found, err := getExplicitGroupMembers(g.gid)
+					require.NoError(t, err)
+					require.False(t, found, "this row needs a GID that names no group")
+				}
+
 				enumeration, err := getGroupMembers(g.gid)
 				require.NoError(t, err)
 				assert.Equal(t, v.verdict, enumeration.verdict)
 			})
 		}
+	}
+}
+
+// TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator verifies that a
+// settled incomplete verdict denies a group-writable path on a cgo build with
+// the production wiring in place. Every other test of the denial reaches it by
+// replacing GroupMembership.enumerateGroupMembers with a closure, so the cgo
+// getGroupMembers is never on the stack there and could stop carrying the
+// verdict without any of them failing. The second call re-decides from the
+// membership cache, so the verdict survives a cache hit as well.
+func TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator(t *testing.T) {
+	// Plants process-wide state, so no t.Parallel().
+	useNsswitchVerdict(t, incompleteVerdict(causeNSSSources, "passwd: sss"))
+
+	uid := os.Getuid()
+	gm := New()
+
+	for _, call := range []string{"first_call", "cached_call"} {
+		t.Run(call, func(t *testing.T) {
+			canWrite, err := gm.CanUserSafelyWriteFile(uid, uint32(uid), getCurrentUserGID(t), 0o660)
+			assert.False(t, canWrite)
+			require.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+		})
 	}
 }
 
