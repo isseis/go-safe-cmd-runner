@@ -99,7 +99,7 @@
 
 対応する設計: `02_architecture.md` §2.2、§3.2。
 
-> **この Phase は「判定」を変えないが、「起動時の記録」は変える。** 移設と doc コメントの是正しか行わないため、許可/拒否の結論はどのビルドでも本 Phase の前後で変わらない。一方で、`EnsurePermissionCheckUID`（`manager.go`、ビルドタグ無し）は `precomputeEnumerationEnvironment()` を無条件に呼んでおり、CGO ビルドでは現在それが `membership_cgo.go` の空実装に束縛されている。本 Phase で定義が `nsswitch.go` の1つに揃うと、CGO ビルドでもこの呼び出しが分類まで到達する。その結果、**`passwd`・`group` が `files`・`systemd` 以外を含むホスト（および非 linux）では、`record`・`verify` の CGO ビルドが起動時に警告 `This build cannot enumerate every member of a group on this host` を `user_database_source=nss` つきで出すようになる。これは CGO ビルドがこれまで一度も出したことのない記録である。** AC-15・AC-16 が求める挙動そのものであり、本 Phase で実際に有効になるため、その検証テスト（`TestProcessNSSCompletenessReporterEmitsOncePerProcess`）と警告側の陽性対照（§5.5）も本 Phase に置く。`cmd/runner` への配線と公開の入口だけが Phase 4 に残る。
+> **この Phase は「判定」を変えないが、「起動時の記録」は変える。** 移設と doc コメントの是正しか行わないため、許可/拒否の結論はどのビルドでも本 Phase の前後で変わらない。一方で、`EnsurePermissionCheckUID`（`manager.go`、ビルドタグ無し）は `precomputeEnumerationEnvironment()` を無条件に呼んでおり、CGO ビルドでは現在それが `membership_cgo.go` の空実装に束縛されている。本 Phase で定義が `nsswitch.go` の1つに揃うと、CGO ビルドでもこの呼び出しが分類まで到達する。その結果、**`passwd`・`group` が `files`・`systemd` 以外を含むホスト（および非 linux）では、`record`・`verify` の CGO ビルドが起動時に警告 `This build cannot enumerate every member of a group on this host` を `user_database_source=nss` つきで出すようになる。これは CGO ビルドがこれまで一度も出したことのない記録である。** AC-15・AC-16 が求める挙動そのものであり、本 Phase で実際に有効になるため、その検証（既存の `nsswitch_test.go::TestNSSCompletenessReporter_Report`・`TestNSSCompletenessReporter_ReportsOnlyOnce`。タグ除去により両ビルドで実行される）と警告側の陽性対照（§5.5）も本 Phase に置く。`cmd/runner` への配線と公開の入口だけが Phase 4 に残る。
 
 **変更するファイル**: `internal/groupmembership/nsswitch.go`・`membership_nocgo.go`・`membership_cgo.go`・`completeness.go`・`test_helpers.go`・`nsswitch_test.go`・`membership_nocgo_test.go`・`manager_test.go`
 
@@ -675,7 +675,7 @@ Phase を単位に PR を切る。ただし **Phase 2 と Phase 3 は1つの PR 
 | `X5` | `isUserOnlyGroupMember` の `completenessIncomplete` の枝を削り `default` へ倒す | `manager_test.go::TestCanUserSafelyWriteFile_IncompleteEnumeration`（返る sentinel が変わる） | Phase 2 |
 | `X6` | CGO 版 `adviseIncompleteness` の文面を非 CGO 版のものに差し替える | `incompleteness_advice_cgo_test.go::TestAdviseIncompleteness_CGO` | Phase 3 |
 | `X7` | `classifyNSSCompleteness` の `goos != "linux"` の分岐を削る | `nsswitch_test.go::TestClassifyNSSCompleteness`（Phase 1 のタグ除去により CGO ビルドでも実行されることを、あわせて確かめる） | Phase 1 |
-| `X8` | `processNSSCompletenessReporter.report` の `CompareAndSwap` による1回限りの抑止を外す | `manager_test.go::TestProcessNSSCompletenessReporterEmitsOncePerProcess`（記録が2件になる） | Phase 1 |
+| `X8` | `nssCompletenessReporter.report` の `CompareAndSwap` による1回限りの抑止を外す（`r.reported.Store(true)` へ差し替える） | `nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce`（記録が3件になる） | Phase 1 |
 
 ### 5.4 新規に書く文書の突き合わせ
 
@@ -690,7 +690,7 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 - `make test` は `CGO_ENABLED=1`（`-race` つき）と `CGO_ENABLED=0` を順に実行する。`make lint` も同じ2構成で回る。両者の終了コードが 0 であることを各 Phase の完了判定条件とする。
 - **開発環境が `files` 構成である場合、新しい拒否も新しい警告も手元では現れない。** 次の2つを必ず行う。
   - [ ] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。
-  - [ ] **警告側の陽性対照（強制実行。Phase 1 で実施）。** 警告は Phase 1 で有効になるため、この確認も Phase 1 で行う。開発コンテナの `/etc/nsswitch.conf` の `passwd` 行を一時的に `passwd: sss` へ書き換え、`CGO_ENABLED=1` でビルドした `record` を1回起動して、`This build cannot enumerate every member of a group on this host` が `user_database_source=nss` つきで**1度だけ**出ることを目視する。同じ手順を `CGO_ENABLED=0` のビルドでも行い、`user_database_source=passwd-file` になることを確かめる。確認後は `/etc/nsswitch.conf` を必ず元に戻す。**この手順を省くと、警告が出る側の経路はどのテストでも踏まれない**——`TestNsswitchVerdictReportsWhatItSettled` は分類が「完全」になるホストでは「記録が無いこと」しか確かめず、`TestProcessNSSCompletenessReporterEmitsOncePerProcess` はレポータを直接呼ぶため確定からの連結を通らないためである（Phase 1 の注記）。
+  - [ ] **警告側の陽性対照（強制実行。Phase 1 で実施）。** 警告は Phase 1 で有効になるため、この確認も Phase 1 で行う。開発コンテナの `/etc/nsswitch.conf` の `passwd` 行を一時的に `passwd: sss` へ書き換え、`CGO_ENABLED=1` でビルドした `record` を1回起動して、`This build cannot enumerate every member of a group on this host` が `user_database_source=nss` つきで**1度だけ**出ることを目視する。同じ手順を `CGO_ENABLED=0` のビルドでも行い、`user_database_source=passwd-file` になることを確かめる。確認後は `/etc/nsswitch.conf` を必ず元に戻す。**この手順を省くと、警告が出る側の経路はどのテストでも踏まれない**——`TestNsswitchVerdictReportsWhatItSettled` は分類が「完全」になるホストでは「記録が無いこと」しか確かめず、`TestNSSCompletenessReporter_Report`・`TestNSSCompletenessReporter_ReportsOnlyOnce` はレポータを直接呼ぶため確定からの連結を通らないためである（Phase 1 の注記）。
 - `make deadcode` を Phase 1 と Phase 4 の完了時に実行し、`nsswitch.go` のタグ除去と公開の入口の追加によって到達不能コードが生じていないことを確かめる。
 
 ### 5.6 後方互換性の確認
