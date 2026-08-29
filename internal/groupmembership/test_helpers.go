@@ -45,13 +45,33 @@ func clearNsswitchClassification() {
 	processNSSCompletenessReporter.reported.Store(false)
 }
 
-// restoreStartupNsswitchClassification puts the process back into the state
-// TestMain left it in: the host's own classification, settled once. A test
-// that cleared or planted a verdict must restore it, or the tests that follow
-// would enumerate against an unstated classification and deny.
-func restoreStartupNsswitchClassification() {
-	clearNsswitchClassification()
+// startupNsswitchClassification is the state that settling the classification
+// once, the way a binary does at startup, left behind. Restoring from this
+// snapshot rather than classifying again keeps a cleanup from reading
+// /etc/nsswitch.conf a second time and from emitting the startup warning into
+// whatever logger a later test has installed.
+var startupNsswitchClassification struct {
+	verdict  completenessVerdict
+	reported bool
+}
+
+// settleStartupNsswitchClassification settles the classification for the test
+// binary the way record, verify and runner do at startup, and remembers the
+// state it produced so that restoreStartupNsswitchClassification can put it
+// back. TestMain calls it before any test runs.
+func settleStartupNsswitchClassification() {
 	precomputeEnumerationEnvironment()
+	startupNsswitchClassification.verdict = nsswitchVerdictValue
+	startupNsswitchClassification.reported = processNSSCompletenessReporter.reported.Load()
+}
+
+// restoreStartupNsswitchClassification puts the process back into the state
+// TestMain left it in. A test that cleared or planted a verdict must restore
+// it, or the tests that follow would enumerate against an unstated
+// classification and deny.
+func restoreStartupNsswitchClassification() {
+	nsswitchVerdictValue = startupNsswitchClassification.verdict
+	processNSSCompletenessReporter.reported.Store(startupNsswitchClassification.reported)
 }
 
 // useNsswitchVerdict fixes the completeness verdict for this process for the

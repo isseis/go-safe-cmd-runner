@@ -453,14 +453,12 @@ classDiagram
 
     class NSSClassification {
         <<nsswitch.go: 関数とプロセス単位の状態>>
-        -nsswitchVerdictMu sync.Mutex
-        -nsswitchVerdictResolved bool
         -nsswitchVerdictValue completenessVerdict
         -processNSSCompletenessReporter nssCompletenessReporter
         classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenessVerdict
         nsswitchVerdict() completenessVerdict
-        settleNsswitchVerdict() (completenessVerdict, bool)
         precomputeEnumerationEnvironment()
+        PrecomputeEnumerationEnvironment()
     }
 
     class CGOEnumeration {
@@ -491,16 +489,18 @@ classDiagram
 ```
 
 > 矢印 A → B は「A が B を用いる、または B を生成する」ことを表す。ラベルはその関係の内容である。`NSSClassification`・`CGOEnumeration`・`NoCGOEnumeration` は Go の型ではなく、`nsswitch.go`・`membership_cgo.go`・`membership_nocgo.go` に属するパッケージレベルの関数と変数を図示のためにまとめたものである。`CGOEnumeration` と `NoCGOEnumeration` は同名の関数を持つが、1つのバイナリにはビルドタグに応じてどちらか一方だけが存在する。
-> `NSSClassification` の4つの変数が、本タスクで `membership_nocgo.go` から移設される状態である。テストはこの状態を固定して列挙全体を駆動する（§7.1）。
+> `NSSClassification` の2つの変数が、本タスクで `membership_nocgo.go` から移設され、起動時に1回だけ書かれる状態である。テストはこの状態を固定して列挙全体を駆動する（§7.1）。
 
 ### 3.6 コンポーネント責務表
 
 | ファイル | 区分 | 責務と本タスクでの変更点 |
 |---|---|---|
-| `internal/groupmembership/nsswitch.go` | 変更 | ビルドタグを外す。`nsswitchVerdict`・`settleNsswitchVerdict`・memo 変数・`processNSSCompletenessReporter`・`precomputeEnumerationEnvironment` を受け入れる。公開の入口 `PrecomputeEnumerationEnvironment` を追加する（AC-31、§4.4）。分類の規則は無変更、doc コメント4箇所を是正（§2.2） |
-| `internal/groupmembership/membership_cgo.go` | 変更 | `getGroupMembers` が完全性判定を全成功経路に載せる。空実装の `precomputeEnumerationEnvironment` を削除。`getGroupMembers` の doc コメントに完全性の申告を明記。ロック順序の注記を更新（§2.2） |
+| `internal/groupmembership/nsswitch.go` | 変更 | ビルドタグを外す。`nsswitchVerdict`・確定した値を持つ変数・`processNSSCompletenessReporter`・`precomputeEnumerationEnvironment` を受け入れ、確定を起動時の1回に改める（§3.2）。公開の入口 `PrecomputeEnumerationEnvironment` を追加する（AC-31、§4.4）。分類の規則は無変更、doc コメント4箇所を是正（§2.2） |
+| `internal/groupmembership/membership_cgo.go` | 変更 | `getGroupMembers` が完全性判定を全成功経路に載せる。空実装の `precomputeEnumerationEnvironment` を削除。`getGroupMembers` の doc コメントに完全性の申告を明記。ロック順序の注記は据え置く（§2.2） |
 | `internal/groupmembership/membership_nocgo.go` | 変更 | 移設分を取り除く。列挙の挙動は無変更 |
 | `internal/groupmembership/completeness.go` | 変更 | `causeNSSSources` の doc コメントを是正（§2.2） |
+| `internal/groupmembership/testmain_test.go`・`internal/safefileio/testmain_test.go` | 新規 | `TestMain` が起動時の確定を本番のバイナリと同じ位置で1回だけ行う（§7.1） |
+| `internal/testutil/sourceorder/` | 新規 | `record`・`verify` の起動順序ガードが用いる、関数本体内の参照位置を取る補助（§7.1） |
 | `internal/groupmembership/manager.go` | 変更 | `incompleteEnumerationError` が文面の決定を `adviseIncompleteness` へ委譲する |
 | `internal/groupmembership/incompleteness_advice.go` | 新規 | `incompletenessAdvice` 型と `implementationDefectAdvice` |
 | `internal/groupmembership/incompleteness_advice_cgo.go` | 新規 | CGO 版の `adviseIncompleteness` |

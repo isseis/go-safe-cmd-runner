@@ -130,7 +130,14 @@ func TestStartupPrivilegeDropOrder(t *testing.T) {
 // and neither leaves a runtime trace on a host this build can enumerate
 // exhaustively, so the guard reads the source: settling before logging is set
 // up would send the warning nowhere, and settling after the first verification
-// would let a denial precede the warning that explains it.
+// would let a denial precede the warning that explains it. Both
+// verification-manager constructors are tracked, since which one runs depends
+// on --dry-run.
+//
+// The guard compares source positions, so it sees where the call is written
+// rather than whether it executes: a change that wrapped the call in a
+// condition, or returned above it, would keep this green. Nothing does so
+// today -- the call is a statement of run's own body.
 func TestEnumerationEnvironmentPrecomputeOrder(t *testing.T) {
 	t.Run("run settles the classification after logging and before verification", func(t *testing.T) {
 		sites, _ := identitymutationguard.FindRefsWithOptions(t, ".", enumerationOrderOptions())
@@ -138,15 +145,18 @@ func TestEnumerationEnvironmentPrecomputeOrder(t *testing.T) {
 		setupLogging := onlyCallSite(t, sites, "run", "SetupLogging")
 		precompute := onlyCallSite(t, sites, "run", "PrecomputeEnumerationEnvironment")
 		newVerification := onlyCallSite(t, sites, "run", "NewVerificationManager")
+		newDryRunVerification := onlyCallSite(t, sites, "run", "NewManagerForDryRun")
 
-		require.Equal(t, setupLogging.File, precompute.File,
-			"positions are only comparable within one file")
-		require.Equal(t, precompute.File, newVerification.File,
-			"positions are only comparable within one file")
+		for _, later := range []identitymutationguard.CallSite{precompute, newVerification, newDryRunVerification} {
+			require.Equal(t, setupLogging.File, later.File,
+				"positions are only comparable within one file")
+		}
 		assert.Less(t, setupLogging.Pos, precompute.Pos,
 			"run must set logging up before settling the classification, or the warning reaches no destination")
 		assert.Less(t, precompute.Pos, newVerification.Pos,
 			"run must settle the classification before the first verification, or a denial precedes the warning that explains it")
+		assert.Less(t, precompute.Pos, newDryRunVerification.Pos,
+			"the same must hold on the --dry-run path, which builds its verification manager elsewhere")
 	})
 
 	t.Run("control: the order assertions fail on reordered source", func(t *testing.T) {
@@ -154,9 +164,11 @@ func TestEnumerationEnvironmentPrecomputeOrder(t *testing.T) {
 			"import (\n" +
 			"\t\"github.com/isseis/go-safe-cmd-runner/internal/groupmembership\"\n" +
 			"\t\"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap\"\n" +
+			"\t\"github.com/isseis/go-safe-cmd-runner/internal/verification\"\n" +
 			")\n" +
 			"func run(runID string) error {\n" +
 			"\t_, _ = bootstrap.NewVerificationManager()\n" +
+			"\t_, _ = verification.NewManagerForDryRun()\n" +
 			"\tgroupmembership.PrecomputeEnumerationEnvironment()\n" +
 			"\t_ = bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{})\n" +
 			"\treturn nil\n" +
@@ -171,6 +183,8 @@ func TestEnumerationEnvironmentPrecomputeOrder(t *testing.T) {
 		assert.Greater(t, setupLogging.Pos, precompute.Pos,
 			"the scan must see the reordered source inside run's body, not merely find the calls")
 		assert.Greater(t, precompute.Pos, newVerification.Pos,
+			"the scan must see the reordered source inside run's body, not merely find the calls")
+		assert.Greater(t, precompute.Pos, onlyCallSite(t, sites, "run", "NewManagerForDryRun").Pos,
 			"the scan must see the reordered source inside run's body, not merely find the calls")
 	})
 }
@@ -230,6 +244,7 @@ func enumerationOrderOptions() identitymutationguard.Options {
 			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "SetupLogging"},
 			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/groupmembership", FuncName: "PrecomputeEnumerationEnvironment"},
 			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "NewVerificationManager"},
+			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/verification", FuncName: "NewManagerForDryRun"},
 		},
 	}
 }

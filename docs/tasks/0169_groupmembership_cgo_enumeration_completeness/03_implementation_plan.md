@@ -327,6 +327,7 @@
   - [x] `02_architecture.md` の §2.2（ロック順序の注記）・§3.2（`settleNsswitchVerdict` を含む3シンボルの提示）・§7.1 を、作り替え後の姿へ改訂する。改訂は本 Phase の実装と同じコミットで行う。
   - [x] §5.3 に無効化確認の行を足す: 起動時の確定を外した状態で、「未確定なら拒否される」ことを主張するテストが失敗すること（`X10`。`manager.go` の `default` の枝を無効化する形で実施した——起動時の確定を外すだけでは、この主張は通ったままになるためである）。あわせて「確定は1回だけ」を主張する `TestNsswitchVerdictSettlesOncePerProcess` の無効化確認 `X11` を加えた。
   - [x] **計画に無かった追加作業（2026-08-29）**: 確定が起動時の1回になったことで、起動時の確定を経ずに列挙するテストは拒否を受けるようになった。本番のバイナリと同じ起動状態をテストバイナリにも作るため、`internal/groupmembership/testmain_test.go` と `internal/safefileio/testmain_test.go`（いずれも `//go:build test`）に `TestMain` を1つずつ置き、`precomputeEnumerationEnvironment`（`safefileio` では公開の入口）を最初のテストの前に呼ぶ。あわせて `resetNsswitchClassification`・`useNsswitchVerdict` の `t.Cleanup` を、ゼロ値ではなくこの起動状態へ戻す形に改めた。production コードにテスト専用の分岐は加えていない。`02_architecture.md` §2.2 の配置表と §7.1 に同じ内容を反映した。
+  - [x] **レビュー指摘による追加（2026-08-29）**: (1) `cmd/record`・`cmd/verify` に起動順序ガードを追加した（上表 AC-31 の追加行、`X12`）。両者の `run` は `groupmembership.New().EnsurePermissionCheckUID` をメソッド値として取るため `identitymutationguard` の修飾子解決では届かない。関数本体内の参照位置を取る補助を `internal/testutil/sourceorder`（`//go:build test`）に置き、2パッケージから使う。(2) `cmd/runner` の順序ガードが `verification.NewManagerForDryRun` も追跡するようにした（`--dry-run` の経路では `bootstrap.NewVerificationManager` が実行されないため）。(3) `unstatedCompletenessError` の文面に「起動時に確定させていない」という第2の原因を加えた。起動時確定が唯一の確定手段になったため、従来の「列挙の実装の欠陥」だけを述べる文面は原因を取り違えさせる。(4) `restoreStartupNsswitchClassification` を、再分類ではなく `TestMain` が記録した起動時の状態からの復元に改めた（後続テストの logger へ警告が紛れ込むのを避けるため）。(5) `02_architecture.md` §3.5・§3.6 の記述を作り替え後の姿へ改訂した。
   - [x] `manager_test.go` に `TestUnsettledEnvironmentDeniesGroupWritableFile` を追加した。「未確定なら拒否される」が実装の性質として成り立つことを固定する（`ErrGroupMemberCompletenessUnstated` で拒否されること）。
 
 **完了判定条件**
@@ -489,6 +490,7 @@
 | AC-31 | test | `cmd/runner/main.go` `run` | `cmd/runner/startup_order_guard_test.go::TestEnumerationEnvironmentPrecomputeOrder`（`SetupLogging` < `PrecomputeEnumerationEnvironment` < `NewVerificationManager` の順であること。3件がちょうど1件ずつであることを要求して空振りを防ぐ。順序を入れ替えたソースで走査が実際に順序を見ていることを確かめる control サブテストを含む） |
 | AC-31 | test | `nsswitch.go` `PrecomputeEnumerationEnvironment` | `manager_test.go::TestPrecomputeEnumerationEnvironmentSettlesTheVerdict`（公開の入口を呼ぶ前は未確定であり、呼んだ後に完全性判定が確定していること）。**公開の入口を実際に呼ぶテストはこれだけである**——警告側のテストは共有レポータを直接の対象とするため、入口が消えても失敗しない |
 | AC-31 | static | `cmd/record`・`cmd/verify` | `rg -c 'PrecomputeEnumerationEnvironment' cmd/record/main.go cmd/verify/main.go` が一致無し（`record`・`verify` の挙動が変わらないこと。両者は `EnsurePermissionCheckUID` 経由のまま） |
+| AC-31 | test | `cmd/record`・`cmd/verify` の `run` | `cmd/record/startup_order_guard_test.go::TestEnumerationEnvironmentSettledBeforeDirCheck`・`cmd/verify/startup_order_guard_test.go::TestEnumerationEnvironmentSettledBeforeDirCheck`（`EnsurePermissionCheckUID` の参照が `checkDirPermissions`／`checkHashDirPermissions` に先行すること。**レビュー指摘により追加**: 上の静的検査は「新しい入口を呼んでいないこと」しか示さず、確定が起動時の1回になった後に本当に必要な性質——確定が最初のディレクトリ判定に先行すること——を誰も検証していなかった。両パッケージのテストは `deps` へスタブを注入するため実行時には踏めず、ソースを読む形で確かめる） |
 
 ### 3.1 検証コマンド集
 
@@ -701,6 +703,7 @@ Phase を単位に PR を切る。ただし **Phase 2 と Phase 3 は1つの PR 
 | `X8` | `nssCompletenessReporter.report` の `CompareAndSwap` による1回限りの抑止を外す（`r.reported.Store(true)` へ差し替える） | `nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce`（記録が3件になる） | Phase 1 |
 | `X10` | `manager.go` の `isUserOnlyGroupMember` の `switch` から `default` の拒否を外し、未確定の完全性が拒否されないようにする | `manager_test.go::TestUnsettledEnvironmentDeniesGroupWritableFile` | Phase 4 |
 | `X11` | `precomputeEnumerationEnvironment` の「確定済みなら何もしない」早期 return を外し、呼ばれるたびに分類し直すようにする | `manager_test.go::TestNsswitchVerdictSettlesOncePerProcess` | Phase 4 |
+| `X12` | `record`・`verify` の `run` で `EnsurePermissionCheckUID` の解決を `checkDirPermissions`／`checkHashDirPermissions` の後ろへ移す | `cmd/record`・`cmd/verify` の `startup_order_guard_test.go::TestEnumerationEnvironmentSettledBeforeDirCheck` | Phase 4 |
 
 ### 5.4 新規に書く文書の突き合わせ
 

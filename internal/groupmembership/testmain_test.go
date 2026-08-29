@@ -14,6 +14,6 @@ import (
 // answer for a binary that never settled the classification -- not for one
 // that did.
 func TestMain(m *testing.M) {
-	precomputeEnumerationEnvironment()
+	settleStartupNsswitchClassification()
 	os.Exit(m.Run())
 }
