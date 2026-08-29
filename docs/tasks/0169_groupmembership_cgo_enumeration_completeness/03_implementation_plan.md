@@ -285,7 +285,7 @@
 > **Phase 2 と Phase 3 を1つの PR にまとめる理由。** 2つを別々の PR にすると、その間 `main` は「CGO ビルドで拒否するが、非 CGO 版の文面で `CGO_ENABLED=1` でのビルドを勧める」状態になる。既に `CGO_ENABLED=1` でビルドしている利用者を、既に居る場所へ誘導する案内であり、AC-12 が無くそうとしているもの、および §9「運用への案内」が成功基準に挙げているものそのものである。Phase 3 は Phase 2 に依存しない（`adviseIncompleteness` の3層分割は単独でグリーンになる）ため、順序を入れ替えれば窓は塞げるが、それには承認済みの `02_architecture.md` §8 の Phase 順序の改訂が要る。Phase の順序を保ったまま窓を無くせる本まとめを採る。両 Phase とも `internal/groupmembership`1パッケージに閉じており、まとめても1つの関心——「CGO ビルドを fail-closed にし、その理由と回復手段を正しく伝える」——に収まる。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1075）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
