@@ -1622,3 +1622,192 @@ func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
 
 	assert.Equal(t, 1, calls)
 }
+
+// TestNsswitchVerdictSettlesOncePerProcess verifies that the classification
+// is settled once and reused. Re-reading /etc/nsswitch.conf per call would
+// let a permission decision change halfway through a run, which is a denial
+// the operator cannot reproduce.
+func TestNsswitchVerdictSettlesOncePerProcess(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	// Plant a value the host itself could never produce: a second call that
+	// classified again would overwrite it and return the host's own answer.
+	planted := incompleteVerdict(causeUnsupportedPlatform, "planted by TestNsswitchVerdictSettlesOncePerProcess")
+	require.NotEqual(t, planted, settled)
+	nsswitchVerdictMu.Lock()
+	nsswitchVerdictValue = planted
+	nsswitchVerdictMu.Unlock()
+
+	assert.Equal(t, planted, nsswitchVerdict())
+}
+
+// TestNsswitchVerdictAgreesAcrossGoroutines verifies that concurrent callers
+// all receive the classification that was settled, whichever of them settled
+// it.
+func TestNsswitchVerdictAgreesAcrossGoroutines(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	const callers = 16
+	verdicts := make([]completenessVerdict, callers)
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := range callers {
+		go func() {
+			defer wg.Done()
+			verdicts[i] = nsswitchVerdict()
+		}()
+	}
+	wg.Wait()
+
+	for _, v := range verdicts {
+		assert.Equal(t, verdicts[0], v)
+	}
+}
+
+// TestNsswitchVerdictReportsWhatItSettled verifies that settling the
+// classification is what drives the startup warning, and that it drives it
+// exactly when the classification is not complete.
+//
+// On a host this build can enumerate exhaustively the expectation is that
+// nothing was recorded, which alone would also hold if the reporter were
+// never called at all. The reverse direction -- that an incomplete
+// classification does produce the record -- is what the forced run described
+// in the plan confirms, since forcing it from inside the test would require
+// a seam in production code that exists only for tests.
+func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	assert.Equal(t, settled.completeness != completenessComplete,
+		processNSSCompletenessReporter.reported.Load(),
+		"the startup warning must be emitted exactly when the classification is not complete")
+}
+
+// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
+// startup entry point settles the NSS classification, so that a host this
+// build cannot enumerate says so when record or verify starts rather than at
+// the first group-writable file.
+func TestEnsurePermissionCheckUIDPrecomputesEnvironment(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	// The UID resolution may legitimately fail on some hosts; what is under
+	// test is that the classification was settled before that could matter.
+	_ = New().EnsurePermissionCheckUID()
+
+	nsswitchVerdictMu.Lock()
+	defer nsswitchVerdictMu.Unlock()
+	assert.True(t, nsswitchVerdictResolved, "EnsurePermissionCheckUID must settle the NSS classification")
+}
+
+// TestClassifyNSSCompletenessAgreesAcrossBuilds pins the classification both
+// builds must reach for the same configuration. It lives in this file, which
+// carries no build tag, so that the compiler itself guarantees the same
+// expectations run under cgo and without it.
+//
+// Exhaustive coverage of the classification rule stays in
+// nsswitch_test.go::TestClassifyNSSCompleteness; what this table adds is the
+// claim that the two builds do not diverge.
+func TestClassifyNSSCompletenessAgreesAcrossBuilds(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		snapshot  nsswitchSnapshot
+		want      enumerationCompleteness
+		wantCause incompletenessCause
+	}{
+		{
+			name:     "files only",
+			snapshot: nsswitchSnapshot{state: nsswitchRead, content: "passwd: files\ngroup: files\n"},
+			want:     completenessComplete,
+		},
+		{
+			name:     "files and systemd",
+			snapshot: nsswitchSnapshot{state: nsswitchRead, content: "passwd: files systemd\ngroup: files systemd\n"},
+			want:     completenessComplete,
+		},
+		{
+			name:      "sss cannot be confirmed exhaustive",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files sss\ngroup: files sss\n"},
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:      "ldap cannot be confirmed exhaustive",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: ldap\ngroup: ldap\n"},
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:     "absent file leaves the local files as the only source",
+			snapshot: nsswitchSnapshot{state: nsswitchAbsent},
+			want:     completenessComplete,
+		},
+		{
+			name:      "read failure is not absence",
+			snapshot:  nsswitchSnapshot{state: nsswitchReadFailed, err: os.ErrPermission},
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:      "duplicated passwd line",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files\npasswd: files\ngroup: files\n"},
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+		{
+			name:      "unclosed action token hides what follows it",
+			snapshot:  nsswitchSnapshot{state: nsswitchRead, content: "passwd: files [NOTFOUND=return\ngroup: files\n"},
+			want:      completenessIncomplete,
+			wantCause: causeNSSSources,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := classifyNSSCompleteness(tt.snapshot, "linux")
+			assert.Equal(t, tt.want, got.completeness)
+			assert.Equal(t, tt.wantCause, got.cause)
+		})
+	}
+}
+
+// TestProcessNSSCompletenessReporterEmitsOncePerProcess verifies that the
+// reporter instance the whole process shares emits the warning at most once,
+// and that the record names the user database this build consults. Both
+// builds run it, so the same assertion demands "nss" under cgo and
+// "passwd-file" without it.
+//
+// nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce makes the
+// once-only claim about a locally declared reporter. What is under test here
+// is the shared instance together with resetNsswitchClassification: the pair
+// is what lets a test observe the single emission an already-settled process
+// would otherwise have consumed.
+func TestProcessNSSCompletenessReporterEmitsOncePerProcess(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	handler := tu.NewLogRecorder(nil)
+	original := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(original) })
+
+	verdict := incompleteVerdict(causeNSSSources, "passwd: sss")
+	processNSSCompletenessReporter.report(slog.Default(), verdict)
+	processNSSCompletenessReporter.report(slog.Default(), verdict)
+
+	records := handler.Records()
+	require.Len(t, records, 1)
+
+	assert.Equal(t, slog.LevelWarn, records[0].Level)
+	assert.Equal(t, nssCompletenessMessage, records[0].Message)
+	assert.Equal(t, map[string]any{
+		"user_database_source": userDatabaseSource,
+		"cause":                causeNSSSources.String(),
+		"detail":               "passwd: sss",
+	}, records[0].Attrs)
+}

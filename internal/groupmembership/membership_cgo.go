@@ -328,13 +328,6 @@ func getGroupMembers(gid uint32) (groupEnumeration, error) {
 	return groupEnumeration{members: merged, verdict: completeVerdict()}, nil
 }
 
-// precomputeEnumerationEnvironment has nothing to resolve for the cgo build:
-// libc's NSS-backed lookups always report a complete enumeration on success
-// (see getGroupMembers above), so there is no environment fact to determine
-// ahead of the first enumeration.
-func precomputeEnumerationEnvironment() {
-}
-
 // getUsersWithPrimaryGID returns users whose primary GID matches the given GID.
 func getUsersWithPrimaryGID(gid uint32) ([]string, error) {
 	pwentMutex.Lock()

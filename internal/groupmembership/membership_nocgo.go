@@ -7,10 +7,7 @@ package groupmembership
 
 import (
 	"fmt"
-	"log/slog"
-	"runtime"
 	"strings"
-	"sync"
 )
 
 // userDatabaseSource names the user database this build consults for user
@@ -93,56 +90,4 @@ func enumerateFromSources(groupSrc, passwdSrc dbSource, gid uint32, nssVerdict c
 	}
 
 	return groupEnumeration{members: result, verdict: verdict}, nil
-}
-
-// precomputeEnumerationEnvironment resolves whatever environment facts this
-// build needs before the first enumeration, so that a build unable to
-// enumerate every member says so at startup rather than at the first
-// group-writable file.
-func precomputeEnumerationEnvironment() {
-	nsswitchVerdict()
-}
-
-// processNSSCompletenessReporter is the single reporter instance shared by
-// the whole process, so that the classification record is emitted at most
-// once per process.
-var processNSSCompletenessReporter nssCompletenessReporter
-
-// The classification is settled once and reused for the lifetime of the
-// process: a permission decision that changed halfway through a run because
-// /etc/nsswitch.conf was edited would be a denial the operator cannot
-// reproduce. The cost is that a change to that file goes unobserved until
-// the process exits.
-var (
-	nsswitchVerdictMu       sync.Mutex
-	nsswitchVerdictResolved bool
-	nsswitchVerdictValue    completenessVerdict
-)
-
-// nsswitchVerdict returns the classification for this process. It reads and
-// classifies on first call, records an incomplete classification once, and
-// reuses the result thereafter.
-func nsswitchVerdict() completenessVerdict {
-	verdict, justSettled := settleNsswitchVerdict()
-	if justSettled {
-		// The record is emitted outside the lock: a log handler is
-		// arbitrary code, and one that reached back into this package
-		// would deadlock on a lock that is not reentrant.
-		processNSSCompletenessReporter.report(slog.Default(), verdict)
-	}
-	return verdict
-}
-
-// settleNsswitchVerdict returns the classification for this process and
-// whether this call is the one that settled it.
-func settleNsswitchVerdict() (completenessVerdict, bool) {
-	nsswitchVerdictMu.Lock()
-	defer nsswitchVerdictMu.Unlock()
-
-	if nsswitchVerdictResolved {
-		return nsswitchVerdictValue, false
-	}
-	nsswitchVerdictValue = classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)
-	nsswitchVerdictResolved = true
-	return nsswitchVerdictValue, true
 }
