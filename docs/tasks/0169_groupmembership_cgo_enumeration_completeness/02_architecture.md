@@ -961,7 +961,7 @@ func resetNsswitchClassification(t *testing.T)
 | `membership_nocgo_test.go` / `TestEnsurePermissionCheckUIDPrecomputesEnvironment` | 非 CGO ビルドで完全性判定が確定することを検証する | `manager_test.go`（ビルドタグ無し）へ移し、両ビルドで実行されるようにする。主張の内容は変えない |
 | `membership_nocgo_test.go` / `resetNsswitchClassification` | 非 CGO ビルド専用の補助関数 | `test_helpers.go` へ移す（§7.1）。移設後は両ビルドのテストが同じ補助関数を使う |
 
-`membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` は変更しない（AC-22）。同テストは既に `classifyNSSCompleteness` の結果で skip を決めており、比較しているのはメンバー集合である。本タスクは列挙が返す集合を変えないため、skip 条件も比較結果も変わらない。
+`membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` は振る舞いを変えない（AC-22）。同テストは既に `classifyNSSCompleteness` の結果で skip を決めており、比較しているのはメンバー集合である。本タスクは列挙が返す集合を変えないため、skip 条件も比較結果も変わらない。
 
 `manager_test.go` の group-writable 系テストは 0168 で既に `ErrGroupMemberEnumerationIncomplete` を許容する形になっており、CGO ビルドで新たに拒否が起きても通る。本タスクでの変更は要らない（§3.7）。
 

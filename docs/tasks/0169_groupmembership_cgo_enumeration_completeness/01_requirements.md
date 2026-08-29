@@ -8,7 +8,7 @@
 | Created | 2026-08-27 |
 | Review date | 2026-08-28 |
 | Reviewer | isseis |
-| Comments | 2026-08-28: 設計レビューの結果を反映して承認。AC-30（`netgroup` 行が判定の対象外であることの明記）と AC-31（`cmd/runner` の起動時確定）を追加し、AC-21 の文言を実装構造に合わせて差し替えた。`/etc/nsswitch.conf` 不在時の扱いは AC-03 のまま据え置く |
+| Comments | 2026-08-29: AC-22 を「ファイルが変わらないこと」ではなく「振る舞い（skip 条件と比較結果）が変わらないこと」へ改めた。実装中に、同ファイルの `//go:build cgo && test` の `test` タグが無用であることが判明したためである（`_test.go` は production ビルドに入らず、同ファイルは `//go:build test` のシンボルを1つも使わない）。振る舞いに関わらない整理まで禁じる読み方は、AC の意図（意味論一致テストの適用範囲が動かないこと）を超えていた。<br>2026-08-28: 設計レビューの結果を反映して承認。AC-30（`netgroup` 行が判定の対象外であることの明記）と AC-31（`cmd/runner` の起動時確定）を追加し、AC-21 の文言を実装構造に合わせて差し替えた。`/etc/nsswitch.conf` 不在時の扱いは AC-03 のまま据え置く |
 
 ## 関連 Issue
 
@@ -150,7 +150,7 @@ SSSD が `getgrgid_r()` の `gr_mem` を空で返すようになる。既定は 
 
 - **AC-20**: AC-01〜AC-05 を検証するテストが、実行ホストの `/etc/nsswitch.conf` の内容に依存せず、与えられた内容だけから判定できる形で書かれている。CGO ビルドでも、SSSD が構成されたホストを模した内容に対する判定が検証できる。
 - **AC-21**: F-001・F-003 の各 AC を検証するテストが、検証対象の分岐を無効化すると失敗する（CLAUDE.md「テストは主張する理由で失敗できること」）。無効化の方法と失敗を確認した旨をコミットメッセージに記す。とくに AC-02 は CGO 版 `getGroupMembers` が完全性判定ではなく `completeVerdict()` を載せるように戻すと、AC-15 は完全性判定を確定させる処理を空実装に戻すと、それぞれ失敗しなければならない。
-- **AC-22**: [`membership_semantics_test.go`](../../../internal/groupmembership/membership_semantics_test.go) の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` が対象とする環境集合が本タスクの前後で変わらない。同テストが比較するのはメンバー集合であり、完全性の申告を加えたことによって skip 条件が変わることはない。
+- **AC-22**: [`membership_semantics_test.go`](../../../internal/groupmembership/membership_semantics_test.go) の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` の**振る舞い**が本タスクの前後で変わらない。すなわち、対象とする環境集合（skip 条件）と比較結果が変わらない。同テストが比較するのはメンバー集合であり、完全性の申告を加えたことによって skip 条件が変わることはない。**これはファイルの無変更を求めるものではない**——振る舞いを変えない編集（ビルドタグの整理など）は許す。
 - **AC-23**: CGO ビルド・非 CGO ビルドの双方で `make test` と `make lint` が通過する。
 
 #### F-007: 文書への反映

@@ -208,7 +208,7 @@
   - [x] `incompleteVerdict(causeNSSSources, "passwd: sss")`（AC-02。SSSD が構成されたホストを模した値であり、libc がエラーを返していない状況で「不完全」になることを踏む）
   - [x] `incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")`（AC-04 が linux 以外で載る値。分類器側の AC-04 は `nsswitch_test.go::TestClassifyNSSCompleteness` が踏む）
   - [x] このテストはプロセス全体の状態を触るため `t.Parallel()` を宣言しない。
-- [-] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める件は**取り止めた（利用者指摘。2026-08-29）**。いったん改めたが元へ戻し、`incompleteness_advice_{cgo,nocgo}_test.go` にも `&& test` を付けないこととした。**理由**: `_test.go` は production ビルドに入らないため、`test` タグに production からの除外という役目は無い（それが必要なのは `_test.go` でない `test_helpers.go` の側である）。「`test_helpers.go` のシンボルを使うから」という当初の理由も成り立たない——本パッケージのテストは `-tags test` 無しでは**そもそもコンパイルできない**。`manager_test.go`（タグ無し）が全ファイル `//go:build test` の `internal/testutil` を import しており、タグ無しの `go test` は `build constraints exclude all Go files in internal/testutil` で失敗する。`Makefile` の `unit-test-cgo1`・`unit-test-cgo0` と `make lint` はいずれも `-tags test` を渡すため、付けても外しても到達範囲は変わらない（両構成での実行を確認済み）。**むしろ付けないほうが安全である**——将来 `manager_test.go` の `testutil` 依存が無くなった場合、タグが付いていればタグ無し実行でこれらのファイルは**黙って実行対象から外れる**が、付いていなければ未定義シンボルのコンパイルエラーとして表面化する。パッケージ内の多数派（`manager_test.go`・`nsswitch_test.go` ほか、いずれも `test_helpers.go` のシンボルを使う）も `test` タグを付けていない。**`membership_semantics_test.go` の `//go:build cgo && test` は据え置く**——同ファイルは AC-22 が本タスクでの無変更を求めている。同ファイルのタグ整理は別タスクとする。
+- [-] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める件は**取り止めた（利用者指摘。2026-08-29）**。いったん改めたが元へ戻し、`incompleteness_advice_{cgo,nocgo}_test.go` にも `&& test` を付けないこととした。**理由**: `_test.go` は production ビルドに入らないため、`test` タグに production からの除外という役目は無い（それが必要なのは `_test.go` でない `test_helpers.go` の側である）。「`test_helpers.go` のシンボルを使うから」という当初の理由も成り立たない——本パッケージのテストは `-tags test` 無しでは**そもそもコンパイルできない**。`manager_test.go`（タグ無し）が全ファイル `//go:build test` の `internal/testutil` を import しており、タグ無しの `go test` は `build constraints exclude all Go files in internal/testutil` で失敗する。`Makefile` の `unit-test-cgo1`・`unit-test-cgo0` と `make lint` はいずれも `-tags test` を渡すため、付けても外しても到達範囲は変わらない（両構成での実行を確認済み）。**むしろ付けないほうが安全である**——将来 `manager_test.go` の `testutil` 依存が無くなった場合、タグが付いていればタグ無し実行でこれらのファイルは**黙って実行対象から外れる**が、付いていなければ未定義シンボルのコンパイルエラーとして表面化する。パッケージ内の多数派（`manager_test.go`・`nsswitch_test.go` ほか、いずれも `test_helpers.go` のシンボルを使う）も `test` タグを付けていない。**`membership_semantics_test.go` の `//go:build cgo && test` も同じ理由で外した（利用者指摘。2026-08-29）**——同ファイルは `//go:build test` のシンボルを1つも使っておらず、`test` タグは完全に無用であった。当初はこれを「AC-22 が無変更を求めている」として据え置いたが、AC-22 が守ろうとしているのは意味論一致テストの適用範囲（skip 条件と比較結果）であってファイルのバイト列ではない。`01_requirements.md` の AC-22 をその意味に改め、検証も「差分がビルドタグ行に限られること」＋「CGO 構成で従来どおり実行されること」に改めた。
 - [x] `02_architecture.md` §3.2.1 の「/etc/nsswitch.conf が存在しない場合」に、glibc の既定構成テーブル（upstream の `nss/nss_database.c`）を読んだ結果を追記する（同節と §7.5 が求める確認）。結果が同節の記述と食い違った場合にのみ、AC-03 の改訂を提案する。
 
 **完了判定条件**
@@ -467,7 +467,7 @@
 | AC-20 | static | `nsswitch_test.go`・`membership_cgo_test.go` | §3.1 の `AC-20` のコマンド。2つの関数の**実在を確かめてから**、その本体にファイルを開く呼び出しが無いことを確認する。**この検査が言うのは対象の2関数についてだけである**——`membership_cgo_test.go::TestGetGroupMembers_StatesTheHostVerdict` は期待値を得るために `readNsswitchSnapshot()` を呼ぶため実行ホストの `/etc/nsswitch.conf` を読む。同テストはホストの分類との一致を確かめるものであり、完全性判定を固定して検証する側ではない。**実在の確認は省けない**——`awk` が関数を見つけられなければ空の入力が `rg` に渡り、テストを1行も書いていない状態で「一致無し」＝合格になる |
 | AC-21 | static | PR-1〜PR-3 の各ブランチ | §3.1 の `AC-21` のコマンドが `1` 以上を返す。**PR ごとに main へマージして次を新しいブランチで始めるため、`main..HEAD` には当該ブランチ分しか含まれない。** 各 Phase の完了判定条件で個別に確認する。PR-4（Phase 5）は §5.3 に担当行を持たないため対象外である |
 | AC-21 | manual | 同上 | §5.3 の `X1`〜`X9` の無効化確認を実施し、対応するテストが実際に失敗することを確かめる。各行の担当 Phase は同表の「実施する Phase」列が定める |
-| AC-22 | static | `membership_semantics_test.go` | §3.1 の `AC-22` のコマンド（同ファイルに差分が無いこと） |
+| AC-22 | static | `membership_semantics_test.go` | §3.1 の `AC-22` のコマンド（同ファイルの差分がビルドタグ行に限られること。AC-22 が求めるのは振る舞いの不変であり、ファイルの無変更ではない） |
 | AC-22 | test | 同上 | `membership_semantics_test.go::TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` が CGO ビルドで従来どおり通過する（skip 条件も比較結果も変わらない） |
 | AC-23 | static | — | `make test` の終了コードが 0（`CGO_ENABLED=1` と `CGO_ENABLED=0` の両方を実行する）。`make lint` の終了コードが 0（同じく両構成） |
 | AC-24 | static | `security-risk-assessment.ja.md` | `rg -c '緩く評価される可能性がある' docs/user/security-risk-assessment.ja.md` が一致無し（現状 1 件）。かつ §3.1 の `AC-24` のコマンド（書き換え後の節に「拒否」が入ったことの陽性の裏取り）が `1` 以上 |
@@ -571,8 +571,17 @@ git log --no-show-signature --format='%H' main..HEAD | while read -r h; do
   git show -s --no-show-signature --format=%B "$h" | rg -qi 'disabled the' && echo "$h"
 done | wc -l
 
-# AC-22: 意味論一致テストが本タスクで変更されていないこと。出力が空で合格。
-git diff main...HEAD -- internal/groupmembership/membership_semantics_test.go
+# AC-22: 意味論一致テストの振る舞いが変わっていないこと。出力が空で合格。
+#        AC-22 が求めるのは skip 条件と比較結果の不変であってファイルの無変更ではないため、
+#        「差分が空であること」では検査できない（本タスクはビルドタグ行を1行変えている）。
+#        差分のうちビルドタグ行だけを除いて、残りが空であることを見る。
+#        `^[-+][^-+]` で +++/--- のファイル見出しを外してから絞り込む。
+git diff main...HEAD -- internal/groupmembership/membership_semantics_test.go \
+  | rg '^[-+][^-+]' | rg -v '^[-+]//go:build cgo'
+
+# AC-22 の振る舞い側: 同テストが CGO 構成で従来どおり実行されること。1 で合格。
+#        タグを外したことで実行対象から外れていないことを、実行ログで確かめる。
+make test 2>&1 | rg -c '^=== RUN   TestGetGroupMembers_CGOAndNoCGOSemanticsMatch$'
 
 # AC-24: 書き換え後に「CGO ビルドでも拒否される」と述べていること（陽性の裏取り）。1 で合格。
 #        `rg -A 20 '既知の制限' | rg -c 'CGO ビルド'` のような広い取り方は、非 CGO ビルド
