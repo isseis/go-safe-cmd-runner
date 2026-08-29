@@ -1,4 +1,4 @@
-//go:build cgo && test
+//go:build cgo
 
 package groupmembership
 
