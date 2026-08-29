@@ -1157,59 +1157,22 @@ func TestCanUserSafelyWriteFile_CompleteEnumeration(t *testing.T) {
 	}
 }
 
-// TestIncompleteEnumerationErrorMessage verifies that the denial message names
-// the user database this build consults and offers the remediation that fits
-// the recorded cause, so that an operator can act on it without reading code.
+// TestIncompleteEnumerationErrorMessage verifies that the denial message
+// names the user database this build consults and reports the cause, for the
+// two causes whose advice is the same on every build. The build-specific
+// causes are covered by incompleteness_advice_cgo_test.go and
+// incompleteness_advice_nocgo_test.go.
 func TestIncompleteEnumerationErrorMessage(t *testing.T) {
 	t.Parallel()
 
+	// The two cases below are unreachable while incompleteVerdict is the only
+	// way to build an incomplete verdict. They are covered so that growing the
+	// cause enum cannot silently leave the message half empty.
 	tests := []struct {
-		name            string
-		verdict         completenessVerdict
-		wantContains    []string
-		wantNotContains []string
+		name         string
+		verdict      completenessVerdict
+		wantContains []string
 	}{
-		{
-			name:    "unsupported platform",
-			verdict: incompleteVerdict(causeUnsupportedPlatform, "goos=darwin"),
-			wantContains: []string{
-				"user_database_source=" + userDatabaseSource,
-				"cause=" + causeUnsupportedPlatform.String(),
-				"goos=darwin",
-				"CGO_ENABLED=1",
-			},
-			wantNotContains: []string{"/etc/nsswitch.conf"},
-		},
-		{
-			name:    "nss sources",
-			verdict: incompleteVerdict(causeNSSSources, "group: files sss"),
-			wantContains: []string{
-				"user_database_source=" + userDatabaseSource,
-				"cause=" + causeNSSSources.String(),
-				"group: files sss",
-				"/etc/nsswitch.conf",
-				"CGO_ENABLED=1",
-			},
-		},
-		{
-			name:    "malformed line",
-			verdict: incompleteVerdict(causeMalformedLine, "1 line skipped, first at /etc/group:12"),
-			wantContains: []string{
-				"user_database_source=" + userDatabaseSource,
-				"cause=" + causeMalformedLine.String(),
-				"first at /etc/group:12",
-				// Deleting the offending line is the obvious response and the
-				// wrong one for a NIS compatibility entry, where the line is
-				// correct and only this build cannot follow it.
-				"NIS",
-				"CGO_ENABLED=1",
-			},
-			wantNotContains: []string{"/etc/nsswitch.conf"},
-		},
-		// The two cases below are unreachable while incompleteVerdict is the
-		// only way to build an incomplete verdict. They are covered so that
-		// growing the cause enum cannot silently leave the message half
-		// empty.
 		{
 			name:    "cause left unspecified",
 			verdict: completenessVerdict{completeness: completenessIncomplete, cause: causeUnspecified},
@@ -1241,9 +1204,6 @@ func TestIncompleteEnumerationErrorMessage(t *testing.T) {
 			message := err.Error()
 			for _, want := range tt.wantContains {
 				assert.Contains(t, message, want)
-			}
-			for _, notWant := range tt.wantNotContains {
-				assert.NotContains(t, message, notWant)
 			}
 		})
 	}

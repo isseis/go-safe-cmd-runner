@@ -250,36 +250,16 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 
 // incompleteEnumerationError builds the denial returned when an enumeration
 // states that it may omit members. The cause selects both the fact and the
-// remediation; neither is chosen by inspecting the detail text.
+// remediation; neither is chosen by inspecting the detail text. Which advice
+// a cause maps to differs between builds, so adviseIncompleteness decides it.
 func incompleteEnumerationError(groupGID uint32, verdict completenessVerdict) error {
-	var fact, remediation string
-	switch verdict.cause {
-	case causeUnsupportedPlatform:
-		fact = "this build cannot enumerate all members of a group on this platform"
-		// The platforms this reaches are the ones with no /etc/nsswitch.conf,
-		// so the remediation names the platform's own user database rather
-		// than NSS.
-		remediation = "rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc"
-	case causeNSSSources:
-		fact = "/etc/nsswitch.conf names a user database source this build cannot consult, or could not be read"
-		remediation = "check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted"
-	case causeMalformedLine:
-		fact = "a line of the user database files could not be parsed and was skipped, so the members listed there are unknown"
-		remediation = "check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1"
-	case causeUnspecified:
-		fact = "the enumeration was judged incomplete but recorded no cause"
-		remediation = "report this as a defect in the enumeration implementation"
-	default:
-		fact = "the enumeration was judged incomplete for a cause this build does not recognize"
-		remediation = "report this as a defect in the enumeration implementation"
-	}
-
+	advice := adviseIncompleteness(verdict.cause)
 	state := fmt.Sprintf("user_database_source=%s, cause=%s", userDatabaseSource, verdict.cause)
 	if verdict.detail != "" {
 		state += ", detail=" + verdict.detail
 	}
 	return fmt.Errorf("cannot confirm the members of group GID %d: %s (%s); %s: %w",
-		groupGID, fact, state, remediation, ErrGroupMemberEnumerationIncomplete)
+		groupGID, advice.fact, state, advice.remediation, ErrGroupMemberEnumerationIncomplete)
 }
 
 // unstatedCompletenessError builds the denial returned when an enumeration

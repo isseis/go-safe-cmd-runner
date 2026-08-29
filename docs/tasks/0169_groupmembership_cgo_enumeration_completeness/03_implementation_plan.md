@@ -234,41 +234,41 @@
 
 **作業内容**
 
-- [ ] `incompleteness_advice.go`（ビルドタグ無し）を新規追加する。
-  - [ ] `incompletenessAdvice` 型（非公開フィールド `fact string`・`remediation string`）
-  - [ ] `implementationDefectAdvice(what string) incompletenessAdvice`。`fact` に `what` を、`remediation` に `"report this as a defect in the enumeration implementation"` を入れて返す。この文字列は現行 `manager.go` の `causeUnspecified`・`default` の `remediation` と同一であり、変えない。
-- [ ] `incompleteness_advice_nocgo.go`（`//go:build !cgo`）を新規追加し、`adviseIncompleteness(cause incompletenessCause) incompletenessAdvice` を置く。文面は現行 `manager.go` の `switch` から**1文字も変えずに**移す（AC-13）。
-  - [ ] `causeUnsupportedPlatform`: fact `"this build cannot enumerate all members of a group on this platform"`、remediation `"rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc"`
-  - [ ] `causeNSSSources`: fact `"/etc/nsswitch.conf names a user database source this build cannot consult, or could not be read"`、remediation `"check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted"`
-  - [ ] `causeMalformedLine`: fact `"a line of the user database files could not be parsed and was skipped, so the members listed there are unknown"`、remediation `"check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1"`
-  - [ ] `causeUnspecified`: `implementationDefectAdvice("the enumeration was judged incomplete but recorded no cause")`
-  - [ ] `default`: `implementationDefectAdvice("the enumeration was judged incomplete for a cause this build does not recognize")`
-  - [ ] 現行 `manager.go` の `causeUnsupportedPlatform` の枝に付いている説明コメント（`// The platforms this reaches are the ones with no /etc/nsswitch.conf,` から始まる3行）も一緒に移す。
-- [ ] `incompleteness_advice_cgo.go`（`//go:build cgo`）を新規追加し、同名の `adviseIncompleteness` を置く。回復手段に `CGO_ENABLED` を含めない（AC-12）。
-  - [ ] `causeUnsupportedPlatform`: fact `"this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member"`、remediation `"clear the group-writable bit on the path (chmod g-w)"`
-  - [ ] `causeNSSSources`: fact `"/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), its lines could not be read as written, or the file could not be read"`、remediation `"clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with sources whose enumeration is exhaustive (files, systemd)"`
+- [x] `incompleteness_advice.go`（ビルドタグ無し）を新規追加する。
+  - [x] `incompletenessAdvice` 型（非公開フィールド `fact string`・`remediation string`）
+  - [x] `implementationDefectAdvice(what string) incompletenessAdvice`。`fact` に `what` を、`remediation` に `"report this as a defect in the enumeration implementation"` を入れて返す。この文字列は現行 `manager.go` の `causeUnspecified`・`default` の `remediation` と同一であり、変えない。
+- [x] `incompleteness_advice_nocgo.go`（`//go:build !cgo`）を新規追加し、`adviseIncompleteness(cause incompletenessCause) incompletenessAdvice` を置く。文面は現行 `manager.go` の `switch` から**1文字も変えずに**移す（AC-13）。
+  - [x] `causeUnsupportedPlatform`: fact `"this build cannot enumerate all members of a group on this platform"`、remediation `"rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc"`
+  - [x] `causeNSSSources`: fact `"/etc/nsswitch.conf names a user database source this build cannot consult, or could not be read"`、remediation `"check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted"`
+  - [x] `causeMalformedLine`: fact `"a line of the user database files could not be parsed and was skipped, so the members listed there are unknown"`、remediation `"check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1"`
+  - [x] `causeUnspecified`: `implementationDefectAdvice("the enumeration was judged incomplete but recorded no cause")`
+  - [x] `default`: `implementationDefectAdvice("the enumeration was judged incomplete for a cause this build does not recognize")`
+  - [x] 現行 `manager.go` の `causeUnsupportedPlatform` の枝に付いている説明コメント（`// The platforms this reaches are the ones with no /etc/nsswitch.conf,` から始まる3行）も一緒に移す。
+- [x] `incompleteness_advice_cgo.go`（`//go:build cgo`）を新規追加し、同名の `adviseIncompleteness` を置く。回復手段に `CGO_ENABLED` を含めない（AC-12）。
+  - [x] `causeUnsupportedPlatform`: fact `"this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member"`、remediation `"clear the group-writable bit on the path (chmod g-w)"`
+  - [x] `causeNSSSources`: fact `"/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), its lines could not be read as written, or the file could not be read"`、remediation `"clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with sources whose enumeration is exhaustive (files, systemd)"`
     - `fact` を広く書くのは、この原因が指定ソース起因だけでなく行の重複・角括弧の未閉じ・行の不在・ソース名の不在・ファイル読み取り失敗のいずれでも付くためである（`02_architecture.md` §4.3）。粒度は `detail` が担う。
-  - [ ] `causeMalformedLine`: `implementationDefectAdvice("a cause only a build that scans the user database files directly can produce was reported")`。この枝を残すのは `switch` の網羅性を保つためであり、到達した場合は環境の問題ではなく実装の誤りとして `default` と同じ拒否側に倒す（AC-14）。
-  - [ ] `causeUnspecified`・`default`: 非 CGO 版と同じ `implementationDefectAdvice` の呼び出しを置く。
-- [ ] `manager.go` の `incompleteEnumerationError` を、文面の決定を委譲する形へ改める。`var fact, remediation string` の宣言と `switch verdict.cause { ... }` の全体を削除し、`advice := adviseIncompleteness(verdict.cause)` の1行に置き換える。`fact`・`remediation` の参照は `advice.fact`・`advice.remediation` に読み替える。宣言を残すと `make lint` が未使用として報告する。`state` の組み立てと `fmt.Errorf` の書式（`"cannot confirm the members of group GID %d: %s (%s); %s: %w"`）はそのまま残す。doc コメントの「The cause selects both the fact and the remediation; neither is chosen by inspecting the detail text.」も残し、委譲先を指す1文を加える。
-- [ ] `manager_test.go` の `TestIncompleteEnumerationErrorMessage` を分割する（§1.3(b)）。
-  - [ ] `manager_test.go` に残すのは、ビルドに依存しない2ケース（`causeUnspecified`・`causeOutOfRange`）のみとする。この2ケースの `wantContains` に `"CGO_ENABLED=1"` は含まれない。関数名は変えない。
-  - [ ] `incompleteness_advice_nocgo_test.go`（`//go:build !cgo && test`）を新規追加し、`TestAdviseIncompleteness_NoCGO` を置く。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の3ケースについて、現行 `TestIncompleteEnumerationErrorMessage` の `wantContains`／`wantNotContains` をそのまま引き継ぐ（AC-13）。加えて `incompleteEnumerationError` を通したメッセージにも同じ文字列が現れることを検証する。
-  - [ ] `incompleteness_advice_cgo_test.go`（`//go:build cgo && test`）を新規追加し、`TestAdviseIncompleteness_CGO` を置く。検証内容は次の3点。
-    - [ ] `causeUnsupportedPlatform`・`causeNSSSources` の `fact`・`remediation` のいずれにも `"CGO_ENABLED"` が現れないこと、および `remediation` に `"chmod g-w"` が現れること（AC-12）
-    - [ ] `causeMalformedLine`・`causeUnspecified`・`causeOutOfRange` が実装の誤りを示す文面（`"defect"`）を返すこと（AC-14）
-    - [ ] `incompleteEnumerationError(unrelatedGID, incompleteVerdict(causeNSSSources, "passwd: sss"))` のメッセージが `"user_database_source=nss"`・`"cause=nss-sources"`・`"detail=passwd: sss"` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること（AC-11）
-  - [ ] `causeOutOfRange` は現在 `manager_test.go` に定義されている。両ビルド別テストから参照するため、定義は `manager_test.go`（タグ無し）にそのまま残す。新規の2ファイルに `&& test` を付けるのは、参照する `unrelatedGID`・`causeOutOfRange` を持つ `manager_test.go` が `newWithFixedEnumeration`（`//go:build test`）に依存し、`-tags test` でなければコンパイルできないためである。Phase 2 で `membership_cgo_test.go` を `//go:build cgo && test` に改めるのと同じ理由であり、パッケージ内で判断を揃える。
+  - [x] `causeMalformedLine`: `implementationDefectAdvice("a cause only a build that scans the user database files directly can produce was reported")`。この枝を残すのは `switch` の網羅性を保つためであり、到達した場合は環境の問題ではなく実装の誤りとして `default` と同じ拒否側に倒す（AC-14）。
+  - [x] `causeUnspecified`・`default`: 非 CGO 版と同じ `implementationDefectAdvice` の呼び出しを置く。
+- [x] `manager.go` の `incompleteEnumerationError` を、文面の決定を委譲する形へ改める。`var fact, remediation string` の宣言と `switch verdict.cause { ... }` の全体を削除し、`advice := adviseIncompleteness(verdict.cause)` の1行に置き換える。`fact`・`remediation` の参照は `advice.fact`・`advice.remediation` に読み替える。宣言を残すと `make lint` が未使用として報告する。`state` の組み立てと `fmt.Errorf` の書式（`"cannot confirm the members of group GID %d: %s (%s); %s: %w"`）はそのまま残す。doc コメントの「The cause selects both the fact and the remediation; neither is chosen by inspecting the detail text.」も残し、委譲先を指す1文を加える。
+- [x] `manager_test.go` の `TestIncompleteEnumerationErrorMessage` を分割する（§1.3(b)）。
+  - [x] `manager_test.go` に残すのは、ビルドに依存しない2ケース（`causeUnspecified`・`causeOutOfRange`）のみとする。この2ケースの `wantContains` に `"CGO_ENABLED=1"` は含まれない。関数名は変えない。
+  - [x] `incompleteness_advice_nocgo_test.go`（`//go:build !cgo && test`）を新規追加し、`TestAdviseIncompleteness_NoCGO` を置く。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の3ケースについて、現行 `TestIncompleteEnumerationErrorMessage` の `wantContains`／`wantNotContains` をそのまま引き継ぐ（AC-13）。加えて `incompleteEnumerationError` を通したメッセージにも同じ文字列が現れることを検証する。
+  - [x] `incompleteness_advice_cgo_test.go`（`//go:build cgo && test`）を新規追加し、`TestAdviseIncompleteness_CGO` を置く。検証内容は次の3点。
+    - [x] `causeUnsupportedPlatform`・`causeNSSSources` の `fact`・`remediation` のいずれにも `"CGO_ENABLED"` が現れないこと、および `remediation` に `"chmod g-w"` が現れること（AC-12）
+    - [x] `causeMalformedLine`・`causeUnspecified`・`causeOutOfRange` が実装の誤りを示す文面（`"defect"`）を返すこと（AC-14）
+    - [x] `incompleteEnumerationError(unrelatedGID, incompleteVerdict(causeNSSSources, "passwd: sss"))` のメッセージが `"user_database_source=nss"`・`"cause=nss-sources"`・`"detail=passwd: sss"` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること（AC-11）
+  - [x] `causeOutOfRange` は現在 `manager_test.go` に定義されている。両ビルド別テストから参照するため、定義は `manager_test.go`（タグ無し）にそのまま残す。新規の2ファイルに `&& test` を付けるのは、参照する `unrelatedGID`・`causeOutOfRange` を持つ `manager_test.go` が `newWithFixedEnumeration`（`//go:build test`）に依存し、`-tags test` でなければコンパイルできないためである。Phase 2 で `membership_cgo_test.go` を `//go:build cgo && test` に改めるのと同じ理由であり、パッケージ内で判断を揃える。
 
 **完了判定条件**
 
-- [ ] `make test`・`make lint` が両構成で成功する。
-- [ ] `rg -c 'CGO_ENABLED' internal/groupmembership/manager.go internal/groupmembership/incompleteness_advice.go internal/groupmembership/incompleteness_advice_cgo.go` が一致無し。
-- [ ] `rg -c 'CGO_ENABLED=1' internal/groupmembership/incompleteness_advice_nocgo.go` が `3`。
-- [ ] `rg -l 'func adviseIncompleteness' internal/groupmembership/` が `incompleteness_advice_cgo.go` と `incompleteness_advice_nocgo.go` の2件のみを返す。
-- [ ] §3.1 の `AC-14` のコマンドが一致無し（`detail` の内容で分岐していないこと）。
-- [ ] `rg --files internal/groupmembership | rg -c 'incompleteness_advice(_cgo|_nocgo)?\.go'` が `3`（3ファイルが実在すること。存在しないファイルに対する `rg` は終了コード 2 を返し、これを「一致無し」と取り違えると上の各静的確認が空振りする）。
-- [ ] §5.3 の無効化確認 `X6` を実施し、コミットメッセージに英語で記す。
+- [x] `make test`・`make lint` が両構成で成功する。
+- [x] `rg -c 'CGO_ENABLED' internal/groupmembership/manager.go internal/groupmembership/incompleteness_advice.go internal/groupmembership/incompleteness_advice_cgo.go` が一致無し。
+- [x] `rg -c 'CGO_ENABLED=1' internal/groupmembership/incompleteness_advice_nocgo.go` が `3`。
+- [x] `rg -l 'func adviseIncompleteness' internal/groupmembership/` が `incompleteness_advice_cgo.go` と `incompleteness_advice_nocgo.go` の2件のみを返す。
+- [x] §3.1 の `AC-14` のコマンドが一致無し（`detail` の内容で分岐していないこと）。
+- [x] `rg --files internal/groupmembership | rg -c 'incompleteness_advice(_cgo|_nocgo)?\.go'` が `3`（3ファイルが実在すること。存在しないファイルに対する `rg` は終了コード 2 を返し、これを「一致無し」と取り違えると上の各静的確認が空振りする）。
+- [x] §5.3 の無効化確認 `X6` を実施し、コミットメッセージに英語で記す。
 
 ### PR-2 作成ポイント: cgo fail-closed enumeration with build-specific advice
 
@@ -701,7 +701,7 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 
 - `make test` は `CGO_ENABLED=1`（`-race` つき）と `CGO_ENABLED=0` を順に実行する。`make lint` も同じ2構成で回る。両者の終了コードが 0 であることを各 Phase の完了判定条件とする。
 - **開発環境が `files` 構成である場合、新しい拒否も新しい警告も手元では現れない。** 次の2つを必ず行う。
-  - [x] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。**実施状況**: 経路の踏破は Phase 2 で実施済み（`CanCurrentUserSafelyWriteFile` が `user_database_source=nss` つきで拒否することを確認）。文面の確認は、CGO 版の文面が存在しない Phase 2 時点では行えないため Phase 3 で行う。
+  - [x] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。**実施状況**: いずれも実施済み。経路の踏破は Phase 2（`CanUserSafelyWriteFile` が `user_database_source=nss` つきで拒否）、文面の確認は Phase 3（同じ経路で出るメッセージが `chmod g-w` を勧め、`CGO_ENABLED` を含まないことを確認）。
   - [ ] **警告側の陽性対照（強制実行。Phase 1 で実施）。** 警告は Phase 1 で有効になるため、この確認も Phase 1 で行う。開発コンテナの `/etc/nsswitch.conf` の `passwd` 行を一時的に `passwd: sss` へ書き換え、`CGO_ENABLED=1` でビルドした `record` を1回起動して、`This build cannot enumerate every member of a group on this host` が `user_database_source=nss` つきで**1度だけ**出ることを目視する。同じ手順を `CGO_ENABLED=0` のビルドでも行い、`user_database_source=passwd-file` になることを確かめる。確認後は `/etc/nsswitch.conf` を必ず元に戻す。**この手順を省くと、警告が出る側の経路はどのテストでも踏まれない**——`TestNsswitchVerdictReportsWhatItSettled` は分類が「完全」になるホストでは「記録が無いこと」しか確かめず、`TestNSSCompletenessReporter_Report`・`TestNSSCompletenessReporter_ReportsOnlyOnce` はレポータを直接呼ぶため確定からの連結を通らないためである（Phase 1 の注記）。
 - `make deadcode` を Phase 1 と Phase 4 の完了時に実行し、`nsswitch.go` のタグ除去と公開の入口の追加によって到達不能コードが生じていないことを確かめる。
 
