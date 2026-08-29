@@ -3,71 +3,87 @@
 package groupmembership
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestAdviseIncompleteness_CGO fixes the wording this build offers per cause.
-// This build must never tell an operator to rebuild with CGO_ENABLED=1: they
-// are already there, so it would name no way out of the denial.
+// TestAdviseIncompleteness_CGO checks the properties this build's advice must
+// have, not the sentences it happens to use. This wording is meant to be
+// improved on, so copying it into expectations would turn every improvement
+// into a test failure with no defect behind it. The non-cgo wording is a
+// different matter -- it is deliberately frozen, and its test pins it
+// literally for that reason.
 //
-// Strings are matched whole -- a substring matches a rewritten one too -- and
-// each row is checked on the message as well, so an assembly that stopped
-// carrying the advice fails here rather than silently dropping it.
+// What must hold, and is checked below:
+//
+//   - This build never tells an operator to rebuild with CGO_ENABLED=1. They
+//     are already there, so it would name no way out of the denial.
+//   - A cause an operator can act on names the action; a cause only an
+//     implementation error can produce says so instead.
+//   - Each cause has its own advice, so a branch that returned another
+//     cause's advice is caught even though no sentence is pinned.
+//   - The advice reaches the message the operator sees.
 func TestAdviseIncompleteness_CGO(t *testing.T) {
 	t.Parallel()
 
-	const (
-		defectRemediation = "report this as a defect in the enumeration implementation"
-		chmod             = "clear the group-writable bit on the path (chmod g-w)"
-	)
-
-	// Every defined cause needs a row here; the loop below enforces it.
-	want := map[incompletenessCause]incompletenessAdvice{
-		causeUnsupportedPlatform: {
-			fact:        "this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member",
-			remediation: chmod,
-		},
-		causeNSSSources: {
-			fact:        "/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which",
-			remediation: chmod + ", or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd)",
-		},
-		causeMalformedLine: {
-			fact:        "a cause only a build that scans the user database files directly can produce was reported",
-			remediation: defectRemediation,
-		},
-		causeUnspecified: {
-			fact:        "the enumeration was judged incomplete but recorded no cause",
-			remediation: defectRemediation,
-		},
+	// Causes a host condition can produce. The rest are reachable only
+	// through an implementation error, including causeMalformedLine: only a
+	// build that scans the user database files itself can attach it.
+	actionable := map[incompletenessCause]struct{}{
+		causeUnsupportedPlatform: {},
+		causeNSSSources:          {},
 	}
 
+	// Ranged over rather than listed, so a cause added later is classified
+	// here instead of falling into the switch's default.
+	seen := make(map[incompletenessAdvice]incompletenessCause, len(allIncompletenessCauses))
 	for _, cause := range allIncompletenessCauses {
-		expected, ok := want[cause]
-		require.True(t, ok, "cause %s has no expected advice; classify it in adviseIncompleteness and add it here", cause)
+		advice := adviseIncompleteness(cause)
+
+		if other, duplicate := seen[advice]; duplicate {
+			t.Errorf("causes %s and %s give identical advice; one of them is reaching the other's branch", other, cause)
+		}
+		seen[advice] = cause
 
 		t.Run(cause.String(), func(t *testing.T) {
 			t.Parallel()
 
-			advice := adviseIncompleteness(cause)
-			assert.Equal(t, expected, advice)
+			assert.NotEmpty(t, advice.fact)
+			assert.NotEmpty(t, advice.remediation)
+			assert.NotContains(t, advice.fact, "CGO_ENABLED")
+			assert.NotContains(t, advice.remediation, "CGO_ENABLED")
 
+			if _, ok := actionable[cause]; ok {
+				// chmod g-w is the action itself, not a turn of phrase: the
+				// denial is reached through the group-writable bit, and
+				// clearing it is what an operator can always do.
+				assert.Contains(t, advice.remediation, "chmod g-w")
+			} else {
+				assert.Equal(t, implementationDefectAdvice(advice.fact), advice,
+					"a cause no environment can produce must carry the shared defect remediation")
+			}
+
+			// Taking the strings from the function rather than from a literal
+			// means this still holds after the wording is improved, while an
+			// assembly that stopped carrying the advice fails.
 			message := incompleteEnumerationError(unrelatedGID, incompleteVerdict(cause, "detail for "+cause.String())).Error()
-			assert.Contains(t, message, expected.fact)
-			assert.Contains(t, message, expected.remediation)
-			assert.NotContains(t, message, "CGO_ENABLED", "the message must not tell a cgo build to become one")
+			assert.Contains(t, message, advice.fact)
+			assert.Contains(t, message, advice.remediation)
+			assert.NotContains(t, message, "CGO_ENABLED")
 		})
 	}
 
-	// A cause outside the defined range denies like an unrecognized one
-	// rather than reaching for wording that fits some host condition.
+	// A cause outside the defined range denies like an unrecognized one rather
+	// than reaching for wording that fits some host condition.
 	t.Run("cause outside the defined range", func(t *testing.T) {
 		t.Parallel()
 
 		advice := adviseIncompleteness(causeOutOfRange)
-		assert.Equal(t, implementationDefectAdvice("the enumeration was judged incomplete for a cause this build does not recognize"), advice)
+		assert.Equal(t, implementationDefectAdvice(advice.fact), advice)
+		assert.NotContains(t, advice.remediation, "chmod g-w")
 	})
 
 	// The state attributes identify the host and the cause, and the sentinel
@@ -82,5 +98,9 @@ func TestAdviseIncompleteness_CGO(t *testing.T) {
 		assert.Contains(t, message, "user_database_source=nss")
 		assert.Contains(t, message, "cause=nss-sources")
 		assert.Contains(t, message, "detail=passwd: sss")
+		// The fact names the file whose configuration produced this cause, so
+		// the operator knows where to look before reading the detail.
+		assert.Contains(t, message, nsswitchPath)
+		assert.True(t, strings.HasSuffix(message, ErrGroupMemberEnumerationIncomplete.Error()))
 	})
 }
