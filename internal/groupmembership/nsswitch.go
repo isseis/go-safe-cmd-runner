@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"unicode"
 )
@@ -299,56 +298,50 @@ func (r *nssCompletenessReporter) report(logger *slog.Logger, v completenessVerd
 	)
 }
 
-// precomputeEnumerationEnvironment settles the completeness verdict before
-// the first enumeration, so that a build that cannot enumerate every member
-// on this host says so at startup rather than at the first group-writable
-// file.
-func precomputeEnumerationEnvironment() {
-	nsswitchVerdict()
-}
-
 // processNSSCompletenessReporter is the single reporter instance shared by
 // the whole process, so that the classification record is emitted at most
 // once per process.
 var processNSSCompletenessReporter nssCompletenessReporter
 
+// nsswitchVerdictValue is the classification for this process. It is written
+// exactly once, by precomputeEnumerationEnvironment during startup while the
+// process is still single-threaded, and only read from then on; that is what
+// makes it safe to hold without a lock. Until startup writes it, it holds its
+// zero value, whose completeness is unstated and which therefore denies.
+//
 // The classification is settled once and reused for the lifetime of the
 // process: a permission decision that changed halfway through a run because
 // /etc/nsswitch.conf was edited would be a denial the operator cannot
 // reproduce. The cost is that a change to that file goes unobserved until
 // the process exits.
-var (
-	nsswitchVerdictMu       sync.Mutex
-	nsswitchVerdictResolved bool
-	nsswitchVerdictValue    completenessVerdict
-)
+var nsswitchVerdictValue completenessVerdict
 
-// nsswitchVerdict returns the classification for this process. It reads and
-// classifies on first call, records an incomplete classification once, and
-// reuses the result thereafter.
+// nsswitchVerdict returns the classification settled for this process. A
+// caller that reaches it before startup settled anything receives the
+// unstated zero value, which denies rather than grants.
 func nsswitchVerdict() completenessVerdict {
-	verdict, justSettled := settleNsswitchVerdict()
-	if justSettled {
-		// Emitted outside nsswitchVerdictMu: a log handler is arbitrary code,
-		// and one reaching back into this package would deadlock on a lock
-		// that is not reentrant. That still leaves GroupMembership.cacheMutex,
-		// which is held whenever an enumeration is what settled the verdict.
-		// Settling at startup, before any enumeration, is what removes it.
-		processNSSCompletenessReporter.report(slog.Default(), verdict)
-	}
-	return verdict
+	return nsswitchVerdictValue
 }
 
-// settleNsswitchVerdict returns the classification for this process and
-// whether this call is the one that settled it.
-func settleNsswitchVerdict() (completenessVerdict, bool) {
-	nsswitchVerdictMu.Lock()
-	defer nsswitchVerdictMu.Unlock()
-
-	if nsswitchVerdictResolved {
-		return nsswitchVerdictValue, false
+// precomputeEnumerationEnvironment settles the completeness verdict before
+// the first enumeration, so that a build that cannot enumerate every member
+// on this host says so at startup rather than at the first group-writable
+// file. It both classifies and records. A call made after the verdict is
+// settled keeps the first classification, so a mid-run edit of
+// /etc/nsswitch.conf cannot change a decision.
+func precomputeEnumerationEnvironment() {
+	if nsswitchVerdictValue.completeness != completenessUnstated {
+		return
 	}
 	nsswitchVerdictValue = classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)
-	nsswitchVerdictResolved = true
-	return nsswitchVerdictValue, true
+	processNSSCompletenessReporter.report(slog.Default(), nsswitchVerdictValue)
+}
+
+// PrecomputeEnumerationEnvironment settles the completeness verdict for
+// this process, so that a build that cannot enumerate every member on this
+// host says so at startup rather than at the first group-writable path.
+// It resolves no UID and returns no error; EnsurePermissionCheckUID calls
+// it too, so record and verify need no change.
+func PrecomputeEnumerationEnvironment() {
+	precomputeEnumerationEnvironment()
 }

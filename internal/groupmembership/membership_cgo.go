@@ -296,10 +296,9 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 
 // pwentMutex serialises all setpwent/getpwent/endpwent calls within this
 // package. It is held inside getUsersWithPrimaryGID.
-// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.
-// Reverse acquisition is forbidden. The last two are never nested today, since
-// nsswitchVerdict releases its lock before returning; cacheMutex is held
-// across the whole enumeration, which the comment on nsswitchVerdict covers.
+// Lock ordering: GroupMembership.cacheMutex -> pwentMutex. Reverse
+// acquisition is forbidden. nsswitchVerdict takes no lock at all: the
+// classification is settled at startup and only read afterwards.
 var pwentMutex sync.Mutex
 
 // getGroupMembers returns all members of a group given its GID, together

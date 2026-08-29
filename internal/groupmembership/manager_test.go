@@ -1584,46 +1584,26 @@ func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
 }
 
 // TestNsswitchVerdictSettlesOncePerProcess verifies that the classification
-// is settled once and reused. Re-reading /etc/nsswitch.conf per call would
-// let a permission decision change halfway through a run, which is a denial
-// the operator cannot reproduce.
+// is settled once and reused. Reclassifying on a later call would let a
+// permission decision change halfway through a run because
+// /etc/nsswitch.conf was edited, which is a denial the operator cannot
+// reproduce.
 func TestNsswitchVerdictSettlesOncePerProcess(t *testing.T) {
 	resetNsswitchClassification(t)
 
+	precomputeEnumerationEnvironment()
 	settled := nsswitchVerdict()
 
-	// Plant a value the host itself could never produce: a second call that
-	// classified again would overwrite it and return the host's own answer.
+	// Plant a value the host itself could never produce: a second startup
+	// call that classified again would overwrite it with the host's own
+	// answer.
 	planted := incompleteVerdict(causeUnsupportedPlatform, "planted by TestNsswitchVerdictSettlesOncePerProcess")
 	require.NotEqual(t, planted, settled)
-	nsswitchVerdictMu.Lock()
 	nsswitchVerdictValue = planted
-	nsswitchVerdictMu.Unlock()
+
+	precomputeEnumerationEnvironment()
 
 	assert.Equal(t, planted, nsswitchVerdict())
-}
-
-// TestNsswitchVerdictAgreesAcrossGoroutines verifies that concurrent callers
-// all receive the classification that was settled, whichever of them settled
-// it.
-func TestNsswitchVerdictAgreesAcrossGoroutines(t *testing.T) {
-	resetNsswitchClassification(t)
-
-	const callers = 16
-	verdicts := make([]completenessVerdict, callers)
-	var wg sync.WaitGroup
-	wg.Add(callers)
-	for i := range callers {
-		go func() {
-			defer wg.Done()
-			verdicts[i] = nsswitchVerdict()
-		}()
-	}
-	wg.Wait()
-
-	for _, v := range verdicts {
-		assert.Equal(t, verdicts[0], v)
-	}
 }
 
 // TestNsswitchVerdictReportsWhatItSettled verifies that settling the
@@ -1639,6 +1619,7 @@ func TestNsswitchVerdictAgreesAcrossGoroutines(t *testing.T) {
 func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
 	resetNsswitchClassification(t)
 
+	precomputeEnumerationEnvironment()
 	settled := nsswitchVerdict()
 
 	assert.Equal(t, settled.completeness != completenessComplete,
@@ -1657,7 +1638,46 @@ func TestEnsurePermissionCheckUIDPrecomputesEnvironment(t *testing.T) {
 	// test is that the classification was settled before that could matter.
 	_ = New().EnsurePermissionCheckUID()
 
-	nsswitchVerdictMu.Lock()
-	defer nsswitchVerdictMu.Unlock()
-	assert.True(t, nsswitchVerdictResolved, "EnsurePermissionCheckUID must settle the NSS classification")
+	assert.NotEqual(t, completenessUnstated, nsswitchVerdict().completeness,
+		"EnsurePermissionCheckUID must settle the NSS classification")
+}
+
+// TestPrecomputeEnumerationEnvironmentSettlesTheVerdict verifies that the
+// exported startup entry point settles the classification, so that cmd/runner
+// -- which resolves no permission check UID of its own -- warns about a host
+// this build cannot enumerate when it starts rather than at the first
+// group-writable path. It is the only test that calls the exported entry
+// point: the warning tests drive the shared reporter directly and would not
+// notice the entry point disappearing.
+func TestPrecomputeEnumerationEnvironmentSettlesTheVerdict(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	require.Equal(t, completenessUnstated, nsswitchVerdict().completeness,
+		"nothing may have settled the classification before the entry point is called")
+
+	PrecomputeEnumerationEnvironment()
+
+	assert.NotEqual(t, completenessUnstated, nsswitchVerdict().completeness,
+		"PrecomputeEnumerationEnvironment must settle the NSS classification")
+}
+
+// TestUnsettledEnvironmentDeniesGroupWritableFile verifies that an
+// enumeration reached without startup having settled the classification
+// denies. Removing the mutex from the classification made startup the only
+// thing that settles it, so a binary that forgets to call one of the two
+// startup entry points must fail closed rather than read an unstated verdict
+// as permission to grant.
+func TestUnsettledEnvironmentDeniesGroupWritableFile(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	gm := New()
+	canWrite, err := gm.CanUserSafelyWriteFile(currentUID, uint32(currentUID), unrelatedGID, 0o664)
+
+	assert.False(t, canWrite)
+	assert.ErrorIs(t, err, ErrGroupMemberCompletenessUnstated)
 }

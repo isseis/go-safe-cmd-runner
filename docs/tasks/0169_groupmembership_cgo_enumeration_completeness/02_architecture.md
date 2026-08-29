@@ -175,14 +175,15 @@ flowchart LR
 | ファイル | ビルドタグ | 本タスクでの変更 |
 |---|---|---|
 | `completeness.go` | なし | `causeNSSSources` の doc コメントを両ビルドで正しい表現へ改める（後述）。型そのものは変更しない |
-| `nsswitch.go` | **なし**（`//go:build !cgo \|\| test` を外す） | 完全性判定をプロセス単位で確定させる仕組み（`nsswitchVerdict`・その memo・警告レポータの共有インスタンス）と `precomputeEnumerationEnvironment` を `membership_nocgo.go` から移設する。`cmd/runner` 向けの公開の入口 `PrecomputeEnumerationEnvironment` を追加する。分類の規則は変えないが、doc コメントを両ビルドで正しい表現へ改める（後述） |
+| `nsswitch.go` | **なし**（`//go:build !cgo \|\| test` を外す） | 完全性判定をプロセス単位で確定させる仕組み（`nsswitchVerdict`・確定した値・警告レポータの共有インスタンス）と `precomputeEnumerationEnvironment` を `membership_nocgo.go` から移設し、確定を起動時の1回に改める。`cmd/runner` 向けの公開の入口 `PrecomputeEnumerationEnvironment` を追加する。分類の規則は変えないが、doc コメントを両ビルドで正しい表現へ改める（後述） |
 | `membership_nocgo.go` | `//go:build !cgo` | 上記の移設分を取り除く。非 CGO 版 `getGroupMembers` の挙動は変えない |
-| `membership_cgo.go` | `//go:build cgo` | `getGroupMembers` が `nsswitchVerdict()` の完全性判定を申告に反映する。空実装の `precomputeEnumerationEnvironment` を削除する（移設先へ集約）。doc コメントを是正する（AC-07）。ロック順序の注記に `nsswitchVerdictMu` を加える |
+| `membership_cgo.go` | `//go:build cgo` | `getGroupMembers` が `nsswitchVerdict()` の完全性判定を申告に反映する。空実装の `precomputeEnumerationEnvironment` を削除する（移設先へ集約）。doc コメントを是正する（AC-07）。ロック順序の注記は `cacheMutex` → `pwentMutex` のまま据え置く |
 | `manager.go` | なし | `incompleteEnumerationError` が、事実と回復手段の文面の決定をビルド別の関数へ委譲する。組み立てと `switch` の構造は現行のまま |
 | `incompleteness_advice.go`（新規） | なし | 事実と回復手段を運ぶ型 `incompletenessAdvice` と、両ビルドで同一の分岐（実装の誤りを示す案内） |
 | `incompleteness_advice_cgo.go`（新規） | `//go:build cgo` | CGO 版の事実と回復手段 |
 | `incompleteness_advice_nocgo.go`（新規） | `//go:build !cgo` | 非 CGO 版の事実と回復手段。0168 が定めた文面をそのまま移す（AC-13） |
 | `test_helpers.go` | `//go:build test` | 完全性判定をテストから任意の値に固定する補助関数を、`membership_nocgo_test.go` の `resetNsswitchClassification` を吸収する形で置く（§7.1） |
+| `testmain_test.go`（新規） | `//go:build test` | `TestMain` が、起動時の確定を本番のバイナリと同じ位置——最初のテストが走る前——で1回だけ行う（§7.1）。`internal/safefileio` にも同じ理由で1つ置く |
 
 **`nsswitch.go` からビルドタグを外す**ことが、本タスクの構造上の中心である。0168 がこのファイルに `!cgo || test` を付けていたのは、CGO ビルドでのみ有効な意味論一致テスト（`membership_semantics_test.go`）が分類関数を呼ぶためであり、CGO ビルドの production コードには呼び出し元が無かった。本タスクで CGO 版 `getGroupMembers` が production の呼び出し元になるため、タグを外せる。外すことで、許可リスト `completeNSSSources` と分類の規則が両ビルドから同一の実装としてコンパイルされる（AC-08、AC-09）。
 
@@ -202,7 +203,7 @@ flowchart LR
 
 **`membership_files.go` のタグ（`!cgo || test`）は変えない。** ファイル走査と `malformedLines` は非 CGO 版だけが使うものであり、CGO ビルドの production コードへ持ち込む理由が無い。`malformedLines.verdict()` を持つ `membership_files_nocgo.go` の `//go:build !cgo` も同様に据え置く。したがって CGO ビルドに非 CGO 専用のシンボルは入らず、`make deadcode` の対象（`./cmd/record ./cmd/runner ./cmd/verify`）に新たな到達不能コードは現れない（AC-10）。
 
-**ロック順序**: `membership_cgo.go` は現在「`GroupMembership.cacheMutex` → `pwentMutex`。逆順の獲得は禁止」と注記している。本タスクで `nsswitchVerdictMu` がこの経路に加わるため、注記を「`cacheMutex` → `nsswitchVerdictMu` → `pwentMutex`」へ更新する。`nsswitchVerdictMu` を保持したまま `cacheMutex` を取る経路は作らない。この順序が守られる限り循環は生じない。
+**ロック順序**: `membership_cgo.go` は「`GroupMembership.cacheMutex` → `pwentMutex`。逆順の獲得は禁止」と注記している。本タスクはこの経路にロックを加えない。完全性判定は起動時に1回だけ書かれ、以後は読むだけであるため、`nsswitchVerdict()` はロックを取らない（§3.2）。したがって注記は現行のまま据え置く。
 
 ### 2.3 データフロー
 
@@ -275,30 +276,35 @@ func getGroupMembers(gid uint32) (groupEnumeration, error)
 
 ### 3.2 分類と完全性判定の確定の共有（F-002 / AC-08〜AC-10）
 
-`nsswitch.go` からビルドタグを外し、0168 が `membership_nocgo.go` に置いていた次の3つを同ファイルへ移す。移動のみであり、処理内容は変更しない（doc コメントの是正は §2.2 のとおり行う）。
+`nsswitch.go` からビルドタグを外し、0168 が `membership_nocgo.go` に置いていた完全性判定の確定の仕組みを同ファイルへ移す。あわせて、確定を「最初の列挙による遅延確定」から「起動時の1回」へ改める（付録A の 2026-08-29 の決定）。
 
 ```go
-// nsswitchVerdict returns the completeness verdict settled for this process.
-// It reads and classifies on first call, records an incomplete verdict once,
-// and reuses the result thereafter.
-func nsswitchVerdict() completenessVerdict
+// nsswitchVerdictValue is the classification for this process. It is written
+// exactly once, by precomputeEnumerationEnvironment during startup while the
+// process is still single-threaded, and only read from then on.
+var nsswitchVerdictValue completenessVerdict
 
-// settleNsswitchVerdict returns the verdict for this process and whether
-// this call is the one that settled it.
-func settleNsswitchVerdict() (completenessVerdict, bool)
+// nsswitchVerdict returns the classification settled for this process. A
+// caller that reaches it before startup settled anything receives the
+// unstated zero value, which denies rather than grants.
+func nsswitchVerdict() completenessVerdict
 
 // processNSSCompletenessReporter is the single reporter instance shared by
 // the whole process, so that the record is emitted at most once per process.
 var processNSSCompletenessReporter nssCompletenessReporter
 ```
 
-あわせて、両ビルドで同一の実装になる `precomputeEnumerationEnvironment` も `nsswitch.go` に1つだけ置く。0168 ではこれがビルドごとに2つ存在し、CGO 版は空実装であった。本タスク後はどちらのビルドでも `nsswitchVerdict()` を呼ぶだけであるため、複製を残す理由が無い。
+**排他制御は持たない。** `nsswitchVerdictValue` を書くのは起動時の1回だけであり、その時点で群所属を参照する goroutine は存在しない（production の `go`／`wg.Go` は Slack 送信の2箇所だけで、いずれも群所属を参照せず、コマンド実行は逐次である）。したがって 0168 の `nsswitchVerdictMu`・`nsswitchVerdictResolved`・`settleNsswitchVerdict` は削除する。**未確定のまま列挙へ到達した場合はゼロ値 `completenessUnstated` が `manager.go` の `switch` の `default` に落ち、`unstatedCompletenessError` で拒否される**（追加のコードを要さない fail-secure）。
+
+あわせて、両ビルドで同一の実装になる `precomputeEnumerationEnvironment` も `nsswitch.go` に1つだけ置く。0168 ではこれがビルドごとに2つ存在し、CGO 版は空実装であった。本タスク後はこれが分類と記録の双方を行う唯一の場所になる。
 
 ```go
 // precomputeEnumerationEnvironment settles the completeness verdict before
 // the first enumeration, so that a build that cannot enumerate every member
 // on this host says so at startup rather than at the first group-writable
-// file.
+// file. It both classifies and records. A call made after the verdict is
+// settled keeps the first classification, so a mid-run edit of
+// /etc/nsswitch.conf cannot change a decision.
 func precomputeEnumerationEnvironment()
 ```
 
@@ -914,7 +920,9 @@ func useNsswitchVerdict(t *testing.T, v completenessVerdict)
 func resetNsswitchClassification(t *testing.T)
 ```
 
-この2つを `test_helpers.go`（`//go:build test`）に置く。現在 `membership_nocgo_test.go` にある `resetNsswitchClassification` をここへ移し、`useNsswitchVerdict` はそれを使って「固定 → 実行 → 復元」を行う。両者が触る状態は同じ4つ——`nsswitchVerdictMu`・`nsswitchVerdictResolved`・`nsswitchVerdictValue`・`processNSSCompletenessReporter.reported`——であり、片方だけを操作する経路は作らない。
+この2つを `test_helpers.go`（`//go:build test`）に置く。現在 `membership_nocgo_test.go` にある `resetNsswitchClassification` をここへ移し、`useNsswitchVerdict` はそれを使って「固定 → 実行 → 復元」を行う。両者が触る状態は同じ2つ——`nsswitchVerdictValue`・`processNSSCompletenessReporter.reported`——であり、片方だけを操作する経路は作らない。
+
+**復元先は「起動時に確定した状態」である。** 確定を起動時の1回に改めた後は、未確定のまま列挙へ到達したテストは拒否を受ける。したがって、実際に列挙するテストを含むパッケージ（`internal/groupmembership`・`internal/safefileio`）は `TestMain` で `precomputeEnumerationEnvironment`（`safefileio` では公開の入口）を1回呼び、本番のバイナリと同じ起動状態を作る。上の2つの補助関数の `t.Cleanup` も、ゼロ値ではなくこの起動状態へ戻す。
 
 **なぜ1つに絞るか**: 非 CGO 版は完全性判定を引数で受け取る内側の関数（`enumerateFromFiles`）を持つが、あれは分類の結果と不正行の記録を合成する処理を駆動するための seam である。CGO 版には合成する相手が無いため、同型の内側関数は補助関数と役割が重なる（§3.1）。
 

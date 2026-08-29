@@ -297,7 +297,7 @@
 
 **作業内容**
 
-- [ ] `nsswitch.go` に公開の入口を追加する。
+- [x] `nsswitch.go` に公開の入口を追加する。
   ```go
   // PrecomputeEnumerationEnvironment settles the completeness verdict for
   // this process, so that a build that cannot enumerate every member on this
@@ -308,32 +308,34 @@
   	precomputeEnumerationEnvironment()
   }
   ```
-- [ ] `cmd/runner/main.go` の `run` 関数で、`bootstrap.SetupLogging(...)` が `nil` を返した直後に `groupmembership.PrecomputeEnumerationEnvironment()` を呼ぶ。呼び出しの上に、位置の理由（ログ設定の後でなければ警告が出力先に届かず、最初の検証の前でなければ拒否に先行しない）を述べる英語のコメントを置く。
-- [ ] `manager_test.go` に `TestPrecomputeEnumerationEnvironmentSettlesTheVerdict` を追加する（AC-31 のうちパッケージ側）。`resetNsswitchClassification` から始め、`PrecomputeEnumerationEnvironment()` を呼んだ後に `nsswitchVerdictResolved` が真であることを検証する。`t.Parallel()` は宣言しない。
-- [ ] `cmd/runner/startup_order_guard_test.go` に `TestEnumerationEnvironmentPrecomputeOrder` を追加する（AC-31 のうち呼び出し位置）。既存の `startupOrderOptions` に倣い、次の3つを追跡する `Options` を作って `identitymutationguard.FindRefsWithOptions(t, ".", ...)` を呼び、`run` 内の位置を比較する。
-  - [ ] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "SetupLogging"}`
-  - [ ] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/groupmembership", FuncName: "PrecomputeEnumerationEnvironment"}`
-  - [ ] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "NewVerificationManager"}`
-  - [ ] 既存の `onlyCallSite` を使い、3件がいずれもちょうど1件であること（空振りしないこと）と、位置が `SetupLogging` < `PrecomputeEnumerationEnvironment` < `NewVerificationManager` の順であることを検証する。
-  - [ ] 既存の `TestStartupPrivilegeDropOrder` が持つ「control」サブテストに倣い、順序を入れ替えたソース文字列を `identitymutationguard.RefsInSourceWithOptions` に与えて、走査が実際に順序を見ていることを確かめるサブテストを置く。
+- [x] `cmd/runner/main.go` の `run` 関数で、`bootstrap.SetupLogging(...)` が `nil` を返した直後に `groupmembership.PrecomputeEnumerationEnvironment()` を呼ぶ。呼び出しの上に、位置の理由（ログ設定の後でなければ警告が出力先に届かず、最初の検証の前でなければ拒否に先行しない）を述べる英語のコメントを置く。
+- [x] `manager_test.go` に `TestPrecomputeEnumerationEnvironmentSettlesTheVerdict` を追加する（AC-31 のうちパッケージ側）。`resetNsswitchClassification` から始め、`PrecomputeEnumerationEnvironment()` を呼んだ後に完全性判定が確定していることを検証する。`t.Parallel()` は宣言しない。**計画からの相違（2026-08-29）**: 当初の記述は `nsswitchVerdictResolved` が真であることを検証するとしていたが、本 Phase の latch 作り替えでその変数を削除したため、確定の観測手段を `nsswitchVerdict().completeness != completenessUnstated` に改めた。あわせて、呼び出し前に未確定であることを `require` で先に主張し、テストが空振りしない形にした。同じ理由で、`TestEnsurePermissionCheckUIDPrecomputesEnvironment`（Phase 1 で追加済み）の主張も同じ形へ書き換えた。
+- [x] `cmd/runner/startup_order_guard_test.go` に `TestEnumerationEnvironmentPrecomputeOrder` を追加する（AC-31 のうち呼び出し位置）。既存の `startupOrderOptions` に倣い、次の3つを追跡する `Options` を作って `identitymutationguard.FindRefsWithOptions(t, ".", ...)` を呼び、`run` 内の位置を比較する。
+  - [x] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "SetupLogging"}`
+  - [x] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/groupmembership", FuncName: "PrecomputeEnumerationEnvironment"}`
+  - [x] `{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "NewVerificationManager"}`
+  - [x] 既存の `onlyCallSite` を使い、3件がいずれもちょうど1件であること（空振りしないこと）と、位置が `SetupLogging` < `PrecomputeEnumerationEnvironment` < `NewVerificationManager` の順であることを検証する。
+  - [x] 既存の `TestStartupPrivilegeDropOrder` が持つ「control」サブテストに倣い、順序を入れ替えたソース文字列を `identitymutationguard.RefsInSourceWithOptions` に与えて、走査が実際に順序を見ていることを確かめるサブテストを置く。
 
-- [ ] **latch を作り替える（2026-08-29 決定。mutex を外し、起動時の1回に固定する）。** 本 Phase で3つのバイナリすべてが起動時に確定させるようになるため、ここが厳密化の自然な置き場である。Phase 3 以前に入れると、`cmd/runner` がまだ確定させないため group-writable なパスを全部拒否してしまう。
-  - [ ] 根拠: 現在のフローに `nsswitchVerdict()` を並行に呼ぶ経路は無い。production の `go`／`wg.Go` は Slack 送信の2箇所（`internal/logging/slack_sender.go`・`internal/runner/bootstrap/logger.go`）だけで、いずれも群所属を参照しない。コマンド実行は逐次である。したがって `nsswitchVerdictMu` は何も守っていない。
-  - [ ] `nsswitchVerdictMu`・`nsswitchVerdictResolved`・`settleNsswitchVerdict`（と `justSettled`）を削除する。`nsswitchVerdictValue` は「起動時に goroutine が存在しないうちに1回だけ書き、以後は読むだけ」の変数にし、その旨を英語のコメントで宣言する。
-  - [ ] `precomputeEnumerationEnvironment` が分類と `report` の両方を行い、`nsswitchVerdict()` は `nsswitchVerdictValue` を返すだけにする。「記録はロックの外で出す」というコメントは、ロックが無くなるため削除する。
-  - [ ] **未確定のまま列挙へ到達した場合は拒否する。** 追加のコードは不要である: ゼロ値 `completenessUnstated` が `manager.go` の `switch` の `default` に落ち、`unstatedCompletenessError` で拒否される。この「起動時に確定していなければ拒否」が成り立つことをテストで固定する。
-  - [ ] `TestNsswitchVerdictAgreesAcrossGoroutines` を削除する（守るべき並行性が無くなるため）。削除後に `go tool cover -func` が両構成で関数ごとに不変であることを確認する。
-  - [ ] `resetNsswitchClassification`・`useNsswitchVerdict` を、mutex を使わない形へ書き換える。
-  - [ ] `02_architecture.md` の §2.2（ロック順序の注記）・§3.2（`settleNsswitchVerdict` を含む3シンボルの提示）・§7.1 を、作り替え後の姿へ改訂する。改訂は本 Phase の実装と同じコミットで行う。
-  - [ ] §5.3 に無効化確認の行を足す: 起動時の確定を外した状態で、「未確定なら拒否される」ことを主張するテストが失敗すること。
+- [x] **latch を作り替える（2026-08-29 決定。mutex を外し、起動時の1回に固定する）。** 本 Phase で3つのバイナリすべてが起動時に確定させるようになるため、ここが厳密化の自然な置き場である。Phase 3 以前に入れると、`cmd/runner` がまだ確定させないため group-writable なパスを全部拒否してしまう。
+  - [x] 根拠: 現在のフローに `nsswitchVerdict()` を並行に呼ぶ経路は無い。production の `go`／`wg.Go` は Slack 送信の2箇所（`internal/logging/slack_sender.go`・`internal/runner/bootstrap/logger.go`）だけで、いずれも群所属を参照しない。コマンド実行は逐次である。したがって `nsswitchVerdictMu` は何も守っていない。
+  - [x] `nsswitchVerdictMu`・`nsswitchVerdictResolved`・`settleNsswitchVerdict`（と `justSettled`）を削除する。`nsswitchVerdictValue` は「起動時に goroutine が存在しないうちに1回だけ書き、以後は読むだけ」の変数にし、その旨を英語のコメントで宣言する。
+  - [x] `precomputeEnumerationEnvironment` が分類と `report` の両方を行い、`nsswitchVerdict()` は `nsswitchVerdictValue` を返すだけにする。「記録はロックの外で出す」というコメントは、ロックが無くなるため削除する。
+  - [x] **未確定のまま列挙へ到達した場合は拒否する。** 追加のコードは不要である: ゼロ値 `completenessUnstated` が `manager.go` の `switch` の `default` に落ち、`unstatedCompletenessError` で拒否される。この「起動時に確定していなければ拒否」が成り立つことをテストで固定する。
+  - [x] `TestNsswitchVerdictAgreesAcrossGoroutines` を削除する（守るべき並行性が無くなるため）。削除後に `go tool cover -func` が両構成で関数ごとに不変であることを確認する。
+  - [x] `resetNsswitchClassification`・`useNsswitchVerdict` を、mutex を使わない形へ書き換える。
+  - [x] `02_architecture.md` の §2.2（ロック順序の注記）・§3.2（`settleNsswitchVerdict` を含む3シンボルの提示）・§7.1 を、作り替え後の姿へ改訂する。改訂は本 Phase の実装と同じコミットで行う。
+  - [x] §5.3 に無効化確認の行を足す: 起動時の確定を外した状態で、「未確定なら拒否される」ことを主張するテストが失敗すること（`X10`。`manager.go` の `default` の枝を無効化する形で実施した——起動時の確定を外すだけでは、この主張は通ったままになるためである）。あわせて「確定は1回だけ」を主張する `TestNsswitchVerdictSettlesOncePerProcess` の無効化確認 `X11` を加えた。
+  - [x] **計画に無かった追加作業（2026-08-29）**: 確定が起動時の1回になったことで、起動時の確定を経ずに列挙するテストは拒否を受けるようになった。本番のバイナリと同じ起動状態をテストバイナリにも作るため、`internal/groupmembership/testmain_test.go` と `internal/safefileio/testmain_test.go`（いずれも `//go:build test`）に `TestMain` を1つずつ置き、`precomputeEnumerationEnvironment`（`safefileio` では公開の入口）を最初のテストの前に呼ぶ。あわせて `resetNsswitchClassification`・`useNsswitchVerdict` の `t.Cleanup` を、ゼロ値ではなくこの起動状態へ戻す形に改めた。production コードにテスト専用の分岐は加えていない。`02_architecture.md` §2.2 の配置表と §7.1 に同じ内容を反映した。
+  - [x] `manager_test.go` に `TestUnsettledEnvironmentDeniesGroupWritableFile` を追加した。「未確定なら拒否される」が実装の性質として成り立つことを固定する（`ErrGroupMemberCompletenessUnstated` で拒否されること）。
 
 **完了判定条件**
 
-- [ ] `make test`・`make lint` が両構成で成功する。
-- [ ] `rg -c 'PrecomputeEnumerationEnvironment\(\)' cmd/runner/main.go` が `1`。
-- [ ] `rg -c 'PrecomputeEnumerationEnvironment' cmd/record/main.go cmd/verify/main.go` が一致無し（`record`・`verify` は `EnsurePermissionCheckUID` 経由のままであること）。
-- [ ] `make deadcode` が `PrecomputeEnumerationEnvironment` を到達不能として報告しない。
-- [ ] §5.3 の無効化確認 `X3`・`X4`・`X9` を実施し、コミットメッセージに英語で記す。
+- [x] `make test`・`make lint` が両構成で成功する。
+- [x] `rg -c 'PrecomputeEnumerationEnvironment\(\)' cmd/runner/main.go` が `1`。
+- [x] `rg -c 'PrecomputeEnumerationEnvironment' cmd/record/main.go cmd/verify/main.go` が一致無し（`record`・`verify` は `EnsurePermissionCheckUID` 経由のままであること）。
+- [x] `make deadcode` が `PrecomputeEnumerationEnvironment` を到達不能として報告しない。
+- [x] §5.3 の無効化確認 `X3`・`X4`・`X9`（および本 Phase で加えた `X10`・`X11`）を実施し、コミットメッセージに英語で記す。
 
 ### PR-3 作成ポイント: startup warning entry point and runner wiring
 
@@ -485,7 +487,7 @@
 | AC-30 | static | 利用者向け文書 英語版3件 | `rg -c 'netgroup' docs/user/record_command.md docs/user/verify_command.md docs/user/security-risk-assessment.md` が3ファイルとも `1` 以上、かつ出力が3行（現状はいずれも0件）。英語版は `/mktrans` の訳語が事前に確定しないため語の有無で取り、内容は下の manual で確かめる |
 | AC-30 | manual | 同上 | 追加した記述を日本語版・英語版とも読み、「判定が見るのは `passwd`・`group` の2行だけである」ことと「`netgroup` 行は判定に影響しない」ことの両方が明示されており、Ubuntu の既定を見た利用者が誤認しない書き方になっていることを確認する |
 | AC-31 | test | `cmd/runner/main.go` `run` | `cmd/runner/startup_order_guard_test.go::TestEnumerationEnvironmentPrecomputeOrder`（`SetupLogging` < `PrecomputeEnumerationEnvironment` < `NewVerificationManager` の順であること。3件がちょうど1件ずつであることを要求して空振りを防ぐ。順序を入れ替えたソースで走査が実際に順序を見ていることを確かめる control サブテストを含む） |
-| AC-31 | test | `nsswitch.go` `PrecomputeEnumerationEnvironment` | `manager_test.go::TestPrecomputeEnumerationEnvironmentSettlesTheVerdict`（公開の入口を呼んだ後に完全性判定が確定していること）。**公開の入口を実際に呼ぶテストはこれだけである**——警告側のテストは共有レポータを直接の対象とするため、入口が消えても失敗しない |
+| AC-31 | test | `nsswitch.go` `PrecomputeEnumerationEnvironment` | `manager_test.go::TestPrecomputeEnumerationEnvironmentSettlesTheVerdict`（公開の入口を呼ぶ前は未確定であり、呼んだ後に完全性判定が確定していること）。**公開の入口を実際に呼ぶテストはこれだけである**——警告側のテストは共有レポータを直接の対象とするため、入口が消えても失敗しない |
 | AC-31 | static | `cmd/record`・`cmd/verify` | `rg -c 'PrecomputeEnumerationEnvironment' cmd/record/main.go cmd/verify/main.go` が一致無し（`record`・`verify` の挙動が変わらないこと。両者は `EnsurePermissionCheckUID` 経由のまま） |
 
 ### 3.1 検証コマンド集
@@ -697,6 +699,8 @@ Phase を単位に PR を切る。ただし **Phase 2 と Phase 3 は1つの PR 
 | `X6` | CGO 版 `adviseIncompleteness` の文面を非 CGO 版のものに差し替える | `incompleteness_advice_cgo_test.go::TestAdviseIncompleteness_CGO` | Phase 3 |
 | `X7` | `classifyNSSCompleteness` の `goos != "linux"` の分岐を削る | `nsswitch_test.go::TestClassifyNSSCompleteness`（Phase 1 のタグ除去により CGO ビルドでも実行されることを、あわせて確かめる） | Phase 1 |
 | `X8` | `nssCompletenessReporter.report` の `CompareAndSwap` による1回限りの抑止を外す（`r.reported.Store(true)` へ差し替える） | `nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce`（記録が3件になる） | Phase 1 |
+| `X10` | `manager.go` の `isUserOnlyGroupMember` の `switch` から `default` の拒否を外し、未確定の完全性が拒否されないようにする | `manager_test.go::TestUnsettledEnvironmentDeniesGroupWritableFile` | Phase 4 |
+| `X11` | `precomputeEnumerationEnvironment` の「確定済みなら何もしない」早期 return を外し、呼ばれるたびに分類し直すようにする | `manager_test.go::TestNsswitchVerdictSettlesOncePerProcess` | Phase 4 |
 
 ### 5.4 新規に書く文書の突き合わせ
 

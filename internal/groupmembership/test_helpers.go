@@ -21,36 +21,37 @@ func newWithFixedEnumeration(members []string, verdict completenessVerdict) *Gro
 	})
 }
 
-// resetNsswitchClassification clears the process-wide classification latch
-// and the reporter that shares its lifetime, so that a test can observe the
-// first classification of the process -- including the reporter's one
-// emission per process, which an earlier test would otherwise have consumed.
-// It clears them again afterwards so that a value one test planted cannot be
-// read by the next.
+// resetNsswitchClassification clears the process-wide classification and the
+// reporter that shares its lifetime, so that a test can observe the first
+// classification of the process -- including the reporter's one emission per
+// process, which an earlier test would otherwise have consumed. It clears
+// them again afterwards so that a value one test planted cannot be read by
+// the next.
 //
-// Callers must not run in parallel with each other: the latch is
-// process-wide, and clearing it mid-run would let another test observe a
-// classification that is being settled a second time.
+// Callers must not run in parallel with each other, nor with any test that
+// enumerates: the classification is process-wide, and production settles it
+// once at startup and only reads it afterwards.
 func resetNsswitchClassification(t *testing.T) {
 	t.Helper()
 
-	reset := func() {
-		nsswitchVerdictMu.Lock()
-		defer nsswitchVerdictMu.Unlock()
-		clearNsswitchClassificationLocked()
-	}
-
-	reset()
-	t.Cleanup(reset)
+	clearNsswitchClassification()
+	t.Cleanup(restoreStartupNsswitchClassification)
 }
 
-// clearNsswitchClassificationLocked returns the process-wide classification
-// and its reporter to the state they have before anything settles them. The
-// caller must hold nsswitchVerdictMu.
-func clearNsswitchClassificationLocked() {
-	nsswitchVerdictResolved = false
+// clearNsswitchClassification returns the process-wide classification and its
+// reporter to the state they have before startup settles them.
+func clearNsswitchClassification() {
 	nsswitchVerdictValue = completenessVerdict{}
 	processNSSCompletenessReporter.reported.Store(false)
+}
+
+// restoreStartupNsswitchClassification puts the process back into the state
+// TestMain left it in: the host's own classification, settled once. A test
+// that cleared or planted a verdict must restore it, or the tests that follow
+// would enumerate against an unstated classification and deny.
+func restoreStartupNsswitchClassification() {
+	clearNsswitchClassification()
+	precomputeEnumerationEnvironment()
 }
 
 // useNsswitchVerdict fixes the completeness verdict for this process for the
@@ -61,10 +62,10 @@ func clearNsswitchClassificationLocked() {
 // Callers must not run in parallel with each other: the verdict it plants is
 // process-wide.
 //
-// The planted verdict is never reported: nothing settles it, so
-// processNSSCompletenessReporter stays unfired. A test that asserts on the
-// startup warning must instead call resetNsswitchClassification and let the
-// host's own classification settle.
+// The planted verdict is never reported: precomputeEnumerationEnvironment is
+// not what put it there, and it leaves an already settled verdict alone. A
+// test that asserts on the startup warning must instead call
+// resetNsswitchClassification and let the host's own classification settle.
 //
 // Only the cgo build will ever call this: the non-cgo build takes the verdict
 // as an argument to enumerateFromFiles, which has to combine it with the
@@ -74,18 +75,7 @@ func clearNsswitchClassificationLocked() {
 func useNsswitchVerdict(t *testing.T, v completenessVerdict) {
 	t.Helper()
 
-	plant := func(v completenessVerdict) {
-		nsswitchVerdictMu.Lock()
-		defer nsswitchVerdictMu.Unlock()
-		clearNsswitchClassificationLocked()
-		nsswitchVerdictValue = v
-		nsswitchVerdictResolved = true
-	}
-
-	plant(v)
-	t.Cleanup(func() {
-		nsswitchVerdictMu.Lock()
-		defer nsswitchVerdictMu.Unlock()
-		clearNsswitchClassificationLocked()
-	})
+	clearNsswitchClassification()
+	nsswitchVerdictValue = v
+	t.Cleanup(restoreStartupNsswitchClassification)
 }

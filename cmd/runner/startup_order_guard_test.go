@@ -125,6 +125,56 @@ func TestStartupPrivilegeDropOrder(t *testing.T) {
 	})
 }
 
+// TestEnumerationEnvironmentPrecomputeOrder statically verifies where run
+// settles the enumeration-completeness classification. Both neighbours matter
+// and neither leaves a runtime trace on a host this build can enumerate
+// exhaustively, so the guard reads the source: settling before logging is set
+// up would send the warning nowhere, and settling after the first verification
+// would let a denial precede the warning that explains it.
+func TestEnumerationEnvironmentPrecomputeOrder(t *testing.T) {
+	t.Run("run settles the classification after logging and before verification", func(t *testing.T) {
+		sites, _ := identitymutationguard.FindRefsWithOptions(t, ".", enumerationOrderOptions())
+
+		setupLogging := onlyCallSite(t, sites, "run", "SetupLogging")
+		precompute := onlyCallSite(t, sites, "run", "PrecomputeEnumerationEnvironment")
+		newVerification := onlyCallSite(t, sites, "run", "NewVerificationManager")
+
+		require.Equal(t, setupLogging.File, precompute.File,
+			"positions are only comparable within one file")
+		require.Equal(t, precompute.File, newVerification.File,
+			"positions are only comparable within one file")
+		assert.Less(t, setupLogging.Pos, precompute.Pos,
+			"run must set logging up before settling the classification, or the warning reaches no destination")
+		assert.Less(t, precompute.Pos, newVerification.Pos,
+			"run must settle the classification before the first verification, or a denial precedes the warning that explains it")
+	})
+
+	t.Run("control: the order assertions fail on reordered source", func(t *testing.T) {
+		reordered := "package main\n" +
+			"import (\n" +
+			"\t\"github.com/isseis/go-safe-cmd-runner/internal/groupmembership\"\n" +
+			"\t\"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap\"\n" +
+			")\n" +
+			"func run(runID string) error {\n" +
+			"\t_, _ = bootstrap.NewVerificationManager()\n" +
+			"\tgroupmembership.PrecomputeEnumerationEnvironment()\n" +
+			"\t_ = bootstrap.SetupLogging(bootstrap.SetupLoggingOptions{})\n" +
+			"\treturn nil\n" +
+			"}\n"
+
+		sites, _ := identitymutationguard.RefsInSourceWithOptions(t, "reordered.go", reordered, enumerationOrderOptions())
+
+		setupLogging := onlyCallSite(t, sites, "run", "SetupLogging")
+		precompute := onlyCallSite(t, sites, "run", "PrecomputeEnumerationEnvironment")
+		newVerification := onlyCallSite(t, sites, "run", "NewVerificationManager")
+
+		assert.Greater(t, setupLogging.Pos, precompute.Pos,
+			"the scan must see the reordered source inside run's body, not merely find the calls")
+		assert.Greater(t, precompute.Pos, newVerification.Pos,
+			"the scan must see the reordered source inside run's body, not merely find the calls")
+	})
+}
+
 // mainFuncBody returns the body of the main function declared in path.
 func mainFuncBody(t *testing.T, path string) *ast.BlockStmt {
 	t.Helper()
@@ -168,6 +218,18 @@ func startupOrderOptions() identitymutationguard.Options {
 		Extra: []identitymutationguard.ExtraTrackedFunc{
 			{ImportPath: "flag", FuncName: "Parse"},
 			{ImportPath: "", FuncName: "dropStartupPrivileges"},
+		},
+	}
+}
+
+// enumerationOrderOptions tracks the three calls of run whose order decides
+// whether the enumeration-completeness warning precedes the first denial.
+func enumerationOrderOptions() identitymutationguard.Options {
+	return identitymutationguard.Options{
+		Extra: []identitymutationguard.ExtraTrackedFunc{
+			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "SetupLogging"},
+			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/groupmembership", FuncName: "PrecomputeEnumerationEnvironment"},
+			{ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap", FuncName: "NewVerificationManager"},
 		},
 	}
 }
