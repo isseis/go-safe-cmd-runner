@@ -180,8 +180,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1073）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: CGO 版の完全性申告（AC-01〜AC-06, AC-07 の残り）
 
@@ -191,40 +191,40 @@
 
 **作業内容**
 
-- [ ] `var pwentMutex sync.Mutex` に付いている doc コメントを分割する。現在は `getGroupMembers` を説明する段落と `pwentMutex` を説明する段落が1つのコメントブロックにまとまっており、`getGroupMembers` 自身には doc コメントが無い。
-  - [ ] `var pwentMutex` に残すコメント: `// pwentMutex serialises all setpwent/getpwent/endpwent calls within this`／`// package. It is held inside getUsersWithPrimaryGID.`／`// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.`／`// Reverse acquisition is forbidden.`（ロック順序に `nsswitchVerdictMu` を加える。`02_architecture.md` §2.2）
-  - [ ] `func getGroupMembers` に新たに付ける doc コメント: `// getGroupMembers returns all members of a group given its GID, together`／`// with what this host's user database configuration says about whether`／`// libc enumerates them exhaustively.`／`//`／`// The member set is the union of explicit members (gr_mem) and users whose`／`// primary GID matches the requested GID. This matches the non-CGO`／`// implementation semantics. The completeness is the verdict settled for`／`// this process: libc resolves every configured source, but a source such as`／`// sss gives no guarantee that what it returns is every member.`
-- [ ] `getGroupMembers` の本体で、完全性判定の取得を関数の先頭に置く（`verdict := nsswitchVerdict()`）。`02_architecture.md` §6.1 のとおり、成功して返るすべての経路が同じ値を載せることをコードの形から読めるようにするためである。
-- [ ] `getGroupMembers` のグループ不在の分岐を、`return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: []string{}, verdict: verdict}, nil` へ変える。
-- [ ] `getGroupMembers` の最終の return を、`return groupEnumeration{members: merged, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: merged, verdict: verdict}, nil` へ変える。
-- [ ] `membership_cgo_test.go` の `TestGetGroupMembers_StatesComplete` を改める（`02_architecture.md` §7.3）。
-  - [ ] 関数名を `TestGetGroupMembers_StatesTheHostVerdict` へ改める。「無条件に完全」を固定する名前が残ると、主張と名前が食い違う。
-  - [ ] 主張を `assert.Equal(t, completeVerdict(), enumeration.verdict)` から、期待値を `classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)` から得る形へ改める。分類の定義をテスト側に複製しないための形であり、`membership_semantics_test.go` が既に採っている書き方に倣う。
-  - [ ] doc コメントを、このテストがホストの分類との一致を主張するものであることを述べる文へ書き換える。
-  - [ ] **このテストを AC-01・AC-02 の根拠として数えない。** `files` のみを構成したホスト（本コンテナと GitHub-hosted の Ubuntu ランナーがこれに当たる）では期待値が `completeVerdict()` に等しくなるため、`getGroupMembers` を元の `completeVerdict()` 固定へ戻しても緑のままであり、そのホストでは失敗しえない。失敗しうるのは分類が「完全」にならないホストだけである。AC-01・AC-02 を担うのは、非ホスト由来の完全性判定を植える `TestGetGroupMembers_CarriesTheSettledVerdict` のほうである。`02_architecture.md` §7.3 が本テストの維持（削除ではなく更新）を指示しているため残すが、位置づけはホスト整合性の確認に限る。
-- [ ] `test_helpers.go` に `useNsswitchVerdict(t *testing.T, v completenessVerdict)` を追加する（Phase 1 から繰り延べた分。仕様は Phase 1 の該当行に記す）。本 Phase で最初の呼び出し元が現れるため `unused` に掛からない。
-- [ ] `membership_cgo_test.go` に AC-01・AC-02 を検証するテスト `TestGetGroupMembers_CarriesTheSettledVerdict` を追加する。`useNsswitchVerdict` で完全性判定を固定し、グループが存在する GID（`getCurrentUserGID(t)`）と存在しない GID（`manager_test.go` が既に定義している `unrelatedGID`。リテラルの `99999` を書かない）の双方で、固定した値がそのまま `enumeration.verdict` に現れることを検証する。固定する値は少なくとも次の3つとする。
-  - [ ] `completeVerdict()`（AC-01）
-  - [ ] `incompleteVerdict(causeNSSSources, "passwd: sss")`（AC-02。SSSD が構成されたホストを模した値であり、libc がエラーを返していない状況で「不完全」になることを踏む）
-  - [ ] `incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")`（AC-04 が linux 以外で載る値。分類器側の AC-04 は `nsswitch_test.go::TestClassifyNSSCompleteness` が踏む）
-  - [ ] このテストはプロセス全体の状態を触るため `t.Parallel()` を宣言しない。
-- [ ] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める。同ファイルが `test_helpers.go`（`//go:build test`）の `useNsswitchVerdict` を使うようになるためである。テストタグ限定のシンボルを使う CGO 専用テストとして、`membership_semantics_test.go` が既に `//go:build cgo && test` を採っている。**この変更でテストの到達範囲は狭まらない**——`make test` は両構成とも `-tags test` を渡し（`Makefile` の `unit-test`）、`make lint` も `--build-tags test` 付きで `golangci-lint` を実行するため、同ファイルの既存テスト（`TestValidateGroupMemberCount`・`TestGetExplicitGroupMembers_*` 等）は従来どおり実行される。
-- [ ] `02_architecture.md` §3.2.1 の「/etc/nsswitch.conf が存在しない場合」に、glibc の既定構成テーブル（upstream の `nss/nss_database.c`）を読んだ結果を追記する（同節と §7.5 が求める確認）。結果が同節の記述と食い違った場合にのみ、AC-03 の改訂を提案する。
+- [x] `var pwentMutex sync.Mutex` に付いている doc コメントを分割する。現在は `getGroupMembers` を説明する段落と `pwentMutex` を説明する段落が1つのコメントブロックにまとまっており、`getGroupMembers` 自身には doc コメントが無い。
+  - [x] `var pwentMutex` に残すコメント: `// pwentMutex serialises all setpwent/getpwent/endpwent calls within this`／`// package. It is held inside getUsersWithPrimaryGID.`／`// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.`／`// Reverse acquisition is forbidden.`（ロック順序に `nsswitchVerdictMu` を加える。`02_architecture.md` §2.2）
+  - [x] `func getGroupMembers` に新たに付ける doc コメント: `// getGroupMembers returns all members of a group given its GID, together`／`// with what this host's user database configuration says about whether`／`// libc enumerates them exhaustively.`／`//`／`// The member set is the union of explicit members (gr_mem) and users whose`／`// primary GID matches the requested GID. This matches the non-CGO`／`// implementation semantics. The completeness is the verdict settled for`／`// this process: libc resolves every configured source, but a source such as`／`// sss gives no guarantee that what it returns is every member.`
+- [x] `getGroupMembers` の本体で、完全性判定の取得を関数の先頭に置く（`verdict := nsswitchVerdict()`）。`02_architecture.md` §6.1 のとおり、成功して返るすべての経路が同じ値を載せることをコードの形から読めるようにするためである。
+- [x] `getGroupMembers` のグループ不在の分岐を、`return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: []string{}, verdict: verdict}, nil` へ変える。
+- [x] `getGroupMembers` の最終の return を、`return groupEnumeration{members: merged, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: merged, verdict: verdict}, nil` へ変える。
+- [x] `membership_cgo_test.go` の `TestGetGroupMembers_StatesComplete` を改める（`02_architecture.md` §7.3）。
+  - [x] 関数名を `TestGetGroupMembers_StatesTheHostVerdict` へ改める。「無条件に完全」を固定する名前が残ると、主張と名前が食い違う。
+  - [x] 主張を `assert.Equal(t, completeVerdict(), enumeration.verdict)` から、期待値を `classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)` から得る形へ改める。分類の定義をテスト側に複製しないための形であり、`membership_semantics_test.go` が既に採っている書き方に倣う。
+  - [x] doc コメントを、このテストがホストの分類との一致を主張するものであることを述べる文へ書き換える。
+  - [x] **このテストを AC-01・AC-02 の根拠として数えない。** `files` のみを構成したホスト（本コンテナと GitHub-hosted の Ubuntu ランナーがこれに当たる）では期待値が `completeVerdict()` に等しくなるため、`getGroupMembers` を元の `completeVerdict()` 固定へ戻しても緑のままであり、そのホストでは失敗しえない。失敗しうるのは分類が「完全」にならないホストだけである。AC-01・AC-02 を担うのは、非ホスト由来の完全性判定を植える `TestGetGroupMembers_CarriesTheSettledVerdict` のほうである。`02_architecture.md` §7.3 が本テストの維持（削除ではなく更新）を指示しているため残すが、位置づけはホスト整合性の確認に限る。
+- [x] `test_helpers.go` に `useNsswitchVerdict(t *testing.T, v completenessVerdict)` を追加する（Phase 1 から繰り延べた分。仕様は Phase 1 の該当行に記す）。**計画からの相違**: 本 Phase で最初の呼び出し元が現れるため `unused` に掛からない、と書いていたが、実際には掛かった。呼び出し元は `//go:build cgo && test` のテストだけであり、`make lint` の `CGO_ENABLED=0` 側の実行（`Makefile` の `lint` は2構成で回す）はそのファイルを読まないため `func useNsswitchVerdict is unused` を報告する。置き場は §5.2 の指定どおり `test_helpers.go` のまま変えず、理由を述べた `//nolint:unused` を doc コメントに添えて解消した。`cgo && test` のヘルパファイルへ分けなかったのは、両ビルドのテストが同じ手段で完全性判定を固定するという §7.1 の形を崩さないためである。
+- [x] `membership_cgo_test.go` に AC-01・AC-02 を検証するテスト `TestGetGroupMembers_CarriesTheSettledVerdict` を追加する。`useNsswitchVerdict` で完全性判定を固定し、グループが存在する GID（`getCurrentUserGID(t)`）と存在しない GID（`manager_test.go` が既に定義している `unrelatedGID`。リテラルの `99999` を書かない）の双方で、固定した値がそのまま `enumeration.verdict` に現れることを検証する。固定する値は少なくとも次の3つとする。
+  - [x] `completeVerdict()`（AC-01）
+  - [x] `incompleteVerdict(causeNSSSources, "passwd: sss")`（AC-02。SSSD が構成されたホストを模した値であり、libc がエラーを返していない状況で「不完全」になることを踏む）
+  - [x] `incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")`（AC-04 が linux 以外で載る値。分類器側の AC-04 は `nsswitch_test.go::TestClassifyNSSCompleteness` が踏む）
+  - [x] このテストはプロセス全体の状態を触るため `t.Parallel()` を宣言しない。
+- [-] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める件は**取り止めた（利用者指摘。2026-08-29）**。いったん改めたが元へ戻し、`incompleteness_advice_{cgo,nocgo}_test.go` にも `&& test` を付けないこととした。**理由**: `_test.go` は production ビルドに入らないため、`test` タグに production からの除外という役目は無い（それが必要なのは `_test.go` でない `test_helpers.go` の側である）。「`test_helpers.go` のシンボルを使うから」という当初の理由も成り立たない——本パッケージのテストは `-tags test` 無しでは**そもそもコンパイルできない**。`manager_test.go`（タグ無し）が全ファイル `//go:build test` の `internal/testutil` を import しており、タグ無しの `go test` は `build constraints exclude all Go files in internal/testutil` で失敗する。`Makefile` の `unit-test-cgo1`・`unit-test-cgo0` と `make lint` はいずれも `-tags test` を渡すため、付けても外しても到達範囲は変わらない（両構成での実行を確認済み）。**むしろ付けないほうが安全である**——将来 `manager_test.go` の `testutil` 依存が無くなった場合、タグが付いていればタグ無し実行でこれらのファイルは**黙って実行対象から外れる**が、付いていなければ未定義シンボルのコンパイルエラーとして表面化する。パッケージ内の多数派（`manager_test.go`・`nsswitch_test.go` ほか、いずれも `test_helpers.go` のシンボルを使う）も `test` タグを付けていない。**`membership_semantics_test.go` の `//go:build cgo && test` も同じ理由で外した（利用者指摘。2026-08-29）**——同ファイルは `//go:build test` のシンボルを1つも使っておらず、`test` タグは完全に無用であった。当初はこれを「AC-22 が無変更を求めている」として据え置いたが、AC-22 が守ろうとしているのは意味論一致テストの適用範囲（skip 条件と比較結果）であってファイルのバイト列ではない。`01_requirements.md` の AC-22 をその意味に改め、検証も「差分がビルドタグ行に限られること」＋「CGO 構成で従来どおり実行されること」に改めた。
+- [x] `02_architecture.md` §3.2.1 の「/etc/nsswitch.conf が存在しない場合」に、glibc の既定構成テーブル（upstream の `nss/nss_database.c`）を読んだ結果を追記する（同節と §7.5 が求める確認）。結果が同節の記述と食い違った場合にのみ、AC-03 の改訂を提案する。
 
 **完了判定条件**
 
-- [ ] `make test`・`make lint` が両構成で成功する。
-- [ ] `rg -c 'completeVerdict\(\)' internal/groupmembership/membership_cgo.go` が一致無し（現状 2 件）。
-- [ ] `rg -c 'nsswitchVerdict\(\)' internal/groupmembership/membership_cgo.go` が `1`。
-- [ ] `rg -c '^func TestGetGroupMembers_CarriesTheSettledVerdict\(' internal/groupmembership/membership_cgo_test.go` が `1`（新しいテストが実在すること。§3 の AC-20 の静的確認が空振りしないための前提）。
-- [ ] §5.3 の無効化確認 `X1`・`X5` を実施し、コミットメッセージに英語で記す。
+- [x] `make test`・`make lint` が両構成で成功する。
+- [x] `rg -c 'completeVerdict\(\)' internal/groupmembership/membership_cgo.go` が一致無し（現状 2 件）。
+- [x] `rg -c 'nsswitchVerdict\(\)' internal/groupmembership/membership_cgo.go` が `1`。
+- [x] `rg -c '^func TestGetGroupMembers_CarriesTheSettledVerdict\(' internal/groupmembership/membership_cgo_test.go` が `1`（新しいテストが実在すること。§3 の AC-20 の静的確認が空振りしないための前提）。
+- [x] §5.3 の無効化確認 `X1`・`X5` を実施し、コミットメッセージに英語で記す。
 
 > **Phase 2 で `cacheMutex` を保持したままログハンドラを呼ぶ経路が CGO ビルドにも生じる（レビュー指摘）。** `manager.go` の `getGroupEnumeration` は `cacheMutex.Lock()` を保持したまま `gm.enumerateGroupMembers(gid)` を呼ぶ。本 Phase で CGO 版 `getGroupMembers` が `nsswitchVerdict()` を呼ぶようになると、その中の `processNSSCompletenessReporter.report(slog.Default(), verdict)` が `cacheMutex`（再入不可の `sync.RWMutex`）の下で実行される。ハンドラは任意のコードであり、`safefileio` 経由で `CanCurrentUserSafelyWriteFile` → `getGroupEnumeration` へ戻るものがあれば自己デッドロックする。`nsswitchVerdict` の既存コメントは「記録はロックの外で出す」と述べているが、その対象は `nsswitchVerdictMu` だけであり `cacheMutex` を名指ししていない。なお本経路は非 CGO ビルドには既に存在する（`getGroupMembers` が `nsswitchVerdict()` を呼ぶため）ので、本 Phase が新設する欠陥ではなく CGO ビルドへ拡げるものである。通常の起動では `precomputeEnumerationEnvironment()` が先に確定させるため `justSettled` が偽になり `report` は呼ばれないが、その入口を通らない利用（ライブラリとしての利用、テスト）では成立しうる。本 Phase で次の2点を行う。ロック順序の注記の更新（`cacheMutex` → `nsswitchVerdictMu` → `pwentMutex`）とは別の問題であり、順序ではなく「ロック下で任意のコードを呼ぶこと」を扱う。
 
 **対処は Phase 4 の作り替えに委ね、本 Phase では回避策を作らない**（2026-08-29 決定。下記「latch の作り替え」を参照）。遅延確定をやめて起動時の1回に固定すれば `report` は起動時＝ロックの外でしか走らなくなり、この経路自体が消えるためである。回避策を先に入れると、Phase 4 でそれを捨てることになる。
 
-- [ ] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。Phase 4 までの暫定の記録であり、作り替えの際にコメントごと消える。
-- [ ] Phase 2〜3 の間はこの経路が生きていることを受容する。**踏むには「`GroupMembership` へ戻る `slog` ハンドラ」が要るが、そのようなハンドラは現在存在しない**（production の goroutine は Slack 送信の2箇所のみで、いずれも群所属を参照しない）。
+- [x] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。Phase 4 までの暫定の記録であり、作り替えの際にコメントごと消える。
+- [x] Phase 2〜3 の間はこの経路が生きていることを受容する。**踏むには「`GroupMembership` へ戻る `slog` ハンドラ」が要るが、そのようなハンドラは現在存在しない**（production の goroutine は Slack 送信の2箇所のみで、いずれも群所属を参照しない）。
 
 ### Phase 3: 拒否メッセージのビルド別化（AC-11〜AC-14）
 
@@ -234,41 +234,41 @@
 
 **作業内容**
 
-- [ ] `incompleteness_advice.go`（ビルドタグ無し）を新規追加する。
-  - [ ] `incompletenessAdvice` 型（非公開フィールド `fact string`・`remediation string`）
-  - [ ] `implementationDefectAdvice(what string) incompletenessAdvice`。`fact` に `what` を、`remediation` に `"report this as a defect in the enumeration implementation"` を入れて返す。この文字列は現行 `manager.go` の `causeUnspecified`・`default` の `remediation` と同一であり、変えない。
-- [ ] `incompleteness_advice_nocgo.go`（`//go:build !cgo`）を新規追加し、`adviseIncompleteness(cause incompletenessCause) incompletenessAdvice` を置く。文面は現行 `manager.go` の `switch` から**1文字も変えずに**移す（AC-13）。
-  - [ ] `causeUnsupportedPlatform`: fact `"this build cannot enumerate all members of a group on this platform"`、remediation `"rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc"`
-  - [ ] `causeNSSSources`: fact `"/etc/nsswitch.conf names a user database source this build cannot consult, or could not be read"`、remediation `"check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted"`
-  - [ ] `causeMalformedLine`: fact `"a line of the user database files could not be parsed and was skipped, so the members listed there are unknown"`、remediation `"check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1"`
-  - [ ] `causeUnspecified`: `implementationDefectAdvice("the enumeration was judged incomplete but recorded no cause")`
-  - [ ] `default`: `implementationDefectAdvice("the enumeration was judged incomplete for a cause this build does not recognize")`
-  - [ ] 現行 `manager.go` の `causeUnsupportedPlatform` の枝に付いている説明コメント（`// The platforms this reaches are the ones with no /etc/nsswitch.conf,` から始まる3行）も一緒に移す。
-- [ ] `incompleteness_advice_cgo.go`（`//go:build cgo`）を新規追加し、同名の `adviseIncompleteness` を置く。回復手段に `CGO_ENABLED` を含めない（AC-12）。
-  - [ ] `causeUnsupportedPlatform`: fact `"this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member"`、remediation `"clear the group-writable bit on the path (chmod g-w)"`
-  - [ ] `causeNSSSources`: fact `"/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), its lines could not be read as written, or the file could not be read"`、remediation `"clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with sources whose enumeration is exhaustive (files, systemd)"`
+- [x] `incompleteness_advice.go`（ビルドタグ無し）を新規追加する。
+  - [x] `incompletenessAdvice` 型（非公開フィールド `fact string`・`remediation string`）
+  - [x] `implementationDefectAdvice(what string) incompletenessAdvice`。`fact` に `what` を、`remediation` に `"report this as a defect in the enumeration implementation"` を入れて返す。この文字列は現行 `manager.go` の `causeUnspecified`・`default` の `remediation` と同一であり、変えない。
+- [x] `incompleteness_advice_nocgo.go`（`//go:build !cgo`）を新規追加し、`adviseIncompleteness(cause incompletenessCause) incompletenessAdvice` を置く。文面は現行 `manager.go` の `switch` から**1文字も変えずに**移す（AC-13）。
+  - [x] `causeUnsupportedPlatform`: fact `"this build cannot enumerate all members of a group on this platform"`、remediation `"rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc"`
+  - [x] `causeNSSSources`: fact `"/etc/nsswitch.conf names a user database source this build cannot consult, or could not be read"`、remediation `"check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted"`
+  - [x] `causeMalformedLine`: fact `"a line of the user database files could not be parsed and was skipped, so the members listed there are unknown"`、remediation `"check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1"`
+  - [x] `causeUnspecified`: `implementationDefectAdvice("the enumeration was judged incomplete but recorded no cause")`
+  - [x] `default`: `implementationDefectAdvice("the enumeration was judged incomplete for a cause this build does not recognize")`
+  - [x] 現行 `manager.go` の `causeUnsupportedPlatform` の枝に付いている説明コメント（`// The platforms this reaches are the ones with no /etc/nsswitch.conf,` から始まる3行）も一緒に移す。
+- [x] `incompleteness_advice_cgo.go`（`//go:build cgo`）を新規追加し、同名の `adviseIncompleteness` を置く。回復手段に `CGO_ENABLED` を含めない（AC-12）。
+  - [x] `causeUnsupportedPlatform`: fact `"this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member"`、remediation `"clear the group-writable bit on the path (chmod g-w)"`
+  - [x] `causeNSSSources`: fact `"/etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which"`、remediation `"clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd)"`。**計画からの相違（レビュー指摘により実装時に2点変えた。いずれも `02_architecture.md` §4.3 の表に近づける向きである）**: (1) remediation に `only` を入れた——`のみ` は §4.3 の表にあるが計画の文字列から落ちていた。無いと「`sss` の隣に `files` を足す」という読み方が成り立つが、分類器は名指しされたソースが**すべて**許可リストにあることを求めるため、その対処では拒否が解けず利用者を空回りさせる。(2) fact に「行の不在」と「どれに当たるかは `detail` が示す」を入れた——どちらも §4.3 の表にあり、計画の文字列だけが落としていた
     - `fact` を広く書くのは、この原因が指定ソース起因だけでなく行の重複・角括弧の未閉じ・行の不在・ソース名の不在・ファイル読み取り失敗のいずれでも付くためである（`02_architecture.md` §4.3）。粒度は `detail` が担う。
-  - [ ] `causeMalformedLine`: `implementationDefectAdvice("a cause only a build that scans the user database files directly can produce was reported")`。この枝を残すのは `switch` の網羅性を保つためであり、到達した場合は環境の問題ではなく実装の誤りとして `default` と同じ拒否側に倒す（AC-14）。
-  - [ ] `causeUnspecified`・`default`: 非 CGO 版と同じ `implementationDefectAdvice` の呼び出しを置く。
-- [ ] `manager.go` の `incompleteEnumerationError` を、文面の決定を委譲する形へ改める。`var fact, remediation string` の宣言と `switch verdict.cause { ... }` の全体を削除し、`advice := adviseIncompleteness(verdict.cause)` の1行に置き換える。`fact`・`remediation` の参照は `advice.fact`・`advice.remediation` に読み替える。宣言を残すと `make lint` が未使用として報告する。`state` の組み立てと `fmt.Errorf` の書式（`"cannot confirm the members of group GID %d: %s (%s); %s: %w"`）はそのまま残す。doc コメントの「The cause selects both the fact and the remediation; neither is chosen by inspecting the detail text.」も残し、委譲先を指す1文を加える。
-- [ ] `manager_test.go` の `TestIncompleteEnumerationErrorMessage` を分割する（§1.3(b)）。
-  - [ ] `manager_test.go` に残すのは、ビルドに依存しない2ケース（`causeUnspecified`・`causeOutOfRange`）のみとする。この2ケースの `wantContains` に `"CGO_ENABLED=1"` は含まれない。関数名は変えない。
-  - [ ] `incompleteness_advice_nocgo_test.go`（`//go:build !cgo && test`）を新規追加し、`TestAdviseIncompleteness_NoCGO` を置く。`causeUnsupportedPlatform`・`causeNSSSources`・`causeMalformedLine` の3ケースについて、現行 `TestIncompleteEnumerationErrorMessage` の `wantContains`／`wantNotContains` をそのまま引き継ぐ（AC-13）。加えて `incompleteEnumerationError` を通したメッセージにも同じ文字列が現れることを検証する。
-  - [ ] `incompleteness_advice_cgo_test.go`（`//go:build cgo && test`）を新規追加し、`TestAdviseIncompleteness_CGO` を置く。検証内容は次の3点。
-    - [ ] `causeUnsupportedPlatform`・`causeNSSSources` の `fact`・`remediation` のいずれにも `"CGO_ENABLED"` が現れないこと、および `remediation` に `"chmod g-w"` が現れること（AC-12）
-    - [ ] `causeMalformedLine`・`causeUnspecified`・`causeOutOfRange` が実装の誤りを示す文面（`"defect"`）を返すこと（AC-14）
-    - [ ] `incompleteEnumerationError(unrelatedGID, incompleteVerdict(causeNSSSources, "passwd: sss"))` のメッセージが `"user_database_source=nss"`・`"cause=nss-sources"`・`"detail=passwd: sss"` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること（AC-11）
-  - [ ] `causeOutOfRange` は現在 `manager_test.go` に定義されている。両ビルド別テストから参照するため、定義は `manager_test.go`（タグ無し）にそのまま残す。新規の2ファイルに `&& test` を付けるのは、参照する `unrelatedGID`・`causeOutOfRange` を持つ `manager_test.go` が `newWithFixedEnumeration`（`//go:build test`）に依存し、`-tags test` でなければコンパイルできないためである。Phase 2 で `membership_cgo_test.go` を `//go:build cgo && test` に改めるのと同じ理由であり、パッケージ内で判断を揃える。
+  - [x] `causeMalformedLine`: `implementationDefectAdvice("a cause only a build that scans the user database files directly can produce was reported")`。この枝を残すのは `switch` の網羅性を保つためであり、到達した場合は環境の問題ではなく実装の誤りとして `default` と同じ拒否側に倒す（AC-14）。
+  - [x] `causeUnspecified`・`default`: 非 CGO 版と同じ `implementationDefectAdvice` の呼び出しを置く。
+- [x] `manager.go` の `incompleteEnumerationError` を、文面の決定を委譲する形へ改める。`var fact, remediation string` の宣言と `switch verdict.cause { ... }` の全体を削除し、`advice := adviseIncompleteness(verdict.cause)` の1行に置き換える。`fact`・`remediation` の参照は `advice.fact`・`advice.remediation` に読み替える。宣言を残すと `make lint` が未使用として報告する。`state` の組み立てと `fmt.Errorf` の書式（`"cannot confirm the members of group GID %d: %s (%s); %s: %w"`）はそのまま残す。doc コメントの「The cause selects both the fact and the remediation; neither is chosen by inspecting the detail text.」も残し、委譲先を指す1文を加える。
+- [x] `manager_test.go` の `TestIncompleteEnumerationErrorMessage` を分割する（§1.3(b)）。
+  - [x] `manager_test.go` に残すのは、ビルドに依存しない2ケース（`causeUnspecified`・`causeOutOfRange`）のみとする。この2ケースの `wantContains` に `"CGO_ENABLED=1"` は含まれない。関数名は変えない。
+  - [x] `incompleteness_advice_nocgo_test.go`（`//go:build !cgo && test`）を新規追加し、`TestAdviseIncompleteness_NoCGO` を置く。**計画からの相違（利用者指摘。2026-08-29。CGO 版と同じ理由）**: 当初は現行 `TestIncompleteEnumerationErrorMessage` の `wantContains`／`wantNotContains` をそのまま引き継ぐ形で書いたが、これは production の文面のコピーであり、文面を改善しただけでテストが赤くなる。**AC-13 は「移設で文面が変わっていないこと」を求める一回限りの要件であり、その検証は §3.1 の `rg -cF`（静的、`6` を返す）が担う。**同じリテラルを3箇所目としてテストに置いても、AC-13 の検証は強くならず、将来の正当な改善だけを妨げる。テストは性質を検証する形（AC-13 の test 行に列挙）へ改めた。**元のテストが捕らえた欠陥は保たれている**——`wantContains` が捕らえた「回復手段が `CGO_ENABLED=1` を案内しなくなる」は同名の検査が、`wantNotContains` が捕らえた「無関係な `/etc/nsswitch.conf` を案内する」は `namesNsswitch` の真偽両方向の検査が捕らえる。実際に5種の変異（枝の取り違え・cgo 案内の消失・`NIS` 注意の消失・誤ったファイルの名指し・advice の非伝播）で失敗すること、および3つの fact の正当な書き換えでは失敗しないことを確認した。
+  - [x] `incompleteness_advice_cgo_test.go`（`//go:build cgo && test`）を新規追加し、`TestAdviseIncompleteness_CGO` を置く。検証内容は次の3点。**計画からの相違（利用者指摘。2026-08-29）**: レビュー指摘を受けて一度は CGO 版の文面を全文照合する形にしたが、これは取り止め、性質の検証へ改めた。**理由**: CGO 版の文面は凍結対象ではない（凍結を求めるのは非 CGO 版に対する AC-13 のみ）。全文照合は本文のコピーであり、文面を改善しただけで——欠陥が無いのに——テストが赤くなる。しかも直し方は期待値へのコピー&ペーストであり、内容を考えずに期待値を書き換える習慣を促す。代わりに「`CGO_ENABLED` を含まない」「ホスト起因の原因は `chmod g-w` を案内する」「実装の誤りを指す原因は `implementationDefectAdvice` の回復手段を返す」「原因ごとの advice が互いに異なる」「関数が返した文字列がメッセージに現れる」を検証する。**レビュー指摘が捕らえたかった欠陥は保たれている**——枝の取り違え（`causeNSSSources` が `causeUnsupportedPlatform` の advice を返す）は advice の相互相違が捕らえ、組み立てが advice を落とす欠陥は「関数の戻り値がメッセージに現れる」が捕らえる。実際に4種の変異（枝の取り違え・advice の非伝播・`CGO_ENABLED` の再混入・実装誤り側の枝がホスト向け案内を返す）で失敗すること、および文面の正当な書き換えでは失敗しないことを確認した。Phase 5 が文書へ転記する文面の一致は §5.4 の生成・突き合わせ手順が担う。
+    - [x] `causeUnsupportedPlatform`・`causeNSSSources` の `fact`・`remediation` のいずれにも `"CGO_ENABLED"` が現れないこと、および `remediation` に `"chmod g-w"` が現れること（AC-12）
+    - [x] `causeMalformedLine`・`causeUnspecified`・`causeOutOfRange` が実装の誤りを示す文面（`"defect"`）を返すこと（AC-14）
+    - [x] `incompleteEnumerationError(unrelatedGID, incompleteVerdict(causeNSSSources, "passwd: sss"))` のメッセージが `"user_database_source=nss"`・`"cause=nss-sources"`・`"detail=passwd: sss"` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること（AC-11）
+  - [x] `causeOutOfRange` は現在 `manager_test.go` に定義されている。両ビルド別テストから参照するため、定義は `manager_test.go`（タグ無し）にそのまま残す。新規の2ファイルに `&& test` を付けるのは、参照する `unrelatedGID`・`causeOutOfRange` を持つ `manager_test.go` が `newWithFixedEnumeration`（`//go:build test`）に依存し、`-tags test` でなければコンパイルできないためである。Phase 2 で `membership_cgo_test.go` を `//go:build cgo && test` に改めるのと同じ理由であり、パッケージ内で判断を揃える。
 
 **完了判定条件**
 
-- [ ] `make test`・`make lint` が両構成で成功する。
-- [ ] `rg -c 'CGO_ENABLED' internal/groupmembership/manager.go internal/groupmembership/incompleteness_advice.go internal/groupmembership/incompleteness_advice_cgo.go` が一致無し。
-- [ ] `rg -c 'CGO_ENABLED=1' internal/groupmembership/incompleteness_advice_nocgo.go` が `3`。
-- [ ] `rg -l 'func adviseIncompleteness' internal/groupmembership/` が `incompleteness_advice_cgo.go` と `incompleteness_advice_nocgo.go` の2件のみを返す。
-- [ ] §3.1 の `AC-14` のコマンドが一致無し（`detail` の内容で分岐していないこと）。
-- [ ] `rg --files internal/groupmembership | rg -c 'incompleteness_advice(_cgo|_nocgo)?\.go'` が `3`（3ファイルが実在すること。存在しないファイルに対する `rg` は終了コード 2 を返し、これを「一致無し」と取り違えると上の各静的確認が空振りする）。
-- [ ] §5.3 の無効化確認 `X6` を実施し、コミットメッセージに英語で記す。
+- [x] `make test`・`make lint` が両構成で成功する。
+- [x] `rg -c 'CGO_ENABLED' internal/groupmembership/manager.go internal/groupmembership/incompleteness_advice.go internal/groupmembership/incompleteness_advice_cgo.go` が一致無し。
+- [x] `rg -c 'CGO_ENABLED=1' internal/groupmembership/incompleteness_advice_nocgo.go` が `3`。
+- [x] `rg -l 'func adviseIncompleteness' internal/groupmembership/` が `incompleteness_advice_cgo.go` と `incompleteness_advice_nocgo.go` の2件のみを返す。
+- [x] §3.1 の `AC-14` のコマンドが一致無し（`detail` の内容で分岐していないこと）。
+- [x] `rg --files internal/groupmembership | rg -c 'incompleteness_advice(_cgo|_nocgo)?\.go'` が `3`（3ファイルが実在すること。存在しないファイルに対する `rg` は終了コード 2 を返し、これを「一致無し」と取り違えると上の各静的確認が空振りする）。
+- [x] §5.3 の無効化確認 `X6` を実施し、コミットメッセージに英語で記す。
 
 ### PR-2 作成ポイント: cgo fail-closed enumeration with build-specific advice
 
@@ -284,8 +284,8 @@
 
 > **Phase 2 と Phase 3 を1つの PR にまとめる理由。** 2つを別々の PR にすると、その間 `main` は「CGO ビルドで拒否するが、非 CGO 版の文面で `CGO_ENABLED=1` でのビルドを勧める」状態になる。既に `CGO_ENABLED=1` でビルドしている利用者を、既に居る場所へ誘導する案内であり、AC-12 が無くそうとしているもの、および §9「運用への案内」が成功基準に挙げているものそのものである。Phase 3 は Phase 2 に依存しない（`adviseIncompleteness` の3層分割は単独でグリーンになる）ため、順序を入れ替えれば窓は塞げるが、それには承認済みの `02_architecture.md` §8 の Phase 順序の改訂が要る。Phase の順序を保ったまま窓を無くせる本まとめを採る。両 Phase とも `internal/groupmembership`1パッケージに閉じており、まとめても1つの関心——「CGO ビルドを fail-closed にし、その理由と回復手段を正しく伝える」——に収まる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1075）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -449,11 +449,11 @@
 | AC-10 | static | `membership_files.go`・`membership_files_nocgo.go` | `rg -c '^//go:build !cgo \|\| test' internal/groupmembership/membership_files.go` が `1`、`rg -c '^//go:build !cgo$' internal/groupmembership/membership_files_nocgo.go` が `1`（非 CGO 専用シンボルのタグが据え置かれていること） |
 | AC-10 | static | — | `make deadcode` の出力が本タスクの前後で変わらない。§3.1 の `AC-10` のコマンドで差分を取る |
 | AC-11 | test | `manager.go` `incompleteEnumerationError` | `internal/groupmembership/incompleteness_advice_cgo_test.go::TestAdviseIncompleteness_CGO` の `incompleteEnumerationError` を通すサブテスト（`user_database_source=nss`・`cause=nss-sources`・`detail=passwd: sss` を含み、`ErrGroupMemberEnumerationIncomplete` で包まれていること） |
-| AC-12 | test | `incompleteness_advice_cgo.go` `adviseIncompleteness` | `::TestAdviseIncompleteness_CGO`（`causeUnsupportedPlatform`・`causeNSSSources` の `fact`・`remediation` に `"CGO_ENABLED"` が現れず、`remediation` に `"chmod g-w"` が現れること） |
+| AC-12 | test | `incompleteness_advice_cgo.go` `adviseIncompleteness` | `::TestAdviseIncompleteness_CGO`。次の4点を検証する。(1) どの原因の `fact`・`remediation` にも `"CGO_ENABLED"` が現れない、(2) ホスト起因の原因は `"chmod g-w"` を案内し、実装の誤りを指す原因は `implementationDefectAdvice` の回復手段を返す、(3) **原因ごとの advice が互いに異なる**、(4) `adviseIncompleteness` が返した文字列そのものが組み立て後のメッセージに現れる。**CGO 版の文面は全文照合しない**——後述 |
 | AC-12 | static | 同上 | §3.1 の `AC-12` のコマンドで3ファイルの実在（`3`）を確かめたうえで、`rg -c 'CGO_ENABLED' internal/groupmembership/incompleteness_advice_cgo.go internal/groupmembership/incompleteness_advice.go internal/groupmembership/manager.go` が一致無し。**実在の確認を先に行わないと、ファイル未作成による終了コード 2 を「一致無し」と取り違える** |
-| AC-13 | test | `incompleteness_advice_nocgo.go` | `internal/groupmembership/incompleteness_advice_nocgo_test.go::TestAdviseIncompleteness_NoCGO`。現行 `manager_test.go::TestIncompleteEnumerationErrorMessage` の3ケースの `wantContains`／`wantNotContains` をそのまま引き継ぐ |
+| AC-13 | test | `incompleteness_advice_nocgo.go` | `internal/groupmembership/incompleteness_advice_nocgo_test.go::TestAdviseIncompleteness_NoCGO`。**文面の全文照合は行わない**（下記「計画からの相違」）。検証するのは性質——ホストが生む3原因はいずれも `CGO_ENABLED=1` でのビルドを案内すること、`causeNSSSources` だけが `/etc/nsswitch.conf` を名指すこと、`causeMalformedLine` の回復手段が `NIS` に触れること、原因ごとの advice が互いに異なること、`adviseIncompleteness` が返した文字列がメッセージに現れること |
 | AC-13 | static | 同上 | §3.1 の `AC-13` のコマンドが `6` を返す。移設前の `manager.go` の**事実3つと回復手段3つ**が、移設後は `incompleteness_advice_nocgo.go` に一字一句そのまま存在すること。**回復手段だけを照合してはならない**——既存の `TestIncompleteEnumerationErrorMessage` の `wantContains` も事実の全文を主張していないため、事実を書き換えるとどの検査にも掛からない |
-| AC-14 | test | 両ビルドの `adviseIncompleteness` | `::TestAdviseIncompleteness_CGO`・`::TestAdviseIncompleteness_NoCGO` の `causeUnspecified`・`causeOutOfRange` の各ケース（`"defect"` を含む文面が返ること）、および `manager_test.go::TestIncompleteEnumerationErrorMessage` の残る2ケース |
+| AC-14 | test | 両ビルドの `adviseIncompleteness` | `::TestAdviseIncompleteness_CGO` の `causeUnspecified`・`causeMalformedLine` の各行と「cause outside the defined range」のサブテスト（実装の誤りを指す文面が返ること）、および `manager_test.go::TestIncompleteEnumerationErrorMessage` の2ケース（非 CGO 版の `causeUnspecified`・`default` を `incompleteEnumerationError` 経由で踏む）。**`TestAdviseIncompleteness_NoCGO` はここには挙げない**——同テストの行はホストが生む3原因だけであり、`causeUnspecified`・`causeOutOfRange` の行を持たない |
 | AC-14 | static | `incompleteness_advice*.go` | §3.1 の `AC-14` のコマンドが一致無し（`detail` の内容で分岐していないこと） |
 | AC-15 | test | `manager.go` `EnsurePermissionCheckUID` | `manager_test.go::TestEnsurePermissionCheckUIDPrecomputesEnvironment`（Phase 1 で `membership_nocgo_test.go` から移設。移設後は CGO ビルドでも実行される） |
 | AC-15 | test | `nsswitch.go` `nssCompletenessReporter` | `nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce`（既存。「不完全」に対し記録が1件だけ出ること）。**当初は共有インスタンスを対象とする専用テストを足す計画だったが取り止めた**（レビュー指摘。Phase 1 の該当行に理由を記す） |
@@ -464,10 +464,10 @@
 | AC-18 | static | `internal/runner/base/security`・`internal/safefileio` | §3.1 の `AC-18` のコマンド（両パッケージの production コードに差分が無いこと）。実環境の列挙に依存するテストの更新は本タスクの挙動変更の当然の帰結であり、この保証の対象外とする |
 | AC-19 | test | `CanUserSafelyWriteFile` | `manager_test.go::TestCanUserSafelyWriteFile_CompleteEnumeration`（既存。「完全」を注入し、唯一のメンバーの許可と共有グループの拒否）、`::TestCanUserSafelyWriteFile`（既存。world-writable の一律拒否・非所有者の拒否・owner-writable の許可。`New()` を使うが権限ビットが group-writable でないため列挙に到達しない。§1.3(c)） |
 | AC-20 | test | `useNsswitchVerdict` を用いる各テスト | `membership_cgo_test.go::TestGetGroupMembers_CarriesTheSettledVerdict` が `useNsswitchVerdict` で完全性判定を固定し、実行ホストの `/etc/nsswitch.conf` を読まずに判定を検証する |
-| AC-20 | static | `nsswitch_test.go`・`membership_cgo_test.go` | §3.1 の `AC-20` のコマンド。2つの関数の**実在を確かめてから**、その本体にファイルを開く呼び出しが無いこと（ファイルに触れるのは `TestReadNsswitchSnapshotFrom` だけであること）を確認する。**実在の確認は省けない**——`awk` が関数を見つけられなければ空の入力が `rg` に渡り、テストを1行も書いていない状態で「一致無し」＝合格になる |
+| AC-20 | static | `nsswitch_test.go`・`membership_cgo_test.go` | §3.1 の `AC-20` のコマンド。2つの関数の**実在を確かめてから**、その本体にファイルを開く呼び出しが無いことを確認する。**この検査が言うのは対象の2関数についてだけである**——`membership_cgo_test.go::TestGetGroupMembers_StatesTheHostVerdict` は期待値を得るために `readNsswitchSnapshot()` を呼ぶため実行ホストの `/etc/nsswitch.conf` を読む。同テストはホストの分類との一致を確かめるものであり、完全性判定を固定して検証する側ではない。**実在の確認は省けない**——`awk` が関数を見つけられなければ空の入力が `rg` に渡り、テストを1行も書いていない状態で「一致無し」＝合格になる |
 | AC-21 | static | PR-1〜PR-3 の各ブランチ | §3.1 の `AC-21` のコマンドが `1` 以上を返す。**PR ごとに main へマージして次を新しいブランチで始めるため、`main..HEAD` には当該ブランチ分しか含まれない。** 各 Phase の完了判定条件で個別に確認する。PR-4（Phase 5）は §5.3 に担当行を持たないため対象外である |
 | AC-21 | manual | 同上 | §5.3 の `X1`〜`X9` の無効化確認を実施し、対応するテストが実際に失敗することを確かめる。各行の担当 Phase は同表の「実施する Phase」列が定める |
-| AC-22 | static | `membership_semantics_test.go` | §3.1 の `AC-22` のコマンド（同ファイルに差分が無いこと） |
+| AC-22 | static | `membership_semantics_test.go` | §3.1 の `AC-22` のコマンド（同ファイルの差分がビルドタグ行に限られること。AC-22 が求めるのは振る舞いの不変であり、ファイルの無変更ではない） |
 | AC-22 | test | 同上 | `membership_semantics_test.go::TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` が CGO ビルドで従来どおり通過する（skip 条件も比較結果も変わらない） |
 | AC-23 | static | — | `make test` の終了コードが 0（`CGO_ENABLED=1` と `CGO_ENABLED=0` の両方を実行する）。`make lint` の終了コードが 0（同じく両構成） |
 | AC-24 | static | `security-risk-assessment.ja.md` | `rg -c '緩く評価される可能性がある' docs/user/security-risk-assessment.ja.md` が一致無し（現状 1 件）。かつ §3.1 の `AC-24` のコマンド（書き換え後の節に「拒否」が入ったことの陽性の裏取り）が `1` 以上 |
@@ -571,8 +571,17 @@ git log --no-show-signature --format='%H' main..HEAD | while read -r h; do
   git show -s --no-show-signature --format=%B "$h" | rg -qi 'disabled the' && echo "$h"
 done | wc -l
 
-# AC-22: 意味論一致テストが本タスクで変更されていないこと。出力が空で合格。
-git diff main...HEAD -- internal/groupmembership/membership_semantics_test.go
+# AC-22: 意味論一致テストの振る舞いが変わっていないこと。出力が空で合格。
+#        AC-22 が求めるのは skip 条件と比較結果の不変であってファイルの無変更ではないため、
+#        「差分が空であること」では検査できない（本タスクはビルドタグ行を1行変えている）。
+#        差分のうちビルドタグ行だけを除いて、残りが空であることを見る。
+#        `^[-+][^-+]` で +++/--- のファイル見出しを外してから絞り込む。
+git diff main...HEAD -- internal/groupmembership/membership_semantics_test.go \
+  | rg '^[-+][^-+]' | rg -v '^[-+]//go:build cgo'
+
+# AC-22 の振る舞い側: 同テストが CGO 構成で従来どおり実行されること。1 で合格。
+#        タグを外したことで実行対象から外れていないことを、実行ログで確かめる。
+make test 2>&1 | rg -c '^=== RUN   TestGetGroupMembers_CGOAndNoCGOSemanticsMatch$'
 
 # AC-24: 書き換え後に「CGO ビルドでも拒否される」と述べていること（陽性の裏取り）。1 で合格。
 #        `rg -A 20 '既知の制限' | rg -c 'CGO ビルド'` のような広い取り方は、非 CGO ビルド
@@ -701,7 +710,7 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 
 - `make test` は `CGO_ENABLED=1`（`-race` つき）と `CGO_ENABLED=0` を順に実行する。`make lint` も同じ2構成で回る。両者の終了コードが 0 であることを各 Phase の完了判定条件とする。
 - **開発環境が `files` 構成である場合、新しい拒否も新しい警告も手元では現れない。** 次の2つを必ず行う。
-  - [ ] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。
+  - [x] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。**実施状況**: いずれも実施済み。経路の踏破は Phase 2（`CanUserSafelyWriteFile` が `user_database_source=nss` つきで拒否）、文面の確認は Phase 3（同じ経路で出るメッセージが `chmod g-w` を勧め、`CGO_ENABLED` を含まないことを確認）。
   - [ ] **警告側の陽性対照（強制実行。Phase 1 で実施）。** 警告は Phase 1 で有効になるため、この確認も Phase 1 で行う。開発コンテナの `/etc/nsswitch.conf` の `passwd` 行を一時的に `passwd: sss` へ書き換え、`CGO_ENABLED=1` でビルドした `record` を1回起動して、`This build cannot enumerate every member of a group on this host` が `user_database_source=nss` つきで**1度だけ**出ることを目視する。同じ手順を `CGO_ENABLED=0` のビルドでも行い、`user_database_source=passwd-file` になることを確かめる。確認後は `/etc/nsswitch.conf` を必ず元に戻す。**この手順を省くと、警告が出る側の経路はどのテストでも踏まれない**——`TestNsswitchVerdictReportsWhatItSettled` は分類が「完全」になるホストでは「記録が無いこと」しか確かめず、`TestNSSCompletenessReporter_Report`・`TestNSSCompletenessReporter_ReportsOnlyOnce` はレポータを直接呼ぶため確定からの連結を通らないためである（Phase 1 の注記）。
 - `make deadcode` を Phase 1 と Phase 4 の完了時に実行し、`nsswitch.go` のタグ除去と公開の入口の追加によって到達不能コードが生じていないことを確かめる。
 
@@ -778,5 +787,5 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 - [ ] 本計画書のレビューを受け、status を `approved` へ更新する
 - [ ] `approved` 後に Phase 1 から実装へ着手する
 - [ ] 実装中は各作業項目のチェックボックスをその都度更新する
-- [ ] Phase 2 で確認した glibc の既定構成の結果を `02_architecture.md` §3.2.1 へ追記する
+- [x] Phase 2 で確認した glibc の既定構成の結果を `02_architecture.md` §3.2.1 へ追記する
 - [ ] Phase 5 完了後、`02_architecture.md` §9 が挙げる拡張候補（「完全」と判定した場合の `slog.Debug` 記録、不完全時の列挙の短絡、`initgroups` 行の分類）を別タスクとして検討する

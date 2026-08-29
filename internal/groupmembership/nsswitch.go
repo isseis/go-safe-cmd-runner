@@ -329,9 +329,11 @@ var (
 func nsswitchVerdict() completenessVerdict {
 	verdict, justSettled := settleNsswitchVerdict()
 	if justSettled {
-		// The record is emitted outside the lock: a log handler is
-		// arbitrary code, and one that reached back into this package
-		// would deadlock on a lock that is not reentrant.
+		// Emitted outside nsswitchVerdictMu: a log handler is arbitrary code,
+		// and one reaching back into this package would deadlock on a lock
+		// that is not reentrant. That still leaves GroupMembership.cacheMutex,
+		// which is held whenever an enumeration is what settled the verdict.
+		// Settling at startup, before any enumeration, is what removes it.
 		processNSSCompletenessReporter.report(slog.Default(), verdict)
 	}
 	return verdict

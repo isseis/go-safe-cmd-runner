@@ -313,7 +313,7 @@ func precomputeEnumerationEnvironment()
 | `files` | `/etc/passwd`・`/etc/group` を自分で全行走査する | glibc の `nss_files` は同じ2ファイルを全行走査する。列挙を抑止する設定項目を持たない | 完全 |
 | `systemd` | このソースは無視され、ファイル走査の結果だけが残る | `nss-systemd` は `getpwent`・`getgrent` に応答するが、`systemd-homed` のユーザーは動的に現れるため網羅性は保証されない。**受容している既知の穴である**（§5.4） | 完全（受容） |
 | `sss`・`ldap`・`nis`・`winbind`・`compat`・`db`・未知の名前 | このビルドが自力で読めない | libc は読めるが、網羅的に列挙される保証が無い。SSSD の `enumerate = False`・`ignore_group_members = True` が代表例であり、いずれもエラーを伴わない | 不完全 |
-| `/etc/nsswitch.conf` が存在しない | ファイルが無ければ `files` 以外の参照先を設定する手段が無い | glibc のコンパイル時の既定構成に依存する。決定的な確認は取れていないが、受容できる根拠がある（下記） | 完全（AC-03） |
+| `/etc/nsswitch.conf` が存在しない | ファイルが無ければ `files` 以外の参照先を設定する手段が無い | glibc のコンパイル時の既定構成に依存する。upstream の既定テーブルで確認済みであり、Ubuntu 26.04 では `files` になる（下記） | 完全（AC-03） |
 | 行の形が読めない（重複・角括弧未閉じ・行が無い・ソース名が無い） | 何が設定されているか判定できない | 同左 | 不完全 |
 | `GOOS` が `linux` 以外 | `/etc/nsswitch.conf` を持たないため判定材料が無い | 同左（§3.4） | 不完全 |
 
@@ -329,16 +329,24 @@ func precomputeEnumerationEnvironment()
 
 | 調べたこと | 結果 |
 |---|---|
-| `libc.so.6` に埋め込まれた既定構成の文字列 | `compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` のいずれも存在しない。NSS ソース名として現れる裸の文字列は `files` のみ |
+| `libc.so.6` に埋め込まれた既定構成の文字列 | `strings -a -n 3 libc.so.6 \| grep -x` で `files`・`nis`・`files dns`・`nis nisplus` は一致し、`compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` は一致しない。前4者は `#ifdef LINK_OBSOLETE_NSL` の外にあるため、`#ifdef` の内側の2つだけが欠けていることが `LINK_OBSOLETE_NSL` 未定義の証拠になる。**`-n` の既定値は 4 であり、既定のまま実行すると3文字の `nis` を取りこぼす**——本行の判定は `-n 3` で行う |
 | マウント名前空間で `/etc/nsswitch.conf` を隠した状態での実挙動 | **確認できず**。検証環境で `unshare` が `Operation not permitted` となる |
 
-文字列の証拠は「既定は `files`」を示唆するが、決定的ではない。**それでも本設計は AC-03 のまま「完全」と申告する。** 理由は次のとおりである。
+**upstream の既定テーブルを読んだ結果（2026-08-29 実施。実装時の確認事項）。** glibc の `nss/nss_database.c` は、`/etc/nsswitch.conf` が開けなかった場合に、データベースごとの既定を適用する。読んだのは upstream の master 版（`bminor/glibc` ミラー）である。要点は3つある。
+
+- **`passwd` と `group` の既定は同じ `nss_database_default_compat` である**（`per_database_defaults` テーブル）。
+- **その `compat` が実際に何の行になるかは、ビルド構成 `LINK_OBSOLETE_NSL` で決まる。** `nss_database_select_default` の `switch` は、`LINK_OBSOLETE_NSL` が定義されている場合にのみ `compat [NOTFOUND=return] files` を選び、定義されていない場合は `nss_database_default_compat` と `nss_database_default_defconfig` の双方が `files` の枝へ落ちる。ソース中のコメントもこれを明言している——「nis/compat mappings get turned into "files" for !LINK_OBSOLETE_NSL configurations」。
+- **ファイルを開けなかった理由は既定の選択に影響しない。** `nss_database_reload` は `ENOENT` に加えて `EACCES`・`EPERM`・`EISDIR`・`ELOOP`・`ENOTDIR` も「ファイルシステムの内容に由来する恒久的な誤り」として無視し、同じ既定を適用する。すなわち glibc から見れば「不在」と「読めない」は同じ扱いである。本設計はこのうち「読めない」を「不完全」に倒しており（§4.3）、glibc の実挙動より厳しい側にずれている。過剰拒否の方向であり、fail-open は生じない。
+
+Ubuntu 26.04 の `libc.so.6` に `compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` のいずれも無いこと（上表）は、このビルドで `LINK_OBSOLETE_NSL` が定義されていないことを示す。`#ifdef` の外にある `files dns`・`nis nisplus` は同じバイナリに存在するため、文字列が単に最適化で消えたのではないことも裏付けられる。したがって**このプラットフォームでの既定は `passwd`・`group` とも `files` であり、AC-03 の前提と食い違わない。AC-03 の改訂は要らない。**
+
+**「不在ならば不完全」へ倒さない理由は、glibc のビルド構成によらない。** そう倒すと、`/etc/nsswitch.conf` を持たない最小構成のコンテナイメージがすべて、group-writable なパスで拒否される。頻度が高いのはこちらであり、得られる安全性はほぼ無い。
+
+`LINK_OBSOLETE_NSL` を有効にしてビルドされた glibc（`--enable-obsolete-nsl`）では既定が `compat [NOTFOUND=return] files` になる。**その構成でも本設計は AC-03 のまま「完全」と申告する。** その構成に固有の理由は次の2つである。
 
 - fail-open が成立するには、「`/etc/nsswitch.conf` が無い」「compat/NIS が実際に機能している」「group-writable な保護対象ファイルがある」の3つが同時に必要である。SSSD も NIS も、導入すればこのファイルを書く。3条件が揃う構成は事実上存在しない。
 - 仮に既定が `compat` であっても、`/etc/passwd` に `+`・`-` 行が無く NIS ドメインが未設定であれば、挙動は `files` と同一である。
-- 逆に「不在ならば不完全」へ倒すと、`/etc/nsswitch.conf` を持たない最小構成のコンテナイメージがすべて、group-writable なパスで拒否される。頻度が高いのはこちらであり、得られる安全性はほぼ無い。
 
-実装時に、対象とする glibc バージョンの既定テーブル（upstream の `nss/nss_database.c`）を一度読んで結果を本節に追記する（§7.5）。確認の結果が上記と食い違った場合にのみ、AC-03 の改訂を提案する。
 
 **musl 環境の注記**: musl libc は NSS を持たず `/etc/nsswitch.conf` を読まない。musl 上の CGO ビルドは、libc が参照しないファイルの内容から分類することになる。この乖離は過剰拒否の方向にしか働かない（musl は常に `files` 相当であるのに、設定に `sss` があれば「不完全」と判定する）ため安全側だが、Alpine 系のコンテナでは想定外の拒否として現れうる。§5.4 に残存リスクとして記録する。
 
@@ -953,7 +961,7 @@ func resetNsswitchClassification(t *testing.T)
 | `membership_nocgo_test.go` / `TestEnsurePermissionCheckUIDPrecomputesEnvironment` | 非 CGO ビルドで完全性判定が確定することを検証する | `manager_test.go`（ビルドタグ無し）へ移し、両ビルドで実行されるようにする。主張の内容は変えない |
 | `membership_nocgo_test.go` / `resetNsswitchClassification` | 非 CGO ビルド専用の補助関数 | `test_helpers.go` へ移す（§7.1）。移設後は両ビルドのテストが同じ補助関数を使う |
 
-`membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` は変更しない（AC-22）。同テストは既に `classifyNSSCompleteness` の結果で skip を決めており、比較しているのはメンバー集合である。本タスクは列挙が返す集合を変えないため、skip 条件も比較結果も変わらない。
+`membership_semantics_test.go` の `TestGetGroupMembers_CGOAndNoCGOSemanticsMatch` は振る舞いを変えない（AC-22）。同テストは既に `classifyNSSCompleteness` の結果で skip を決めており、比較しているのはメンバー集合である。本タスクは列挙が返す集合を変えないため、skip 条件も比較結果も変わらない。
 
 `manager_test.go` の group-writable 系テストは 0168 で既に `ErrGroupMemberEnumerationIncomplete` を許容する形になっており、CGO ビルドで新たに拒否が起きても通る。本タスクでの変更は要らない（§3.7）。
 

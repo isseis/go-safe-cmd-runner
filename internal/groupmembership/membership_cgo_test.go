@@ -5,7 +5,9 @@ package groupmembership
 import (
 	"errors"
 	"math"
+	"os"
 	"os/user"
+	"runtime"
 	"strconv"
 	"syscall"
 	"testing"
@@ -178,14 +180,94 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 	assert.Contains(t, enumeration.members, currentUser.Username)
 }
 
-// TestGetGroupMembers_StatesComplete verifies that the cgo getGroupMembers
-// always reports a complete enumeration on success.
-func TestGetGroupMembers_StatesComplete(t *testing.T) {
+// TestGetGroupMembers_StatesTheHostVerdict verifies that what the cgo
+// getGroupMembers reports agrees with how this host is classified. The
+// expectation comes from the classifier rather than being restated, so the
+// rule lives in one place.
+//
+// On a host that classifies as complete this cannot fail, so it checks
+// agreement only; TestGetGroupMembers_CarriesTheSettledVerdict is what covers
+// the verdict being carried.
+func TestGetGroupMembers_StatesTheHostVerdict(t *testing.T) {
+	resetNsswitchClassification(t)
+
 	currentGID := getCurrentUserGID(t)
 
 	enumeration, err := getGroupMembers(currentGID)
 	require.NoError(t, err)
-	assert.Equal(t, completeVerdict(), enumeration.verdict)
+	assert.Equal(t, classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS), enumeration.verdict)
+}
+
+// TestGetGroupMembers_CarriesTheSettledVerdict verifies that whatever verdict
+// is settled for this process reaches the caller unchanged, both for a group
+// that exists and for one that does not. The verdicts planted here do not
+// come from this host, so an implementation that stated a fixed
+// completeVerdict() would fail on any host.
+func TestGetGroupMembers_CarriesTheSettledVerdict(t *testing.T) {
+	// Plants process-wide state, so no t.Parallel() here or in the subtests.
+	existingGID := getCurrentUserGID(t)
+
+	verdicts := []struct {
+		name    string
+		verdict completenessVerdict
+	}{
+		{name: "complete", verdict: completeVerdict()},
+		// A host running SSSD: libc returns members without error, but the
+		// source gives no guarantee that they are every member.
+		{name: "incomplete_nss_sources", verdict: incompleteVerdict(causeNSSSources, "passwd: sss")},
+		{name: "incomplete_unsupported_platform", verdict: incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")},
+	}
+	gids := []struct {
+		name string
+		gid  uint32
+	}{
+		{name: "group_exists", gid: existingGID},
+		{name: "group_does_not_exist", gid: unrelatedGID},
+	}
+
+	for _, v := range verdicts {
+		for _, g := range gids {
+			t.Run(v.name+"/"+g.name, func(t *testing.T) {
+				useNsswitchVerdict(t, v.verdict)
+
+				if g.gid == unrelatedGID {
+					// This row exists to reach the not-found return. On a host
+					// where the GID does name a group it would quietly become a
+					// copy of the row above, so fail instead.
+					_, found, err := getExplicitGroupMembers(g.gid)
+					require.NoError(t, err)
+					require.False(t, found, "this row needs a GID that names no group")
+				}
+
+				enumeration, err := getGroupMembers(g.gid)
+				require.NoError(t, err)
+				assert.Equal(t, v.verdict, enumeration.verdict)
+			})
+		}
+	}
+}
+
+// TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator verifies that a
+// settled incomplete verdict denies a group-writable path with the production
+// wiring in place. Every other test of the denial replaces
+// GroupMembership.enumerateGroupMembers with a closure, so the cgo
+// getGroupMembers is never on the stack there and could stop carrying the
+// verdict without any of them failing. The second call answers from the
+// membership cache, so the verdict survives a cache hit too.
+func TestCanUserSafelyWriteFile_DeniesThroughTheRealEnumerator(t *testing.T) {
+	// Plants process-wide state, so no t.Parallel().
+	useNsswitchVerdict(t, incompleteVerdict(causeNSSSources, "passwd: sss"))
+
+	uid := os.Getuid()
+	gm := New()
+
+	for _, call := range []string{"first_call", "cached_call"} {
+		t.Run(call, func(t *testing.T) {
+			canWrite, err := gm.CanUserSafelyWriteFile(uid, uint32(uid), getCurrentUserGID(t), 0o660)
+			assert.False(t, canWrite)
+			require.ErrorIs(t, err, ErrGroupMemberEnumerationIncomplete)
+		})
+	}
 }
 
 func TestGetGroupMembers_MergedCountExceedsMaximum(t *testing.T) {

@@ -37,11 +37,55 @@ func resetNsswitchClassification(t *testing.T) {
 	reset := func() {
 		nsswitchVerdictMu.Lock()
 		defer nsswitchVerdictMu.Unlock()
-		nsswitchVerdictResolved = false
-		nsswitchVerdictValue = completenessVerdict{}
-		processNSSCompletenessReporter.reported.Store(false)
+		clearNsswitchClassificationLocked()
 	}
 
 	reset()
 	t.Cleanup(reset)
+}
+
+// clearNsswitchClassificationLocked returns the process-wide classification
+// and its reporter to the state they have before anything settles them. The
+// caller must hold nsswitchVerdictMu.
+func clearNsswitchClassificationLocked() {
+	nsswitchVerdictResolved = false
+	nsswitchVerdictValue = completenessVerdict{}
+	processNSSCompletenessReporter.reported.Store(false)
+}
+
+// useNsswitchVerdict fixes the completeness verdict for this process for the
+// duration of one test and clears it again afterwards, so that a test can
+// drive a whole enumeration from a chosen verdict without depending on the
+// host's own /etc/nsswitch.conf.
+//
+// Callers must not run in parallel with each other: the verdict it plants is
+// process-wide.
+//
+// The planted verdict is never reported: nothing settles it, so
+// processNSSCompletenessReporter stays unfired. A test that asserts on the
+// startup warning must instead call resetNsswitchClassification and let the
+// host's own classification settle.
+//
+// Only the cgo build will ever call this: the non-cgo build takes the verdict
+// as an argument to enumerateFromFiles, which has to combine it with the
+// malformed lines it saw. Hence the suppression below, which is permanent.
+//
+//nolint:unused // called only from //go:build cgo && test files
+func useNsswitchVerdict(t *testing.T, v completenessVerdict) {
+	t.Helper()
+
+	plant := func(v completenessVerdict) {
+		nsswitchVerdictMu.Lock()
+		defer nsswitchVerdictMu.Unlock()
+		clearNsswitchClassificationLocked()
+		nsswitchVerdictValue = v
+		nsswitchVerdictResolved = true
+	}
+
+	plant(v)
+	t.Cleanup(func() {
+		nsswitchVerdictMu.Lock()
+		defer nsswitchVerdictMu.Unlock()
+		clearNsswitchClassificationLocked()
+	})
 }
