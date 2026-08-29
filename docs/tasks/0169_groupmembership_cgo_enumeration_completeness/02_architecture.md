@@ -332,7 +332,15 @@ func precomputeEnumerationEnvironment()
 | `libc.so.6` に埋め込まれた既定構成の文字列 | `compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` のいずれも存在しない。NSS ソース名として現れる裸の文字列は `files` のみ |
 | マウント名前空間で `/etc/nsswitch.conf` を隠した状態での実挙動 | **確認できず**。検証環境で `unshare` が `Operation not permitted` となる |
 
-文字列の証拠は「既定は `files`」を示唆するが、決定的ではない。**それでも本設計は AC-03 のまま「完全」と申告する。** 理由は次のとおりである。
+**upstream の既定テーブルを読んだ結果（2026-08-29 実施。実装時の確認事項）。** glibc の `nss/nss_database.c` は、`/etc/nsswitch.conf` が開けなかった場合に、データベースごとの既定を適用する。読んだのは upstream の master 版（`bminor/glibc` ミラー）である。要点は3つある。
+
+- **`passwd` と `group` の既定は同じ `nss_database_default_compat` である**（`per_database_defaults` テーブル）。
+- **その `compat` が実際に何の行になるかは、ビルド構成 `LINK_OBSOLETE_NSL` で決まる。** `nss_database_select_default` の `switch` は、`LINK_OBSOLETE_NSL` が定義されている場合にのみ `compat [NOTFOUND=return] files` を選び、定義されていない場合は `nss_database_default_compat` と `nss_database_default_defconfig` の双方が `files` の枝へ落ちる。ソース中のコメントもこれを明言している——「nis/compat mappings get turned into "files" for !LINK_OBSOLETE_NSL configurations」。
+- **ファイルを開けなかった理由は既定の選択に影響しない。** `nss_database_reload` は `ENOENT` に加えて `EACCES`・`EPERM`・`EISDIR`・`ELOOP`・`ENOTDIR` も「ファイルシステムの内容に由来する恒久的な誤り」として無視し、同じ既定を適用する。すなわち glibc から見れば「不在」と「読めない」は同じ扱いである。本設計はこのうち「読めない」を「不完全」に倒しており（§4.3）、glibc の実挙動より厳しい側にずれている。過剰拒否の方向であり、fail-open は生じない。
+
+Ubuntu 26.04 の `libc.so.6` に `compat [NOTFOUND=return] files`・`nis [NOTFOUND=return] files` のいずれも無いこと（上表）は、このビルドで `LINK_OBSOLETE_NSL` が定義されていないことを示す。`#ifdef` の外にある `files dns`・`nis nisplus` は同じバイナリに存在するため、文字列が単に最適化で消えたのではないことも裏付けられる。したがって**このプラットフォームでの既定は `passwd`・`group` とも `files` であり、AC-03 の前提と食い違わない。AC-03 の改訂は要らない。**
+
+`LINK_OBSOLETE_NSL` を有効にしてビルドされた glibc（`--enable-obsolete-nsl`）では既定が `compat [NOTFOUND=return] files` になる。**その構成でも本設計は AC-03 のまま「完全」と申告する。** 以下の理由はその構成に対するものである。
 
 - fail-open が成立するには、「`/etc/nsswitch.conf` が無い」「compat/NIS が実際に機能している」「group-writable な保護対象ファイルがある」の3つが同時に必要である。SSSD も NIS も、導入すればこのファイルを書く。3条件が揃う構成は事実上存在しない。
 - 仮に既定が `compat` であっても、`/etc/passwd` に `+`・`-` 行が無く NIS ドメインが未設定であれば、挙動は `files` と同一である。

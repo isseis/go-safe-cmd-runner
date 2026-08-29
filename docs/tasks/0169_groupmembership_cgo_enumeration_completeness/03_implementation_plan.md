@@ -191,40 +191,40 @@
 
 **作業内容**
 
-- [ ] `var pwentMutex sync.Mutex` に付いている doc コメントを分割する。現在は `getGroupMembers` を説明する段落と `pwentMutex` を説明する段落が1つのコメントブロックにまとまっており、`getGroupMembers` 自身には doc コメントが無い。
-  - [ ] `var pwentMutex` に残すコメント: `// pwentMutex serialises all setpwent/getpwent/endpwent calls within this`／`// package. It is held inside getUsersWithPrimaryGID.`／`// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.`／`// Reverse acquisition is forbidden.`（ロック順序に `nsswitchVerdictMu` を加える。`02_architecture.md` §2.2）
-  - [ ] `func getGroupMembers` に新たに付ける doc コメント: `// getGroupMembers returns all members of a group given its GID, together`／`// with what this host's user database configuration says about whether`／`// libc enumerates them exhaustively.`／`//`／`// The member set is the union of explicit members (gr_mem) and users whose`／`// primary GID matches the requested GID. This matches the non-CGO`／`// implementation semantics. The completeness is the verdict settled for`／`// this process: libc resolves every configured source, but a source such as`／`// sss gives no guarantee that what it returns is every member.`
-- [ ] `getGroupMembers` の本体で、完全性判定の取得を関数の先頭に置く（`verdict := nsswitchVerdict()`）。`02_architecture.md` §6.1 のとおり、成功して返るすべての経路が同じ値を載せることをコードの形から読めるようにするためである。
-- [ ] `getGroupMembers` のグループ不在の分岐を、`return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: []string{}, verdict: verdict}, nil` へ変える。
-- [ ] `getGroupMembers` の最終の return を、`return groupEnumeration{members: merged, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: merged, verdict: verdict}, nil` へ変える。
-- [ ] `membership_cgo_test.go` の `TestGetGroupMembers_StatesComplete` を改める（`02_architecture.md` §7.3）。
-  - [ ] 関数名を `TestGetGroupMembers_StatesTheHostVerdict` へ改める。「無条件に完全」を固定する名前が残ると、主張と名前が食い違う。
-  - [ ] 主張を `assert.Equal(t, completeVerdict(), enumeration.verdict)` から、期待値を `classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)` から得る形へ改める。分類の定義をテスト側に複製しないための形であり、`membership_semantics_test.go` が既に採っている書き方に倣う。
-  - [ ] doc コメントを、このテストがホストの分類との一致を主張するものであることを述べる文へ書き換える。
-  - [ ] **このテストを AC-01・AC-02 の根拠として数えない。** `files` のみを構成したホスト（本コンテナと GitHub-hosted の Ubuntu ランナーがこれに当たる）では期待値が `completeVerdict()` に等しくなるため、`getGroupMembers` を元の `completeVerdict()` 固定へ戻しても緑のままであり、そのホストでは失敗しえない。失敗しうるのは分類が「完全」にならないホストだけである。AC-01・AC-02 を担うのは、非ホスト由来の完全性判定を植える `TestGetGroupMembers_CarriesTheSettledVerdict` のほうである。`02_architecture.md` §7.3 が本テストの維持（削除ではなく更新）を指示しているため残すが、位置づけはホスト整合性の確認に限る。
-- [ ] `test_helpers.go` に `useNsswitchVerdict(t *testing.T, v completenessVerdict)` を追加する（Phase 1 から繰り延べた分。仕様は Phase 1 の該当行に記す）。本 Phase で最初の呼び出し元が現れるため `unused` に掛からない。
-- [ ] `membership_cgo_test.go` に AC-01・AC-02 を検証するテスト `TestGetGroupMembers_CarriesTheSettledVerdict` を追加する。`useNsswitchVerdict` で完全性判定を固定し、グループが存在する GID（`getCurrentUserGID(t)`）と存在しない GID（`manager_test.go` が既に定義している `unrelatedGID`。リテラルの `99999` を書かない）の双方で、固定した値がそのまま `enumeration.verdict` に現れることを検証する。固定する値は少なくとも次の3つとする。
-  - [ ] `completeVerdict()`（AC-01）
-  - [ ] `incompleteVerdict(causeNSSSources, "passwd: sss")`（AC-02。SSSD が構成されたホストを模した値であり、libc がエラーを返していない状況で「不完全」になることを踏む）
-  - [ ] `incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")`（AC-04 が linux 以外で載る値。分類器側の AC-04 は `nsswitch_test.go::TestClassifyNSSCompleteness` が踏む）
-  - [ ] このテストはプロセス全体の状態を触るため `t.Parallel()` を宣言しない。
-- [ ] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める。同ファイルが `test_helpers.go`（`//go:build test`）の `useNsswitchVerdict` を使うようになるためである。テストタグ限定のシンボルを使う CGO 専用テストとして、`membership_semantics_test.go` が既に `//go:build cgo && test` を採っている。**この変更でテストの到達範囲は狭まらない**——`make test` は両構成とも `-tags test` を渡し（`Makefile` の `unit-test`）、`make lint` も `--build-tags test` 付きで `golangci-lint` を実行するため、同ファイルの既存テスト（`TestValidateGroupMemberCount`・`TestGetExplicitGroupMembers_*` 等）は従来どおり実行される。
-- [ ] `02_architecture.md` §3.2.1 の「/etc/nsswitch.conf が存在しない場合」に、glibc の既定構成テーブル（upstream の `nss/nss_database.c`）を読んだ結果を追記する（同節と §7.5 が求める確認）。結果が同節の記述と食い違った場合にのみ、AC-03 の改訂を提案する。
+- [x] `var pwentMutex sync.Mutex` に付いている doc コメントを分割する。現在は `getGroupMembers` を説明する段落と `pwentMutex` を説明する段落が1つのコメントブロックにまとまっており、`getGroupMembers` 自身には doc コメントが無い。
+  - [x] `var pwentMutex` に残すコメント: `// pwentMutex serialises all setpwent/getpwent/endpwent calls within this`／`// package. It is held inside getUsersWithPrimaryGID.`／`// Lock ordering: GroupMembership.cacheMutex -> nsswitchVerdictMu -> pwentMutex.`／`// Reverse acquisition is forbidden.`（ロック順序に `nsswitchVerdictMu` を加える。`02_architecture.md` §2.2）
+  - [x] `func getGroupMembers` に新たに付ける doc コメント: `// getGroupMembers returns all members of a group given its GID, together`／`// with what this host's user database configuration says about whether`／`// libc enumerates them exhaustively.`／`//`／`// The member set is the union of explicit members (gr_mem) and users whose`／`// primary GID matches the requested GID. This matches the non-CGO`／`// implementation semantics. The completeness is the verdict settled for`／`// this process: libc resolves every configured source, but a source such as`／`// sss gives no guarantee that what it returns is every member.`
+- [x] `getGroupMembers` の本体で、完全性判定の取得を関数の先頭に置く（`verdict := nsswitchVerdict()`）。`02_architecture.md` §6.1 のとおり、成功して返るすべての経路が同じ値を載せることをコードの形から読めるようにするためである。
+- [x] `getGroupMembers` のグループ不在の分岐を、`return groupEnumeration{members: []string{}, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: []string{}, verdict: verdict}, nil` へ変える。
+- [x] `getGroupMembers` の最終の return を、`return groupEnumeration{members: merged, verdict: completeVerdict()}, nil` から `return groupEnumeration{members: merged, verdict: verdict}, nil` へ変える。
+- [x] `membership_cgo_test.go` の `TestGetGroupMembers_StatesComplete` を改める（`02_architecture.md` §7.3）。
+  - [x] 関数名を `TestGetGroupMembers_StatesTheHostVerdict` へ改める。「無条件に完全」を固定する名前が残ると、主張と名前が食い違う。
+  - [x] 主張を `assert.Equal(t, completeVerdict(), enumeration.verdict)` から、期待値を `classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)` から得る形へ改める。分類の定義をテスト側に複製しないための形であり、`membership_semantics_test.go` が既に採っている書き方に倣う。
+  - [x] doc コメントを、このテストがホストの分類との一致を主張するものであることを述べる文へ書き換える。
+  - [x] **このテストを AC-01・AC-02 の根拠として数えない。** `files` のみを構成したホスト（本コンテナと GitHub-hosted の Ubuntu ランナーがこれに当たる）では期待値が `completeVerdict()` に等しくなるため、`getGroupMembers` を元の `completeVerdict()` 固定へ戻しても緑のままであり、そのホストでは失敗しえない。失敗しうるのは分類が「完全」にならないホストだけである。AC-01・AC-02 を担うのは、非ホスト由来の完全性判定を植える `TestGetGroupMembers_CarriesTheSettledVerdict` のほうである。`02_architecture.md` §7.3 が本テストの維持（削除ではなく更新）を指示しているため残すが、位置づけはホスト整合性の確認に限る。
+- [x] `test_helpers.go` に `useNsswitchVerdict(t *testing.T, v completenessVerdict)` を追加する（Phase 1 から繰り延べた分。仕様は Phase 1 の該当行に記す）。**計画からの相違**: 本 Phase で最初の呼び出し元が現れるため `unused` に掛からない、と書いていたが、実際には掛かった。呼び出し元は `//go:build cgo && test` のテストだけであり、`make lint` の `CGO_ENABLED=0` 側の実行（`Makefile` の `lint` は2構成で回す）はそのファイルを読まないため `func useNsswitchVerdict is unused` を報告する。置き場は §5.2 の指定どおり `test_helpers.go` のまま変えず、理由を述べた `//nolint:unused` を doc コメントに添えて解消した。`cgo && test` のヘルパファイルへ分けなかったのは、両ビルドのテストが同じ手段で完全性判定を固定するという §7.1 の形を崩さないためである。
+- [x] `membership_cgo_test.go` に AC-01・AC-02 を検証するテスト `TestGetGroupMembers_CarriesTheSettledVerdict` を追加する。`useNsswitchVerdict` で完全性判定を固定し、グループが存在する GID（`getCurrentUserGID(t)`）と存在しない GID（`manager_test.go` が既に定義している `unrelatedGID`。リテラルの `99999` を書かない）の双方で、固定した値がそのまま `enumeration.verdict` に現れることを検証する。固定する値は少なくとも次の3つとする。
+  - [x] `completeVerdict()`（AC-01）
+  - [x] `incompleteVerdict(causeNSSSources, "passwd: sss")`（AC-02。SSSD が構成されたホストを模した値であり、libc がエラーを返していない状況で「不完全」になることを踏む）
+  - [x] `incompleteVerdict(causeUnsupportedPlatform, "goos=darwin")`（AC-04 が linux 以外で載る値。分類器側の AC-04 は `nsswitch_test.go::TestClassifyNSSCompleteness` が踏む）
+  - [x] このテストはプロセス全体の状態を触るため `t.Parallel()` を宣言しない。
+- [x] `membership_cgo_test.go` の先頭のビルドタグを `//go:build cgo` から `//go:build cgo && test` へ改める。同ファイルが `test_helpers.go`（`//go:build test`）の `useNsswitchVerdict` を使うようになるためである。テストタグ限定のシンボルを使う CGO 専用テストとして、`membership_semantics_test.go` が既に `//go:build cgo && test` を採っている。**この変更でテストの到達範囲は狭まらない**——`make test` は両構成とも `-tags test` を渡し（`Makefile` の `unit-test`）、`make lint` も `--build-tags test` 付きで `golangci-lint` を実行するため、同ファイルの既存テスト（`TestValidateGroupMemberCount`・`TestGetExplicitGroupMembers_*` 等）は従来どおり実行される。
+- [x] `02_architecture.md` §3.2.1 の「/etc/nsswitch.conf が存在しない場合」に、glibc の既定構成テーブル（upstream の `nss/nss_database.c`）を読んだ結果を追記する（同節と §7.5 が求める確認）。結果が同節の記述と食い違った場合にのみ、AC-03 の改訂を提案する。
 
 **完了判定条件**
 
-- [ ] `make test`・`make lint` が両構成で成功する。
-- [ ] `rg -c 'completeVerdict\(\)' internal/groupmembership/membership_cgo.go` が一致無し（現状 2 件）。
-- [ ] `rg -c 'nsswitchVerdict\(\)' internal/groupmembership/membership_cgo.go` が `1`。
-- [ ] `rg -c '^func TestGetGroupMembers_CarriesTheSettledVerdict\(' internal/groupmembership/membership_cgo_test.go` が `1`（新しいテストが実在すること。§3 の AC-20 の静的確認が空振りしないための前提）。
-- [ ] §5.3 の無効化確認 `X1`・`X5` を実施し、コミットメッセージに英語で記す。
+- [x] `make test`・`make lint` が両構成で成功する。
+- [x] `rg -c 'completeVerdict\(\)' internal/groupmembership/membership_cgo.go` が一致無し（現状 2 件）。
+- [x] `rg -c 'nsswitchVerdict\(\)' internal/groupmembership/membership_cgo.go` が `1`。
+- [x] `rg -c '^func TestGetGroupMembers_CarriesTheSettledVerdict\(' internal/groupmembership/membership_cgo_test.go` が `1`（新しいテストが実在すること。§3 の AC-20 の静的確認が空振りしないための前提）。
+- [x] §5.3 の無効化確認 `X1`・`X5` を実施し、コミットメッセージに英語で記す。
 
 > **Phase 2 で `cacheMutex` を保持したままログハンドラを呼ぶ経路が CGO ビルドにも生じる（レビュー指摘）。** `manager.go` の `getGroupEnumeration` は `cacheMutex.Lock()` を保持したまま `gm.enumerateGroupMembers(gid)` を呼ぶ。本 Phase で CGO 版 `getGroupMembers` が `nsswitchVerdict()` を呼ぶようになると、その中の `processNSSCompletenessReporter.report(slog.Default(), verdict)` が `cacheMutex`（再入不可の `sync.RWMutex`）の下で実行される。ハンドラは任意のコードであり、`safefileio` 経由で `CanCurrentUserSafelyWriteFile` → `getGroupEnumeration` へ戻るものがあれば自己デッドロックする。`nsswitchVerdict` の既存コメントは「記録はロックの外で出す」と述べているが、その対象は `nsswitchVerdictMu` だけであり `cacheMutex` を名指ししていない。なお本経路は非 CGO ビルドには既に存在する（`getGroupMembers` が `nsswitchVerdict()` を呼ぶため）ので、本 Phase が新設する欠陥ではなく CGO ビルドへ拡げるものである。通常の起動では `precomputeEnumerationEnvironment()` が先に確定させるため `justSettled` が偽になり `report` は呼ばれないが、その入口を通らない利用（ライブラリとしての利用、テスト）では成立しうる。本 Phase で次の2点を行う。ロック順序の注記の更新（`cacheMutex` → `nsswitchVerdictMu` → `pwentMutex`）とは別の問題であり、順序ではなく「ロック下で任意のコードを呼ぶこと」を扱う。
 
 **対処は Phase 4 の作り替えに委ね、本 Phase では回避策を作らない**（2026-08-29 決定。下記「latch の作り替え」を参照）。遅延確定をやめて起動時の1回に固定すれば `report` は起動時＝ロックの外でしか走らなくなり、この経路自体が消えるためである。回避策を先に入れると、Phase 4 でそれを捨てることになる。
 
-- [ ] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。Phase 4 までの暫定の記録であり、作り替えの際にコメントごと消える。
-- [ ] Phase 2〜3 の間はこの経路が生きていることを受容する。**踏むには「`GroupMembership` へ戻る `slog` ハンドラ」が要るが、そのようなハンドラは現在存在しない**（production の goroutine は Slack 送信の2箇所のみで、いずれも群所属を参照しない）。
+- [x] `nsswitchVerdict` のコメントの「a lock that is not reentrant」を、`nsswitchVerdictMu` と `cacheMutex` の双方を名指しする表現へ改める。Phase 4 までの暫定の記録であり、作り替えの際にコメントごと消える。
+- [x] Phase 2〜3 の間はこの経路が生きていることを受容する。**踏むには「`GroupMembership` へ戻る `slog` ハンドラ」が要るが、そのようなハンドラは現在存在しない**（production の goroutine は Slack 送信の2箇所のみで、いずれも群所属を参照しない）。
 
 ### Phase 3: 拒否メッセージのビルド別化（AC-11〜AC-14）
 
@@ -701,7 +701,7 @@ Phase 5 で利用者向け文書に転記するエラーメッセージ例は、
 
 - `make test` は `CGO_ENABLED=1`（`-race` つき）と `CGO_ENABLED=0` を順に実行する。`make lint` も同じ2構成で回る。両者の終了コードが 0 であることを各 Phase の完了判定条件とする。
 - **開発環境が `files` 構成である場合、新しい拒否も新しい警告も手元では現れない。** 次の2つを必ず行う。
-  - [ ] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。
+  - [x] **拒否側（Phase 2 で実施）**: `useNsswitchVerdict` で完全性判定を「不完全」に固定した状態でのテスト実行。拒否側の経路を実際に踏む（`02_architecture.md` §7.5）。あわせて、そのとき出る文面が CGO 版のもの（`CGO_ENABLED` を含まない）であることを確かめる。**実施状況**: 経路の踏破は Phase 2 で実施済み（`CanCurrentUserSafelyWriteFile` が `user_database_source=nss` つきで拒否することを確認）。文面の確認は、CGO 版の文面が存在しない Phase 2 時点では行えないため Phase 3 で行う。
   - [ ] **警告側の陽性対照（強制実行。Phase 1 で実施）。** 警告は Phase 1 で有効になるため、この確認も Phase 1 で行う。開発コンテナの `/etc/nsswitch.conf` の `passwd` 行を一時的に `passwd: sss` へ書き換え、`CGO_ENABLED=1` でビルドした `record` を1回起動して、`This build cannot enumerate every member of a group on this host` が `user_database_source=nss` つきで**1度だけ**出ることを目視する。同じ手順を `CGO_ENABLED=0` のビルドでも行い、`user_database_source=passwd-file` になることを確かめる。確認後は `/etc/nsswitch.conf` を必ず元に戻す。**この手順を省くと、警告が出る側の経路はどのテストでも踏まれない**——`TestNsswitchVerdictReportsWhatItSettled` は分類が「完全」になるホストでは「記録が無いこと」しか確かめず、`TestNSSCompletenessReporter_Report`・`TestNSSCompletenessReporter_ReportsOnlyOnce` はレポータを直接呼ぶため確定からの連結を通らないためである（Phase 1 の注記）。
 - `make deadcode` を Phase 1 と Phase 4 の完了時に実行し、`nsswitch.go` のタグ除去と公開の入口の追加によって到達不能コードが生じていないことを確かめる。
 
