@@ -1,5 +1,3 @@
-//go:build !cgo || test
-
 package groupmembership
 
 import (

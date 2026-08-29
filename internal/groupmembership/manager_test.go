@@ -1622,3 +1622,82 @@ func TestNewInitializesSudoUIDExistenceMemo(t *testing.T) {
 
 	assert.Equal(t, 1, calls)
 }
+
+// TestNsswitchVerdictSettlesOncePerProcess verifies that the classification
+// is settled once and reused. Re-reading /etc/nsswitch.conf per call would
+// let a permission decision change halfway through a run, which is a denial
+// the operator cannot reproduce.
+func TestNsswitchVerdictSettlesOncePerProcess(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	// Plant a value the host itself could never produce: a second call that
+	// classified again would overwrite it and return the host's own answer.
+	planted := incompleteVerdict(causeUnsupportedPlatform, "planted by TestNsswitchVerdictSettlesOncePerProcess")
+	require.NotEqual(t, planted, settled)
+	nsswitchVerdictMu.Lock()
+	nsswitchVerdictValue = planted
+	nsswitchVerdictMu.Unlock()
+
+	assert.Equal(t, planted, nsswitchVerdict())
+}
+
+// TestNsswitchVerdictAgreesAcrossGoroutines verifies that concurrent callers
+// all receive the classification that was settled, whichever of them settled
+// it.
+func TestNsswitchVerdictAgreesAcrossGoroutines(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	const callers = 16
+	verdicts := make([]completenessVerdict, callers)
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := range callers {
+		go func() {
+			defer wg.Done()
+			verdicts[i] = nsswitchVerdict()
+		}()
+	}
+	wg.Wait()
+
+	for _, v := range verdicts {
+		assert.Equal(t, verdicts[0], v)
+	}
+}
+
+// TestNsswitchVerdictReportsWhatItSettled verifies that settling the
+// classification is what drives the startup warning, and that it drives it
+// exactly when the classification is not complete.
+//
+// On a host this build can enumerate exhaustively the expectation is that
+// nothing was recorded, which alone would also hold if the reporter were
+// never called at all. The reverse direction -- that an incomplete
+// classification does produce the record -- is what the forced run described
+// in the plan confirms, since forcing it from inside the test would require
+// a seam in production code that exists only for tests.
+func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	settled := nsswitchVerdict()
+
+	assert.Equal(t, settled.completeness != completenessComplete,
+		processNSSCompletenessReporter.reported.Load(),
+		"the startup warning must be emitted exactly when the classification is not complete")
+}
+
+// TestEnsurePermissionCheckUIDPrecomputesEnvironment verifies that the
+// startup entry point settles the NSS classification, so that a host this
+// build cannot enumerate says so when record or verify starts rather than at
+// the first group-writable file.
+func TestEnsurePermissionCheckUIDPrecomputesEnvironment(t *testing.T) {
+	resetNsswitchClassification(t)
+
+	// The UID resolution may legitimately fail on some hosts; what is under
+	// test is that the classification was settled before that could matter.
+	_ = New().EnsurePermissionCheckUID()
+
+	nsswitchVerdictMu.Lock()
+	defer nsswitchVerdictMu.Unlock()
+	assert.True(t, nsswitchVerdictResolved, "EnsurePermissionCheckUID must settle the NSS classification")
+}

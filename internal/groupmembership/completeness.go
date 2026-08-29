@@ -42,8 +42,8 @@ const (
 	// causeUnsupportedPlatform means the build's target platform cannot be
 	// classified (anything other than linux).
 	causeUnsupportedPlatform
-	// causeNSSSources means /etc/nsswitch.conf configures a source this
-	// build cannot enumerate through files alone, or could not be read.
+	// causeNSSSources means /etc/nsswitch.conf configures a source whose
+	// enumeration cannot be confirmed exhaustive, or could not be read.
 	causeNSSSources
 	// causeMalformedLine means a scan of /etc/group or /etc/passwd skipped
 	// at least one line it could not parse.

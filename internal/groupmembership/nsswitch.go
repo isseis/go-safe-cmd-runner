@@ -1,5 +1,3 @@
-//go:build !cgo || test
-
 package groupmembership
 
 import (
@@ -7,7 +5,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unicode"
 )
@@ -39,12 +39,16 @@ type nsswitchSnapshot struct {
 	err     error
 }
 
-// completeNSSSources is the allowlist of source names a build reading the
-// user and group databases from files alone can enumerate exhaustively. It
+// completeNSSSources is the allowlist of source names whose enumeration is
+// taken to be exhaustive from the configuration alone, on either build. It
 // is an allowlist rather than a list of dangerous names so that a source
-// this build has never heard of counts against completeness instead of for
-// it. "compat" is deliberately absent: it pulls NIS entries in through the
-// "+" and "-" lines, which this build cannot resolve.
+// neither build has heard of counts against completeness instead of for it.
+// "compat" is deliberately absent: it pulls NIS entries in through the "+"
+// and "-" lines, and neither build can confirm that those entries are
+// enumerated in full.
+//
+// "systemd" is assumed rather than established: under cgo, nss-systemd
+// answers getpwent and getgrent, but systemd-homed users appear dynamically.
 var completeNSSSources = map[string]struct{}{
 	"files":   {},
 	"systemd": {},
@@ -86,7 +90,7 @@ func readNsswitchSnapshot() nsswitchSnapshot {
 // readNsswitchSnapshotFrom reads the nsswitch configuration at path. Only
 // a file that does not exist yields nsswitchAbsent; every other failure
 // yields nsswitchReadFailed, because a file that exists but cannot be read
-// may well name a source this build cannot consult.
+// may well name a source whose enumeration cannot be confirmed exhaustive.
 func readNsswitchSnapshotFrom(path string) nsswitchSnapshot {
 	content, err := os.ReadFile(path) //nolint:gosec // the path is a fixed system configuration file
 	if err != nil {
@@ -98,22 +102,27 @@ func readNsswitchSnapshotFrom(path string) nsswitchSnapshot {
 	return nsswitchSnapshot{state: nsswitchRead, content: string(content)}
 }
 
-// classifyNSSCompleteness decides whether a build that reads the user and
-// group databases from files alone can enumerate all members, given the
-// contents of /etc/nsswitch.conf and the target platform. It touches no
-// files.
+// classifyNSSCompleteness decides whether this host's user database
+// configuration establishes that all members of a group are enumerated,
+// given the contents of /etc/nsswitch.conf and the target platform. Both
+// builds share this rule. It touches no files.
 func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenessVerdict {
-	// Only Linux configures its user databases through /etc/nsswitch.conf in
-	// a form this build reads, so every other platform is unclassifiable and
-	// therefore incomplete.
+	// No platform other than Linux exposes its user database configuration in
+	// a form either build can classify.
 	if goos != "linux" {
 		return incompleteVerdict(causeUnsupportedPlatform, "goos="+goos)
 	}
 
 	switch snapshot.state {
 	case nsswitchAbsent:
-		// With no configuration file there is no way to configure a source
-		// other than the local files, so the local files are all there is.
+		// Without cgo this is airtight: no file, no way to name a source
+		// other than the local files. Under cgo it is a judgement call,
+		// since glibc falls back to a compile-time default not established
+		// here. Both are answered "complete" because falling open needs no
+		// configuration file AND a working compat or NIS setup AND a
+		// group-writable protected file, while anything configuring such a
+		// source writes this file -- whereas denying would reject every
+		// minimal container image that ships without one.
 		return completeVerdict()
 	case nsswitchRead:
 		return classifyNSSSources(snapshot.content)
@@ -134,7 +143,8 @@ func classifyNSSCompleteness(snapshot nsswitchSnapshot, goos string) completenes
 // classifyNSSSources judges the passwd and group lines of an nsswitch
 // configuration. Both databases must be configured by exactly one line that
 // can be read as written and names at least one source, and every source
-// they name must be one this build can enumerate exhaustively.
+// they name must be one whose enumeration can be confirmed exhaustive from
+// the configuration alone.
 func classifyNSSSources(content string) completenessVerdict {
 	for _, database := range []string{"passwd", "group"} {
 		sources, defect := nssSources(content, database)
@@ -287,4 +297,56 @@ func (r *nssCompletenessReporter) report(logger *slog.Logger, v completenessVerd
 		slog.String("cause", v.cause.String()),
 		slog.String("detail", v.detail),
 	)
+}
+
+// precomputeEnumerationEnvironment settles the completeness verdict before
+// the first enumeration, so that a build that cannot enumerate every member
+// on this host says so at startup rather than at the first group-writable
+// file.
+func precomputeEnumerationEnvironment() {
+	nsswitchVerdict()
+}
+
+// processNSSCompletenessReporter is the single reporter instance shared by
+// the whole process, so that the classification record is emitted at most
+// once per process.
+var processNSSCompletenessReporter nssCompletenessReporter
+
+// The classification is settled once and reused for the lifetime of the
+// process: a permission decision that changed halfway through a run because
+// /etc/nsswitch.conf was edited would be a denial the operator cannot
+// reproduce. The cost is that a change to that file goes unobserved until
+// the process exits.
+var (
+	nsswitchVerdictMu       sync.Mutex
+	nsswitchVerdictResolved bool
+	nsswitchVerdictValue    completenessVerdict
+)
+
+// nsswitchVerdict returns the classification for this process. It reads and
+// classifies on first call, records an incomplete classification once, and
+// reuses the result thereafter.
+func nsswitchVerdict() completenessVerdict {
+	verdict, justSettled := settleNsswitchVerdict()
+	if justSettled {
+		// The record is emitted outside the lock: a log handler is
+		// arbitrary code, and one that reached back into this package
+		// would deadlock on a lock that is not reentrant.
+		processNSSCompletenessReporter.report(slog.Default(), verdict)
+	}
+	return verdict
+}
+
+// settleNsswitchVerdict returns the classification for this process and
+// whether this call is the one that settled it.
+func settleNsswitchVerdict() (completenessVerdict, bool) {
+	nsswitchVerdictMu.Lock()
+	defer nsswitchVerdictMu.Unlock()
+
+	if nsswitchVerdictResolved {
+		return nsswitchVerdictValue, false
+	}
+	nsswitchVerdictValue = classifyNSSCompleteness(readNsswitchSnapshot(), runtime.GOOS)
+	nsswitchVerdictResolved = true
+	return nsswitchVerdictValue, true
 }
