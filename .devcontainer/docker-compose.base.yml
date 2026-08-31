@@ -4,13 +4,15 @@ services:
       context: ..
       dockerfile: .devcontainer/Dockerfile
     environment:
-      - SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock
+      # Make the agent visible from entry points other than VS Code (e.g. docker exec)
+      - SSH_AUTH_SOCK=/ssh-agent.sock
     volumes:
       - ..:/workspaces/ubuntu:cached
-      - /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock
       - ~/.ssh/id_ed25519.pub:/home/issei/.ssh/id_ed25519.pub:ro
-      # 認証情報の永続化（Mac ホストと共有）
+      # Fixed socket path that Docker Desktop forwards to the host's launchd ssh-agent
+      - /run/host-services/ssh-auth.sock:/ssh-agent.sock
+      # Persist credentials (shared with the Mac host)
       - ~/.config/gh:/home/issei/.config/gh
       - ~/.claude:/home/issei/.claude
-    # コンテナを維持するためのコマンド
+    # Command to keep the container running
     command: /bin/sh -c "while sleep 1000; do :; done"

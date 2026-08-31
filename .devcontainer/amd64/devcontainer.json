@@ -7,6 +7,9 @@
     "service": "dev-env",
     "workspaceFolder": "/workspaces/ubuntu",
     "remoteUser": "issei",
+    "remoteEnv": {
+        "SSH_AUTH_SOCK": "/ssh-agent.sock"
+    },
     "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
     "customizations": {
         "vscode": {

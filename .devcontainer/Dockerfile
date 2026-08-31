@@ -1,9 +1,9 @@
 FROM ubuntu:26.04
 
-# インタラクティブな入力を無効化
+# Disable interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 開発ツールのインストール
+# Install development tools
 RUN apt-get update && apt-get install -y \
     bash-completion \
     build-essential \
@@ -22,12 +22,12 @@ RUN apt-get update && apt-get install -y \
     vim \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 日本語ロケール
+# Japanese locale
 RUN locale-gen ja_JP.UTF-8
 ENV LANG=ja_JP.UTF-8
 
-# Go 言語と golangci-lint のインストール
-# TARGETARCH は docker-compose.yml の platform 指定から Docker が自動設定する
+# Install Go and golangci-lint
+# TARGETARCH is automatically set by Docker based on the platform specified in docker-compose.yml
 ARG GO_VERSION=1.26.3
 ARG GOLANGCI_LINT_VERSION=2.11.4
 ARG GOFUMPT_VERSION=v0.6.0
@@ -62,7 +62,7 @@ RUN set -eux \
     && mv /root/go/bin/deadcode /usr/local/bin/deadcode \
     && rm -rf /root/go /root/.cache/go-build
 
-# GitHub CLI (gh) のインストール
+# Install GitHub CLI (gh)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -74,10 +74,46 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # pre-commit
 RUN pip3 install --break-system-packages pre-commit
 
-# パスの設定
+# Claude Code CLI (apt repository, verify signing key fingerprint)
+RUN apt-get update && apt-get install -y gnupg \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+    -o /etc/apt/keyrings/claude-code.asc \
+    && FINGERPRINT="$(gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
+    | awk -F: '/^fpr:/ { print $10; exit }')" \
+    && [ "${FINGERPRINT}" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" ] \
+    || (echo "unexpected Claude Code signing key fingerprint: ${FINGERPRINT}" && exit 1) \
+    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+    > /etc/apt/sources.list.d/claude-code.list \
+    && apt-get update && apt-get install -y claude-code \
+    && apt-get purge -y gnupg && apt-get autoremove -y \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# herdr (agent session persistence tool, verified via official manifest SHA-256)
+ARG HERDR_VERSION=0.8.2
+RUN set -eux \
+    && TARGETARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "${TARGETARCH}" in \
+    amd64) \
+    HERDR_TARGET="linux-x86_64"; \
+    HERDR_SHA256="976150a14d490c94b243ea2e1a7eb2dfb67f12e36b182db90936f6728e6aecf4"; \
+    ;; \
+    arm64) \
+    HERDR_TARGET="linux-aarch64"; \
+    HERDR_SHA256="f55610658e1c2e0d2aaef730b4b2ab885f7f8ba00285ab372bfb14f2e3d5b40d"; \
+    ;; \
+    *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-${HERDR_TARGET}" \
+    -o /tmp/herdr \
+    && echo "${HERDR_SHA256}  /tmp/herdr" | sha256sum -c - \
+    && install -m 0755 /tmp/herdr /usr/local/bin/herdr \
+    && rm /tmp/herdr
+
+# Configure PATH
 ENV PATH=$PATH:/usr/local/go/bin
 
-# 一般ユーザーの作成（root での開発を避けるため）
+# Create a regular user (to avoid developing as root)
 ARG USERNAME=issei
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
