@@ -114,6 +114,7 @@ type slackSender struct {
 	// to park a worker in the dequeued-but-not-yet-registered position.
 	afterDequeue func()
 
+	// mu guards the fields below against the send worker started by go sd.run().
 	mu sync.RWMutex
 	// The following are guarded by mu.
 	closed         bool
@@ -133,13 +134,15 @@ type slackSender struct {
 	// aggregateOnce keeps the flush aggregate to one record per sender, so an
 	// operator totalling the breakdown across a run cannot double-count a
 	// sender whose Flush and Close were both called.
+	// Flush and Close can both reach this from different goroutines.
 	aggregateOnce sync.Once
 
 	// syncInFlight counts sendSync calls that have been accepted (past the
-	// closed check) but have not yet recorded their outcome. terminate waits
-	// on it for synchronous senders before snapshotting FlushStats, so a
-	// concurrent Flush/Close cannot observe Pending before the in-flight send
-	// has updated the sent/failed counters.
+	// closed check) but have not yet recorded their outcome.
+	// terminate waits here for the goroutines running sendSync for
+	// synchronous senders before snapshotting FlushStats, so a concurrent
+	// Flush/Close cannot observe Pending before the in-flight send has
+	// updated the sent/failed counters.
 	syncInFlight sync.WaitGroup
 
 	counters slackCounters
@@ -170,8 +173,9 @@ type shutdownRequest struct {
 }
 
 // slackCounters holds the cumulative counters behind FlushStats. They are
-// atomic rather than mu-guarded because Handle increments Submitted and
-// Dropped while holding only the read lock.
+// updated concurrently by the send worker and by callers, so each field is
+// atomic rather than mu-guarded: Handle increments Submitted and Dropped
+// while holding only the read lock.
 type slackCounters struct {
 	submitted atomic.Int64
 	enqueued  atomic.Int64

@@ -9,7 +9,14 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 )
 
-// Capture represents an active output capture session using temporary file
+// Capture represents an active output capture session using temporary file.
+//
+// os/exec starts one goroutine per writer when Cmd.Stdout/Cmd.Stderr is not
+// an *os.File, and stdout and stderr wrappers share this Capture: the
+// executor gives both the stdoutWrapper and the stderrWrapper the same
+// OutputWriter, so the two per-writer goroutines can call WriteOutput on this
+// Capture concurrently. mutex protects the fields those goroutines contend
+// on.
 type Capture struct {
 	OutputPath   string       // Final output file path
 	TempFilePath string       // Temporary file path

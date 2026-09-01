@@ -26,6 +26,12 @@ import (
 // captures the value once, and all subsequent callers (including the executor)
 // receive the same cached value. This ensures the risk evaluator's base identity
 // and the executor's Credential base are identical.
+//
+// sync.OnceValue here is memoization, not mutual exclusion.
+// It must not be replaced with a hand-written lazy initialization, because
+// doing so risks capturing the identity after the first privilege change
+// instead of before it, which is the correctness requirement this value
+// exists to satisfy.
 var OriginalExecutionIdentity = sync.OnceValue(func() RunAsIdent {
 	// #nosec G115 -- safe: os.Getuid/os.Getgid/os.Getgroups return system IDs,
 	// which are non-negative and fit in uint32 on all supported platforms.

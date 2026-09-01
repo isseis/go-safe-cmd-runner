@@ -454,6 +454,8 @@ func FlushSlackNotifications() {
 	slackHandlers = nil
 
 	stats := make([]logging.FlushStats, len(entries))
+	// this WaitGroup is what makes the Slack flush concurrent: it lets one
+	// goroutine per handler call Flush at the same time instead of serially.
 	var wg sync.WaitGroup
 	for i, entry := range entries {
 		wg.Go(func() {
