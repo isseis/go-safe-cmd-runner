@@ -254,7 +254,7 @@ flowchart LR
 選別」は既存の `identitymutationguard.ProductionGoFiles` がそのまま使える（§4.4）。利用者が1つしか
 無いものをパッケージへ切り出すのは YAGNI に反するため、切り出しは行わない。
 
-### 2.3 出力コピー goroutine が特権窓の内側で走ること
+### 2.3 出力コピー goroutine が特権の隙の中で走ること
 
 次の図は現行コードの挙動である。本タスクはこの構造を変えない。D1 の削除根拠と、§6.2 の脅威の
 両方がここから読み取れる。
@@ -269,7 +269,7 @@ sequenceDiagram
     participant CAP as "output.Capture"
 
     EX->>PM: "WithPrivileges(fn)"
-    PM->>PM: "seteuid(0) — 特権窓の開始"
+    PM->>PM: "seteuid(0) — 特権の隙が開く"
     PM->>EX: "fn() を呼ぶ"
     EX->>OS: "Run()"
     OS->>G1: "writer ごとに goroutine を起こす"
@@ -314,7 +314,7 @@ sequenceDiagram
 | D8 | `ResultCollector.mu` | `sync.Mutex` | フィールド削除 | dry-run 報告の誤り |
 | D9 | `NormalResourceManager.mu`／`DryRunResourceManager.mu` | `sync.RWMutex` | フィールド削除 | 一時ディレクトリの取り残し |
 | D10 | `VerifiedFD.closed` | `atomic.Bool` | `bool` | **二重 close による fd 再利用** |
-| D11 | `UnixPrivilegeManager.mu` | `sync.Mutex` | フィールド削除 | **特権窓の重なり**（§3.4） |
+| D11 | `UnixPrivilegeManager.mu` | `sync.Mutex` | フィールド削除 | **特権の隙の重なり**（§3.4） |
 
 D6 は素の `int32` ではなく `PermissionCheckUIDPolicy` に落とす。`atomic.Int32` を使うために
 `int32(p)`／`PermissionCheckUIDPolicy(...)` の相互変換が全参照点に散っているが、これは
@@ -417,10 +417,15 @@ var ErrReentrantPrivilegeCall = errors.New("reentrant WithPrivileges call")
 並行安全性は何も主張せず、`mu` が与えていた誤った安心は戻らない。fail-closed であり、
 デッドロックという劣悪な検知手段を典型的なエラーへ置き換える。
 
-> **この項目は AC の範囲外である。** `01_requirements.md` の AC-11・AC-12 は doc コメントの記述だけを
-> 求めており、新しいエラー型の追加は求めていない。本設計はこれを、原則5（失われる検知を代替する）の
-> 帰結として提案する。レビューで採否の判断を求める。採らない場合は、AC-11 の記述に「再入は検知されず
-> 静かに特権を失う」を追加することが最低限必要になる。
+この置き直しは、当初 `01_requirements.md` の AC 範囲外だったため設計時に採否の判断を仰いだ項目で
+ある。採用の判断を受けて、要件定義書に **AC-24** を追加した（承認後の追加であることは
+`01_requirements.md` の Document Status の Comments に記録してある）。本設計はこれを確定事項として
+扱う。
+
+ガードの副作用は、再入が**エラーとして観測できるようになる**ことだけである。既存の呼び出し側は
+いずれも再入しないため、返るエラーの種類も呼び出し回数も変わらない。すなわち AC-11 が求める
+「外部から観測できる挙動を変えない」を破らない。破るとすれば、それは再入という既存のバグが
+実在した場合に限られ、その場合は静かに特権を失うより検知されるほうが望ましい。
 
 なお AC-12 は記述の範囲を `privilege` パッケージに限っているが、この契約はインターフェース
 （`runnertypes/config.go:195-197`）にも書かれており、そちらの "or the call deadlocks" も同時に
@@ -467,8 +472,8 @@ K1 は4種類の異なる並行性を含むため、まとめず個別に扱う�
 | `internal/runner/resource/error_scenarios_test.go` | 変更 | `TestConcurrentExecutionConsistency`・`TestConcurrentExecution` の扱い（§8.3） | 上記2件 | なし |
 | `internal/verification/shebang_chain_verifier_test.go` | 変更なし | `TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree` は維持（§8.3） | なし | なし |
 | `internal/runner/base/risktypes/types.go` | 変更 | D10 の削除、契約の取り下げと前提の明記（AC-10、§3.3） | `TestVerifiedFD_ConcurrentClose` | AC-10（同一 goroutine からの二重 close） |
-| `internal/runner/base/privilege/unix.go` | 変更 | D11 の削除、未解決課題の明記（AC-11・AC-12）、再入ガード（§3.4） | `race_test.go` 全体（4関数） | 再入ガードのテスト（§3.4 採用時） |
-| `internal/runner/base/runnertypes/config.go` | 変更 | インターフェースの再入記述を D11 に追随（§3.4） | なし | なし |
+| `internal/runner/base/privilege/unix.go` | 変更 | D11 の削除、未解決課題の明記（AC-11・AC-12）、再入ガード（§3.4、AC-24） | `race_test.go` 全体（4関数） | AC-24（再入が `ErrReentrantPrivilegeCall` を返し `fn()` を呼ばない） |
+| `internal/runner/base/runnertypes/config.go` | 変更 | インターフェースの再入記述を D11 に追随（§3.4、AC-24） | なし | なし |
 | `internal/logging/slack_sender.go` | 変更 | K1a〜K1d の根拠明記（AC-15） | なし | なし |
 | `internal/runner/base/output/capture.go` | 変更 | K2 の根拠明記（AC-14） | なし（`capture_test.go` の並行テストは維持。AC-18） | なし |
 | `internal/runner/base/output/integration_test.go` | 変更 | `TestOutputCaptureIntegration_ConcurrentWrites` は実体が逐次のため改名（§8.3） | なし | なし |
@@ -610,7 +615,7 @@ CLAUDE.md の「リスト漏れはソース集合の range で検証する」に
 とくに `ErrPermissionCheckUIDPolicyConflict` と `ErrInvalidPermissionCheckUIDPolicy` の返却条件は
 D6 の前後で不変である（§7.2 の表）。
 
-新規に追加するエラー型は、§3.4 の再入ガードを採用する場合の1件のみである。
+新規に追加するエラー型は、§3.4 の再入ガード（AC-24）が用いる次の1件のみである。
 
 ```go
 // ErrReentrantPrivilegeCall is returned when WithPrivileges is called from
@@ -618,7 +623,7 @@ D6 の前後で不変である（§7.2 の表）。
 var ErrReentrantPrivilegeCall = errors.New("reentrant WithPrivileges call")
 ```
 
-これは `fn()` を呼ばずに返るため、特権窓は開かない。呼び出し側は既存の `WithPrivileges` の
+これは `fn()` を呼ばずに返るため、特権の隙は開かない。呼び出し側は既存の `WithPrivileges` の
 エラー経路でそのまま受け取る。判定には `errors.Is` を用いる。
 
 census guard test の失敗メッセージは、`go test` の出力としてのみ現れる。production の
@@ -650,7 +655,7 @@ D11 については、テスト削除後の `-race` は何も観測しない。*
 ### 6.2 D11 が可視化する既存の危険（脅威モデル）
 
 D11 の削除は、危険を新たに作るのではなく、**既にある危険を隠していた不十分なガードを取り除く**
-操作である。`mu` が達成しているのは `WithPrivileges` 同士の相互排他だけであり、特権窓が開いている
+操作である。`mu` が達成しているのは `WithPrivileges` 同士の相互排他だけであり、特権の隙が開いている
 間に走る非参加 goroutine は保護できない。
 
 ```mermaid
@@ -661,7 +666,7 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     W["WithPrivileges 呼び出し側"]
-    ESC["seteuid(0) による特権窓の開始"]
+    ESC["seteuid(0) で特権の隙が開く"]
     EUID[("プロセス全体の euid = 0")]
     FN["fn() の実行"]
     RUN["execCmd.Run()"]
@@ -711,7 +716,7 @@ flowchart LR
 
 **この脅威は現在すでに成立している。** `executor.go:211` は `WithPrivileges` の `fn()` の中で
 `executeCommandWithPath` を呼び、その中の `execCmd.Run()`（`executor.go:340`）と
-`execCmd.Output()`（`:358`）が出力コピー goroutine を起こす。どちらの分岐も特権窓の内側である。
+`execCmd.Output()`（`:358`）が出力コピー goroutine を起こす。どちらの分岐も特権の隙の中である。
 したがって `run_as_user`／`run_as_group` を伴うコマンドの実行では、**毎回2つの goroutine が euid 0 で
 走っている**。
 
@@ -753,7 +758,7 @@ exec もしない。したがって上がった euid がファイルシステム
 この分割が要る。
 
 行 1197 の扱いは他と異なる。ここは脅威と対策の対応表であり、対策を消すだけでは脅威が対策なしで
-残る。§6.2 の結論をこの表に反映させる必要がある。すなわち **「特権窓の間、参加しない goroutine は
+残る。§6.2 の結論をこの表に反映させる必要がある。すなわち **「特権の隙が開いている間、参加しない goroutine は
 保護されない。これは未解決の設計課題である」** を対策欄ではなく残存リスクとして記す。
 
 **(2) 例外とする理由**
@@ -936,7 +941,7 @@ CLAUDE.md は「テストの削除は検証を要する主張である」と定�
 
 ### 8.4 テストが主張する理由で失敗できること（AC-19）
 
-AC-04〜AC-10 を検証するテストは、検証対象の挙動を壊したときに失敗しなければならない。
+AC-04〜AC-10 および AC-24 を検証するテストは、検証対象の挙動を壊したときに失敗しなければならない。
 各コミットで次の確認を行い、結果をコミットメッセージに記す。§3.6 の「新規に要るテスト」列が空欄で
 ない項目は、この確認の前にテストを書く必要がある。
 
@@ -949,6 +954,7 @@ AC-04〜AC-10 を検証するテストは、検証対象の挙動を壊したと
 | AC-08 | 一時ディレクトリの登録を落とす |
 | AC-09 | stdout 用と stderr 用の `outputWrapper` を入れ替える |
 | AC-10 | `closed` の判定を外し、`syscall.Close` が2回走るようにする |
+| AC-24 | `inPrivilegedWindow` の判定を外し、再入が `fn()` に到達するようにする |
 
 AC-09 の「標準出力と標準エラー出力が取り違えられない」は、両者を取り違えても総量が変わらない
 テストでは検出できない。stdout と stderr に**異なる内容**を書かせ、それぞれの取得結果が対応する
@@ -1005,7 +1011,7 @@ Phase 1 を先に置く理由は、Phase 2 以降のコミットが「なぜこ�
   再現できる。
 - **census guard test の期待表**: 並列化で足したロックは必ず期待表への追記を伴い、追記の際に理由を
   書かせることで「とりあえずロックを足す」を防ぐ。
-- **`WithPrivileges` の未解決課題の記述**: 特権窓と非参加 goroutine の問題が、並列化の設計に
+- **`WithPrivileges` の未解決課題の記述**: 特権の隙と非参加 goroutine の問題が、並列化の設計に
   先立って読まれる位置にある。
 
 ### 10.2 特権操作の設計をやり直すとき
@@ -1064,11 +1070,24 @@ AC-23 の検証機構として、golangci-lint のカスタムルールや `go v
 
 ### A.5 `01_requirements.md` との差分
 
-設計の過程で、承認済みの要件定義書の記述に3点の誤りが見つかった。いずれも対処方針は変わらないため
-要件定義書は改訂せず、本設計で訂正して進める。
+設計の過程で、承認済みの要件定義書の記述に3点の誤りが見つかった。いずれも対処方針は変わらないため、
+**この3点については**要件定義書を改訂せず、本設計での訂正にとどめる（要件定義書に加えた別の2点の
+変更は A.6 に記す）。
 
 | 箇所 | 要件定義書の記述 | 実際 |
 |---|---|---|
 | 「削除に伴うテストの扱い」の表 | `manager_test.go:1360` を D2 とする | その位置の関数は D3 のもの。D2 に並行テストは存在しない（§8.2） |
 | 同表 | `race_test.go` を「ファイル全体、3箇所」 | テスト関数は4つ（§6.3） |
 | 背景 | 「自前の `go` 文は production コードに2箇所」 | literal な `go` 文は1箇所。もう1つは `sync.WaitGroup.Go`（§1.5） |
+
+### A.6 承認後に要件定義書へ加えた2点の変更
+
+`01_requirements.md` は承認済みだが、本設計のレビューを経て2点を変更した。いずれも承認者の判断に
+よるもので、Document Status の Comments にも記録してある。
+
+| 変更 | 理由 |
+|---|---|
+| **AC-24 の追加** | §3.4 の再入ガードを採用する判断を受けたもの。ガードを入れる以上、検証すべき挙動が要件側に無いと `03_implementation_plan.md` からたどれる先が無くなる |
+| **「特権窓」→「特権の隙」** | 用語集の `隙` の項が、攻撃・競合の文脈で「窓」「ウィンドウ」を使わないと定めているため。技術的な内容は変わらない |
+
+用語の変更は 2 文書に閉じており、他の文書・コードには `特権窓` の使用箇所が無いことを確認した。
