@@ -9,8 +9,8 @@ services:
     volumes:
       - ..:/workspaces/ubuntu:cached
       - ~/.ssh/id_ed25519.pub:/home/issei/.ssh/id_ed25519.pub:ro
-      # Fixed socket path that Docker Desktop forwards to the host's launchd ssh-agent
-      - /run/host-services/ssh-auth.sock:/ssh-agent.sock
+      # Host SSH agent socket path (defaults to Docker Desktop's path; override via HOST_SSH_AUTH_SOCK for other hosts)
+      - ${HOST_SSH_AUTH_SOCK:-/run/host-services/ssh-auth.sock}:/ssh-agent.sock
       # Persist credentials (shared with the Mac host)
       - ~/.config/gh:/home/issei/.config/gh
       - ~/.claude:/home/issei/.claude

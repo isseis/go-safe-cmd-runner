@@ -81,8 +81,10 @@ RUN apt-get update && apt-get install -y gnupg \
     -o /etc/apt/keyrings/claude-code.asc \
     && FINGERPRINT="$(gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
     | awk -F: '/^fpr:/ { print $10; exit }')" \
-    && [ "${FINGERPRINT}" = "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" ] \
-    || (echo "unexpected Claude Code signing key fingerprint: ${FINGERPRINT}" && exit 1) \
+    && if [ "${FINGERPRINT}" != "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" ]; then \
+    echo "unexpected Claude Code signing key fingerprint: ${FINGERPRINT}" >&2; \
+    exit 1; \
+    fi \
     && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
     > /etc/apt/sources.list.d/claude-code.list \
     && apt-get update && apt-get install -y claude-code \
