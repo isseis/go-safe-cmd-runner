@@ -118,17 +118,17 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 
 | AC・削除 | 既存テスト | 判断 |
 |---|---|---|
-| AC-04（D6） | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行を既に覆う |
-| AC-05（D3） | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce` | 逐次の「1回だけ」を既に覆う |
-| AC-05（D5） | `internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 同上。`02_architecture.md` §3.6 は `nsswitch.go` の行に「新規に要るテスト AC-05」と書いているが、この既存テストが同じ性質を同じ粒度で覆うため新規テストは書かない（CLAUDE.md「重複したテストを足す前に既存を確認する」） |
-| AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に覆う |
-| AC-07（D2） | `manager_test.go::TestGroupMembership`（`ClearExpiredCache with expired entries` ほかのサブテスト）、同 `::TestGetGroupMembers_ErrorNotCached` | キャッシュヒット・未ヒット・失効を既に覆う |
-| AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュ格納と再解決を既に覆う。`02_architecture.md` §3.6 の「新規に要るテスト AC-07」はこれで足りる |
-| AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に覆う |
-| D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」をこの4本が覆う。確認済みなので Step 2-8 では追加しない |
-| AC-10（D10） | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 冪等性と nil レシーバは覆うが、**「`syscall.Close` が1回だけ走る」ことは検証していない**。同ファイルの既存ヘルパ `fdIsOpen`（:46）を使って前者を拡張する（新規テスト関数は追加しない） |
+| AC-04（D6） | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行を既に検証している |
+| AC-05（D3） | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce` | 逐次の「1回だけ」を既に検証している |
+| AC-05（D5） | `internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 同上。`02_architecture.md` §3.6 は `nsswitch.go` の行に「新規に要るテスト AC-05」と書いているが、この既存テストが同じ性質を同じ粒度で検証しているため新規テストは書かない（CLAUDE.md「重複したテストを足す前に既存を確認する」） |
+| AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に検証している |
+| AC-07（D2） | `manager_test.go::TestGroupMembership`（`ClearExpiredCache with expired entries` ほかのサブテスト）、同 `::TestGetGroupMembers_ErrorNotCached` | キャッシュヒット・未ヒット・失効を既に検証している |
+| AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュ格納と再解決を既に検証している。`02_architecture.md` §3.6 の「新規に要るテスト AC-07」はこれで足りる |
+| AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に検証している |
+| D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-8 では追加しない |
+| AC-10（D10） | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 冪等性と nil レシーバは検証しているが、**「`syscall.Close` が1回だけ走る」ことは検証していない**。同ファイルの既存ヘルパ `fdIsOpen`（:46）を使って前者を拡張する（新規テスト関数は追加しない） |
 | D11 | §4.4 の表を参照。`race_test.go` の4関数の削除は、カバレッジ比較では検証できない（§4.4 の注記） | Step 3-4 で関数単位にどのテストが検証しているかを議論する |
-| AC-18（K2） | `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess` | K2 を覆う維持対象。削除しない |
+| AC-18（K2） | `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess` | K2 を検証する維持対象。削除しない |
 
 **新規に書くテストは 3 つだけである。** AC-09（`outputWrapper` の stdout／stderr 識別）、
 AC-24（再入ガード）、AC-23（census guard test）。
@@ -354,7 +354,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
    落とす
 3. **並行テストを残したまま** `make test` を1回走らせ、`-race` の報告の有無を記録する
    （この実行の限界は §4.1 に明記した。報告の有無をそのまま「削除してよい証拠」として読まない）
-4. 並行テストを削除または改名する。削除するテストの性質を覆う逐次テストは §1.3.4 で確認済みである
+4. 並行テストを削除または改名する。削除するテストが主張していた性質は逐次テストが検証しており、その対応は §1.3.4 で確認済みである
 5. カバレッジを再取得し、Step 1-0 の基準と関数単位で比較する（`CGO_ENABLED=1`）
 6. `make fmt` → `make test` → `make lint` を通す
 7. コミットする。件名は `refactor(0170): remove D<N> <識別子>` の形とし、本文に次を含める
@@ -500,7 +500,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 - [ ] 並行テスト `result_collector_test.go::TestResultCollector_Concurrency` を削除する。削除する
       テストが主張していた「成功・失敗の記録が集計へ正しく反映される」は
       `TestResultCollector_RecordSuccess`・`TestResultCollector_RecordFailure`・
-      `TestResultCollector_GetSummary`・`TestResultCollector_MixedResults` が覆う（§1.3.4 で確認済み）
+      `TestResultCollector_GetSummary`・`TestResultCollector_MixedResults` が検証している（§1.3.4 で確認済み）
 
 **完了条件**: `rg -n 'rc\.mu\.' internal/verification/result_collector.go` が0件。
 
@@ -678,9 +678,9 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       代わりに次をコミットメッセージの `Coverage:` に書く
       - 削除する4関数が触れていた production 関数（`WithPrivileges`、`prepareExecution`、
         `performElevation`、`handleCleanup`）を、`unix_privilege_test.go` と `manager_test.go` と
-        `identity_mutation_guard_test.go` のどのテストが覆うかを関数ごとに示す。とくに
+        `identity_mutation_guard_test.go` のどのテストが検証しているかを関数ごとに示す。とくに
         `LockSerialization` が実際に寄与していた `WithPrivileges` 入口と `prepareExecution` の
-        `default` 分岐は、`ErrUnsupportedOperationType` を検証する既存テストが覆うことを確認する
+        `default` 分岐は、`ErrUnsupportedOperationType` を検証する既存テストが引き継ぐことを確認する
       - `TestUnixPrivilegeManager_NoDeadlock` と `TestUnixPrivilegeManager_LockSerialization` が
         主張していた「デッドロックしない」「ロックが直列化する」は、**本タスクが意図的に取り下げる
         性質**であり、置き換えるテストを作らないことを明記する
@@ -865,7 +865,7 @@ Phase 2 の 10 件の順序制約は §1.3.3 の import 依存のみである。
 
 ### 4.4 削除・改名するテスト
 
-| 削除・改名 | 属する削除 | 逐次側で覆うもの |
+| 削除・改名 | 属する削除 | 逐次側で検証するもの |
 |---|---|---|
 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` を削除 | D3 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnce` |
 | `TestSudoUIDExistenceMemo_Concurrent` を削除 | D4 | `TestSudoUIDExistenceMemo_ReusesConfirmation`、`TestSudoUIDExistenceMemo_DoesNotRememberFailures` |
@@ -896,7 +896,7 @@ Phase 2 の 10 件の順序制約は §1.3.3 の import 依存のみである。
 
 ### 4.6 維持するテスト
 
-- `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess`（AC-18）。K2 を覆うため
+- `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess`（AC-18）。K2 を検証するものなので
   削除しない。各コミットで `-race` つきで通ることを確認する
 - `internal/verification/shebang_chain_verifier_test.go::TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree`
   （`02_architecture.md` §8.3）。維持し、D7・D8 の doc コメントに警告を書くことで対処する
@@ -1049,10 +1049,10 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
       `internal/testutil/synccensus/census_guard_test.go`（期待表の1行）のみ
 - [ ] **設計文書の日英差分（コード例）**:
       `rg -n -e 'sync\.Mutex' -e 'sync\.RWMutex' -e 'm\.mu\.' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md`
-      → 両版とも 0 件（行 309・322-323・437 を覆う）
+      → 両版とも 0 件（行 309・322-323・437 を検査する）
 - [ ] **設計文書の日英差分（散文）**:
       `rg -n -e 'グローバルmutex' -e 'global mutex' -e 'スレッドセーフ' -e 'Thread-safe' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md`
-      → 両版とも 0 件（行 407・1192/1197・1256/1261 を覆う）
+      → 両版とも 0 件（行 407・1192/1197・1256/1261 を検査する）
 - [ ] **脅威モデルの対策欄が空にならないこと**:
       `security-architecture.ja.md` の脅威「特権処理における競合状態」の行に、対策の削除だけでなく
       残存リスクの記述が入っていることを目視で確認する（`rg` では対策欄と残存リスク欄を区別できない）
