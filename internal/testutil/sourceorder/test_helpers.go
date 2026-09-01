@@ -78,8 +78,32 @@ func OnlyRef(t *testing.T, body *ast.BlockStmt, name string) token.Pos {
 	return positions[0]
 }
 
+// OnlyCall returns the position of the single call to the bare identifier
+// name within body, failing the test if there is not exactly one. Unlike
+// OnlyRef, this matches only an invocation of name, not other references to
+// it -- such as an assignment that stores the value name will later be
+// called through -- so it finds where the call actually happens rather than
+// where the callable was merely named.
+func OnlyCall(t *testing.T, body *ast.BlockStmt, name string) token.Pos {
+	t.Helper()
+
+	var positions []token.Pos
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == name {
+				positions = append(positions, call.Pos())
+			}
+		}
+		return true
+	})
+	require.Lenf(t, positions, 1, "expected exactly one call to %s, got %d", name, len(positions))
+	return positions[0]
+}
+
 // AssertUIDResolvedBeforeCheck verifies that run, declared in the file at
-// mainPath, resolves the permission check UID before it calls checkFuncName.
+// mainPath, calls ensureUID -- the local variable run assigns
+// EnsurePermissionCheckUID's return value or a stub through -- before it
+// calls checkFuncName.
 //
 // EnsurePermissionCheckUID is also what settles the group-enumeration
 // completeness classification for the process, and that classification is
@@ -97,7 +121,7 @@ func AssertUIDResolvedBeforeCheck(t *testing.T, mainPath, checkFuncName string) 
 	t.Run("run resolves the permission check UID before checking directories", func(t *testing.T) {
 		body := Body(t, mainPath, "run")
 
-		ensure := OnlyRef(t, body, "EnsurePermissionCheckUID")
+		ensure := OnlyCall(t, body, "ensureUID")
 		check := OnlyRef(t, body, checkFuncName)
 
 		assert.Less(t, ensure, check,
@@ -108,7 +132,7 @@ func AssertUIDResolvedBeforeCheck(t *testing.T, mainPath, checkFuncName string) 
 		reordered := fmt.Sprintf(
 			"package main\n"+
 				"func run() int {\n"+
-				"\t_, _ = %s(nil, deps{}, nil)\n"+
+				"\t_, _ = %s()\n"+
 				"\tensureUID := groupmembership.New().EnsurePermissionCheckUID\n"+
 				"\t_ = ensureUID()\n"+
 				"\treturn 0\n"+
@@ -116,7 +140,7 @@ func AssertUIDResolvedBeforeCheck(t *testing.T, mainPath, checkFuncName string) 
 
 		body := BodyInSource(t, "reordered.go", reordered, "run")
 
-		ensure := OnlyRef(t, body, "EnsurePermissionCheckUID")
+		ensure := OnlyCall(t, body, "ensureUID")
 		check := OnlyRef(t, body, checkFuncName)
 		assert.Greater(t, ensure, check,
 			"the scan must see the reordered source inside run's body, not merely find both references")

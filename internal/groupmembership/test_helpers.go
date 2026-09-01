@@ -45,24 +45,23 @@ func clearNsswitchClassification() {
 	processNSSCompletenessReporter.reported.Store(false)
 }
 
-// startupNsswitchClassification is the state that settling the classification
-// once, the way a binary does at startup, left behind. Restoring from this
-// snapshot rather than classifying again keeps a cleanup from reading
-// /etc/nsswitch.conf a second time and from emitting the startup warning into
-// whatever logger a later test has installed.
-var startupNsswitchClassification struct {
-	verdict  completenessVerdict
-	reported bool
-}
+// startupNsswitchClassification is the verdict that settling the
+// classification once, the way a binary does at startup, left behind.
+// Restoring from this snapshot rather than classifying again keeps a cleanup
+// from reading /etc/nsswitch.conf a second time and from emitting the
+// startup warning into whatever logger a later test has installed.
+var startupNsswitchClassification completenessVerdict
 
 // settleStartupNsswitchClassification settles the classification for the test
 // binary the way record, verify and runner do at startup, and remembers the
-// state it produced so that restoreStartupNsswitchClassification can put it
-// back. TestMain calls it before any test runs.
+// verdict it produced so that restoreStartupNsswitchClassification can put it
+// back. TestMain calls it before any test runs, so the settle it performs
+// here is always the first: the reporter's one-emission-per-process latch is
+// therefore always left tripped, and restoreStartupNsswitchClassification can
+// restore that fact as a constant rather than a second snapshot field.
 func settleStartupNsswitchClassification() {
 	precomputeEnumerationEnvironment()
-	startupNsswitchClassification.verdict = nsswitchVerdictValue
-	startupNsswitchClassification.reported = processNSSCompletenessReporter.reported.Load()
+	startupNsswitchClassification = nsswitchVerdictValue
 }
 
 // restoreStartupNsswitchClassification puts the process back into the state
@@ -70,8 +69,8 @@ func settleStartupNsswitchClassification() {
 // it, or the tests that follow would enumerate against an unstated
 // classification and deny.
 func restoreStartupNsswitchClassification() {
-	nsswitchVerdictValue = startupNsswitchClassification.verdict
-	processNSSCompletenessReporter.reported.Store(startupNsswitchClassification.reported)
+	nsswitchVerdictValue = startupNsswitchClassification
+	processNSSCompletenessReporter.reported.Store(true)
 }
 
 // useNsswitchVerdict fixes the completeness verdict for this process for the
