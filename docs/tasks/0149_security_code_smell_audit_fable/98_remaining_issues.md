@@ -46,14 +46,10 @@ E1（エントリポイント: `cmd/runner`・`cmd/record`・`cmd/verify`・`boo
 
 > **D1 L-2/L-3 について**: [0168](../0168_groupmembership_nocgo_enumeration_completeness/03_implementation_plan.md) で解消済み（[#976](https://github.com/isseis/go-safe-cmd-runner/issues/976)）。非 CGO ビルドが「完全」と申告してよい条件を `/etc/nsswitch.conf` の内容とプラットフォームから定め、それ以外は「不完全」の申告により group-writable なファイルへの書き込みを fail-closed にした。L-3（不正行の黙殺）は、所見の推奨である「対象 GID の行がパース不能ならエラーを返す」をそのまま採らず、「不完全性の申告」に置き換えて close した。パース不能になるのは GID フィールド自体の解析失敗が主因であり、その行がどの GID のものだったかは原理的に判定できないため、対象を絞った拒否は実装できない。走査全体を不完全として扱うことで、この判定不能性を型で表現した。
 
-- **（新規）CGO ビルドの列挙完全性**: `CGO_ENABLED=1` ビルドは `/etc/nsswitch.conf` を読まず、
-  libc の NSS lookup が成功すれば無条件に「完全」を申告する（`membership_cgo.go:331`）。
-  SSSD の既定 `enumerate = False` と、性能チューニングとして使われる
-  `ignore_group_members = True` は、いずれもエラーを返さずに部分的なメンバ集合を返すため、
-  この前提を破る。結果として group-writable なファイルへの書き込み判定
-  (`isUserOnlyGroupMember`) が fail-open に倒れる。読み込み判定は initgroups 経由のため
-  影響を受けない。0168 は非 CGO ビルドのみを対象としたため対象外。
-  → [#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) を作成済み。
+> **（新規）CGO ビルドの列挙完全性 について**: [0169](../0169_groupmembership_cgo_enumeration_completeness/03_implementation_plan.md) で解消済み（[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)）。`/etc/nsswitch.conf` の分類と完全性判定の確定を CGO・非CGO 両ビルドが共有する1つの実装にし、CGO ビルドの `getGroupMembers` が成功して返るすべての経路に完全性判定を載せるようにした。SSSD の `enumerate = False`（既定）や `ignore_group_members = True` を設定した環境では、libc の NSS lookup がエラーを返さないまま部分的なメンバー集合を返すため、これらの環境では CGO ビルドでも group-writable なファイルへの書き込み判定 (`isUserOnlyGroupMember`) が fail-closed になる。拒否メッセージの事実・回復手段はビルドごとに分け、CGO ビルドの利用者に `CGO_ENABLED=1` でのビルドを案内しないようにした。
+
+- **（新規）`internal/runner/base/security` の誤検知**: [`file_validation.go:319`](../../../internal/runner/base/security/file_validation.go#L319) の `isUserInGroup` が `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境では正当なメンバーが「非メンバー」と判定され、`checkWritePermission` が正当なアクセスを `ErrInvalidFilePermissions` で弾く。安全側に倒れる誤検知であり、0169 の fail-open とは方向が逆であり原因（`GroupIds()` を使っていないこと）も別のため分離した。
+  → [#1071](https://github.com/isseis/go-safe-cmd-runner/issues/1071) を作成済み。
 - **（新規）release.yml の darwin 非 CGO ビルドと Makefile の想定の不整合**: `release.yml` は
   `darwin/arm64` を含む全ターゲットを `CGO_ENABLED: 0` でビルドしているが、`Makefile:147-148`
   のコメントは「macOS はグループメンバーシップの列挙に CGO を要するため `CGO_ENABLED=0` の構成検査を

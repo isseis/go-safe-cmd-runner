@@ -346,10 +346,18 @@ group-writable なファイルへの書き込み安全性判定は従来どお�
 または `/etc/passwd`・`/etc/group` にパース不能な行がある場合は、列挙が完全であることを保証できない
 ため、当該の書き込み安全性判定は「緩く評価される」のではなく**拒否される**（fail-closed）。
 
-なお CGO ビルドにも既知の制限がある。SSSD の `enumerate = False`（既定）や `ignore_group_members =
-True` を設定した環境では、libc の NSS lookup がエラーを返さないまま部分的なメンバー集合を返すことが
-あり、この場合は CGO ビルドでも書き込み安全性判定が実際より緩く評価される可能性がある。詳細は
-[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) を参照。
+CGO ビルドにも同様の既知の制限があったが、[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064)
+で報告された内容は本タスクで解消済みである。CGO ビルドは libc の NSS lookup を経由してユーザー・グループ
+データベースを解決するため、`/etc/nsswitch.conf` の `passwd`・`group` 行が `files`・`systemd` のみの
+環境では非 CGO ビルドと同様に従来どおり判定できる。一方、SSSD の `enumerate = False`（既定）や
+`ignore_group_members = True` を設定した環境など、それ以外のソースが構成されたホストでは、libc の
+NSS lookup がエラーを返さないまま部分的なメンバー集合を返すことがあるため、CGO ビルドでも書き込み安全性判定が拒否される（fail-closed）。また `GOOS` が `linux` 以外の CGO ビルド（例: macOS での
+セルフビルド）は、ユーザーデータベースの構成を確認する手段自体が無いため、常に列挙不完全と判定され
+拒否される。
+
+完全性の判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、netgroup 行は判定に影響しません。Ubuntu の既定である `netgroup: nis` を見て自ホストが該当すると誤認しないよう
+注意すること——ネットグループは GID を持たず、`getgrgid_r` が返すグループメンバーにも `st_gid`
+（ファイルの所有グループ）にも現れないため、グループメンバーの列挙には関与しない。
 
 ### 4. 安全な端末出力制御 (`internal/terminal/`, `internal/ansicolor/`)
 
