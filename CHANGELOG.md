@@ -115,6 +115,41 @@ If 1 and 2 find no source other than `files`/`systemd` and no malformed lines, a
 
 **Rollback:** reverting to the previous release restores the old behavior. The hash file and configuration formats are unchanged, so no additional work is needed.
 
+#### `groupmembership`: fail-closed on group-writable writes when enumeration is incomplete on CGO_ENABLED=1 builds
+
+This pairs with the non-CGO item above: the same completeness check now also applies to a CGO build (a binary self-built with `CGO_ENABLED=1`). **All officially distributed binaries are built with `CGO_ENABLED=0`, so they are unaffected by this change.** Only hosts running a self-built binary with `CGO_ENABLED=1` are affected.
+
+A CGO build resolves the user and group databases through libc's NSS lookup, but in an environment configured with SSSD's `enumerate = False` (the default) or `ignore_group_members = True`, libc's lookup can return a partial member set without returning an error. Previously the CGO build did not detect this and evaluated group membership more permissively than it actually was; from now on, when the enumeration cannot be determined to be complete, the write-safety check for group-writable files and directories is denied with an error (the read-safety check is unaffected).
+
+**Impact:** A binary built with `CGO_ENABLED=1`, on a host matching one of the following, is affected.
+
+- `GOOS` is other than `linux` (e.g. a macOS self-build).
+- The `passwd`/`group` lines of `/etc/nsswitch.conf` name a source other than `files`/`systemd` (including `passwd: files sss`, the default on domain-joined hosts), a line has an unreadable form, a line is missing, or the file could not be read.
+
+On these hosts, checks or writes that go through a group-writable path component not covered by the `isTrustedGroup` exemption will fail after upgrading.
+
+**Steps to assess impact before upgrading:**
+
+```bash
+# 1. Check the NSS source configuration (whether anything other than files/systemd is present)
+# Only the passwd and group lines matter -- a netgroup line does not affect the check
+grep -E '^(passwd|group):' /etc/nsswitch.conf
+
+# 2. Check whether any path component of the target path is group-writable
+p=$(readlink -m <target-path>)
+while [ -n "$p" ]; do
+    ls -ld "$p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+If your self-build uses `CGO_ENABLED=0`, this item does not apply. If you build with `CGO_ENABLED=1`, and step 1 finds no source other than `files`/`systemd` and step 2 finds no group-writable path component, there is no impact after upgrading. If either applies, run `record`/`verify` once and check whether the startup warning `This build cannot enumerate every member of a group on this host` (`user_database_source=nss`) appears.
+
+**Remediation:** (a) remove the group-writable bit from the target path (`chmod g-w`). (b) configure both the `passwd` and `group` lines with only sources whose enumeration is exhaustive (`files`, `systemd`). **Rebuilding with `CGO_ENABLED=1` is not a remediation** -- it already meets that condition.
+
+**Rollback:** rebuilding with `CGO_ENABLED=0` does not avoid this; you must use a version that does not include this change. The configuration and hash file formats are unchanged, so no additional work is needed.
+
 ### Changed
 
 #### Log file name timestamps are now UTC
