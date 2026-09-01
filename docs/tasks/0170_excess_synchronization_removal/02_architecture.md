@@ -460,9 +460,9 @@ K1 は4種類の異なる並行性を含むため、まとめず個別に扱う�
 | ファイル | 区分 | 責務・変更内容 | 削除・改名する既存テスト | 新規に要るテスト |
 |---|---|---|---|---|
 | `internal/runner/base/executor/executor.go` | 変更 | D1 の削除 | なし | AC-09（stdout/stderr の識別） |
-| `internal/groupmembership/manager.go` | 変更 | D2・D3・D4 の削除、§3.2 の記述追随 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently`（D3）、`TestSudoUIDExistenceMemo_Concurrent`（D4） | なし（AC-05・AC-06 は既存の逐次テストが覆う。§8.2） |
+| `internal/groupmembership/manager.go` | 変更 | D2・D3・D4 の削除、§3.2 の記述追随 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently`（D3）、`TestSudoUIDExistenceMemo_Concurrent`（D4） | なし（AC-05・AC-06 は既存の逐次テストが検証している。§8.2） |
 | `internal/groupmembership/nsswitch.go` | 変更 | D5 の削除 | なし | AC-05（`nssCompletenessReporter` 側） |
-| `internal/groupmembership/policy.go` | 変更 | D6 の削除。契約は不変（AC-04） | `TestSetProcessPermissionCheckUIDPolicy_Concurrent` | なし（§7.2 の表を既存の逐次テストが覆う） |
+| `internal/groupmembership/policy.go` | 変更 | D6 の削除。契約は不変（AC-04） | `TestSetProcessPermissionCheckUIDPolicy_Concurrent` | なし（§7.2 の表を既存の逐次テストが検証している） |
 | `internal/groupmembership/test_helpers_policy.go` | 変更 | D6 削除への追随 | なし | なし |
 | `internal/groupmembership/membership_cgo.go` | 変更 | `pwentMutex` の doc コメント改訂（AC-17）、ロック順序記述の削除 | なし | なし |
 | `internal/verification/path_resolver.go` | 変更 | D7 の削除 | なし | AC-07（キャッシュヒット／未ヒット） |
@@ -808,7 +808,7 @@ flowchart TD
     R --> OBS{"並行テストを残したまま<br>-race を実行"}
     OBS -->|"報告あり"| FB["到達可能性の判定が誤り。<br>削除を取り消し維持対象へ移す"]
     OBS -->|"報告なし"| REC["観測結果をコミットメッセージに記録"]
-    REC --> D2["並行テストを削除または改名し<br>逐次テストで性質を覆う"]
+    REC --> D2["並行テストを削除または改名し<br>逐次テストで性質を検証する"]
     D2 --> C3["カバレッジを再取得して比較"]
     C3 --> V1["CGO_ENABLED=1 で make test（-race）"]
     V1 --> V2["CGO_ENABLED=0 で make test"]
@@ -899,19 +899,19 @@ dry-run 経路の状態を扱うが、いずれも収集する内容ではなく
 ### 8.2 並行テストを削除する際の扱い（AC-13）
 
 CLAUDE.md は「テストの削除は検証を要する主張である」と定める。削除する各テストについて、
-その関数が主張していた**非並行の性質**を逐次テストが覆っていることを確認する。
+その関数が主張していた**非並行の性質**を逐次テストが検証していることを確認する。
 
 `01_requirements.md` の「削除に伴うテストの扱い」の表は行番号で対象を指しているが、行番号は既に
 ずれている。実体は関数名で特定するのが正しいので、以下は関数名で示す。
 
-| 削除・改名するテスト | 属する削除 | 逐次側で覆うべき性質 |
+| 削除・改名するテスト | 属する削除 | 逐次側で検証すべき性質 |
 |---|---|---|
-| `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` | **D3** | 2回目以降の `report` が何も記録しない（`TestSudoUIDAdoptionReporter_ReportsOnlyOnce` が既に覆う） |
-| `TestSudoUIDExistenceMemo_Concurrent` | D4 | 確認済み UID は再問い合わせされず、失敗した確認は毎回再問い合わせされる（`TestSudoUIDExistenceMemo_ReusesConfirmation`・`TestSudoUIDExistenceMemo_DoesNotRememberFailures` が既に覆う） |
+| `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` | **D3** | 2回目以降の `report` が何も記録しない（`TestSudoUIDAdoptionReporter_ReportsOnlyOnce` が既に検証している） |
+| `TestSudoUIDExistenceMemo_Concurrent` | D4 | 確認済み UID は再問い合わせされず、失敗した確認は毎回再問い合わせされる（`TestSudoUIDExistenceMemo_ReusesConfirmation`・`TestSudoUIDExistenceMemo_DoesNotRememberFailures` が既に検証している） |
 | `TestSetProcessPermissionCheckUIDPolicy_Concurrent` | D6 | §7.2 の契約表の全行 |
 | `TestResultCollector_Concurrency` | D8 | 成功・失敗の記録が集計へ正しく反映される |
 | `TestVerifiedFD_ConcurrentClose` | D10 | 同一 goroutine からの二重 `Close` で `syscall.Close` が1回だけ走る |
-| `race_test.go` の4関数 | D11 | 特権の昇格・復帰と識別子検証（`TestUnixPrivilegeManager_WithPrivileges` 系および `identity_mutation_guard_test.go` が覆う。実際の被覆は §7.1 のカバレッジ比較で確認する） |
+| `race_test.go` の4関数 | D11 | 特権の昇格・復帰と識別子検証（`TestUnixPrivilegeManager_WithPrivileges` 系および `identity_mutation_guard_test.go` が検証している。実際に検証できているかは §7.1 のカバレッジ比較で確認する） |
 
 > **重要な訂正**: `01_requirements.md` の表は `manager_test.go:1360` を **D2**（メンバーシップ
 > キャッシュへの並行アクセス）としているが、その位置にある関数は
@@ -962,7 +962,7 @@ AC-09 の「標準出力と標準エラー出力が取り違えられない」�
 
 ### 8.5 維持側のテスト（AC-18）
 
-`internal/runner/base/output/capture_test.go` の並行テストは K2 を覆うものであり、削除しない。
+`internal/runner/base/output/capture_test.go` の並行テストは K2 を検証するものであり、削除しない。
 `-race` 付きで引き続き通過することを各コミットで確認する。
 
 ### 8.6 census guard test の設計（AC-23）

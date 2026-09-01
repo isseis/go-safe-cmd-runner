@@ -175,7 +175,7 @@ ensures syscall.Close runs for exactly one caller, avoiding a double-close race 
 
 CLAUDE.md は「テストの削除は検証を要する主張である」と定める。よって削除するテストごとに、
 **その関数が主張していた非並行の性質（冪等性・キャッシュの一貫性・memo のヒットなど）を
-逐次的なテストとして残すか、既存の逐次テストが同じ関数を覆っていることを確認する**。
+逐次的なテストとして残すか、既存の逐次テストが同じ関数を検証していることを確認する**。
 `go tool cover -func` を関数単位で比較し、カバレッジが落ちていないことを確かめる（AC-13）。
 
 対象となる既存の並行テストは次のとおりである。
@@ -189,7 +189,7 @@ CLAUDE.md は「テストの削除は検証を要する主張である」と定�
 | D10 | `internal/runner/base/risktypes/types_test.go:105`（並行 close） |
 | D11 | `internal/runner/base/privilege/race_test.go`（ファイル全体、3箇所） |
 
-K2 を覆う `internal/runner/base/output/capture_test.go:364` は維持対象のテストであり、削除しない。
+K2 を検証する `internal/runner/base/output/capture_test.go:364` は維持対象のテストであり、削除しない。
 
 ### 進め方
 
@@ -265,12 +265,12 @@ K2 を覆う `internal/runner/base/output/capture_test.go:364` は維持対象�
   プロセス全体のカーソルであること、および外すと将来の並行呼び出しでエラーではなく黙って誤った
   列挙結果になることが記されている。あわせて、本タスクの棚卸しで意図的に維持したことが読み取れる。
 
-#### F-004: テストの整理と被覆の維持
+#### F-004: テストの整理とカバレッジの維持
 
 **Acceptance Criteria**:
 
 - **AC-13**: 「削除に伴うテストの扱い」の表に挙げた各テストについて、削除した場合はその関数が
-  主張していた非並行の性質を覆う逐次テストが存在する。削除の前後で `go tool cover -func` の
+  主張していた非並行の性質を検証する逐次テストが存在する。削除の前後で `go tool cover -func` の
   出力を関数単位で比較し、カバレッジが落ちた関数が無いことを確認したうえで、その旨をコミットメッセージ
   に記す。
 - **AC-18**: `internal/runner/base/output/capture_test.go` の並行テストは削除されず、
