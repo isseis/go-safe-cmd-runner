@@ -298,7 +298,7 @@ func TestOutputCaptureIntegration_UnlimitedSize(t *testing.T) {
 
 func TestOutputCaptureIntegration_SequentialWrites(t *testing.T) {
 	tempDir := tu.SafeTempDir(t)
-	outputPath := filepath.Join(tempDir, "concurrent_output.txt")
+	outputPath := filepath.Join(tempDir, "sequential_output.txt")
 
 	// Create mock security validator that allows all operations for testing
 	mockValidator := &MockSecurityValidator{}
