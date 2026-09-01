@@ -218,18 +218,18 @@ AC-24（再入ガード）、AC-23（census guard test）。
 ファイル集合が変わり（`membership_cgo.go` と `membership_nocgo.go`）、構成をまたいで比較すると
 実体の無いカバレッジ低下が出るためである。
 
-- [ ] `make test` と `make lint` が現状で通ることを確認する
-- [ ] 基準値の置き場を作る: `mkdir -p .git/0170-baseline`
-- [ ] **本タスクの起点コミットを固定する**: `git rev-parse HEAD > .git/0170-baseline/base.sha`。
+- [x] `make test` と `make lint` が現状で通ることを確認する
+- [x] 基準値の置き場を作る: `mkdir -p .git/0170-baseline`
+- [x] **本タスクの起点コミットを固定する**: `git rev-parse HEAD > .git/0170-baseline/base.sha`。
       §7 と §8 が `<base>` と書くのはこの SHA である。PR を1本ずつ main へマージしていくと
       `git merge-base main HEAD` は直前の PR の先端へ動いてしまい、コミット数やコミットメッセージを
       数える検証が常に 0 を返すようになるため、起点は必ず SHA で固定する
-- [ ] `make deadcode > .git/0170-baseline/deadcode.txt` を実行する（AC-22 の比較基準）
-- [ ] 削除対象を含む 8 パッケージのカバレッジを関数単位で記録する（AC-13 の比較基準）。対象は
+- [x] `make deadcode > .git/0170-baseline/deadcode.txt` を実行する（AC-22 の比較基準）
+- [x] 削除対象を含む 8 パッケージのカバレッジを関数単位で記録する（AC-13 の比較基準）。対象は
       `internal/groupmembership`、`internal/verification`、`internal/runner/resource`、
       `internal/runner/base/executor`、`internal/runner/base/risktypes`、
       `internal/runner/base/privilege`、`internal/runner/base/output`、`internal/logging`
-- [ ] 記録は次のループで取る（パッケージ名のスラッシュをファイル名で潰す）:
+- [x] 記録は次のループで取る（パッケージ名のスラッシュをファイル名で潰す）:
 
 ```sh
 for p in groupmembership verification runner/resource runner/base/executor \
@@ -248,13 +248,13 @@ done
 補う。役割の説明ではなく相手の goroutine を名指しする。§7 の静的検証が下記のリテラルをそのまま
 検索するため、**語句は一字一句このとおりに書く**。
 
-- [ ] `mu sync.RWMutex`（117 行）: `guards the fields below against the send worker started by go sd.run()`
+- [x] `mu sync.RWMutex`（117 行）: `guards the fields below against the send worker started by go sd.run()`
       の一文を含める
-- [ ] `aggregateOnce sync.Once`（136 行）: `Flush and Close can both reach this from different goroutines`
+- [x] `aggregateOnce sync.Once`（136 行）: `Flush and Close can both reach this from different goroutines`
       の一文を含める
-- [ ] `syncInFlight sync.WaitGroup`（143 行）: `terminate waits here for the goroutines running sendSync`
+- [x] `syncInFlight sync.WaitGroup`（143 行）: `terminate waits here for the goroutines running sendSync`
       の一文を含める
-- [ ] `slackCounters` 型（175 行付近）の doc コメント: `updated concurrently by the send worker and by callers`
+- [x] `slackCounters` 型（175 行付近）の doc コメント: `updated concurrently by the send worker and by callers`
       の一文を含める（5フィールドを個別に書き分けない）
 
 **完了条件**: 次が 4 を返す。
@@ -269,7 +269,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 1-2: K2（`internal/runner/base/output/capture.go:21`）に根拠を書く（AC-14）
 
-- [ ] `mutex` の行末コメント `// Protects concurrent access to file and size` を、`Capture` 型の
+- [x] `mutex` の行末コメント `// Protects concurrent access to file and size` を、`Capture` 型の
       doc コメント側の記述へ移し、次の2つのリテラルを含める
       - `os/exec starts one goroutine per writer`（`Cmd.Stdout`／`Cmd.Stderr` に `*os.File` でない
         `io.Writer` を渡した場合の挙動）
@@ -280,14 +280,14 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 1-3: K3・K4・K5 に根拠を書く（AC-15）
 
-- [ ] `internal/runner/bootstrap/logger.go:457` の `var wg sync.WaitGroup`:
+- [x] `internal/runner/bootstrap/logger.go:457` の `var wg sync.WaitGroup`:
       `this WaitGroup is what makes the Slack flush concurrent` の一文を含める
-- [ ] `internal/logging/log_line_tracker.go:22` の `lineCounter atomic.Int64`: `output copy goroutine` の
+- [x] `internal/logging/log_line_tracker.go:22` の `lineCounter atomic.Int64`: `output copy goroutine` の
       語句を含め、`output.Capture` が出力サイズ上限超過時に `Logger.Error` を呼ぶ経路で、slog ハンドラが
       `os/exec` の出力コピー goroutine 上を走りうることを書く。`DefaultLogLineTracker` 型の既存 doc
       コメント「provides a thread-safe implementation ... using atomic operations for concurrent
       access」は並行の相手を述べていないので、相手を名指しする記述に書き換える
-- [ ] `internal/redaction/error_collector.go:18` の `mu sync.RWMutex`: 同じく `output copy goroutine` の
+- [x] `internal/redaction/error_collector.go:18` の `mu sync.RWMutex`: 同じく `output copy goroutine` の
       語句を含め、`RedactingHandler` が `RecordFailure` を呼ぶ経路で同じ goroutine 上を走りうることを
       書く。型 doc コメントの「Safe for concurrent use」だけの記述を、相手を名指しする記述に置き換える
 
@@ -299,9 +299,9 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 1-4: K6 の2箇所に根拠を書く（AC-16）
 
-- [ ] `internal/runner/base/executor/fdexec_linux.go:19` の `fdExecSupported`:
+- [x] `internal/runner/base/executor/fdexec_linux.go:19` の `fdExecSupported`:
       `memoization, not mutual exclusion` の語句を含める
-- [ ] `internal/runner/base/risktypes/runas_ident.go:29` の `OriginalExecutionIdentity`: 同じ語句に加えて
+- [x] `internal/runner/base/risktypes/runas_ident.go:29` の `OriginalExecutionIdentity`: 同じ語句に加えて
       `must not be replaced with a hand-written lazy initialization` の語句を含め、「最初の権限変更より
       前に捕捉する」正しさの要請を担うことを書く（既存の 15 行目・24 行目の記述を活かす）
 
@@ -312,14 +312,14 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 1-5: `pwentMutex` の doc コメントを改訂する（AC-17）
 
-- [ ] `internal/groupmembership/membership_cgo.go:302` の `pwentMutex` の doc コメントに、次の3つの
+- [x] `internal/groupmembership/membership_cgo.go:302` の `pwentMutex` の doc コメントに、次の3つの
       リテラルを含む記述を書く
       - `process-wide cursor`（`setpwent`／`getpwent`／`endpwent` が libc のプロセス全体のカーソルで
         あること）
       - `silently wrong enumeration`（外すと、将来の並行呼び出しでエラーではなく黙って誤った列挙結果に
         なること）
       - `deliberately kept by task 0170`（本タスクの棚卸しで意図的に維持したこと）
-- [ ] `membership_cgo.go:299-300` の「Lock ordering: `GroupMembership.cacheMutex` -> `pwentMutex`」の
+- [x] `membership_cgo.go:299-300` の「Lock ordering: `GroupMembership.cacheMutex` -> `pwentMutex`」の
       記述は**この Step では削除しない**。`cacheMutex` は D2 のコミットで消えるため、その削除は
       Step 2-2 に含める（削除と記述の追随を同じコミットに置く原則2）
 
@@ -328,22 +328,22 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 1-6: 実体に合わないテスト名を是正する（`02_architecture.md` §8.3）
 
-- [ ] `internal/runner/base/output/integration_test.go:299` の
+- [x] `internal/runner/base/output/integration_test.go:299` の
       `TestOutputCaptureIntegration_ConcurrentWrites` を
       `TestOutputCaptureIntegration_SequentialWrites` に改名し、doc コメントを実体（逐次書き込み）に
       合わせる
-- [ ] `internal/runner/resource/error_scenarios_test.go:258` の `TestConcurrentExecutionConsistency` を
+- [x] `internal/runner/resource/error_scenarios_test.go:258` の `TestConcurrentExecutionConsistency` を
       `TestExecutionConsistencyAcrossModes` に改名する。goroutine ごとに別のマネージャを構築する構造は
       残し、doc コメントに「各 goroutine が自分のマネージャを持つため、マネージャは共有されない」ことを
       書く
-- [ ] `internal/runner/resource/error_scenarios_test.go:598` の `TestConcurrentExecution` を
+- [x] `internal/runner/resource/error_scenarios_test.go:598` の `TestConcurrentExecution` を
       `TestDryRunExecutionAcrossIndependentManagers` に改名する。このテストは 10 goroutine を起こす
       **本当に並行なテスト**であり、共有していないのはマネージャのインスタンスだけである。「Repeated」
       のような逐次を示唆する名前にはしない。doc コメントには、各 goroutine が自分の
       `DryRunResourceManager` を構築するので同一インスタンスが共有されない、という事実だけを書く。
       「これが D9 を許す根拠である」まで書くのは Step 2-9（PR-5）で行う。この時点ではまだ `mu` が
       あり、Phase 1 冒頭の差分注記と同じ理由で、未マージの変更を前提にした記述は置かない
-- [ ] `internal/verification/shebang_chain_verifier_test.go::TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree`
+- [x] `internal/verification/shebang_chain_verifier_test.go::TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree`
       は**変更しない**（`02_architecture.md` §8.3 の判断）
 
 **完了条件**: `rg -n -e 'func TestConcurrentExecution' -e 'func TestOutputCaptureIntegration_ConcurrentWrites' internal/`
@@ -351,8 +351,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Phase 1 の完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が通る
-- [ ] コミットを分ける。Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットにする
+- [x] `make fmt` → `make test` → `make lint` が通る
+- [x] コミットを分ける。Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットにする
 
 ---
 
@@ -368,8 +368,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **判定理由**: rubric のどのトリガにも該当しない。未確立の設計判断も、パネルモード条件も、Conditional checks も無く、コード挙動を変えない doc コメントと改名に閉じる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1082）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1141,14 +1141,14 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 #### PR-1: 維持対象の根拠と改名（AC-14〜AC-17）
 
-- [ ] Step 1-0: 起点 SHA と基準値（deadcode・カバレッジ）を `.git/0170-baseline/` に固定した
-- [ ] Step 1-1: K1 の4件に指定のリテラルを書いた
-- [ ] Step 1-2: K2 に指定のリテラルを書いた
-- [ ] Step 1-3: K3・K4・K5 に指定のリテラルを書いた
-- [ ] Step 1-4: K6 の2件に指定のリテラルを書いた
-- [ ] Step 1-5: `pwentMutex` の doc コメントを改訂した
-- [ ] Step 1-6: 3件のテストを実体に合わせて改名した
-- [ ] Phase 1 の完了ゲート: Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットに分けた
+- [x] Step 1-0: 起点 SHA と基準値（deadcode・カバレッジ）を `.git/0170-baseline/` に固定した
+- [x] Step 1-1: K1 の4件に指定のリテラルを書いた
+- [x] Step 1-2: K2 に指定のリテラルを書いた
+- [x] Step 1-3: K3・K4・K5 に指定のリテラルを書いた
+- [x] Step 1-4: K6 の2件に指定のリテラルを書いた
+- [x] Step 1-5: `pwentMutex` の doc コメントを改訂した
+- [x] Step 1-6: 3件のテストを実体に合わせて改名した
+- [x] Phase 1 の完了ゲート: Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットに分けた
 
 #### PR-2: D1・D2 の削除
 

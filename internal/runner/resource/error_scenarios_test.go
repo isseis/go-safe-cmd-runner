@@ -254,8 +254,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 	}
 }
 
-// TestConcurrentExecutionConsistency tests concurrent execution consistency between modes
-func TestConcurrentExecutionConsistency(t *testing.T) {
+// TestExecutionConsistencyAcrossModes runs numGoroutines goroutines
+// concurrently, each of which calls mode.setup() itself, so each goroutine
+// constructs and drives its own Manager instance; no Manager is shared
+// between goroutines.
+func TestExecutionConsistencyAcrossModes(t *testing.T) {
 	const numGoroutines = 5
 	const commandsPerGoroutine = 3
 
@@ -594,8 +597,11 @@ func TestFormatterErrorScenarios(t *testing.T) {
 	}
 }
 
-// TestConcurrentExecution tests concurrent dry-run execution
-func TestConcurrentExecution(t *testing.T) {
+// TestDryRunExecutionAcrossIndependentManagers runs numGoroutines goroutines
+// concurrently against dry-run execution. Each goroutine constructs its own
+// DryRunResourceManager, so no DryRunResourceManager instance is shared
+// between goroutines; the goroutines themselves are genuinely concurrent.
+func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 	const numGoroutines = 10
 	const commandsPerGoroutine = 5
 

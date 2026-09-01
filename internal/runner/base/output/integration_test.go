@@ -296,9 +296,9 @@ func TestOutputCaptureIntegration_UnlimitedSize(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestOutputCaptureIntegration_ConcurrentWrites(t *testing.T) {
+func TestOutputCaptureIntegration_SequentialWrites(t *testing.T) {
 	tempDir := tu.SafeTempDir(t)
-	outputPath := filepath.Join(tempDir, "concurrent_output.txt")
+	outputPath := filepath.Join(tempDir, "sequential_output.txt")
 
 	// Create mock security validator that allows all operations for testing
 	mockValidator := &MockSecurityValidator{}
@@ -310,10 +310,9 @@ func TestOutputCaptureIntegration_ConcurrentWrites(t *testing.T) {
 	capture, err := manager.PrepareOutput(outputPath, tempDir, 1024*1024)
 	require.NoError(t, err)
 
-	// Note: This test doesn't actually run concurrent goroutines
-	// because the current implementation uses a mutex to protect writes.
-	// Instead, it tests that multiple sequential writes work correctly
-	// and that the mutex protection is in place.
+	// This test calls WriteOutput sequentially from a single goroutine; it
+	// verifies that many writes accumulate correctly, not that concurrent
+	// writers are serialized.
 
 	testData := []byte("Test data chunk ")
 	numWrites := 100

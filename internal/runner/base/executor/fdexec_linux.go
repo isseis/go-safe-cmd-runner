@@ -16,6 +16,8 @@ import (
 // chroots run without it, where exec of /proc/self/fd/<n> would fail with ENOENT.
 // Probe once (mount state is effectively stable for a process lifetime) so that
 // such environments fall back to read-only staging instead of failing.
+// sync.OnceValue here is memoization, not mutual exclusion: there is no
+// shared state to protect, only a probe worth running once.
 var fdExecSupported = sync.OnceValue(func() bool {
 	_, err := os.Stat("/proc/self/fd")
 	return err == nil
