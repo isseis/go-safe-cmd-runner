@@ -392,16 +392,16 @@
   - [x] 「対象外」で分離した `internal/runner/base/security` の誤検知（`file_validation.go` の `isUserInGroup` が `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境で正当なメンバーが「非メンバー」と判定される）を、[#1071](https://github.com/isseis/go-safe-cmd-runner/issues/1071) への参照つきで残件として箇条書きで追加する。
   - [x] D1 以外の節（E1・D2・A1・B1・B2・C1・C2・C3・A3・A7）に差分行が現れないことを確認する（AC-29）。
 - [x] ここまでを日本語版としてコミットする。
-- [ ] `/mktrans` で英語版4件（`security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md`）へ反映する（AC-26、AC-30）。反映にあたり次の2点を守る。
-  - [ ] `CHANGELOG.md` の新しい見出しにも `CGO_ENABLED=1` の語をそのまま残す。§3.1 の `AC-27` が英語版にも同じ検査をかけるためであり、0168 の既存見出し "on non-CGO builds" と機械的に区別する必要があるためでもある。「on CGO-enabled builds」のような言い換えは、訳として正しくても検査を落とす。
-  - [ ] `security-risk-assessment.md` から、書き換え前の記述の英語版（`evaluated more permissively than it actually is even on a CGO build`）が消えていること。§3.1 の `AC-26` がこれを反映漏れの検出に使う。
+- [x] `/mktrans` で英語版4件（`security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md`）へ反映する（AC-26、AC-30）。反映にあたり次の2点を守る。
+  - [x] `CHANGELOG.md` の新しい見出しにも `CGO_ENABLED=1` の語をそのまま残す。§3.1 の `AC-27` が英語版にも同じ検査をかけるためであり、0168 の既存見出し "on non-CGO builds" と機械的に区別する必要があるためでもある。「on CGO-enabled builds」のような言い換えは、訳として正しくても検査を落とす。
+  - [x] `security-risk-assessment.md` から、書き換え前の記述の英語版（`evaluated more permissively than it actually is even on a CGO build`）が消えていること。§3.1 の `AC-26` がこれを反映漏れの検出に使う。
 
 **完了判定条件**
 
-- [ ] §3 の AC-24〜AC-30 の各静的検査が期待どおりの結果を返す。
-- [ ] 追加した CGO ビルド向けのエラーメッセージ例が、Phase 3 で実装した文面と一字一句一致する（§5.4 の突き合わせ手順）。
-- [ ] `make verify-docs` が成功する。文書に対する検査はこの target が担う——`make test` は `unit-test`（`go test` の2構成実行）だけであり、`verify-docs` を依存に持たない。
-- [ ] `make test`・`make lint` が両構成で成功する（文書のみの変更であるため回帰の確認としてのみ行う）。
+- [x] §3 の AC-24〜AC-30 の各静的検査が期待どおりの結果を返す。
+- [x] 追加した CGO ビルド向けのエラーメッセージ例が、Phase 3 で実装した文面と一字一句一致する（§5.4 の突き合わせ手順）。
+- [x] `make verify-docs` が成功する。文書に対する検査はこの target が担う——`make test` は `unit-test`（`go test` の2構成実行）だけであり、`verify-docs` を依存に持たない。
+- [x] `make test`・`make lint` が両構成で成功する（文書のみの変更であるため回帰の確認としてのみ行う）。
 
 ### PR-4 作成ポイント: user documentation and remaining-issue records
 
@@ -415,7 +415,7 @@
 
 **判定理由**: frontier のトリガに該当しない。文書のみの変更で production コードを触らず、転記元の文面は PR-3 で確定済みである。突き合わせの手順は §5.4 が、静的検査は §3・§3.1 が定めている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
@@ -709,9 +709,9 @@ Phase を単位に PR を切る。ただし **Phase 2 と Phase 3 は1つの PR 
 
 Phase 5 で利用者向け文書に転記するエラーメッセージ例は、Phase 3 で実装した文面から生成した実物と一致していなければならない。目視の転記では取りこぼすため、次の手順で突き合わせる。
 
-- [ ] CGO ビルドで、`incompleteEnumerationError` が生成するメッセージを1件出力する使い捨てのテスト（`t.Log`）を実行し、その出力をそのまま `record_command.ja.md`・`verify_command.ja.md` へ貼る。
-- [ ] `CHANGELOG.ja.md` に書いた「アップグレード前に影響有無を判定する手順」のコマンドを本コンテナで実際に実行し、終了コードと出力が説明どおりであることを確かめる（AC-27 の manual 検証）。
-- [ ] 対処法の表が CGO ビルドと非 CGO ビルドで別々の行になっていること、および両者の回復手段が実際に異なる（`CGO_ENABLED=1` でのビルドが CGO ビルドの回復手段に含まれない）ことを確かめる。
+- [x] CGO ビルドで、`incompleteEnumerationError` が生成するメッセージを1件出力する使い捨てのテスト（`t.Log`）を実行し、その出力をそのまま `record_command.ja.md`・`verify_command.ja.md` へ貼る。
+- [x] `CHANGELOG.ja.md` に書いた「アップグレード前に影響有無を判定する手順」のコマンドを本コンテナで実際に実行し、終了コードと出力が説明どおりであることを確かめる（AC-27 の manual 検証）。
+- [x] 対処法の表が CGO ビルドと非 CGO ビルドで別々の行になっていること、および両者の回復手段が実際に異なる（`CGO_ENABLED=1` でのビルドが CGO ビルドの回復手段に含まれない）ことを確かめる。
 
 ### 5.5 ビルド構成の網羅（AC-23）
 
