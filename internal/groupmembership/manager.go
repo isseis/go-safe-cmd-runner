@@ -264,9 +264,12 @@ func incompleteEnumerationError(groupGID uint32, verdict completenessVerdict) er
 
 // unstatedCompletenessError builds the denial returned when an enumeration
 // carries no completeness statement. It names the value seen so that the
-// message points at the enumeration implementation rather than at the host.
+// message points at this program rather than at the host, and names the two
+// ways to get here: an enumeration that stated nothing, and a process that
+// never settled the classification at startup, whose unstated zero value
+// reaches this same branch.
 func unstatedCompletenessError(groupGID uint32, completeness enumerationCompleteness) error {
-	return fmt.Errorf("group member enumeration for GID %d reported completeness %q, which does not state that the result covers all members (user_database_source=%s); this is a defect in the enumeration implementation rather than a condition of this host, so report it: %w",
+	return fmt.Errorf("group member enumeration for GID %d reported completeness %q, which does not state that the result covers all members (user_database_source=%s); either the enumeration stated nothing or this process never settled the classification at startup by calling groupmembership.PrecomputeEnumerationEnvironment or EnsurePermissionCheckUID, so this is a defect in this program rather than a condition of this host: %w",
 		groupGID, completeness.String(), userDatabaseSource, ErrGroupMemberCompletenessUnstated)
 }
 

@@ -190,6 +190,9 @@ func TestGetGroupMembers_IncludesPrimaryGroupMembers(t *testing.T) {
 // the verdict being carried.
 func TestGetGroupMembers_StatesTheHostVerdict(t *testing.T) {
 	resetNsswitchClassification(t)
+	// Startup is what settles the classification, so stand in for it here
+	// rather than leaving the enumeration to read the unstated zero value.
+	precomputeEnumerationEnvironment()
 
 	currentGID := getCurrentUserGID(t)
 

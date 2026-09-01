@@ -285,6 +285,11 @@ func run(runID string) error {
 		return err
 	}
 
+	// Settled here, after logging is set up so the warning reaches its
+	// destination, and before the first verification so that a host this build
+	// cannot enumerate is reported before anything is denied over it.
+	groupmembership.PrecomputeEnumerationEnvironment()
+
 	// Checked before the verification manager exists, so a missing argument is
 	// reported as such even when the hash directory is also unusable.
 	if configPath == "" {
