@@ -297,12 +297,12 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // pwentMutex serialises all setpwent/getpwent/endpwent calls within this
 // package. It is held inside getUsersWithPrimaryGID.
 //
-// setpwent/getpwent/endpwent operate on a single process-wide cursor
-// maintained by libc, not a handle owned by the caller. Without this mutex, a
-// future concurrent caller would not get an error: interleaved getpwent
-// calls would silently advance each other's cursor, producing a silently wrong enumeration
-// rather than a crash or an error. This lock is deliberately kept by task 0170's
-// synchronization removal, unlike the mutexes it removed elsewhere.
+// setpwent/getpwent/endpwent share a single process-wide cursor maintained by
+// libc, not a handle owned by the caller. getpwent_r would not remove this
+// need: it only adds a caller-supplied result buffer, avoiding a race on
+// libc's static struct passwd, but the cursor itself stays process-wide, so
+// concurrent getpwent_r calls would still steal progress from each other
+// exactly as getpwent does.
 // Lock ordering: GroupMembership.cacheMutex -> pwentMutex. Reverse
 // acquisition is forbidden. nsswitchVerdict takes no lock at all: the
 // classification is settled at startup and only read afterwards.
