@@ -460,7 +460,7 @@ K1 は4種類の異なる並行性を含むため、まとめず個別に扱う�
 | ファイル | 区分 | 責務・変更内容 | 削除・改名する既存テスト | 新規に要るテスト |
 |---|---|---|---|---|
 | `internal/runner/base/executor/executor.go` | 変更 | D1 の削除 | なし | AC-09（stdout/stderr の識別） |
-| `internal/groupmembership/manager.go` | 変更 | D2・D3・D4 の削除、§3.2 の記述追随 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently`（D3）、`TestSudoUIDExistenceMemo_Concurrent`（D4） | なし（AC-05・AC-06 は既存の逐次テストが検証している。§8.2） |
+| `internal/groupmembership/manager.go` | 変更 | D2・D3・D4 の削除、§3.2 の記述追随 | `TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently`（D3）、`TestSudoUIDExistenceMemo_Concurrent`（D4） | AC-07（D2 のキャッシュヒット。実装時に既存テストではキャッシュ参照を外しても通ることが判明したため追加した。`03_implementation_plan.md` §1.3.4）。AC-05・AC-06 は既存の逐次テストが検証している（§8.2） |
 | `internal/groupmembership/nsswitch.go` | 変更 | D5 の削除 | なし | AC-05（`nssCompletenessReporter` 側） |
 | `internal/groupmembership/policy.go` | 変更 | D6 の削除。契約は不変（AC-04） | `TestSetProcessPermissionCheckUIDPolicy_Concurrent` | なし（§7.2 の表を既存の逐次テストが検証している） |
 | `internal/groupmembership/test_helpers_policy.go` | 変更 | D6 削除への追随 | なし | なし |
