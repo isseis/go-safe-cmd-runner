@@ -25,7 +25,7 @@ type Capture struct {
 	CurrentSize  int64        // Current accumulated output size
 	StartTime    time.Time    // Start time of capture session
 	Logger       *slog.Logger // Logger for capture operations
-	mutex        sync.Mutex   // Protects concurrent access to file and size
+	mutex        sync.Mutex
 }
 
 // Write implements executor.OutputWriter interface
