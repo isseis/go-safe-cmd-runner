@@ -114,6 +114,11 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 「どの順でもよいが、後から来た方が import を落とす」という取り決めで進める（§2 Phase 2 の共通手順
 に組み込む）。他の 8 件は相互に依存しない。
 
+§3.2 の PR 構成では D2 が PR-2、D3・D4 が PR-3 に入る。PR-2 の時点では D4 の
+`sudoUIDExistenceMemo.mu` が残っているので `manager.go` の `sync` はまだ使われており、落とさなくても
+コンパイルは通る。実際に落とすのは PR-3 の D4 のコミットである。この依存は PR をまたぐが、PR は
+順にマージされるため順序は保たれる。
+
 #### 1.3.4 既存テストで再利用できるもの（新規テストを書かない根拠）
 
 | AC・削除 | 既存テスト | 判断 |
@@ -125,7 +130,7 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 | AC-07（D2） | `manager_test.go::TestGroupMembership`（`ClearExpiredCache with expired entries` ほかのサブテスト）、同 `::TestGetGroupMembers_ErrorNotCached` | キャッシュヒット・未ヒット・失効を既に検証している |
 | AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュ格納と再解決を既に検証している。`02_architecture.md` §3.6 の「新規に要るテスト AC-07」はこれで足りる |
 | AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に検証している |
-| D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-8 では追加しない |
+| D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-7 では追加しない |
 | AC-10（D10） | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 冪等性と nil レシーバは検証しているが、**「`syscall.Close` が1回だけ走る」ことは検証していない**。同ファイルの既存ヘルパ `fdIsOpen`（:46）を使って前者を拡張する（新規テスト関数は追加しない） |
 | D11 | §4.4 の表を参照。`race_test.go` の4関数の削除は、カバレッジ比較では検証できない（§4.4 の注記） | Step 3-4 で関数単位にどのテストが検証しているかを議論する |
 | AC-18（K2） | `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess` | K2 を検証する維持対象。削除しない |
@@ -203,13 +208,23 @@ AC-24（再入ガード）、AC-23（census guard test）。
 
 #### Step 1-0: 着手前の基準値を記録する
 
+基準値は PR-2 以降 PR-7 まで参照するため、複数の PR とブランチをまたいで残る場所へ置く。
+`/tmp` は再起動で消え、別のマシンやコンテナへも引き継がれないので使わない。本計画では
+`.git/0170-baseline/`（git の管理対象外で、ブランチ切り替えの影響を受けない）を使う。
+ディレクトリごと失われた場合は、`base.sha` をチェックアウトした `git worktree` で同じコマンドを
+流し直せば再生成できる。
+
 カバレッジ基準は `CGO_ENABLED=1` に固定する。`internal/groupmembership` は CGO の有無でビルドされる
 ファイル集合が変わり（`membership_cgo.go` と `membership_nocgo.go`）、構成をまたいで比較すると
 実体の無いカバレッジ低下が出るためである。
 
 - [ ] `make test` と `make lint` が現状で通ることを確認する
-- [ ] 基準値の置き場を作る: `mkdir -p /tmp/0170-baseline`
-- [ ] `make deadcode > /tmp/0170-baseline/deadcode.txt` を実行する（AC-22 の比較基準）
+- [ ] 基準値の置き場を作る: `mkdir -p .git/0170-baseline`
+- [ ] **本タスクの起点コミットを固定する**: `git rev-parse HEAD > .git/0170-baseline/base.sha`。
+      §7 と §8 が `<base>` と書くのはこの SHA である。PR を1本ずつ main へマージしていくと
+      `git merge-base main HEAD` は直前の PR の先端へ動いてしまい、コミット数やコミットメッセージを
+      数える検証が常に 0 を返すようになるため、起点は必ず SHA で固定する
+- [ ] `make deadcode > .git/0170-baseline/deadcode.txt` を実行する（AC-22 の比較基準）
 - [ ] 削除対象を含む 8 パッケージのカバレッジを関数単位で記録する（AC-13 の比較基準）。対象は
       `internal/groupmembership`、`internal/verification`、`internal/runner/resource`、
       `internal/runner/base/executor`、`internal/runner/base/risktypes`、
@@ -220,12 +235,12 @@ AC-24（再入ガード）、AC-23（census guard test）。
 for p in groupmembership verification runner/resource runner/base/executor \
          runner/base/risktypes runner/base/privilege runner/base/output logging; do
   n=$(echo "$p" | tr / _)
-  CGO_ENABLED=1 go test -tags test -coverprofile="/tmp/0170-baseline/cov-$n.out" "./internal/$p/"
-  go tool cover -func="/tmp/0170-baseline/cov-$n.out" > "/tmp/0170-baseline/covfunc-$n.txt"
+  CGO_ENABLED=1 go test -tags test -coverprofile=".git/0170-baseline/cov-$n.out" "./internal/$p/"
+  go tool cover -func=".git/0170-baseline/cov-$n.out" > ".git/0170-baseline/covfunc-$n.txt"
 done
 ```
 
-**完了条件**: `/tmp/0170-baseline/deadcode.txt` と8個の `covfunc-*.txt` が存在する。
+**完了条件**: `.git/0170-baseline/base.sha`、`deadcode.txt`、8個の `covfunc-*.txt` が存在する。
 
 #### Step 1-1: K1（`internal/logging/slack_sender.go`）に根拠を書く（AC-15）
 
@@ -324,9 +339,10 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 - [ ] `internal/runner/resource/error_scenarios_test.go:598` の `TestConcurrentExecution` を
       `TestDryRunExecutionAcrossIndependentManagers` に改名する。このテストは 10 goroutine を起こす
       **本当に並行なテスト**であり、共有していないのはマネージャのインスタンスだけである。「Repeated」
-      のような逐次を示唆する名前にはしない。doc コメントに、各 goroutine が自分の
-      `DryRunResourceManager` を構築するので同一インスタンスが共有されないこと（これが D9 を許す事実で
-      あること）を書く
+      のような逐次を示唆する名前にはしない。doc コメントには、各 goroutine が自分の
+      `DryRunResourceManager` を構築するので同一インスタンスが共有されない、という事実だけを書く。
+      「これが D9 を許す根拠である」まで書くのは Step 2-9（PR-5）で行う。この時点ではまだ `mu` が
+      あり、Phase 1 冒頭の差分注記と同じ理由で、未マージの変更を前提にした記述は置かない
 - [ ] `internal/verification/shebang_chain_verifier_test.go::TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree`
       は**変更しない**（`02_architecture.md` §8.3 の判断）
 
@@ -337,6 +353,25 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 - [ ] `make fmt` → `make test` → `make lint` が通る
 - [ ] コミットを分ける。Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットにする
+
+---
+
+### PR-1 作成ポイント: retained-lock rationale and test renames
+
+**対象ステップ**: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6
+
+**推奨タイトル**: `refactor(0170): document retained synchronization and rename misleading tests`
+
+**レビュー観点**: 指定された英語リテラルが §7 の静的検証と一字一句一致するか / 並行の相手 goroutine を名指しできているか（役割の説明で終わっていないか） / 改名した3件のテストの doc コメントが実体（逐次か、インスタンス非共有か）と合っているか / Step 1-0 の基準値が後続 PR から参照できる場所に置かれたか
+
+**実装モデル要件**: standard
+
+**判定理由**: rubric のどのトリガにも該当しない。未確立の設計判断も、パネルモード条件も、Conditional checks も無く、コード挙動を変えない doc コメントと改名に閉じる。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -382,6 +417,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **完了条件**: `rg -n 'w\.mu\.' internal/runner/base/executor/executor.go` が0件。新規テストが通る。
 
+---
+
 #### Step 2-2: D2 `GroupMembership.cacheMutex` の削除
 
 - [ ] `internal/groupmembership/manager.go:90` の `cacheMutex sync.RWMutex` を削除する
@@ -405,6 +442,25 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 - [ ] AC-19 の確認: キャッシュの参照を外し、`TestGroupMembership` のキャッシュ系サブテストが失敗すること
 
 **完了条件**: `rg -n 'cacheMutex' internal/ cmd/` が0件。
+
+### PR-2 作成ポイント: single-owner buffer and cache state (D1, D2)
+
+**対象ステップ**: 2-1 / 2-2
+
+**推奨タイトル**: `refactor(0170): remove outputWrapper and membership cache locks (D1-D2)`
+
+**レビュー観点**: D1: stdout 用と stderr 用が別インスタンスであるという削除根拠が成り立っているか / D1: 新規テストが内容で照合しており総量比較になっていないか / D2: 公開 API（`ClearCache`・`GetCacheStats`）の並行契約が変わる点に警告 doc コメントが付いたか / D2: 二重確認の削除で `getGroupEnumeration` の分岐が変わっていないか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: rubric (c)「隔離された高リスクな変更」に D2 が該当する。公開 API 2本の並行使用の契約を変え、二重確認ロジックごと削除するため、機械的な置換では済まない。影響の重い D2 を PR の末尾に置いている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
 
 #### Step 2-3: D3 `sudoUIDAdoptionReporter.reported` の `bool` 化
 
@@ -470,7 +526,46 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **完了条件**: `rg -n 'int32' internal/groupmembership/policy.go internal/groupmembership/test_helpers_policy.go` が0件。
 
-#### Step 2-7: D7 `PathResolver.mu` の削除
+---
+
+### PR-3 作成ポイント: groupmembership reporter, memo and policy state (D3-D6)
+
+**対象ステップ**: 2-3 / 2-4 / 2-5 / 2-6
+
+**推奨タイトル**: `refactor(0170): remove groupmembership reporter and policy synchronization (D3-D6)`
+
+**レビュー観点**: D6: CAS ループを直線化した後も `02_architecture.md` §7.2 の契約表5行が保たれているか / D6: 基底型を `int32` から `int` へ戻した影響が全参照点に及んでいるか / §1.3.3 の import 順序依存（`manager.go` の `sync/atomic` は D3、`manager_test.go` の `sync` は D3・D4 の後）が本 PR 内で解消されているか / D3・D5 の「1回だけ」がレポータのインスタンス共有で担保されている点が変わっていないか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: rubric (c)「隔離された高リスクな変更」に D6 が該当する。CAS 再試行ループを直線的な判定と代入へ書き換えつつ、返り値と格納値の5通りの組み合わせを不変に保つ必要がある。D3〜D5 は機械的な置換なので、判断を要する D6 を PR の末尾に置いている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
+
+#### Step 2-7: D8 `ResultCollector.mu` の削除
+
+- [ ] `internal/verification/result_collector.go:24` の `mu sync.Mutex` を削除する
+- [ ] 同 49-50、58-59、89-90、108-109、117-118 の Lock／Unlock（5対10行）を削除する
+- [ ] 同 122・126 の「Deep copy … to prevent data races」を、複製の目的を
+      「呼び出し側への内部状態の漏出を防ぐ」に改める。**複製そのものは残す**
+- [ ] `ResultCollector` 型の doc コメントに、D7 と同じ §8.3 の警告を書く。リテラルは
+      `This type is not safe for concurrent use; it must not be reached from verification.Manager's
+      concurrent paths.` とする（同じ理由で本コミットに置く）
+- [ ] 並行テスト `result_collector_test.go::TestResultCollector_Concurrency` を削除する。削除する
+      テストが主張していた「成功・失敗の記録が集計へ正しく反映される」は
+      `TestResultCollector_RecordSuccess`・`TestResultCollector_RecordFailure`・
+      `TestResultCollector_GetSummary`・`TestResultCollector_MixedResults` が検証している（§1.3.4 で確認済み）
+
+**完了条件**: `rg -n 'rc\.mu\.' internal/verification/result_collector.go` が0件。
+
+---
+
+#### Step 2-8: D7 `PathResolver.mu` の削除
 
 - [ ] `internal/verification/path_resolver.go:17` の `mu sync.RWMutex` を削除する
 - [ ] 同 60-62、86-91 の Lock／Unlock／RLock／RUnlock を削除する
@@ -488,21 +583,24 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 **完了条件**: `rg -n 'pr\.mu\.|mu +sync' internal/verification/path_resolver.go` が0件、
 `rg -n 'sync\.RWMutex' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md` が0件。
 
-#### Step 2-8: D8 `ResultCollector.mu` の削除
+### PR-4 作成ポイント: verification package synchronization removal (D8, D7)
 
-- [ ] `internal/verification/result_collector.go:24` の `mu sync.Mutex` を削除する
-- [ ] 同 49-50、58-59、89-90、108-109、117-118 の Lock／Unlock（5対10行）を削除する
-- [ ] 同 122・126 の「Deep copy … to prevent data races」を、複製の目的を
-      「呼び出し側への内部状態の漏出を防ぐ」に改める。**複製そのものは残す**
-- [ ] `ResultCollector` 型の doc コメントに、D7 と同じ §8.3 の警告を書く。リテラルは
-      `This type is not safe for concurrent use; it must not be reached from verification.Manager's
-      concurrent paths.` とする（同じ理由で本コミットに置く）
-- [ ] 並行テスト `result_collector_test.go::TestResultCollector_Concurrency` を削除する。削除する
-      テストが主張していた「成功・失敗の記録が集計へ正しく反映される」は
-      `TestResultCollector_RecordSuccess`・`TestResultCollector_RecordFailure`・
-      `TestResultCollector_GetSummary`・`TestResultCollector_MixedResults` が検証している（§1.3.4 で確認済み）
+**対象ステップ**: 2-7 / 2-8
 
-**完了条件**: `rg -n 'rc\.mu\.' internal/verification/result_collector.go` が0件。
+**推奨タイトル**: `refactor(0170): remove verification package synchronization (D7-D8)`
+
+**レビュー観点**: `verification.Manager` は並行使用の契約を持ちテストもあるのに、その内部フィールドから同期を外す点（`02_architecture.md` §8.3）を doc コメントの警告だけで守れているか / 警告のリテラルが2型で一致しているか / `security-architecture` 行 437 の改訂が日本語版・英語版の両方に入っているか / D8 の複製が残り、目的の記述だけが書き換わっているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: rubric (c)「隔離された高リスクな変更」に D7 が該当する。`TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree` が単一の `verification.Manager` を8 goroutine で駆動しており、その `PathResolver` フィールドから同期を外すという並行経路の判断を伴う（`02_architecture.md` §8.3 が「最も重要」とした項目）。機械的な D8 を先に置き、D7 を PR の末尾に置いている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
 
 #### Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu` の削除
 
@@ -524,6 +622,9 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       記述を削る
 - [ ] `internal/runner/resource/normal_manager_test.go:391,393,403,405,414,416` の `f.Manager.mu` の
       Lock／RLock／Unlock／RUnlock（3対6行）を削除する（間の `tempDirs` へのアクセスは残す）
+- [ ] `TestDryRunExecutionAcrossIndependentManagers` の doc コメントに、各 goroutine が自分の
+      マネージャを構築して同一インスタンスを共有しないことが D9 を許す根拠である旨を書き足す
+      （Step 1-6 から持ち越した分）
 - [ ] AC-19 の確認（通常版・dry-run 版の両方）:
       (a) `NormalResourceManager.CreateTempDir` の `tempDirs` への登録を落とし、
       `TestNormalResourceManager_CreateTempDir` が失敗すること、
@@ -576,11 +677,42 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 ---
 
+### PR-5 作成ポイント: resource and descriptor lifecycle state (D9, D10)
+
+**対象ステップ**: 2-9 / 2-10
+
+**推奨タイトル**: `refactor(0170): remove resource and descriptor lifecycle synchronization (D9-D10)`
+
+**レビュー観点**: D10 の契約取り下げが型レベルと `Close` の2箇所で揃っているか / fd 番号の再利用テストが `require.Equal` で必須条件になっており、非再利用時に暗黙成功しないか / 新たに開く fd が取得箇所で `t.Cleanup` に登録されているか / `Locked` 接尾辞の改名が全呼び出し側と6箇所のコメントに反映されているか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: rubric (b)「Conditional checks に2件以上該当」。resource cleanup at acquisition（Step 2-10 で新規に開く fd を取得箇所で `t.Cleanup` に登録する）と real cleanup/close API existence（`VerifiedFD.Close` の契約取り下げ）の2件に該当する。影響の重い D10 を PR の末尾に置いている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
+
 ### Phase 3: D11 の削除と再入ガードの導入
 
 **位置づけ**: `02_architecture.md` §9 の Phase 3。影響範囲が最も広く、既存文書と脅威モデルの改訂を
 伴うため単独で扱う。D11 の削除と再入ガードは分離できない（ガード無しに `mu` を外すと、
 `02_architecture.md` §3.4 の言うとおり再入が静かな特権喪失になる）ので、1コミットにまとめる。
+
+> **Step 3-1〜3-5 は1コミットである。** Step 3-1 の「テストを先に書く」は「先にコミットする」では
+> ない。`ErrReentrantPrivilegeCall` は Step 3-2 で作るので、3-1 だけを単独でコミットするとコンパイルが
+> 通らない。同じ理由で `race_test.go` の削除（Step 3-4）も同じコミットに入れる。
+
+> **Phase 3 では §7.1 の「並行テストを残したまま `-race`」を行わない。** `race_test.go` の
+> `TestUnixPrivilegeManager_LockSerialization` には skip が無く、10 goroutine から `WithPrivileges` を
+> 呼ぶ。`mu` を外して素の `inPrivilegedWindow bool` を置いた時点で `-race` は**必ず**この変数への競合を
+> 報告するが、それはテスト自身が起こした goroutine によるものであり、production の並行性については
+> 何も語らない（§4.1）。したがって実装・記述の追随・`race_test.go` の削除を1コミットで行い、
+> `Race observation:` には「`race_test.go` は同一コミットで削除するため実測なし。根拠は到達可能性の
+> 議論のみ」と書く。
 
 #### Step 3-1: 再入ガードのテストを先に書く（AC-24）
 
@@ -688,7 +820,7 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 #### Step 3-5: 設計文書を追随させる（`02_architecture.md` §6.3）
 
-日本語版を先に編集し、英語版へは `/mktrans` で反映する（§1.3.6）。6箇所のうち行 437 は Step 2-7 で
+日本語版を先に編集し、英語版へは `/mktrans` で反映する（§1.3.6）。6箇所のうち行 437 は Step 2-8 で
 済んでいるので、ここで扱うのは残り5箇所である。
 
 - [ ] `security-architecture.ja.md:309` の構造体定義のコード例から `mu sync.Mutex  // 競合状態を防止`
@@ -713,6 +845,25 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       本文に Phase 2 と同じ `Rationale:`／`Race observation:`／`Coverage:`／`Falsification:` を含める。
       `Falsification:` には「`inPrivilegedWindow` の判定を外すと
       `TestWithPrivileges_ReentrantCallIsRejected` が失敗する」ことを書く
+
+---
+
+### PR-6 作成ポイント: privilege manager lock removal and reentrancy guard
+
+**対象ステップ**: 3-1 / 3-2 / 3-3 / 3-4 / 3-5
+
+**推奨タイトル**: `feat(0170): reject reentrant WithPrivileges and remove the privilege manager mutex (D11)`
+
+**レビュー観点**: ガード無しでは再入が静かな特権喪失になるため、削除・ガード追加・`race_test.go` 削除が同一コミットに収まっているか / AC-24 のテストが一般ユーザーで skip されず `--- PASS` するか（`originalUID: 0` と `privilegeSupported: true` の構成） / インターフェース側の記述が「全実装が再入をエラーで拒否する」と断定していないか（mock は検知しない） / 脅威モデル（ja:1192 / en:1197）で対策を消すだけにせず残存リスクを記したか / `race_test.go` 削除の根拠が、カバレッジ差分ではなく関数単位の議論になっているか
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: `mkplan.md` step 8 のパネルモード条件のうち security-gate に該当する。既存ガードの撤去（挙動を下げる）と fail-closed な再入ガードの追加（挙動を上げる）を同時に行い、あわせて脅威モデルを改訂する。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -789,8 +940,8 @@ Phase 3 の後に置く。
 
 **位置づけ**: `02_architecture.md` §9 の Phase 5。最終確認のみで、コード変更は伴わない。
 
-- [ ] `make deadcode > /tmp/0170-baseline/deadcode-after.txt` を実行し、
-      `diff /tmp/0170-baseline/deadcode.txt /tmp/0170-baseline/deadcode-after.txt` で新たな到達不能コードの
+- [ ] `make deadcode > .git/0170-baseline/deadcode-after.txt` を実行し、
+      `diff .git/0170-baseline/deadcode.txt .git/0170-baseline/deadcode-after.txt` で新たな到達不能コードの
       報告が増えていないことを確認する（AC-22）
 - [ ] `make test` を実行し、`CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の両方が通り、`-race` の警告が
       1件も出ないことを確認する（AC-20）
@@ -801,7 +952,28 @@ Phase 3 の後に置く。
 
 ---
 
+### PR-7 作成ポイント: sync census guard test and final verification
+
+**対象ステップ**: 4-1 / 4-2 / 4-3 / 4-4（あわせて Phase 5 の最終確認を担う。Phase 5 は差分を生まないため対象ステップには挙げない）
+
+**推奨タイトル**: `test(0170): add sync census guard test`
+
+**レビュー観点**: 走査が `*ast.Field`・`*ast.ValueSpec`（関数内ローカルを含む）・`*ast.AssignStmt` の3位置を拾い、K3 と K6 を取りこぼさないか / `//go:build test` の新規ファイルが `make test` と `make lint` の双方でコンパイルされるか / Step 4-4 の確認2で production ファイルへ足したロックが確実に元へ戻っているか / §7 の `<base>` が §7 冒頭で固定した SHA を指しており、`git merge-base` になっていないか
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: rubric (b)「Conditional checks に2件以上該当」。build-tag compilation（`//go:build test` の新規ファイルを最終的なタグと同じ条件でコンパイルするゲート）と rerun isolation（Step 4-4 の確認2が production ファイルを一時的に書き換えるため、戻し忘れると以後の実行が汚染される）の2件に該当する。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+---
+
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 対応フェーズ | 成果物 | 完了判定 |
 |---|---|---|---|
@@ -814,6 +986,30 @@ Phase 3 の後に置く。
 フェーズの順序は `02_architecture.md` §9 のとおりで変えていない。Phase 1 の内容のうち §8.3 の
 「警告追加」だけを Phase 2 の D7・D8 のコミットへ移した（理由は Phase 1 冒頭の差分注記）。
 Phase 2 の 10 件の順序制約は §1.3.3 の import 依存のみである。
+
+### 3.2 PR 構成
+
+Phase 2 の中で Step 2-7 と Step 2-8 だけを入れ替えた（旧 2-7=D7 / 旧 2-8=D8 → 新 2-7=D8 /
+新 2-8=D7）。理由は、影響の重い D7 を PR-4 の末尾に置くためである。それ以外のステップは並べ替えて
+おらず、各 PR は連続したステップだけで構成されている。
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6 | 維持対象 K1〜K6 と `pwentMutex` への根拠 doc コメント、実体に合わないテスト3件の改名、起点 SHA と基準値の固定 | standard |
+| PR-2 | 2-1 / 2-2 | D1・D2 の削除。stdout／stderr の識別を検証する新規テストと、公開 API の並行契約の警告を含む | frontier-recommended |
+| PR-3 | 2-3 / 2-4 / 2-5 / 2-6 | D3〜D6 の削除。レポータと memo の平坦化、`PermissionCheckUIDPolicy` の基底型の復帰を含む | frontier-recommended |
+| PR-4 | 2-7 / 2-8 | D8・D7 の削除（`verification` パッケージ）。`verification.Manager` の並行経路に対する警告と `security-architecture` 行 437 の改訂を含む | frontier-recommended |
+| PR-5 | 2-9 / 2-10 | D9・D10 の削除。`Locked` 接尾辞の改名と、`VerifiedFD.Close` の並行安全性の契約取り下げを含む | frontier-recommended |
+| PR-6 | 3-1 / 3-2 / 3-3 / 3-4 / 3-5 | D11 の削除、再入ガードの導入、`security-architecture` 残り5箇所と脅威モデルの改訂 | frontier-required |
+| PR-7 | 4-1 / 4-2 / 4-3 / 4-4 | census guard test の追加。あわせて Phase 5 の最終確認（AC-20〜AC-22）と、`<base>..HEAD` を見る検証を担う | frontier-recommended |
+
+**リスクの重い項目は各 PR の末尾に置く。** PR-2 の D2、PR-3 の D6、PR-4 の D7、PR-5 の D10 が
+これにあたる（`02_architecture.md` §3.1 の「誤判定時の最悪の結果」が重い項目）。先に並ぶ機械的な
+ステップのレビューを、重い項目が塞がないようにするためである。
+
+各 PR は単独で緑ゲート（`make test && make lint`）を通す。Phase 2 の完了ゲートが挙げる
+「D1〜D10 の 10 コミット」は PR-2〜PR-5 がすべて main へマージされた時点で揃う、**リポジトリ履歴に
+対する**条件であり、PR-5 単体の差分に対する条件ではない。
 
 ---
 
@@ -846,6 +1042,11 @@ Phase 2 の 10 件の順序制約は §1.3.3 の import 依存のみである。
 
 **D2 には対応する並行テストが無い**（`02_architecture.md` §8.2 の訂正）。D2 の
 `Race observation:` には「該当する並行テストが無いため実測なし。根拠は到達可能性の議論のみ」と書く。
+
+D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManager_LockSerialization` は skip を
+持たず 10 goroutine から `WithPrivileges` を呼ぶため、`mu` を素の `inPrivilegedWindow bool` へ置き換えた
+時点で `-race` は必ず競合を報告する。報告が保証されている以上そこに情報は無いので、Phase 3 では
+この実測を行わず、実装とテスト削除を1コミットにまとめる（Phase 3 冒頭の注記）。
 
 ### 4.2 新規に書くテスト
 
@@ -888,7 +1089,7 @@ Phase 2 の 10 件の順序制約は §1.3.3 の import 依存のみである。
 | AC-04 | 3（衝突・同値 no-op・不正値） | Step 2-6 |
 | AC-05 | 1 | Step 2-3、Step 2-5 |
 | AC-06 | 2（ヒットの再利用・失敗の非記憶） | Step 2-4 |
-| AC-07 | 1（キャッシュ参照） | Step 2-2、Step 2-7 |
+| AC-07 | 1（キャッシュ参照） | Step 2-2、Step 2-8 |
 | AC-08 | 3（通常版の登録・通常版の解放・dry-run 版の登録） | Step 2-9 |
 | AC-09 | 2（stdout／stderr の識別・最初のエラー） | Step 2-1 |
 | AC-10 | 1 | Step 2-10 |
@@ -926,64 +1127,93 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 ## 6. 実装チェックリスト
 
-### Phase 1: 維持対象の根拠（AC-14〜AC-17）
+### 6.1 PR 単位の進捗
 
-- [ ] Step 1-0: 着手前の基準値（deadcode・カバレッジ）を記録した
+- [ ] PR-1 マージ済み（対象ステップ: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
+- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
+- [ ] PR-3 マージ済み（対象ステップ: 2-3 / 2-4 / 2-5 / 2-6）
+- [ ] PR-4 マージ済み（対象ステップ: 2-7 / 2-8）
+- [ ] PR-5 マージ済み（対象ステップ: 2-9 / 2-10）
+- [ ] PR-6 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5）
+- [ ] PR-7 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4、および Phase 5 の最終確認）
+
+### 6.2 PR ごとのステップ
+
+#### PR-1: 維持対象の根拠と改名（AC-14〜AC-17）
+
+- [ ] Step 1-0: 起点 SHA と基準値（deadcode・カバレッジ）を `.git/0170-baseline/` に固定した
 - [ ] Step 1-1: K1 の4件に指定のリテラルを書いた
 - [ ] Step 1-2: K2 に指定のリテラルを書いた
 - [ ] Step 1-3: K3・K4・K5 に指定のリテラルを書いた
 - [ ] Step 1-4: K6 の2件に指定のリテラルを書いた
 - [ ] Step 1-5: `pwentMutex` の doc コメントを改訂した
 - [ ] Step 1-6: 3件のテストを実体に合わせて改名した
-- [ ] Phase 1 の完了ゲートを通した
+- [ ] Phase 1 の完了ゲート: Step 1-1〜1-5 を1コミット、Step 1-6 を別コミットに分けた
 
-### Phase 2: D1〜D10 の削除
+#### PR-2: D1・D2 の削除
 
 - [ ] Step 2-1: D1 `outputWrapper.mu`
 - [ ] Step 2-2: D2 `GroupMembership.cacheMutex`（公開 API の警告を含む）
+- [ ] §1.3.3 の import を落とした（`executor.go` の `sync`。`manager.go` の `sync` は D4 が未了なので**まだ落とさない**）
+
+#### PR-3: D3〜D6 の削除（`groupmembership`）
+
 - [ ] Step 2-3: D3 `sudoUIDAdoptionReporter.reported`
 - [ ] Step 2-4: D4 `sudoUIDExistenceMemo.mu`
 - [ ] Step 2-5: D5 `nssCompletenessReporter.reported`
 - [ ] Step 2-6: D6 `processPermissionCheckUIDPolicy`
-- [ ] Step 2-7: D7 `PathResolver.mu`（`security-architecture` 行 437 を含む）
-- [ ] Step 2-8: D8 `ResultCollector.mu`
+- [ ] §1.3.3 の import を落とした（`manager.go` の `sync/atomic` は D3 のコミット、`sync` は D4 のコミット、`manager_test.go` の `sync` は D3・D4 の後のコミット、`policy.go` と `policy_test.go` は D6 のコミット）
+
+#### PR-4: D8・D7 の削除（`verification`）
+
+- [ ] Step 2-7: D8 `ResultCollector.mu`
+- [ ] Step 2-8: D7 `PathResolver.mu`（`security-architecture` 行 437 を含む）
+- [ ] §1.3.3 の import を落とした（`result_collector.go`・`result_collector_test.go`・`path_resolver.go`）
+
+#### PR-5: D9・D10 の削除
+
 - [ ] Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu`
 - [ ] Step 2-10: D10 `VerifiedFD.closed`
-- [ ] 各コミットで §1.3.3 の import を落とした
-- [ ] Phase 2 の完了ゲートを通した
+- [ ] §1.3.3 の import を落とした（`normal_manager.go`・`dryrun_manager.go`・`types.go`・`types_test.go`）
+- [ ] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
 
-### Phase 3: D11 と再入ガード
+#### PR-6: D11 と再入ガード
 
-- [ ] Step 3-1: 再入ガードのテストを書き、skip されずに通ることを確認した
+- [ ] Step 3-1: 再入ガードのテストを書き、一般ユーザーで skip されずに通ることを確認した
 - [ ] Step 3-2: `mu` を削除し再入ガードを実装した
 - [ ] Step 3-3: `privilege` パッケージと `runnertypes` の記述を追随させた
 - [ ] Step 3-4: `race_test.go` の4関数を削除し、関数単位にどのテストが検証しているかを記録した
 - [ ] Step 3-5: 設計文書の5箇所を日英両版で改訂した
-- [ ] Phase 3 の完了ゲートを通した
+- [ ] Phase 3 の完了ゲート: Step 3-1〜3-5 を1コミットにまとめ、コミットメッセージの4行を書いた
 
-### Phase 4: census guard test
+#### PR-7: census guard test と全体の健全性
 
 - [ ] Step 4-1: テストファイルを作った
 - [ ] Step 4-2: 走査を実装した（フィールド・`var`・`:=` の3位置）
 - [ ] Step 4-3: 期待表（16 行）と双方向に突き合わせた
-- [ ] Step 4-4: 3通りの壊し方で失敗することを確認した
-- [ ] Phase 4 の完了ゲートを通した
-
-### Phase 5: 全体の健全性
-
+- [ ] Step 4-4: 3通りの壊し方で失敗することを確認し、確認2で足したロックを元に戻した
+- [ ] Phase 4 の完了ゲート: `//go:build test` の新規ファイルが `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを確認した
 - [ ] `make deadcode` を基準と比較した（AC-22）
 - [ ] `make test` が両構成で通り `-race` の警告が0件（AC-20）
 - [ ] `make lint` が両構成で通る（AC-21）
-- [ ] §7 の静的検証コマンドをすべて実行した
+- [ ] §7 のうち `<base>..HEAD` を見る行（AC-02・AC-03・AC-13 の2行目・AC-18 の2行目・AC-19）を、`.git/0170-baseline/base.sha` を `<base>` として実行した
+- [ ] §7 の残りの静的検証コマンドをすべて実行した
 - [ ] §8 の横断検索チェックリストを実行した
-- [ ] D1〜D11 が 11 コミットに分かれている（AC-02）
 
 ---
 
 ## 7. 受け入れ基準の検証
 
 種別は `test`（実行可能で、挙動を壊すと失敗する）、`static`（`rg`／`git`／`make` による静的検証）、
-`manual`（PR 上での観察）である。`base` は本タスク着手前のコミット（`git merge-base main HEAD`）を指す。
+`manual`（PR 上での観察）である。
+
+**`<base>` の定義**: Step 1-0 で固定した起点コミット、すなわち `$(cat .git/0170-baseline/base.sha)` を
+指す。`git merge-base main HEAD` は使わない——PR を1本ずつマージしていくと、その値は直前の PR の
+先端へ動く。すると、コミットを数える検証（AC-02・AC-13 の2行目・AC-19）は常に 0 を返し、差分を見る
+検証（AC-03・AC-18 の2行目）は最後の PR の差分しか見なくなって、主張する理由で失敗できなくなる。
+
+**検証を行う PR**: `<base>..HEAD` を見る行は、すべての削除がマージされた後でなければ成立しないため
+**PR-7 で実行する**。それ以外の行は、該当する変更を含む PR で実行する。
 リテラルを検索する `rg` はすべて `-F`（固定文字列）で実行する。
 
 | AC | 種別 | 検証方法 | 期待結果 |
@@ -1005,7 +1235,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-10 | static | `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` | 0 件 |
 | AC-11 | static | `rg -F -c -e 'This method does not serialize privilege windows.' -e 'the process-wide euid is raised' -e 'This is an unresolved design issue' internal/runner/base/privilege/unix.go` | 3 |
 | AC-12 | static | `rg -ni -e 'mutex' -e 'thread.safe' -e 'safe for concurrent' -e 'protected from concurrent' -e 'acquired the .*lock' -g '!*_test.go' internal/runner/base/privilege/` | 0 件（HEAD では `unix.go:92-98,248,287` が該当するため、Step 3-3 を飛ばすと失敗する） |
-| AC-13 | static | Step 1-0 の `/tmp/0170-baseline/covfunc-*.txt` と削除後の `CGO_ENABLED=1 go tool cover -func` 出力を関数単位で `diff` する | カバレッジが落ちた関数が0件（ただし `privilege` パッケージについては Step 3-4 の議論で代替する） |
+| AC-13 | static | Step 1-0 の `.git/0170-baseline/covfunc-*.txt` と削除後の `CGO_ENABLED=1 go tool cover -func` 出力を関数単位で `diff` する | カバレッジが落ちた関数が0件（ただし `privilege` パッケージについては Step 3-4 の議論で代替する） |
 | AC-13 | static | `git log <base>..HEAD --format='%s%n%b' \| rg -c '^Coverage: '` | 11 以上 |
 | AC-14 | static | `rg -F -c -e 'os/exec starts one goroutine per writer' -e 'stdout and stderr wrappers share this Capture' internal/runner/base/output/capture.go` | 2 |
 | AC-15 | static | `rg -F -c -e 'guards the fields below against the send worker started by go sd.run()' -e 'Flush and Close can both reach this from different goroutines' -e 'terminate waits here for the goroutines running sendSync' -e 'updated concurrently by the send worker and by callers' internal/logging/slack_sender.go` | 4（K1a〜K1d） |
@@ -1020,7 +1250,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-19 | manual | 各コミットの `Falsification:` 行が、壊し方と失敗したテスト名を具体的に述べていることを PR で確認する | §4.5 の表の主張が1つも欠けていない |
 | AC-20 | static | `make test` | `CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の双方が通り、`-race` の警告が0件 |
 | AC-21 | static | `make lint` | 両構成で通る |
-| AC-22 | static | `make deadcode > /tmp/0170-baseline/deadcode-after.txt && diff /tmp/0170-baseline/deadcode.txt /tmp/0170-baseline/deadcode-after.txt` | 新たな報告行が増えていない |
+| AC-22 | static | `make deadcode > .git/0170-baseline/deadcode-after.txt && diff .git/0170-baseline/deadcode.txt .git/0170-baseline/deadcode-after.txt` | 新たな報告行が増えていない |
 | AC-23 | test | `internal/testutil/synccensus/census_guard_test.go::TestSyncCensusMatchesExpectation` | 走査結果と期待表 16 行が双方向に一致する |
 | AC-23 | manual | Step 4-4 の3通りの壊し方でテストが失敗することを確認し、コミットメッセージに記す | 3通りすべてで失敗する |
 | AC-24 | test | `internal/runner/base/privilege/unix_privilege_test.go::TestWithPrivileges_ReentrantCallIsRejected` | 再入時に `ErrReentrantPrivilegeCall` が返り `fn()` が呼ばれない。再入しない連続呼び出しでは発火しない。一般ユーザーで `--- PASS`（`--- SKIP` ではない） |
@@ -1093,10 +1323,10 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 ## 10. 次のステップ
 
-- 本計画書のレビューを受け、`Status` を `approved` に更新する
 - `02_architecture.md` §2.2 のファイル数（23 → 24）と §3.6 の責務表に
   `security-architecture.ja.md` の行を反映する（§1.3.6 の注記）
-- Phase 1 から順に実装を進め、各ステップのチェックボックスを実時間で更新する
+- PR-1 から順に実装を進め、各ステップのチェックボックスを実時間で更新する。1つの PR がマージ
+  されるまで次の PR の作業を始めない（各 PR 作成ポイントの最後のチェックボックス）
 - Phase 5 の完了後、`02_architecture.md` §10 に挙げた将来課題（特権操作の設計のやり直し、
   `pwentMutex` の扱い、census の保護漏れ検出への拡張）は本タスクの範囲外として、必要になった時点で
   別タスクを起こす
