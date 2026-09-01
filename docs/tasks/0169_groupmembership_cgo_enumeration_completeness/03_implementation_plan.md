@@ -352,8 +352,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1076）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書と残件一覧（AC-24〜AC-30）
 
@@ -363,45 +363,45 @@
 
 **作業内容**
 
-- [ ] `docs/user/security-risk-assessment.ja.md` §3 の段落「なお CGO ビルドにも既知の制限がある……」を書き換える（AC-24）。
-  - [ ] SSSD/LDAP 等が構成されたホストでは CGO ビルドでも書き込み安全性判定が拒否されること。既存の「この場合は CGO ビルドでも書き込み安全性判定が実際より緩く評価される可能性がある」を、`CGO ビルドでも書き込み安全性判定が拒否される` という表現を含む文へ置き換える（§3.1 の `AC-24` がこの表現を検査する）。
-  - [ ] `files`・`systemd` のみの環境では従来どおり判定できること。
-  - [ ] `GOOS` が `linux` 以外の CGO ビルドも「不完全」と判定されること。
-  - [ ] #1064 への参照を、本タスクで解消済みである旨の記述に改める。
-  - [ ] 完全性の判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、`netgroup` 行は判定に影響しないこと（AC-30）。**`netgroup` 行は判定に影響しません** という文をそのまま含める（§3.1 の `AC-30` がこの表現を検査する）。Ubuntu の既定である `netgroup: nis` を見て自ホストが該当すると誤認しないよう、理由（ネットグループは GID を持たず、`getgrgid_r` が返すことも `st_gid` に現れることもない）を1文添える。
-- [ ] `docs/user/record_command.ja.md` §5.7「group-writable なファイルの書き込みが拒否される（列挙不完全）」を更新する（AC-25、AC-30）。
-  - [ ] 既存の3つのエラー例の直前に、その例が非 CGO ビルド（`user_database_source=passwd-file`）のものであることを明記する。
-  - [ ] CGO ビルドの例を追加する。`user_database_source=nss` のメッセージ全文を、Phase 3 で確定した `fact`・`remediation` から実際の出力どおりに転記する。
-  - [ ] 対処法の表に「対象ビルド」の列を加えるか、CGO ビルド用の表を分けて置く。CGO ビルドの回復手段は「対象パスの group-writable ビットを外す」「`passwd`・`group` の両行を `files`・`systemd` のみで構成する」の2つであり、**`CGO_ENABLED=1` でのビルドは回復手段にならない**ことを明記する。
-  - [ ] CGO ビルドでは `cause=malformed-line` が発生しないことを1文で述べる。
-  - [ ] `runner` の実行前検証（`internal/security` のディレクトリ権限検査）での拒否は `slog` の構造化された記録を持たず、どのディレクトリで拒否されたかはエラー本文から読む必要があることを手順として書く（`02_architecture.md` §4.1）。
-  - [ ] `record` が途中で拒否された場合の復旧手順——ハッシュディレクトリの内容と対象一覧を突き合わせてどこまで書けたかを確認し、回復手段を適用したうえで `record` を再実行する——を書く（`02_architecture.md` §5.5）。
-  - [ ] 「事前の検知」の節に、事前確認には `verify` を用いること、`record` は警告を出しても実行を止めずハッシュファイルの書き込みへ進むため事前確認に使わないことを書く。
-  - [ ] 判定が `passwd`・`group` の2行だけを見ること、および `netgroup` 行が判定に影響しないことを明記する（AC-30）。
-- [ ] `docs/user/verify_command.ja.md` §5.8「ハッシュディレクトリの書き込み安全性判定が拒否される（列挙不完全）」に、上記のうち `record` 固有の復旧手順を除く同じ更新を施す（AC-25、AC-30）。**§5.7「SUDO_UID の実在確認に失敗する」ではない**——そちらも `user_database_source` を扱うため取り違えやすいが、列挙の完全性による拒否を扱うのは §5.8 である。`verify` は読み取りのみを行い、起動時に完全性判定を確定させるため事前確認に使えることを書く。
-- [ ] `CHANGELOG.ja.md` の「未リリース」→「破壊的変更」に新項目を追加する（AC-27）。既存の 0168 の項目（`#### groupmembership: 非CGOビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化`）とは別項目とし、その直後に置く。
-  - [ ] 見出しで対象範囲（CGO ビルド ＝ セルフビルドしたバイナリ）を示す。見出しは `#### \`groupmembership\`: CGO_ENABLED=1 ビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化` とする（0168 の既存見出し「非CGOビルドで…」と機械的に区別するため、`CGO_ENABLED=1` の語を必ず含める。§3.1 の `AC-27` がこれを検査する）。公式配布バイナリはすべて `CGO_ENABLED: 0` でビルドされるため影響を受けないことを明記する。
-  - [ ] `**影響範囲:**` に拒否が起きる条件2つ（`GOOS` が `linux` 以外、または `passwd`・`group` 行が `files`・`systemd` 以外を含む／行の形が読めない／読み取りに失敗する。かつ判定対象に `isTrustedGroup` の免除に当たらない group-writable な構成要素が含まれる）を書く。
-  - [ ] 0168 の項目と対をなすこと（同じ完全性判定を非 CGO ビルドと CGO ビルドの双方へ適用したこと）を明記する。
-  - [ ] アップグレード前に影響有無を判定する手順を、0168 の項目と同じ書式（`grep -E '^(passwd|group):' /etc/nsswitch.conf` と、対象パスの構成要素を根まで辿る `while` ループ）で書く。`grep` を `passwd`・`group` に限定してよい理由（`netgroup` 行は判定に影響しない）を1文添える（AC-30）。
-  - [ ] 回復手段（group-writable ビットを外す／両行を `files`・`systemd` のみにする）と、`CGO_ENABLED=1` でのビルドが回復手段にならないことを書く。
-  - [ ] 切り戻し方法（`CGO_ENABLED=0` でのビルドし直しでは回避できず、本変更を含まないバージョンを使うほかない。設定やハッシュファイルの形式は変わらないため追加の作業は要らない）を書く。
-- [ ] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` §2 D1 を更新する（AC-28）。
-  - [ ] 「（新規）CGO ビルドの列挙完全性」の箇条書き（`- **（新規）CGO ビルドの列挙完全性**:` から `→ [#1064]…を作成済み。` までの8行）を削除する。**直後の「（新規）release.yml の darwin 非 CGO ビルドと Makefile の想定の不整合」の箇条書きは残す**（#1067 の守備範囲であり、本タスクの対象外）。
-  - [ ] 同節が既に用いている引用ブロックの書式で、本タスクと #1064 への参照を含む解消済みの記述を追加する。引用ブロックの見出しは `> **（新規）CGO ビルドの列挙完全性 について**:` とする（§3.1 の `AC-28` がこの表現を検査する）。
-  - [ ] 「対象外」で分離した `internal/runner/base/security` の誤検知（`file_validation.go` の `isUserInGroup` が `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境で正当なメンバーが「非メンバー」と判定される）を、[#1071](https://github.com/isseis/go-safe-cmd-runner/issues/1071) への参照つきで残件として箇条書きで追加する。
-  - [ ] D1 以外の節（E1・D2・A1・B1・B2・C1・C2・C3・A3・A7）に差分行が現れないことを確認する（AC-29）。
-- [ ] ここまでを日本語版としてコミットする。
-- [ ] `/mktrans` で英語版4件（`security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md`）へ反映する（AC-26、AC-30）。反映にあたり次の2点を守る。
-  - [ ] `CHANGELOG.md` の新しい見出しにも `CGO_ENABLED=1` の語をそのまま残す。§3.1 の `AC-27` が英語版にも同じ検査をかけるためであり、0168 の既存見出し "on non-CGO builds" と機械的に区別する必要があるためでもある。「on CGO-enabled builds」のような言い換えは、訳として正しくても検査を落とす。
-  - [ ] `security-risk-assessment.md` から、書き換え前の記述の英語版（`evaluated more permissively than it actually is even on a CGO build`）が消えていること。§3.1 の `AC-26` がこれを反映漏れの検出に使う。
+- [x] `docs/user/security-risk-assessment.ja.md` §3 の段落「なお CGO ビルドにも既知の制限がある……」を書き換える（AC-24）。
+  - [x] SSSD/LDAP 等が構成されたホストでは CGO ビルドでも書き込み安全性判定が拒否されること。既存の「この場合は CGO ビルドでも書き込み安全性判定が実際より緩く評価される可能性がある」を、`CGO ビルドでも書き込み安全性判定が拒否される` という表現を含む文へ置き換える（§3.1 の `AC-24` がこの表現を検査する）。
+  - [x] `files`・`systemd` のみの環境では従来どおり判定できること。
+  - [x] `GOOS` が `linux` 以外の CGO ビルドも「不完全」と判定されること。
+  - [x] #1064 への参照を、本タスクで解消済みである旨の記述に改める。
+  - [x] 完全性の判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、`netgroup` 行は判定に影響しないこと（AC-30）。**`netgroup` 行は判定に影響しません** という文をそのまま含める（§3.1 の `AC-30` がこの表現を検査する）。Ubuntu の既定である `netgroup: nis` を見て自ホストが該当すると誤認しないよう、理由（ネットグループは GID を持たず、`getgrgid_r` が返すことも `st_gid` に現れることもない）を1文添える。
+- [x] `docs/user/record_command.ja.md` §5.7「group-writable なファイルの書き込みが拒否される（列挙不完全）」を更新する（AC-25、AC-30）。
+  - [x] 既存の3つのエラー例の直前に、その例が非 CGO ビルド（`user_database_source=passwd-file`）のものであることを明記する。
+  - [x] CGO ビルドの例を追加する。`user_database_source=nss` のメッセージ全文を、Phase 3 で確定した `fact`・`remediation` から実際の出力どおりに転記する。
+  - [x] 対処法の表に「対象ビルド」の列を加えるか、CGO ビルド用の表を分けて置く。CGO ビルドの回復手段は「対象パスの group-writable ビットを外す」「`passwd`・`group` の両行を `files`・`systemd` のみで構成する」の2つであり、**`CGO_ENABLED=1` でのビルドは回復手段にならない**ことを明記する。
+  - [x] CGO ビルドでは `cause=malformed-line` が発生しないことを1文で述べる。
+  - [x] `runner` の実行前検証（`internal/security` のディレクトリ権限検査）での拒否は `slog` の構造化された記録を持たず、どのディレクトリで拒否されたかはエラー本文から読む必要があることを手順として書く（`02_architecture.md` §4.1）。
+  - [x] `record` が途中で拒否された場合の復旧手順——ハッシュディレクトリの内容と対象一覧を突き合わせてどこまで書けたかを確認し、回復手段を適用したうえで `record` を再実行する——を書く（`02_architecture.md` §5.5）。
+  - [x] 「事前の検知」の節に、事前確認には `verify` を用いること、`record` は警告を出しても実行を止めずハッシュファイルの書き込みへ進むため事前確認に使わないことを書く。
+  - [x] 判定が `passwd`・`group` の2行だけを見ること、および `netgroup` 行が判定に影響しないことを明記する（AC-30）。
+- [x] `docs/user/verify_command.ja.md` §5.8「ハッシュディレクトリの書き込み安全性判定が拒否される（列挙不完全）」に、上記のうち `record` 固有の復旧手順を除く同じ更新を施す（AC-25、AC-30）。**§5.7「SUDO_UID の実在確認に失敗する」ではない**——そちらも `user_database_source` を扱うため取り違えやすいが、列挙の完全性による拒否を扱うのは §5.8 である。`verify` は読み取りのみを行い、起動時に完全性判定を確定させるため事前確認に使えることを書く。
+- [x] `CHANGELOG.ja.md` の「未リリース」→「破壊的変更」に新項目を追加する（AC-27）。既存の 0168 の項目（`#### groupmembership: 非CGOビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化`）とは別項目とし、その直後に置く。
+  - [x] 見出しで対象範囲（CGO ビルド ＝ セルフビルドしたバイナリ）を示す。見出しは `#### \`groupmembership\`: CGO_ENABLED=1 ビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化` とする（0168 の既存見出し「非CGOビルドで…」と機械的に区別するため、`CGO_ENABLED=1` の語を必ず含める。§3.1 の `AC-27` がこれを検査する）。公式配布バイナリはすべて `CGO_ENABLED: 0` でビルドされるため影響を受けないことを明記する。
+  - [x] `**影響範囲:**` に拒否が起きる条件2つ（`GOOS` が `linux` 以外、または `passwd`・`group` 行が `files`・`systemd` 以外を含む／行の形が読めない／読み取りに失敗する。かつ判定対象に `isTrustedGroup` の免除に当たらない group-writable な構成要素が含まれる）を書く。
+  - [x] 0168 の項目と対をなすこと（同じ完全性判定を非 CGO ビルドと CGO ビルドの双方へ適用したこと）を明記する。
+  - [x] アップグレード前に影響有無を判定する手順を、0168 の項目と同じ書式（`grep -E '^(passwd|group):' /etc/nsswitch.conf` と、対象パスの構成要素を根まで辿る `while` ループ）で書く。`grep` を `passwd`・`group` に限定してよい理由（`netgroup` 行は判定に影響しない）を1文添える（AC-30）。
+  - [x] 回復手段（group-writable ビットを外す／両行を `files`・`systemd` のみにする）と、`CGO_ENABLED=1` でのビルドが回復手段にならないことを書く。
+  - [x] 切り戻し方法（`CGO_ENABLED=0` でのビルドし直しでは回避できず、本変更を含まないバージョンを使うほかない。設定やハッシュファイルの形式は変わらないため追加の作業は要らない）を書く。
+- [x] `docs/tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md` §2 D1 を更新する（AC-28）。
+  - [x] 「（新規）CGO ビルドの列挙完全性」の箇条書き（`- **（新規）CGO ビルドの列挙完全性**:` から `→ [#1064]…を作成済み。` までの8行）を削除する。**直後の「（新規）release.yml の darwin 非 CGO ビルドと Makefile の想定の不整合」の箇条書きは残す**（#1067 の守備範囲であり、本タスクの対象外）。
+  - [x] 同節が既に用いている引用ブロックの書式で、本タスクと #1064 への参照を含む解消済みの記述を追加する。引用ブロックの見出しは `> **（新規）CGO ビルドの列挙完全性 について**:` とする（§3.1 の `AC-28` がこの表現を検査する）。
+  - [x] 「対象外」で分離した `internal/runner/base/security` の誤検知（`file_validation.go` の `isUserInGroup` が `GroupIds()` を使わず `GetGroupMembers` を直接引くため、SSSD 環境で正当なメンバーが「非メンバー」と判定される）を、[#1071](https://github.com/isseis/go-safe-cmd-runner/issues/1071) への参照つきで残件として箇条書きで追加する。
+  - [x] D1 以外の節（E1・D2・A1・B1・B2・C1・C2・C3・A3・A7）に差分行が現れないことを確認する（AC-29）。
+- [x] ここまでを日本語版としてコミットする。
+- [x] `/mktrans` で英語版4件（`security-risk-assessment.md`・`record_command.md`・`verify_command.md`・`CHANGELOG.md`）へ反映する（AC-26、AC-30）。反映にあたり次の2点を守る。
+  - [x] `CHANGELOG.md` の新しい見出しにも `CGO_ENABLED=1` の語をそのまま残す。§3.1 の `AC-27` が英語版にも同じ検査をかけるためであり、0168 の既存見出し "on non-CGO builds" と機械的に区別する必要があるためでもある。「on CGO-enabled builds」のような言い換えは、訳として正しくても検査を落とす。
+  - [x] `security-risk-assessment.md` から、書き換え前の記述の英語版（`evaluated more permissively than it actually is even on a CGO build`）が消えていること。§3.1 の `AC-26` がこれを反映漏れの検出に使う。
 
 **完了判定条件**
 
-- [ ] §3 の AC-24〜AC-30 の各静的検査が期待どおりの結果を返す。
-- [ ] 追加した CGO ビルド向けのエラーメッセージ例が、Phase 3 で実装した文面と一字一句一致する（§5.4 の突き合わせ手順）。
-- [ ] `make verify-docs` が成功する。文書に対する検査はこの target が担う——`make test` は `unit-test`（`go test` の2構成実行）だけであり、`verify-docs` を依存に持たない。
-- [ ] `make test`・`make lint` が両構成で成功する（文書のみの変更であるため回帰の確認としてのみ行う）。
+- [x] §3 の AC-24〜AC-30 の各静的検査が期待どおりの結果を返す。
+- [x] 追加した CGO ビルド向けのエラーメッセージ例が、Phase 3 で実装した文面と一字一句一致する（§5.4 の突き合わせ手順）。
+- [x] `make verify-docs` が成功する。文書に対する検査はこの target が担う——`make test` は `unit-test`（`go test` の2構成実行）だけであり、`verify-docs` を依存に持たない。
+- [x] `make test`・`make lint` が両構成で成功する（文書のみの変更であるため回帰の確認としてのみ行う）。
 
 ### PR-4 作成ポイント: user documentation and remaining-issue records
 
@@ -415,8 +415,8 @@
 
 **判定理由**: frontier のトリガに該当しない。文書のみの変更で production コードを触らず、転記元の文面は PR-3 で確定済みである。突き合わせの手順は §5.4 が、静的検査は §3・§3.1 が定めている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1079）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -709,9 +709,9 @@ Phase を単位に PR を切る。ただし **Phase 2 と Phase 3 は1つの PR 
 
 Phase 5 で利用者向け文書に転記するエラーメッセージ例は、Phase 3 で実装した文面から生成した実物と一致していなければならない。目視の転記では取りこぼすため、次の手順で突き合わせる。
 
-- [ ] CGO ビルドで、`incompleteEnumerationError` が生成するメッセージを1件出力する使い捨てのテスト（`t.Log`）を実行し、その出力をそのまま `record_command.ja.md`・`verify_command.ja.md` へ貼る。
-- [ ] `CHANGELOG.ja.md` に書いた「アップグレード前に影響有無を判定する手順」のコマンドを本コンテナで実際に実行し、終了コードと出力が説明どおりであることを確かめる（AC-27 の manual 検証）。
-- [ ] 対処法の表が CGO ビルドと非 CGO ビルドで別々の行になっていること、および両者の回復手段が実際に異なる（`CGO_ENABLED=1` でのビルドが CGO ビルドの回復手段に含まれない）ことを確かめる。
+- [x] CGO ビルドで、`incompleteEnumerationError` が生成するメッセージを1件出力する使い捨てのテスト（`t.Log`）を実行し、その出力をそのまま `record_command.ja.md`・`verify_command.ja.md` へ貼る。
+- [x] `CHANGELOG.ja.md` に書いた「アップグレード前に影響有無を判定する手順」のコマンドを本コンテナで実際に実行し、終了コードと出力が説明どおりであることを確かめる（AC-27 の manual 検証）。
+- [x] 対処法の表が CGO ビルドと非 CGO ビルドで別々の行になっていること、および両者の回復手段が実際に異なる（`CGO_ENABLED=1` でのビルドが CGO ビルドの回復手段に含まれない）ことを確かめる。
 
 ### 5.5 ビルド構成の網羅（AC-23）
 

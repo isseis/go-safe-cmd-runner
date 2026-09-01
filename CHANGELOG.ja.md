@@ -115,6 +115,41 @@ done
 
 **切り戻し:** 直前のリリースへ戻すことで従来の挙動に戻ります。ハッシュファイルや設定の形式は変わらないため、追加の作業は不要です。
 
+#### `groupmembership`: CGO_ENABLED=1 ビルドで列挙不完全な環境の group-writable 書き込みをfail-closed化
+
+上記の非CGOビルドの項目と対になる変更です。同じ完全性判定を、CGO ビルド（`CGO_ENABLED=1` でセルフビルドしたバイナリ）にも適用しました。**公式配布バイナリはすべて `CGO_ENABLED=0` でビルドされるため、この変更の影響を受けません。** 影響を受けるのは、`CGO_ENABLED=1` で自ビルドしたバイナリを運用しているホストだけです。
+
+CGO ビルドは libc の NSS lookup を経由してユーザー・グループデータベースを解決しますが、SSSD の `enumerate = False`（既定）や `ignore_group_members = True` を設定した環境では、libc の lookup がエラーを返さないまま部分的なメンバー集合を返すことがあります。これまで CGO ビルドはこの状況を検出せず、群所属を実際より緩く判定していましたが、以後は列挙が完全であると判定できない場合に group-writable なファイル・ディレクトリへの書き込み安全性判定がエラーで拒否されるようになりました（読み取り安全性判定は影響を受けません）。
+
+**影響範囲:** `CGO_ENABLED=1` でビルドしたバイナリで、かつ次のいずれかに該当するホストが対象です。
+
+- `GOOS` が `linux` 以外（macOS でのセルフビルドなど）。
+- `/etc/nsswitch.conf` の `passwd`・`group` 行が `files`・`systemd` 以外のソースを含む（ドメイン参加ホストの既定である `passwd: files sss` を含む）、行の形が読み取れない、行が無い、またはファイルの読み取りに失敗する。
+
+これらのホストで、`isTrustedGroup` の免除に当たらない group-writable な構成要素を経由する検査・書き込みが行われる場合、アップグレード後にその処理が失敗します。
+
+**アップグレード前に影響有無を判定する手順:**
+
+```bash
+# 1. NSS のソース構成を確認する（files・systemd 以外が含まれていないか）
+# netgroup 行は判定に影響しないため、passwd・group の2行だけを見れば十分です
+grep -E '^(passwd|group):' /etc/nsswitch.conf
+
+# 2. 対象パスの構成要素に group-writable なものがないか確認する
+p=$(readlink -m <対象パス>)
+while [ -n "$p" ]; do
+    ls -ld "$p"
+    [ "$p" = / ] && break
+    p=$(dirname "$p")
+done
+```
+
+自ビルドが `CGO_ENABLED=0` であれば本項目は該当しません。`CGO_ENABLED=1` でビルドしている場合、1 で `files`・`systemd` 以外のソースが見つからず、かつ 2 で group-writable な構成要素が見つからなければ、アップグレード後も影響はありません。該当する場合は、`record`・`verify` を1回実行して起動時警告 `This build cannot enumerate every member of a group on this host`（`user_database_source=nss`）が出るかを確認してください。
+
+**回復手段:** (a) 対象パスの group-writable ビットを落とす（`chmod g-w`）。(b) `passwd`・`group` の両行を、列挙が網羅的なソース（`files`・`systemd`）のみで構成する。**`CGO_ENABLED=1` でのビルドは回復手段になりません**——既にその条件を満たしているためです。
+
+**切り戻し:** `CGO_ENABLED=0` でのビルドし直しでは回避できません。上記の非CGOビルドの項目のとおり非CGOビルドも同じ状況で既にfail-closedとなっているため、本変更を含まないバージョンへ戻す必要があります。設定やハッシュファイルの形式は変わらないため、追加の作業は不要です。
+
 ### 変更
 
 #### ログファイル名のタイムスタンプが UTC になりました

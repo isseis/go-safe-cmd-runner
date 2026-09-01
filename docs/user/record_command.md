@@ -738,10 +738,16 @@ complete, the write-safety check is denied and `record` exits without recording 
 file. This check used to be evaluated more permissively and allow the write; it now denies it.
 This is a different check from the SUDO_UID existence check in 5.6.
 
-**Error Messages**
+The completeness check looks only at the `passwd` and `group` lines of `/etc/nsswitch.conf`; a
+netgroup line does not affect the check. Do not assume this applies to your host just because you
+see Ubuntu's default `netgroup: nis` -- a netgroup has no GID and plays no part in enumerating
+group members.
 
-There are three causes for the denial, each identified by the sentinel text
-`group member enumeration is incomplete` and a `cause=` attribute.
+**Error Messages (non-CGO build, `CGO_ENABLED=0`)**
+
+The following three examples are all from a non-CGO build; the `user_database_source=passwd-file`
+in the message is the marker. There are three causes for the denial, each identified by the
+sentinel text `group member enumeration is incomplete` and a `cause=` attribute.
 
 ```text
 Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a user database source this build cannot consult, or could not be read (user_database_source=passwd-file, cause=nss-sources); check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted: group member enumeration is incomplete
@@ -757,6 +763,8 @@ Error: cannot confirm the members of group GID 1000: a line of the user database
 
 `cause=malformed-line` means a malformed line in `/etc/passwd`/`/etc/group` is the cause. In this
 case, a separate `slog.Warn` recording the file name and line number is emitted to standard error.
+**This cause cannot occur on a CGO build** -- a CGO build does not scan the files itself; it goes
+through libc's NSS lookup.
 
 ```text
 Error: cannot confirm the members of group GID 1000: this build cannot enumerate all members of a group on this platform (user_database_source=passwd-file, cause=unsupported-platform); rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc: group member enumeration is incomplete
@@ -765,24 +773,80 @@ Error: cannot confirm the members of group GID 1000: this build cannot enumerate
 `cause=unsupported-platform` means the official macOS binary is the cause: a non-CGO `darwin`
 binary has no `/etc/nsswitch.conf`, so it is always judged incomplete.
 
-**Remediation**
+**Remediation (non-CGO build)**
 
 | Cause (`cause=`) | Remediation |
 |---|---|
-| `nss-sources` (NSS environment) | Rebuild with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (e.g. `chmod 0755`) |
+| `nss-sources` (NSS environment) | Rebuild with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (`chmod g-w`) |
 | `malformed-line` (malformed line) | Fix the line the warning log points to. If it is a NIS compatibility entry (starting with `+`/`-`), rebuild with `CGO_ENABLED=1` |
-| `unsupported-platform` (macOS) | Rebuild yourself with `CGO_ENABLED=1`, or remove the group-writable bit from the target path |
+| `unsupported-platform` (macOS) | Rebuild yourself with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (`chmod g-w`) |
+
+**Error Messages (CGO build, `CGO_ENABLED=1`)**
+
+The following are from a self-built CGO build; the `user_database_source=nss` in the message is
+the marker. A CGO build resolves the user and group databases through libc's NSS lookup, so
+`cause=malformed-line` does not occur.
+
+```text
+Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which (user_database_source=nss, cause=nss-sources, detail=passwd: sss); clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd): group member enumeration is incomplete
+```
+
+`cause=nss-sources` means a source that `/etc/nsswitch.conf` configures (SSSD, etc.) does not
+guarantee exhaustive enumeration, or a line has an unreadable form, is missing, or the file could
+not be read. The `detail` indicates which one applies.
+
+```text
+Error: cannot confirm the members of group GID 1000: this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member (user_database_source=nss, cause=unsupported-platform); clear the group-writable bit on the path (chmod g-w): group member enumeration is incomplete
+```
+
+`cause=unsupported-platform` means the cause is a CGO build whose `GOOS` is other than `linux`
+(e.g. a macOS self-build).
+
+**Remediation (CGO build)**
+
+**Rebuilding with `CGO_ENABLED=1` is not a remediation for a CGO build** -- it already meets that
+condition.
+
+| Cause (`cause=`) | Remediation |
+|---|---|
+| `nss-sources` (NSS environment) | Remove the group-writable bit from the target path (`chmod g-w`), or configure both the `passwd` and `group` lines with only sources whose enumeration is exhaustive (`files`, `systemd`) |
+| `unsupported-platform` (other than `linux`) | Remove the group-writable bit from the target path (`chmod g-w`) |
 
 **Detecting This in Advance**
 
 When the enumeration is judged incomplete, the following warning is emitted to standard error
 exactly once at process startup, before the actual denial occurs. Running a trial `record`
 invocation on the target host without any write targets lets you detect in advance whether the
-denial would occur.
+denial would occur. However, `record` proceeds to write hash files even after emitting the
+warning, so use `verify` as described next for the pre-run check itself.
 
 ```text
 WARN This build cannot enumerate every member of a group on this host user_database_source=passwd-file cause=nss-sources detail=...
 ```
+
+Use `verify` for the pre-run check. `verify` settles the completeness verdict at startup and only
+reads, so you can check for the denial without rewriting any hash files.
+
+**Recovery Procedure When `record` Is Denied Partway Through**
+
+`record` processes multiple files in a single invocation, but the denial occurs at startup (when
+the first group-writable path component is reached), so normally no file is recorded at all.
+Still, treat it as a recovery procedure on the assumption that recording may have progressed part
+of the way.
+
+1. Compare the contents of the hash directory against the list of files you specified for
+   recording, to see which hash files already exist and which do not.
+2. Apply the remediation above (removing the group-writable bit for the cause, or reconfiguring
+   the `passwd`/`group` lines).
+3. Re-run `record`. Without `-force`, files already recorded are skipped rather than overwritten
+   (see 5.3).
+
+**About Denials from the Runner's Pre-Execution Check**
+
+If this denial occurs in the directory permission check (`internal/security`, the `runner`'s
+pre-execution check), no structured `slog` record is emitted. Only the error string is returned,
+and you have to read which directory was denied from the error text (`cannot confirm the members
+of group GID <gid>: ...`).
 
 ## 6. Related Documentation
 

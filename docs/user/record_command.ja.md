@@ -734,9 +734,11 @@ WARN Permission check UID taken from SUDO_UID instead of the real UID; if this p
 
 ハッシュディレクトリ、または記録対象ファイルの祖先ディレクトリの構成要素が group-writable であり、かつこのホスト上でグループメンバーの列挙が完全であることを確認できない場合、その書き込み安全性判定が拒否され、`record` は対象ファイルを1件も記録せずに終了します。この判定は以前は「実際より緩く評価される」ことで許可されていましたが、現在は拒否されます。5.6 の `SUDO_UID` の実在確認とは異なる判定です。
 
-**エラーメッセージ**
+判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、netgroup 行は判定に影響しません。Ubuntu の既定である `netgroup: nis` を見て自ホストが該当すると誤認しないでください——ネットグループは GID を持たず、グループメンバーの列挙には関与しません。
 
-拒否の原因は3種類あり、いずれもセンチネル文言 `group member enumeration is incomplete` と、原因を示す `cause=` 属性を含みます。
+**エラーメッセージ（非 CGO ビルド、`CGO_ENABLED=0`）**
+
+以下の3例はいずれも非 CGO ビルドのものです。メッセージの `user_database_source=passwd-file` が目印になります。拒否の原因は3種類あり、いずれもセンチネル文言 `group member enumeration is incomplete` と、原因を示す `cause=` 属性を含みます。
 
 ```text
 Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a user database source this build cannot consult, or could not be read (user_database_source=passwd-file, cause=nss-sources); check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted: group member enumeration is incomplete
@@ -748,7 +750,7 @@ Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a 
 Error: cannot confirm the members of group GID 1000: a line of the user database files could not be parsed and was skipped, so the members listed there are unknown (user_database_source=passwd-file, cause=malformed-line, detail=...); check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1: group member enumeration is incomplete
 ```
 
-`cause=malformed-line` は `/etc/passwd`・`/etc/group` の不正行が原因です。この場合は標準エラー出力に別途 `slog.Warn` で該当ファイル名・行番号が記録されます。
+`cause=malformed-line` は `/etc/passwd`・`/etc/group` の不正行が原因です。この場合は標準エラー出力に別途 `slog.Warn` で該当ファイル名・行番号が記録されます。**この原因は CGO ビルドでは発生しません**——CGO ビルドはファイルを自ら走査せず、libc の NSS lookup を経由するためです。
 
 ```text
 Error: cannot confirm the members of group GID 1000: this build cannot enumerate all members of a group on this platform (user_database_source=passwd-file, cause=unsupported-platform); rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc: group member enumeration is incomplete
@@ -756,21 +758,60 @@ Error: cannot confirm the members of group GID 1000: this build cannot enumerate
 
 `cause=unsupported-platform` は macOS 配布バイナリが原因です。非 CGO ビルドの `darwin` バイナリは、`/etc/nsswitch.conf` を持たないため常に不完全と判定されます。
 
-**対処法**
+**対処法（非 CGO ビルド）**
 
 | 原因（`cause=`） | 対処 |
 |---|---|
-| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod` で `0755` 等にする） |
+| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod g-w`） |
 | `malformed-line`（不正行） | 警告ログが指す行を修正する。NIS 互換行（`+`・`-` で始まる）であれば `CGO_ENABLED=1` でビルドし直す |
-| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す |
+| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す（`chmod g-w`） |
+
+**エラーメッセージ（CGO ビルド、`CGO_ENABLED=1`）**
+
+以下はセルフビルドした CGO ビルドのものです。メッセージの `user_database_source=nss` が目印になります。CGO ビルドは libc の NSS lookup を経由してユーザー・グループデータベースを解決するため、`cause=malformed-line` は生じません。
+
+```text
+Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which (user_database_source=nss, cause=nss-sources, detail=passwd: sss); clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd): group member enumeration is incomplete
+```
+
+`cause=nss-sources` は、`/etc/nsswitch.conf` が設定するソース（SSSD 等）が網羅的な列挙を保証しないこと、あるいは行の形が読めない・行が無い・ファイルが読めないことが原因です。どれに当たるかは `detail` が示します。
+
+```text
+Error: cannot confirm the members of group GID 1000: this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member (user_database_source=nss, cause=unsupported-platform); clear the group-writable bit on the path (chmod g-w): group member enumeration is incomplete
+```
+
+`cause=unsupported-platform` は `GOOS` が `linux` 以外の CGO ビルド（macOS でのセルフビルド等）が原因です。
+
+**対処法（CGO ビルド）**
+
+**`CGO_ENABLED=1` でのビルドは、CGO ビルドに対する回復手段になりません**——既にその条件を満たしているためです。
+
+| 原因（`cause=`） | 対処 |
+|---|---|
+| `nss-sources`（NSS 環境） | 対象パスの group-writable ビットを外す（`chmod g-w`）。または `passwd`・`group` の両行を、列挙が網羅的なソース（`files`・`systemd`）のみで構成する |
+| `unsupported-platform`（`linux` 以外） | 対象パスの group-writable ビットを外す（`chmod g-w`） |
 
 **事前の検知**
 
-列挙が不完全と判定されると、プロセス起動時に一度だけ次の警告が標準エラー出力に出ます。実際に拒否が起きる前に出力されるため、対象ホストで書き込み対象を含まない試験的な `record` 実行を1回行えば、拒否が起きるかどうかを事前に検知できます。
+列挙が不完全と判定されると、プロセス起動時に一度だけ次の警告が標準エラー出力に出ます。実際に拒否が起きる前に出力されるため、対象ホストで書き込み対象を含まない試験的な `record` 実行を1回行えば、拒否が起きるかどうかを事前に検知できます。ただし `record` は警告を出しても実行を止めずハッシュファイルの書き込みへ進むため、実行前の事前確認そのものには次項のとおり `verify` を使ってください。
 
 ```text
 WARN This build cannot enumerate every member of a group on this host user_database_source=passwd-file cause=nss-sources detail=...
 ```
+
+事前確認には `verify` を用いてください。`verify` は起動時に完全性判定を確定させ、読み取りのみを行うため、ハッシュファイルを書き換えずに拒否の有無を確認できます。
+
+**`record` が途中で拒否された場合の復旧手順**
+
+`record` は複数ファイルを1回の実行で処理しますが、拒否は起動時（最初の group-writable な構成要素に到達した時点）で発生するため、通常はどのファイルも記録されずに終了します。ただし復旧の手順としては、途中まで記録が進んでいる可能性を前提に確認してください。
+
+1. ハッシュディレクトリの内容と、記録対象として指定した一覧を突き合わせ、既にハッシュファイルが存在するものと存在しないものを確認する。
+2. 上記の対処法（原因に応じた group-writable ビットの除去、または `passwd`・`group` 行の構成変更）を適用する。
+3. `record` を再実行する。`-force` を付けなければ、既に記録済みのファイルは上書きされずスキップされる（5.3 参照）。
+
+**runner の実行前検証での拒否について**
+
+`internal/security` のディレクトリ権限検査（`runner` の実行前検証）でこの拒否が起きた場合、`slog` による構造化された記録は出ません。返るのはエラー文字列のみであり、どのディレクトリで拒否されたかはエラー本文（`cannot confirm the members of group GID <gid>: ...`）から読み取る必要があります。
 
 ## 6. 関連ドキュメント
 

@@ -358,11 +358,23 @@ domain-joined hosts), or when `/etc/passwd`/`/etc/group` contains a line that ca
 the enumeration cannot be guaranteed complete, so the write-safety check in question is not
 "evaluated more permissively" — it is **denied** (fail-closed).
 
-CGO builds have a known limitation too. In an environment configured with SSSD's
-`enumerate = False` (the default) or `ignore_group_members = True`, libc's NSS lookup can return
-a partial member set without returning an error, in which case the write-safety check can be
-evaluated more permissively than it actually is even on a CGO build. See
-[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) for details.
+CGO builds had a similar known limitation, but the issue reported in
+[#1064](https://github.com/isseis/go-safe-cmd-runner/issues/1064) has been resolved by this
+task. A CGO build resolves the user and group databases through libc's NSS lookup, so in an
+environment where the `passwd` and `group` lines of `/etc/nsswitch.conf` name only `files` and
+`systemd`, it can be determined as before, the same as a non-CGO build. On the other hand, on a
+host configured with another source -- such as an environment with SSSD's `enumerate = False`
+(the default) or `ignore_group_members = True` -- libc's NSS lookup can return a partial member
+set without returning an error, so the write-safety check is denied even on a CGO build
+(fail-closed). A CGO build whose `GOOS` is other than `linux` (e.g. a macOS self-build) is also
+always judged as incomplete enumeration and denied, because that platform offers no way at all to
+confirm how its user database is configured.
+
+The completeness check looks only at the `passwd` and `group` lines of `/etc/nsswitch.conf`; a
+netgroup line does not affect the check. Be careful not to assume this applies to your host just
+because you see Ubuntu's default `netgroup: nis` -- a netgroup has no GID, and appears neither in
+the group members returned by `getgrgid_r` nor in a file's owning group (`st_gid`), so it plays no
+part in enumerating group members.
 
 ### 4. Safe Terminal Output Control (`internal/terminal/`, `internal/ansicolor/`)
 

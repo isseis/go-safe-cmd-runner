@@ -786,9 +786,11 @@ WARN Permission check UID taken from SUDO_UID instead of the real UID; if this p
 
 **検証対象ファイル側の祖先ディレクトリは対象外です。** ハッシュディレクトリが「信頼の根」であるのに対し、検証対象ファイルの祖先ディレクトリが group-writable であることは `verify` が検出しようとしている状態そのものであるため、この経路は従来どおり警告のみを記録して検証を継続します（終了コードは変わりません）。
 
-**エラーメッセージ**
+判定が見るのは `/etc/nsswitch.conf` の `passwd`・`group` の2行だけであり、netgroup 行は判定に影響しません。Ubuntu の既定である `netgroup: nis` を見て自ホストが該当すると誤認しないでください——ネットグループは GID を持たず、グループメンバーの列挙には関与しません。
 
-拒否の原因は3種類あり、いずれもセンチネル文言 `group member enumeration is incomplete` と、原因を示す `cause=` 属性を含みます。
+**エラーメッセージ（非 CGO ビルド、`CGO_ENABLED=0`）**
+
+以下の3例はいずれも非 CGO ビルドのものです。メッセージの `user_database_source=passwd-file` が目印になります。拒否の原因は3種類あり、いずれもセンチネル文言 `group member enumeration is incomplete` と、原因を示す `cause=` 属性を含みます。
 
 ```text
 Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a user database source this build cannot consult, or could not be read (user_database_source=passwd-file, cause=nss-sources); check the passwd and group lines of /etc/nsswitch.conf, then rebuild with CGO_ENABLED=1 so that the configured sources are consulted: group member enumeration is incomplete
@@ -800,7 +802,7 @@ Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf names a 
 Error: cannot confirm the members of group GID 1000: a line of the user database files could not be parsed and was skipped, so the members listed there are unknown (user_database_source=passwd-file, cause=malformed-line, detail=...); check the reported line: correct it if its format is wrong, or, if it is a NIS compatibility entry (a line starting with + or -), rebuild with CGO_ENABLED=1: group member enumeration is incomplete
 ```
 
-`cause=malformed-line` は `/etc/passwd`・`/etc/group` の不正行が原因です。この場合は標準エラー出力に別途 `slog.Warn` で該当ファイル名・行番号が記録されます。
+`cause=malformed-line` は `/etc/passwd`・`/etc/group` の不正行が原因です。この場合は標準エラー出力に別途 `slog.Warn` で該当ファイル名・行番号が記録されます。**この原因は CGO ビルドでは発生しません**——CGO ビルドはファイルを自ら走査せず、libc の NSS lookup を経由するためです。
 
 ```text
 Error: cannot confirm the members of group GID 1000: this build cannot enumerate all members of a group on this platform (user_database_source=passwd-file, cause=unsupported-platform); rebuild with CGO_ENABLED=1 so that group members are resolved through the platform's own user database via libc: group member enumeration is incomplete
@@ -808,17 +810,42 @@ Error: cannot confirm the members of group GID 1000: this build cannot enumerate
 
 `cause=unsupported-platform` は macOS 配布バイナリが原因です。非 CGO ビルドの `darwin` バイナリは、`/etc/nsswitch.conf` を持たないため常に不完全と判定されます。
 
-**対処法**
+**対処法（非 CGO ビルド）**
 
 | 原因（`cause=`） | 対処 |
 |---|---|
-| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod` で `0755` 等にする） |
+| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod g-w`） |
 | `malformed-line`（不正行） | 警告ログが指す行を修正する。NIS 互換行（`+`・`-` で始まる）であれば `CGO_ENABLED=1` でビルドし直す |
-| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す |
+| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す（`chmod g-w`） |
+
+**エラーメッセージ（CGO ビルド、`CGO_ENABLED=1`）**
+
+以下はセルフビルドした CGO ビルドのものです。メッセージの `user_database_source=nss` が目印になります。CGO ビルドは libc の NSS lookup を経由してユーザー・グループデータベースを解決するため、`cause=malformed-line` は生じません。
+
+```text
+Error: cannot confirm the members of group GID 1000: /etc/nsswitch.conf does not establish that every member of a group is enumerated: a source it names gives no guarantee of exhaustive enumeration (SSSD returns no directory users under enumerate = False, and no explicit members under ignore_group_members = True), a line it needs is missing or could not be read as written, or the file could not be read; the detail says which (user_database_source=nss, cause=nss-sources, detail=passwd: sss); clear the group-writable bit on the path (chmod g-w), or configure the passwd and group lines with only sources whose enumeration is exhaustive (files, systemd): group member enumeration is incomplete
+```
+
+`cause=nss-sources` は、`/etc/nsswitch.conf` が設定するソース（SSSD 等）が網羅的な列挙を保証しないこと、あるいは行の形が読めない・行が無い・ファイルが読めないことが原因です。どれに当たるかは `detail` が示します。
+
+```text
+Error: cannot confirm the members of group GID 1000: this platform offers no way to determine how its user database is configured, so a group's member list cannot be confirmed to cover every member (user_database_source=nss, cause=unsupported-platform); clear the group-writable bit on the path (chmod g-w): group member enumeration is incomplete
+```
+
+`cause=unsupported-platform` は `GOOS` が `linux` 以外の CGO ビルド（macOS でのセルフビルド等）が原因です。
+
+**対処法（CGO ビルド）**
+
+**`CGO_ENABLED=1` でのビルドは、CGO ビルドに対する回復手段になりません**——既にその条件を満たしているためです。
+
+| 原因（`cause=`） | 対処 |
+|---|---|
+| `nss-sources`（NSS 環境） | 対象パスの group-writable ビットを外す（`chmod g-w`）。または `passwd`・`group` の両行を、列挙が網羅的なソース（`files`・`systemd`）のみで構成する |
+| `unsupported-platform`（`linux` 以外） | 対象パスの group-writable ビットを外す（`chmod g-w`） |
 
 **事前の検知**
 
-列挙が不完全と判定されると、プロセス起動時に一度だけ次の警告が標準エラー出力に出ます。実際に拒否が起きる前に出力されるため、対象ホストで `verify` を1回実行すれば、拒否が起きるかどうかを事前に検知できます。
+列挙が不完全と判定されると、プロセス起動時に一度だけ次の警告が標準エラー出力に出ます。実際に拒否が起きる前に出力されるため、対象ホストで `verify` を1回実行すれば、拒否が起きるかどうかを事前に検知できます。`verify` は読み取りのみを行い、起動時に完全性判定を確定させるため、runner 実行前の事前確認にそのまま使えます。
 
 ```text
 WARN This build cannot enumerate every member of a group on this host user_database_source=passwd-file cause=nss-sources detail=...
