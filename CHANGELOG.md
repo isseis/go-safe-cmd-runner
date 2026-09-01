@@ -148,7 +148,7 @@ If your self-build uses `CGO_ENABLED=0`, this item does not apply. If you build 
 
 **Remediation:** (a) remove the group-writable bit from the target path (`chmod g-w`). (b) configure both the `passwd` and `group` lines with only sources whose enumeration is exhaustive (`files`, `systemd`). **Rebuilding with `CGO_ENABLED=1` is not a remediation** -- it already meets that condition.
 
-**Rollback:** rebuilding with `CGO_ENABLED=0` does not avoid this; you must use a version that does not include this change. The configuration and hash file formats are unchanged, so no additional work is needed.
+**Rollback:** rebuilding with `CGO_ENABLED=0` does not avoid this, because the non-CGO build already fails closed in the same situations, as described in the item above; you must use a version that does not include this change. The configuration and hash file formats are unchanged, so no additional work is needed.
 
 ### Changed
 

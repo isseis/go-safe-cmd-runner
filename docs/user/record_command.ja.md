@@ -762,9 +762,9 @@ Error: cannot confirm the members of group GID 1000: this build cannot enumerate
 
 | 原因（`cause=`） | 対処 |
 |---|---|
-| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod` で `0755` 等にする） |
+| `nss-sources`（NSS 環境） | `CGO_ENABLED=1` でビルドし直すか、対象パスの group-writable ビットを外す（`chmod g-w`） |
 | `malformed-line`（不正行） | 警告ログが指す行を修正する。NIS 互換行（`+`・`-` で始まる）であれば `CGO_ENABLED=1` でビルドし直す |
-| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す |
+| `unsupported-platform`（macOS） | `CGO_ENABLED=1` でセルフビルドするか、対象パスの group-writable ビットを外す（`chmod g-w`） |
 
 **エラーメッセージ（CGO ビルド、`CGO_ENABLED=1`）**
 

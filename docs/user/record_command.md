@@ -777,9 +777,9 @@ binary has no `/etc/nsswitch.conf`, so it is always judged incomplete.
 
 | Cause (`cause=`) | Remediation |
 |---|---|
-| `nss-sources` (NSS environment) | Rebuild with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (e.g. `chmod 0755`) |
+| `nss-sources` (NSS environment) | Rebuild with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (`chmod g-w`) |
 | `malformed-line` (malformed line) | Fix the line the warning log points to. If it is a NIS compatibility entry (starting with `+`/`-`), rebuild with `CGO_ENABLED=1` |
-| `unsupported-platform` (macOS) | Rebuild yourself with `CGO_ENABLED=1`, or remove the group-writable bit from the target path |
+| `unsupported-platform` (macOS) | Rebuild yourself with `CGO_ENABLED=1`, or remove the group-writable bit from the target path (`chmod g-w`) |
 
 **Error Messages (CGO build, `CGO_ENABLED=1`)**
 
