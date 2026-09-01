@@ -94,7 +94,6 @@ func restoreStartupNsswitchClassification() {
 func useNsswitchVerdict(t *testing.T, v completenessVerdict) {
 	t.Helper()
 
-	clearNsswitchClassification()
+	resetNsswitchClassification(t)
 	nsswitchVerdictValue = v
-	t.Cleanup(restoreStartupNsswitchClassification)
 }
