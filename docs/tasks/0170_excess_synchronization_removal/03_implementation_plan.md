@@ -487,7 +487,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 **判定理由**: rubric (c)「隔離された高リスクな変更」に D2 が該当する。公開 API 2本の並行使用の契約を変え、二重確認ロジックごと削除するため、機械的な置換では済まない。影響の重い D2 を PR の末尾に置いている。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1083）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
