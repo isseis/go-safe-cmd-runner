@@ -368,7 +368,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **判定理由**: rubric のどのトリガにも該当しない。未確立の設計判断も、パネルモード条件も、Conditional checks も無く、コード挙動を変えない doc コメントと改名に閉じる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
