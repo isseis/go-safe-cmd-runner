@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 
@@ -631,19 +630,24 @@ func (fs *osFileSystem) FileExists(path string) (bool, error) {
 }
 
 // outputWrapper is an io.Writer that both captures output in a buffer
-// and writes to an OutputWriter with a specific stream name
+// and writes to an OutputWriter with a specific stream name.
+//
+// Each wrapper is written by exactly one goroutine: os/exec starts one copy
+// goroutine per non-*os.File writer, and Execute gives stdout and stderr
+// separate wrapper instances. buffer and writeErr are read only after
+// cmd.Wait() returns, which happens after those goroutines finish -- this last
+// step holds because Cmd.WaitDelay is left zero; setting it would let Wait
+// return while a copy goroutine is still writing. The shared OutputWriter is
+// the part reached from both goroutines, and OutputWriter implementations are
+// required to be thread-safe (see the interface contract in interface.go).
 type outputWrapper struct {
 	writer   OutputWriter
 	stream   OutputStream
 	buffer   bytes.Buffer
 	writeErr error // Stores the first write error encountered
-	mu       sync.Mutex
 }
 
 func (w *outputWrapper) Write(p []byte) (n int, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	// Write to buffer for capturing
 	w.buffer.Write(p)
 
@@ -662,14 +666,10 @@ func (w *outputWrapper) Write(p []byte) (n int, err error) {
 }
 
 func (w *outputWrapper) GetBuffer() []byte {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.buffer.Bytes()
 }
 
 func (w *outputWrapper) GetWriteError() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.writeErr
 }
 
