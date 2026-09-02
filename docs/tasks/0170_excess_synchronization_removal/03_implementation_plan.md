@@ -1039,44 +1039,44 @@ Phase 3 の後に置く。
 
 #### Step 4-1: テストファイルを作る
 
-- [ ] `internal/testutil/synccensus/census_guard_test.go` を新規に作る。ファイル冒頭に `//go:build test`
+- [x] `internal/testutil/synccensus/census_guard_test.go` を新規に作る。ファイル冒頭に `//go:build test`
       を置く（import する `identitymutationguard` が `//go:build test` のため。§1.3.7）
-- [ ] パッケージ名は `synccensus` とする。同じ親ディレクトリの既存パッケージ
+- [x] パッケージ名は `synccensus` とする。同じ親ディレクトリの既存パッケージ
       `internal/testutil/identitymutationguard` が `package identitymutationguard` を使っており、本件は
       その先例に揃えるものである（`test_organization.md` の `package <domain>testutil` は、他パッケージへ
       公開するヘルパを置く `testutil/` サブディレクトリの規則であり、本件は公開ヘルパを持たない）
-- [ ] テスト関数名は `TestSyncCensusMatchesExpectation` とする（§7 が参照する名前）
-- [ ] ファイル冒頭のコメントに、タグ無しで `go test ./internal/testutil/synccensus/` とパスを明示すると
+- [x] テスト関数名は `TestSyncCensusMatchesExpectation` とする（§7 が参照する名前）
+- [x] ファイル冒頭のコメントに、タグ無しで `go test ./internal/testutil/synccensus/` とパスを明示すると
       `build constraints exclude all Go files` になること、`make test` を使うことを書く
 
 #### Step 4-2: 走査を実装する
 
-- [ ] リポジトリルートからの相対パス `../../../internal` と `../../../cmd` を再帰的に走査する
-- [ ] ディレクトリ名が `testdata` のものは走査から除く
-- [ ] 各ディレクトリについて `identitymutationguard.ProductionGoFiles(t, dir)` を呼び、production
+- [x] リポジトリルートからの相対パス `../../../internal` と `../../../cmd` を再帰的に走査する
+- [x] ディレクトリ名が `testdata` のものは走査から除く
+- [x] 各ディレクトリについて `identitymutationguard.ProductionGoFiles(t, dir)` を呼び、production
       ファイルの一覧を得る（`ProductionGoFiles` は1ディレクトリ単位なので再帰は本テストが行う）
-- [ ] ファイルの読み取りに `os.ReadFile` を使う場合は、既存の
+- [x] ファイルの読み取りに `os.ReadFile` を使う場合は、既存の
       `identitymutationguard/helpers.go` と同じく `// #nosec G304 -- path is built from an os.ReadDir
       result filtered to *.go, not from external/attacker-controlled input.` を**その行に限って**付ける。
       `parser.ParseFile` にパスだけを渡して読ませる場合はこの抑制は要らない
-- [ ] 得たファイルを `go/parser` で構文解析し、`ast.Inspect` で全ノードを辿って次の3種を拾う（§1.3.8）
+- [x] 得たファイルを `go/parser` で構文解析し、`ast.Inspect` で全ノードを辿って次の3種を拾う（§1.3.8）
       - `*ast.Field` — 構造体フィールド
       - `*ast.ValueSpec` — トップレベル宣言と**関数内のローカル変数宣言の双方**（K3 がこれ）
       - `*ast.AssignStmt` — `:=` による短縮変数宣言（現在は該当なしだが、将来の追加を捕まえるため）
-- [ ] 型式を持つ宣言では、`*`／`[]`／`map[...]` を剥がしたうえで、`sync` パッケージの並行
+- [x] 型式を持つ宣言では、`*`／`[]`／`map[...]` を剥がしたうえで、`sync` パッケージの並行
       プリミティブ全体（`Mutex`／`RWMutex`／`Once`／`OnceValue`／`OnceFunc`／`OnceValues`／
       `WaitGroup`／`Map`／`Cond`／`Locker`）と `atomic` パッケージの全型を検出する
-- [ ] 型式を持たない宣言では、初期化子が `sync.OnceValue`／`sync.OnceFunc`／`sync.OnceValues` の
+- [x] 型式を持たない宣言では、初期化子が `sync.OnceValue`／`sync.OnceFunc`／`sync.OnceValues` の
       呼び出しである場合を検出する。K6 の2件はこの形でしか拾えない（`02_architecture.md` §4.5）
 
 #### Step 4-3: 期待表と双方向に突き合わせる
 
-- [ ] 期待表を、ファイル・識別子・維持する短い理由の3列で持つ。詳細な根拠は production 側の
+- [x] 期待表を、ファイル・識別子・維持する短い理由の3列で持つ。詳細な根拠は production 側の
       doc コメントに置き、期待表には失敗メッセージに出る一文だけを持たせる
       （`02_architecture.md` §4.6・付録 A.4）
-- [ ] 期待表の行数は 16 になる。内訳は K1 が8、K2・K3・K4・K5 が各1、K6 が2、K7 が1、
+- [x] 期待表の行数は 16 になる。内訳は K1 が8、K2・K3・K4・K5 が各1、K6 が2、K7 が1、
       `pwentMutex` が1である
-- [ ] 「走査で見つかったが期待表に無い」と「期待表にあるが走査で見つからない」を**別々の見出し**で
+- [x] 「走査で見つかったが期待表に無い」と「期待表にあるが走査で見つからない」を**別々の見出し**で
       報告する。各行に「ファイル・識別子・（期待表にある場合は）理由」を出す
 
 #### Step 4-4: テストが主張する理由で失敗できることを確認する（`02_architecture.md` §8.6）
@@ -1084,20 +1084,27 @@ Phase 3 の後に置く。
 3つの確認は、それぞれ別の失敗の向き・別の走査位置を突く。同じ経路を2回試すことにならないよう、
 確認2で足すロックの**形**を指定する。
 
-- [ ] 確認1（期待表側の欠落）: 期待表から1行削り、「走査で見つかったが期待表に無い」で失敗すること
-- [ ] 確認2（走査側の余剰・構文位置の網羅）: production ファイルへロックを1つ**関数内のローカル
+- [x] 確認1（期待表側の欠落）: 期待表から1行削り、「走査で見つかったが期待表に無い」で失敗すること
+- [x] 確認2（走査側の余剰・構文位置の網羅）: production ファイルへロックを1つ**関数内のローカル
       `var` として**足し、同じく失敗すること。トップレベルやフィールドとして足すと確認1と同じ経路しか
       通らないため、構文位置を変える。確認後は必ず元に戻す
-- [ ] 確認3（型式を持たない宣言）: **K6 の行**（`sync.OnceValue`）を期待表から削り、「期待表にあるが
-      走査で見つからない」で失敗すること。型式だけを見る実装ではここが通ってしまうため省略できない
-- [ ] 3つの確認結果をコミットメッセージに記す
+- [x] 確認3（型式を持たない宣言）: **K6 の行**（`sync.OnceValue`）を期待表から削り、失敗すること。
+      型式だけを見る実装ではここが通ってしまうため省略できない。
+      **計画からの差分**: 当初は失敗の向きを「期待表にあるが走査で見つからない」と書いていたが、
+      これは誤りだった。期待表から行を削ると、その行は期待表側に存在しなくなるので、この向きでは
+      そもそも報告されえない。走査が型式を持たない宣言を実際に拾えている場合の失敗の向きは
+      「走査で見つかったが期待表に無い」である（型式だけを見る実装ならどちらの向きでも報告されず
+      テストが通ってしまい、それが確認3の弁別したい状態である）。実測はこの向きで失敗した。
+      あわせて「期待表にあるが走査で見つからない」の向きも報告経路として生きていることを、
+      存在しない行（`manager.go` の `cacheMutex`、D2 で削除済み）を一時的に足して確認した
+- [x] 3つの確認結果をコミットメッセージに記す
 
 #### Phase 4 の完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が通る。とくに `//go:build test` を付けた新規ファイルが
+- [x] `make fmt` → `make test` → `make lint` が通る。とくに `//go:build test` を付けた新規ファイルが
       `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを
       確認する
-- [ ] コミット件名を `test(0170): add sync census guard test` とする
+- [x] コミット件名を `test(0170): add sync census guard test` とする
 
 ---
 
@@ -1296,13 +1303,13 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 ### 6.1 PR 単位の進捗
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
-- [ ] PR-3 マージ済み（対象ステップ: 2-3 / 2-4 / 2-5 / 2-6）
-- [ ] PR-4 マージ済み（対象ステップ: 2-7 / 2-8）
-- [ ] PR-5 マージ済み（対象ステップ: 2-9 / 2-10）
-- [ ] PR-6 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5）
-- [ ] PR-7 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4、および Phase 5 の最終確認）
+- [x] PR-1 マージ済み（対象ステップ: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
+- [x] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
+- [x] PR-3 マージ済み（対象ステップ: 2-3 / 2-4 / 2-5 / 2-6）
+- [x] PR-4 マージ済み（対象ステップ: 2-7 / 2-8）
+- [x] PR-5 マージ済み（対象ステップ: 2-9 / 2-10）
+- [x] PR-6 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5）
+- [x] PR-7 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4、および Phase 5 の最終確認）
 
 ### 6.2 PR ごとのステップ
 
@@ -1342,24 +1349,24 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 - [x] Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu`
 - [x] Step 2-10: D10 `VerifiedFD.closed`
 - [x] §1.3.3 の import を落とした（`normal_manager.go`・`dryrun_manager.go`・`types.go`・`types_test.go`）
-- [ ] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
+- [x] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
 
 #### PR-6: D11 と再入ガード
 
-- [ ] Step 3-1: 再入ガードのテストを書き、一般ユーザーで skip されずに通ることを確認した
-- [ ] Step 3-2: `mu` を削除し再入ガードを実装した
-- [ ] Step 3-3: `privilege` パッケージと `runnertypes` の記述を追随させた
-- [ ] Step 3-4: `race_test.go` の4関数を削除し、関数単位にどのテストが検証しているかを記録した
-- [ ] Step 3-5: 設計文書の5箇所を日英両版で改訂した
-- [ ] Phase 3 の完了ゲート: Step 3-1〜3-5 を1コミットにまとめ、コミットメッセージの4行を書いた
+- [x] Step 3-1: 再入ガードのテストを書き、一般ユーザーで skip されずに通ることを確認した
+- [x] Step 3-2: `mu` を削除し再入ガードを実装した
+- [x] Step 3-3: `privilege` パッケージと `runnertypes` の記述を追随させた
+- [x] Step 3-4: `race_test.go` の4関数を削除し、関数単位にどのテストが検証しているかを記録した
+- [x] Step 3-5: 設計文書の5箇所を日英両版で改訂した
+- [x] Phase 3 の完了ゲート: Step 3-1〜3-5 を1コミットにまとめ、コミットメッセージの4行を書いた
 
 #### PR-7: census guard test と全体の健全性
 
-- [ ] Step 4-1: テストファイルを作った
-- [ ] Step 4-2: 走査を実装した（フィールド・`var`・`:=` の3位置）
-- [ ] Step 4-3: 期待表（16 行）と双方向に突き合わせた
-- [ ] Step 4-4: 3通りの壊し方で失敗することを確認し、確認2で足したロックを元に戻した
-- [ ] Phase 4 の完了ゲート: `//go:build test` の新規ファイルが `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを確認した
+- [x] Step 4-1: テストファイルを作った
+- [x] Step 4-2: 走査を実装した（フィールド・`var`・`:=` の3位置）
+- [x] Step 4-3: 期待表（16 行）と双方向に突き合わせた
+- [x] Step 4-4: 3通りの壊し方で失敗することを確認し、確認2で足したロックを元に戻した
+- [x] Phase 4 の完了ゲート: `//go:build test` の新規ファイルが `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを確認した
 - [ ] `make deadcode` を基準と比較した（AC-22）
 - [ ] `make test` が両構成で通り `-race` の警告が0件（AC-20）
 - [ ] `make lint` が両構成で通る（AC-21）
