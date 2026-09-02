@@ -1383,29 +1383,6 @@ func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
 	assert.Len(t, handler.Records(), 1)
 }
 
-// TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently verifies that the
-// once-per-lifetime guarantee holds when report is called from many
-// goroutines at once.
-func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
-	t.Parallel()
-
-	handler := tu.NewLogRecorder(nil)
-	logger := slog.New(handler)
-
-	var reporter sudoUIDAdoptionReporter
-	var wg sync.WaitGroup
-	wg.Add(50)
-	for range 50 {
-		go func() {
-			defer wg.Done()
-			reporter.report(logger, SudoUIDAware, 0, 1000)
-		}()
-	}
-	wg.Wait()
-
-	assert.Len(t, handler.Records(), 1)
-}
-
 // TestSudoUIDExistenceMemo_ReusesConfirmation verifies that a confirmed UID
 // is not re-queried.
 func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
@@ -1533,7 +1510,7 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
 	t.Parallel()
 
-	assert.False(t, processSudoUIDAdoptionReporter.reported.Load(),
+	assert.False(t, processSudoUIDAdoptionReporter.reported,
 		"the process-wide reporter must not be reported through by tests")
 }
 

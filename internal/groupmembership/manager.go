@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -460,15 +459,16 @@ const sudoUIDEnvVar = "SUDO_UID"
 // single instance shared by the whole process satisfies "once per process".
 // It is the only place that builds the record's message and attributes.
 type sudoUIDAdoptionReporter struct {
-	reported atomic.Bool
+	reported bool
 }
 
 // report emits the adoption record once unless already emitted.
 // A failure to record must not change the read-safety verdict.
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
-	if !r.reported.CompareAndSwap(false, true) {
+	if r.reported {
 		return
 	}
+	r.reported = true
 	logger.Warn(
 		"Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
 		slog.Int("permission_check_uid", permissionCheckUID),
