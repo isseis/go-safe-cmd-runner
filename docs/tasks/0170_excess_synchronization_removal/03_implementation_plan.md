@@ -1068,6 +1068,19 @@ Phase 3 の後に置く。
       `WaitGroup`／`Map`／`Cond`／`Locker`）と `atomic` パッケージの全型を検出する
 - [x] 型式を持たない宣言では、初期化子が `sync.OnceValue`／`sync.OnceFunc`／`sync.OnceValues` の
       呼び出しである場合を検出する。K6 の2件はこの形でしか拾えない（`02_architecture.md` §4.5）
+- [x] **計画からの差分（レビュー指摘への対応）**: 実装時に次の4点を広げた。いずれも「捕まえるはず
+      のものを取りこぼす」側の穴であり、走査の目的（AC-23）に直結する
+      1. **総称型の実体化**を剥がす。`atomic.Pointer[T]` は `*ast.IndexExpr` が選択子を包む形になり、
+         剥がさないと**検出されない**。`sync.OnceValue[bool](f)` も同様。あわせてチャネルの要素型と
+         可変長引数の要素型も剥がす
+      2. **`sync` の型名の列挙をやめる**。上に挙げた10個の手書きの一覧は `sync.Pool` を落としており、
+         「一覧が現実から取り残される」という §4.6 が防ごうとしている状態そのものだった。`atomic` と
+         同じく、import が `sync` に解決される修飾名は型の位置に現れた時点で並行プリミティブと
+         みなす（型の位置に関数は現れない）
+      3. **`new(sync.Mutex)`** を `&sync.Mutex{}` と同様に拾う
+      4. **走査自体のテストを書く**（Step 4-2 の実装に対する単体テスト）。合成ソースを受け取る
+         `declarationsInSource` を切り出し、認識する宣言の形を表で固定した。上の3件は、リポジトリの
+         16 宣言では一度も通らない分岐にあったため、Step 4-4 の3つの確認では見つからなかった
 
 #### Step 4-3: 期待表と双方向に突き合わせる
 
@@ -1078,10 +1091,20 @@ Phase 3 の後に置く。
       `pwentMutex` が1である
 - [x] 「走査で見つかったが期待表に無い」と「期待表にあるが走査で見つからない」を**別々の見出し**で
       報告する。各行に「ファイル・識別子・（期待表にある場合は）理由」を出す
+- [x] **計画からの差分（レビュー指摘への対応）**: 突合を集合ではなく**個数**で行う。当初の実装は
+      `{ファイル, 識別子}` を鍵にした集合で突き合わせていたため、同一ファイルに同名の宣言が2つ
+      できても期待表の1行が両方を満たしてしまった（`mu`／`wg` は本リポジトリで最も多い名前であり、
+      既に censused な `mu` を持つファイルほど2つ目が足されやすい）。期待表の同一行の重複を
+      個数として数え、多い側・少ない側をそれぞれの見出しで報告する。表の列は3列のままで、16 行という
+      内訳も変わらない
+- [x] **計画からの差分（レビュー指摘への対応）**: 2つの見出しの報告を `require` から `assert` に
+      変える。改名は「1つ消えて1つ増える」形になるため、`require` だと片方しか出ず、読み手が
+      2回走らせる羽目になる（`02_architecture.md` §4.6 は失敗メッセージそのものを成果物と位置づけて
+      いる）
 
 #### Step 4-4: テストが主張する理由で失敗できることを確認する（`02_architecture.md` §8.6）
 
-3つの確認は、それぞれ別の失敗の向き・別の走査位置を突く。同じ経路を2回試すことにならないよう、
+確認は、それぞれ別の失敗の向き・別の走査位置を突く。同じ経路を2回試すことにならないよう、
 確認2で足すロックの**形**を指定する。
 
 - [x] 確認1（期待表側の欠落）: 期待表から1行削り、「走査で見つかったが期待表に無い」で失敗すること
@@ -1097,7 +1120,15 @@ Phase 3 の後に置く。
       テストが通ってしまい、それが確認3の弁別したい状態である）。実測はこの向きで失敗した。
       あわせて「期待表にあるが走査で見つからない」の向きも報告経路として生きていることを、
       存在しない行（`manager.go` の `cacheMutex`、D2 で削除済み）を一時的に足して確認した
-- [x] 3つの確認結果をコミットメッセージに記す
+- [x] **計画からの差分（レビュー指摘への対応）**: 確認を2つ足した。確認5は Step 4-3 の個数突合を
+      直接突くものである。3つの確認はいずれも走査の同じ分岐しか通らず、レビューが見つけた3件
+      （総称型・`sync.Pool`・同名の重複）はその外側にあった。走査自体の単体テスト（Step 4-2 の
+      追記4）が本来の受け皿であり、この2件はその補強である
+      - 確認4（もう一方の向きの報告経路）: 存在しない行を期待表へ足し、「期待表にあるが走査で
+        見つからない」で失敗すること
+      - 確認5（個数の突合）: production ファイルの同一関数に同名のロックをもう1つ足し、
+        `found 2, table has 1` を含むメッセージで失敗すること。確認後は必ず元に戻す
+- [x] 5つの確認結果をコミットメッセージに記す
 
 #### Phase 4 の完了ゲート
 
@@ -1255,6 +1286,7 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 | `TestGetGroupMembers_CacheHitSkipsEnumeration` | `internal/groupmembership/manager_test.go` | 同じ GID の2回目の `GetGroupMembers` が列挙関数を呼ばないこと。別 GID は呼ぶこと。失効後は再列挙すること（§1.3.4 の実装時の訂正による追加） | AC-07（D2） |
 | `TestWithPrivileges_ReentrantCallIsRejected` | `internal/runner/base/privilege/unix_privilege_test.go` | 再入が `ErrReentrantPrivilegeCall` を返し `fn()` を呼ばないこと。再入しない連続呼び出しでは発火しないこと。一般ユーザーで skip されずに走ること | AC-24 |
 | `TestSyncCensusMatchesExpectation` | `internal/testutil/synccensus/census_guard_test.go` | 走査結果と期待表 16 行の双方向一致 | AC-23 |
+| `TestDeclarationsInSourceRecognizesDeclarationForms`、同 `TestDeclarationsInSourceResolvesAliasedImports` | 同上 | 走査が認識する宣言の形（フィールド・埋め込み・ポインタ／スライス／マップ／チャネル／可変長・総称型・トップレベル `var`・関数内 `var`・`:=`・`&T{}`・`new(T)`・`sync.OnceValue`・同名の重複）と、import を通じた修飾子の解決。合成ソースに対して検証する。**計画からの差分**: レビュー指摘への対応として実装時に追加した（Step 4-2 の追記4） | AC-23 |
 
 `outputWrapper` は非公開型なので、AC-09 のテストはパッケージ `executor` の内部テストとして書く。
 
@@ -1306,7 +1338,10 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 ### 4.7 テストヘルパの方針
 
 **新規のテストヘルパファイルは作らない。** 必要な走査ヘルパ（`ProductionGoFiles`）は既存の
-`internal/testutil/identitymutationguard` にあり、そのまま使える。既存の
+`internal/testutil/identitymutationguard` にあり、そのまま使える。**計画からの差分（レビュー指摘への
+対応）**: import の解決（`resolveLocalImports`）も同ファイルに既にあり、census guard test 側に写した
+実装は行単位でほぼ同一だった。新規ファイルは作らず、既存の `helpers.go` に
+`ResolveLocalImports`（dot-import を拒否する述語を引数に取る）を公開して両者から使う。既存の
 `internal/groupmembership/test_helpers.go` と `test_helpers_policy.go`（いずれも `//go:build test`）は
 D5・D6 への追随として**内容だけを変更**し、ファイルの新設・分割は行わない。
 
