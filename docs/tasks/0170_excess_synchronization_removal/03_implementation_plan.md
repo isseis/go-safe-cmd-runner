@@ -809,7 +809,7 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 **判定理由**: rubric (b)「Conditional checks に2件以上該当」。resource cleanup at acquisition（Step 2-10 で新規に開く fd を取得箇所で `t.Cleanup` に登録する）と real cleanup/close API existence（`VerifiedFD.Close` の契約取り下げ）の2件に該当する。影響の重い D10 を PR の末尾に置いている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
