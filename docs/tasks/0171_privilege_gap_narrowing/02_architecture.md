@@ -29,13 +29,13 @@
 | fd-bound 実行 | 検証済みの記述子を `/proc/self/fd` 経由でそのまま exec する経路（Linux） |
 | staging フォールバック | fd-bound 実行が使えないとき、検証済み記述子の内容を専用の複製へ写して実行する経路 |
 | 準備フェーズ | コマンドを起動できる状態まで組み立てる区間。特権を要さない |
-| 起動フェーズ | 子プロセスを起動する区間。特権の隙（起動の隙）を開く |
+| 起動フェーズ | 子プロセスを起動する区間。特権の隙（起動区間）を開く |
 | 監督フェーズ | 子プロセスの終了・キャンセル・出力の取り込みを見る区間。キャンセル時と staging フォールバックの後始末を除き、特権を要さない |
-| 起動の隙 | 起動フェーズが開く特権の隙。中で行うのは `Start()`（staging フォールバックのときは複製の作成も）だけ |
-| kill の隙 | キャンセル時にだけ開く特権の隙。中で行うのは `Process.Kill()` だけ |
-| 後始末の隙 | run-as 実行かつ staging フォールバックのときにだけ開く特権の隙。中で行うのは staged copy の削除だけ |
+| 起動区間 | 起動フェーズが開く特権の隙。中で行うのは `Start()`（staging フォールバックのときは複製の作成も）だけ |
+| kill 区間 | キャンセル時にだけ開く特権の隙。中で行うのは `Process.Kill()` だけ |
+| 後始末区間 | run-as 実行かつ staging フォールバックのときにだけ開く特権の隙。中で行うのは staged copy の削除だけ |
 | 出力ポンプ | 子プロセスの stdout／stderr のパイプを親側で読み、`OutputWriter` へ流す部品。本タスクで新設する |
-| 待機 goroutine | 監督フェーズで `execCmd.Wait()` だけを呼ぶ goroutine。起動の隙が閉じた後に起動する |
+| 待機 goroutine | 監督フェーズで `execCmd.Wait()` だけを呼ぶ goroutine。起動区間が閉じた後に起動する |
 
 ---
 
@@ -54,11 +54,11 @@
 
 本設計は、コマンド実行を**準備・起動・監督の3フェーズへ分け、通常の経路の特権の隙を起動フェーズ
 だけに縮める**。出力の受け渡しを `os/exec` の goroutine から自前の出力ポンプへ移し、キャンセルの
-待機を watchdog goroutine から実行 goroutine の `select` へ移すことで、起動の隙の中に残る goroutine
+待機を watchdog goroutine から実行 goroutine の `select` へ移すことで、起動区間の中に残る goroutine
 は実行 goroutine だけになる。
 
-隙は最大で3つ開く。常に開くのは起動の隙だけであり、kill の隙はキャンセルが起きたときに、
-後始末の隙は run-as 実行かつ staging フォールバックのときにだけ開く（§3.4、§5.2）。
+隙は最大で3つ開く。常に開くのは起動区間だけであり、kill 区間はキャンセルが起きたときに、
+後始末区間は run-as 実行かつ staging フォールバックのときにだけ開く（§3.4、§5.2）。
 
 ### 1.2 設計原則
 
@@ -79,7 +79,7 @@
 6. **待ち時間に上限を置く。** 自前で待つ以上、相手が返さない場合の出口を用意する。kill の後の回収と
    出力の吸い出しには上限を設け、越えたら理由を添えて戻る。
 
-### 1.3 概念モデル: 3つのフェーズと起動の隙
+### 1.3 概念モデル: 3つのフェーズと起動区間
 
 ```mermaid
 flowchart TD
@@ -92,7 +92,7 @@ flowchart TD
     PREP["準備フェーズ<br>prepareCommand<br>（出力ポンプの生成を含む）"]
     BIND{"exec の束縛"}
 
-    subgraph GAP["起動の隙"]
+    subgraph GAP["起動区間"]
         STAGE["stageFromFD<br>staging フォールバックのみ"]
         START["execCmd.Start()"]
     end
@@ -122,7 +122,7 @@ flowchart TD
 矢印 A → B は「A の次に B が起きる」を表す。ただし円筒形の節点から出る矢印だけは「A を B が
 入力として使う」を表す。`BIND` から出る矢印のラベルは、選ばれた経路を示す。`GAP` の枠の内側だけが
 実効 UID 0 で走る。待機 goroutine と読み取り goroutine は監督フェーズで起動するので、枠の外にある。
-キャンセルが起きたときの kill の隙と、run-as 実行かつ staging フォールバックのときの後始末の隙は、
+キャンセルが起きたときの kill 区間と、run-as 実行かつ staging フォールバックのときの後始末区間は、
 監督フェーズの中で開く（§3.3、§3.4）。
 
 **Legend**
@@ -142,9 +142,9 @@ flowchart LR
     class L3 enhanced
 ```
 
-### 1.4 起動の隙の中の goroutine が消える理由
+### 1.4 起動区間の中の goroutine が消える理由
 
-隙の中で走る goroutine の発生源は3つある。本設計はこのうち2つを取り除く。
+起動区間の中で走る goroutine の発生源は3つある。本設計はこのうち2つを取り除く。
 
 | 発生源 | 現在 | 本設計後 |
 |---|---|---|
@@ -154,10 +154,10 @@ flowchart LR
 
 `os/exec` が出力コピー goroutine を起こすのは、`Cmd.Stdout`／`Cmd.Stderr` が `*os.File` でないときに
 限られる。パイプを親側で用意して書き込み端を渡せば、子プロセスへ渡す記述子はそのまま `*os.File`
-となり、`os/exec` の側には何も残らない。読み取りは自前の goroutine が行うが、これは起動の隙が
+となり、`os/exec` の側には何も残らない。読み取りは自前の goroutine が行うが、これは起動区間が
 閉じてから起動する。
 
-kill の隙と後始末の隙は、この2本の読み取り goroutine と待機 goroutine が生きている間に開く。
+kill 区間と後始末区間は、この2本の読み取り goroutine と待機 goroutine が生きている間に開く。
 その扱いは §5.3 に残存リスクとして記す。
 
 ### 1.5 なぜ既存の仕組みでは足りないのか（YAGNI の確認）
@@ -168,7 +168,7 @@ kill の隙と後始末の隙は、この2本の読み取り goroutine と待機
 | `exec.CommandContext` を使ったまま `Cmd.Cancel` だけ差し替える | `Cancel` は watchdog goroutine の上で呼ばれる。そこから `WithPrivileges` を呼ぶと、2つの goroutine が特権操作に入りうることになり、原則4を破る |
 | `Cmd.WaitDelay` を設定して `Wait()` の戻りを早める | 隙の長さは `Wait()` が戻るまでではなく子プロセスが終わるまで続く。長さの問題を解かない |
 | 出力の取り込みを `Cmd.StdoutPipe()` に任せる | `StdoutPipe` は `Wait()` より前に読み切ることを呼び出し側へ要求する契約であり、パイプの解放時期も `Wait()` に結び付いている。所有関係が2箇所に割れるので、原則2（生成と解放を1箇所へ）に反する |
-| 特権操作を別プロセスへ切り出す | 0170 設計文書 §10.2 の選択肢だが、範囲がはるかに大きい。本タスクは非参加 goroutine を起動の隙の外へ出すことでこの判断の緊急度を下げる（要件定義書のスコープ外） |
+| 特権操作を別プロセスへ切り出す | 0170 設計文書 §10.2 の選択肢だが、範囲がはるかに大きい。本タスクは非参加 goroutine を起動区間の外へ出すことでこの判断の緊急度を下げる（要件定義書のスコープ外） |
 
 ---
 
@@ -202,9 +202,9 @@ flowchart TD
     subgraph AFTER["本設計後: 隙 = staging と fork/execve"]
         A1["executeWithUserGroup"]
         A2["prepareCommand"]
-        A3["WithPrivileges が起動の隙を開く"]
+        A3["WithPrivileges が起動区間を開く"]
         A4["stageFromFD と execCmd.Start()"]
-        A5["WithPrivileges が起動の隙を閉じる"]
+        A5["WithPrivileges が起動区間を閉じる"]
         A6["superviseCommand"]
         A7["出力ポンプの読み取り goroutine"]
         A8["待機 goroutine"]
@@ -319,12 +319,12 @@ sequenceDiagram
     PUMP-->>EX: パイプ2組（読み取り端・書き込み端）
     EX->>CMD: Stdout/Stderr に書き込み端(*os.File)を設定
     EX->>PM: WithPrivileges(executionCtx, startPrepared)
-    PM->>PM: seteuid(0)（起動の隙が開く）
+    PM->>PM: seteuid(0)（起動区間が開く）
     PM-->>EX: startPrepared を呼ぶ
     EX->>CMD: Start()
     CMD-->>EX: nil
     EX-->>PM: startPrepared が戻る（started = true）
-    PM->>PM: seteuid(originalUID) と識別子検査（起動の隙が閉じる）
+    PM->>PM: seteuid(originalUID) と識別子検査（起動区間が閉じる）
     PM-->>EX: nil
     EX->>PUMP: releaseChildEnds()（親側の書き込み端を閉じる）
     EX->>PUMP: start()（読み取り goroutine を2本起こす）
@@ -338,7 +338,7 @@ sequenceDiagram
 ```
 
 矢印 A ->> B は「A が B を呼ぶ」、破線の矢印 B -->> A は「B が A へ制御を戻す」を表す。
-`seteuid(0)` から `seteuid(originalUID)` までが起動の隙である。書き込み端を閉じるのは隙の**外**、
+`seteuid(0)` から `seteuid(originalUID)` までが起動区間である。書き込み端を閉じるのは隙の**外**、
 `WithPrivileges` が戻った直後である。`Start()` の成否によらず必ず通る1箇所という不変条件（§3.2 要点3）
 はこの位置でも守れる一方、隙の内側に置くと AC-04 が定める「隙の中は `chown`／`chmod` と `Start()`
 だけ」から外れるため、外に出している。閉じるまでの間（隙が閉じるまでの数マイクロ秒）親が書き込み端を
@@ -417,8 +417,8 @@ const (
 | フェーズ | 関数 | 行うこと | 特権 |
 |---|---|---|---|
 | 準備 | `prepareCommand` | 引数検査、`exec.Cmd` の組み立て、`os.DevNull` の open、環境変数の組み立て、出力ポンプの生成、fd-bound 実行のための記述子複製、`binding`／`kill` の宣言、`ctx.Err()` の確認 | 不要 |
-| 起動 | `startPrepared` | staging フォールバック時の複製作成と `execCmd.Path` の確定（§3.4）、`execCmd.Start()` | 起動の隙の内側（run-as のときのみ隙を開く） |
-| 監督 | `superviseCommand` | 読み取り goroutine と待機 goroutine の起動、`ctx.Done()` との `select`、キャンセル時の kill、staging の後始末、`Result` の組み立て | 原則として不要（kill の隙・後始末の隙のみ §3.3、§3.4） |
+| 起動 | `startPrepared` | staging フォールバック時の複製作成と `execCmd.Path` の確定（§3.4）、`execCmd.Start()` | 起動区間の内側（run-as のときのみ隙を開く） |
+| 監督 | `superviseCommand` | 読み取り goroutine と待機 goroutine の起動、`ctx.Done()` との `select`、キャンセル時の kill、staging の後始末、`Result` の組み立て | 原則として不要（kill 区間・後始末区間のみ §3.3、§3.4） |
 
 `executeWithUserGroup` と `executeNormal` の違いは起動フェーズの包み方だけになる。前者は
 `startPrepared` を `WithPrivileges` で包み、後者はそのまま呼ぶ。準備と監督は両者で同一の経路を通る。
@@ -524,7 +524,7 @@ func (p *outputPump) release() error
 2. **読み取り端は読み取り goroutine が閉じる。** `os/exec` は複製が終わった時点で
    （エラー終了を含めて）読み取り端を閉じており、そのため上限超過時に子プロセスが
    `SIGPIPE` を受ける。ポンプも同じ順序を守る。これが F-004 の打ち切り挙動の土台である。
-3. **書き込み端は起動の隙が閉じた直後に閉じる。** 閉じ忘れると子プロセスが終了しても
+3. **書き込み端は起動区間が閉じた直後に閉じる。** 閉じ忘れると子プロセスが終了しても
    読み取り端が EOF に達せず、`wait` が deadline まで戻らない。所有者と時期を1箇所
    （`WithPrivileges` から戻った直後、§3.1 の骨格）に定め、`Start()` が失敗した経路も同じ
    呼び出しを通す。隙の外に置くのは、隙の中身を AC-04 の定める `chown`／`chmod`／`Start()` に
@@ -613,22 +613,22 @@ type commandOutcome struct {
   （`ProcessState`、`Process` を含む）。kill の対象 PID は隙を開く前に控えた値を使う。
 
 - **待機 goroutine。** `execCmd.Wait()` だけを呼び、結果をバッファ1のチャネルへ送って終わる。
-  特権に触れる処理を含まない。起動の隙が閉じた後に起動する。
+  特権に触れる処理を含まない。起動区間が閉じた後に起動する。
 - **キャンセルの検出。** 実行 goroutine が `ctx.Done()` と待機結果のチャネルを `select` する。
   タイムアウトとシグナルはどちらも context のキャンセルとして現れるので、経路は1つである
   （タイムアウトは [`createCommandContext`](../../../internal/runner/group_executor.go#L528) の
   `context.WithTimeout`、シグナルは [`main.go`](../../../cmd/runner/main.go#L244) の
   `signal.NotifyContext` に由来する）。
 - **kill。** キャンセルを検出した実行 goroutine が `execCmd.Process.Kill()` を呼ぶ。
-  `pc.kill` が `killReelevated` のときは、この呼び出しだけを `WithPrivileges` で包む（kill の隙）。
+  `pc.kill` が `killReelevated` のときは、この呼び出しだけを `WithPrivileges` で包む（kill 区間）。
   kill を行ったこと、対象の PID、選ばれた `killStrategy` は `Info` で記録する。これが無いと、
   タイムアウトで死んだのか外部から殺されたのかを、後から運用者が区別できない。
-- **kill の隙と後始末の隙は専用の `Operation` で開く。** `WithPrivileges` へ渡す
+- **kill 区間と後始末区間は専用の `Operation` で開く。** `WithPrivileges` へ渡す
   `ElevationContext.Operation` は
   [`prepareExecution`](../../../internal/runner/base/privilege/unix.go#L136) の `switch` で検査され、
   列挙に無い値は `ErrUnsupportedOperationType` で弾かれる。したがって
   `OperationKillAfterCancel`／`OperationStagingCleanup` を `runnertypes.Operation` に加え、
-  同 `switch` の昇格が要る側へ足す（§3.6）。起動の隙の `OperationUserGroupExecution` を
+  同 `switch` の昇格が要る側へ足す（§3.6）。起動区間の `OperationUserGroupExecution` を
   流用すると、1回の実行で同じ operation の昇格が最大3組ログに並び、どれが起動でどれが kill かを
   監査ログから区別できなくなる。AC-06（昇格と復帰の対は1組）と AC-09（kill の再昇格は kill だけ）は
   ログから検証する基準なので、区別できないことは検証できないことと同じである。
@@ -673,11 +673,11 @@ inode をそのまま exec するのは、起動者がバイナリをすり替�
 複製が root 所有になるのは、隙の内側で作られることの結果であって `chown` の結果ではない。
 
 **差分2: 後始末のためにもう1組の昇格と復帰を使う。** run-as 実行では、隙の内側で作った staged copy の
-ディレクトリが root 所有・許可 `0710`（`stagingDirMode`）になる。起動の隙が閉じた後の親プロセスは
+ディレクトリが root 所有・許可 `0710`（`stagingDirMode`）になる。起動区間が閉じた後の親プロセスは
 起動者の実効 UID で走るため、このディレクトリからエントリを削除できず、`os.RemoveAll` は EACCES で
-失敗する。そこで **run-as 実行では、子プロセスの終了後に後始末の隙を開いて staged copy を削除する**。
+失敗する。そこで **run-as 実行では、子プロセスの終了後に後始末区間を開いて staged copy を削除する**。
 
-後始末の隙を開く条件は **staging フォールバック かつ run-as 実行**（`cred != nil`）である。通常実行では
+後始末区間を開く条件は **staging フォールバック かつ run-as 実行**（`cred != nil`）である。通常実行では
 `executeCommandWithPath` が `cred == nil` で呼ばれ、`stageFromFD` は `chgrp`／`chmod` を行わない
 （[`executor.go:505`](../../../internal/runner/base/executor/executor.go#L505)）。ディレクトリは
 起動者所有・`0700` のままなので、`os.RemoveAll` は隙なしで成功する。ここで条件を「staging のとき」と
@@ -693,16 +693,16 @@ inode をそのまま exec するのは、起動者がバイナリをすり替�
 開き直す多機能バイナリ（busybox など、`stageFromFD` が basename を保つ理由でもある）も同様である。
 
 fd-bound 実行の経路では、複製した記述子が子プロセスの fd 3 として継承され、`/proc/self/fd/3` は
-子の側で解決できる。したがってシェバンつきスクリプトはこの経路では動く。後始末の隙を使うのは、
+子の側で解決できる。したがってシェバンつきスクリプトはこの経路では動く。後始末区間を使うのは、
 2つの経路の間に差を作らないためでもある。
 
 **この差分の影響範囲。**
 
 - staging フォールバックは Linux 以外、およびテストで fd-bound 実行を無効化した場合にだけ使われる。
-  実運用の主経路（Linux の fd-bound 実行）では、隙は `Start()` だけであり、後始末の隙も開かない。
+  実運用の主経路（Linux の fd-bound 実行）では、隙は `Start()` だけであり、後始末区間も開かない。
 - 隙の長さはコマンドの実行時間ではなく実行ファイルの大きさに比例する。AC-05（隙の長さが
   コマンドの実行時間に依存しない）は成立する。ただし長さの上限は攻撃者の影響を受けうる（§5.4）。
-- 非参加 goroutine は staging の間も存在しない。後始末の隙については §5.3 に記す。
+- 非参加 goroutine は staging の間も存在しない。後始末区間については §5.3 に記す。
 - 差分はこの2点だけである。とくに、書き込み端の解放と複製した検証済み記述子の解放は、いずれも
   隙の**外**（`WithPrivileges` から戻った直後）で行う。AC-04 が定める「隙の中は `chown`／`chmod` と
   `Start()` だけ」は、差分1の複製作成を除いてそのまま成り立つ。隙の中から到達できる呼び出しの
@@ -828,11 +828,11 @@ classDiagram
 |---|---|---|---|
 | `internal/runner/base/executor/command_lifecycle.go` | 新規 | `preparedCommand`、`stagingRequest`、`execBinding`、`killStrategy`、`prepareCommand`／`startPrepared`／`superviseCommand` | - |
 | `internal/runner/base/executor/output_pump.go` | 新規 | `outputPump`、`pumpStream`、`boundedBuffer`、パイプの生成・解放・読み取り | - |
-| `internal/runner/base/executor/executor.go` | 変更 | `executeWithUserGroup`／`executeNormal` を3フェーズ構成へ組み替え、`executeCommandWithPath` を廃止、`prepareExecCommand` を準備フェーズと起動フェーズへ分割、昇格時間の計測を隙ごとに分けて採り（§7.3）、kill の隙の記録方法を決め、`outputWrapper` の収集先を `boundedBuffer` へ替えて doc コメントを更新 | `executor_test.go`、`executor_fdexec_test.go`、`executor_privilege_check_test.go`、`executor_usergroup_test.go` |
+| `internal/runner/base/executor/executor.go` | 変更 | `executeWithUserGroup`／`executeNormal` を3フェーズ構成へ組み替え、`executeCommandWithPath` を廃止、`prepareExecCommand` を準備フェーズと起動フェーズへ分割、昇格時間の計測を隙ごとに分けて採り（§7.3）、kill 区間の記録方法を決め、`outputWrapper` の収集先を `boundedBuffer` へ替えて doc コメントを更新 | `executor_test.go`、`executor_fdexec_test.go`、`executor_privilege_check_test.go`、`executor_usergroup_test.go` |
 | `internal/runner/base/executor/stagefromfd_test.go` | 変更 | 位置づけの更新（§3.4） | 同左 |
 | `internal/runner/base/executor/privileged_test_condition_test.go` | 変更 | 既存の `canRunPrivilegedIntegrationTest` は変えず、実 UID が 0 でないことまで要求する別の述語 `canRunSetuidModelIntegrationTest` を追加する（§7.3） | `TestCanRunPrivilegedIntegrationTest`（既存の表はそのまま。新しい述語の表を足す） |
 | `internal/runner/base/runnertypes/config.go` | 変更 | `Operation` に `OperationKillAfterCancel`／`OperationStagingCleanup` を追加（§3.3） | `config_test.go`（operation 一覧を検証している箇所があれば追随） |
-| `internal/runner/base/privilege/unix.go` | 変更 | `prepareExecution` の `switch` に上記2つの operation を昇格が要る側として追加（追加しないと `ErrUnsupportedOperationType` で弾かれる）。あわせて `WithPrivileges` の doc コメントから出力コピー goroutine の記述を除き、残る未解決課題（`Start()` 中の露出、kill の隙・後始末の隙、別プロセス化の是非）を明示（AC-20） | `unix_privilege_test.go`（`ErrUnsupportedOperationType` の表に2行追加） |
+| `internal/runner/base/privilege/unix.go` | 変更 | `prepareExecution` の `switch` に上記2つの operation を昇格が要る側として追加（追加しないと `ErrUnsupportedOperationType` で弾かれる）。あわせて `WithPrivileges` の doc コメントから出力コピー goroutine の記述を除き、残る未解決課題（`Start()` 中の露出、kill 区間・後始末区間、別プロセス化の是非）を明示（AC-20） | `unix_privilege_test.go`（`ErrUnsupportedOperationType` の表に2行追加） |
 | `internal/runner/base/output/capture.go` | 変更 | `Capture` の doc コメントを更新。並行呼び出しの発生源が `os/exec` の per-writer goroutine から出力ポンプの読み取り goroutine へ替わる（`mutex` は必要なまま） | `internal/testutil/synccensus/census_guard_test.go` |
 | `internal/redaction/error_collector.go` | 変更 | 同上の理由で doc コメントを更新（`mu` は必要なまま） | 同上 |
 | `internal/logging/log_line_tracker.go` | 変更 | 同上の理由で doc コメントを更新（`atomic.Int64` は必要なまま） | 同上 |
@@ -925,8 +925,8 @@ kill した場合に限り、`ctx.Err()` と `Wait()` のエラーの両方を `
 
 | 現在の性質 | 由来 | 本設計での扱い |
 |---|---|---|
-| すでにキャンセルされた context で `Start()` を呼ぶと `ctx.Err()` を返し、プロセスを起こさない | `CommandContext` | 準備フェーズの最後、起動の隙を開く前に `ctx.Err()` を検査して同じエラーを返す。隙を開かないので特権も記述子も残さない（AC-12）。検査と `Start()` の間にキャンセルされた場合に子が起きるのは現在と同じであり、その場合は監督フェーズの `select` が拾って kill する |
-| context のキャンセル時に `Process.Kill()` を呼ぶ | `CommandContext` | 実行 goroutine の `select` が検出して kill する（§3.3）。`run_as` 実行では kill の隙を開く |
+| すでにキャンセルされた context で `Start()` を呼ぶと `ctx.Err()` を返し、プロセスを起こさない | `CommandContext` | 準備フェーズの最後、起動区間を開く前に `ctx.Err()` を検査して同じエラーを返す。隙を開かないので特権も記述子も残さない（AC-12）。検査と `Start()` の間にキャンセルされた場合に子が起きるのは現在と同じであり、その場合は監督フェーズの `select` が拾って kill する |
+| context のキャンセル時に `Process.Kill()` を呼ぶ | `CommandContext` | 実行 goroutine の `select` が検出して kill する（§3.3）。`run_as` 実行では kill 区間を開く |
 | `Cancel` が `os.ErrProcessDone` を返した場合はエラーとしない | `CommandContext` | 同じ扱いにする（§3.3） |
 | `Wait()` のエラーを context のエラーより優先する | `CommandContext` | **意図して変える。** キャンセル由来の kill では両方をたどれるエラーを返す（§4.2 順位2） |
 | `WaitDelay` が 0 なので、`Wait()` は出力の複製が終わるまで待つ | `CommandContext` | ポンプの `wait` が両方の読み取り goroutine の終了を待ってから結果を組み立てる。ただし kill の後は `killGraceDelay` を上限とする。上限を設けない `os/exec` の既定は、パイプを持ったまま離れた孫プロセスがいるとタイムアウトの保証そのものを失わせるため、ここは意図して変える |
@@ -962,10 +962,10 @@ flowchart TD
     end
 
     subgraph NEXT["本設計後"]
-        X1["起動の隙: staging と Start()"]
+        X1["起動区間: staging と Start()"]
         X2["実行 goroutine のみ"]
-        X3["kill の隙: Process.Kill()"]
-        X4["後始末の隙: staged copy の削除"]
+        X3["kill 区間: Process.Kill()"]
+        X4["後始末区間: staged copy の削除"]
         X5["読み取り goroutine と待機 goroutine"]
         X6["Slack 送信ワーカー"]
         X1 --> X2
@@ -1010,27 +1010,27 @@ flowchart LR
     class L4 enhanced
 ```
 
-### 5.2 3つの隙の性質
+### 5.2 3つの区間の性質
 
-| 隙 | 開く条件 | 中で行うこと | 長さ | 中で走る非参加 goroutine |
+| 区間 | 開く条件 | 中で行うこと | 長さ | 中で走る非参加 goroutine |
 |---|---|---|---|---|
-| 起動の隙 | 毎回（run-as 実行） | fd-bound 実行では `Start()` だけ。staging フォールバックでは複製の作成・`chmod`・`chgrp` も | `fork`／`execve` の時間（staging では複製の時間が加わる） | Slack 送信ワーカーのみ |
-| kill の隙 | キャンセルが起きたときだけ | `Process.Kill()` だけ | システムコール1回 | 読み取り goroutine2本、待機 goroutine、Slack 送信ワーカー |
-| 後始末の隙 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
+| 起動区間 | 毎回（run-as 実行） | fd-bound 実行では `Start()` だけ。staging フォールバックでは複製の作成・`chmod`・`chgrp` も | `fork`／`execve` の時間（staging では複製の時間が加わる） | Slack 送信ワーカーのみ |
+| kill 区間 | キャンセルが起きたときだけ | `Process.Kill()` だけ | システムコール1回 | 読み取り goroutine2本、待機 goroutine、Slack 送信ワーカー |
+| 後始末区間 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
 
 現在と比べたときの変化は次のとおりである。
 
 | 項目 | 現在 | 本設計後 |
 |---|---|---|
 | 実効 UID 0 の継続時間（run-as 実行） | コマンドの実行時間そのもの | 上表のとおり。いずれもコマンドの実行時間に依存しない |
-| 隙の中を走る非参加 goroutine | 出力コピー2本、watchdog 1本、Slack 送信ワーカー（コマンドの実行時間ずっと） | 起動の隙では Slack 送信ワーカーのみ。kill の隙と後始末の隙は §5.3 |
+| 隙の中を走る非参加 goroutine | 出力コピー2本、watchdog 1本、Slack 送信ワーカー（コマンドの実行時間ずっと） | 起動区間では Slack 送信ワーカーのみ。kill 区間と後始末区間は §5.3 |
 | 隙の中で行うファイル操作 | 環境変数の組み立て、`os.DevNull` の open、記述子の複製、staging 一式、出力の書き込み | fd-bound 実行では無し。staging フォールバックでは staging 一式と、その削除 |
 | 特権操作を行う goroutine | 実行 goroutine と watchdog goroutine（kill 経路を追加した場合） | 実行 goroutine のみ |
 
-### 5.3 kill の隙と後始末の隙に残る露出（残存リスク）
+### 5.3 kill 区間と後始末区間に残る露出（残存リスク）
 
-kill の隙と後始末の隙が開くとき、出力ポンプの読み取り goroutine と待機 goroutine は生きている。
-これらは本タスクが起動の隙から追い出した種類の goroutine そのものである。本設計はこれを
+kill 区間と後始末区間が開くとき、出力ポンプの読み取り goroutine と待機 goroutine は生きている。
+これらは本タスクが起動区間から追い出した種類の goroutine そのものである。本設計はこれを
 受け入れる残存リスクとして扱う。理由と限界を示す。
 
 - どちらの隙も、開くのは例外的な場合（キャンセル、staging フォールバック）に限られる。
@@ -1045,14 +1045,14 @@ kill の隙と後始末の隙が開くとき、出力ポンプの読み取り go
 読み取りを止めている間の出力の扱い（捨てるか、後から吸い出すか）を決める必要があり、
 本タスクの範囲を超える。§9 に将来の課題として記す。
 
-### 5.4 staging の隙の長さと `$TMPDIR`（残存リスク）
+### 5.4 staging を伴う起動区間の長さと `$TMPDIR`（残存リスク）
 
 `stageFromFD` は `os.MkdirTemp("", ...)` を使う。行き先は `os.TempDir()`、すなわち起動者が渡す
 `$TMPDIR` である。起動者は本プロジェクトの脅威モデルの攻撃者であるため、複製先のファイルシステムを
-攻撃者が選べる。応答の遅いファイルシステムを指せば、隙の長さ（`io.Copy` の所要時間）を任意に
+攻撃者が選べる。応答の遅いファイルシステムを指せば、起動区間の長さ（`io.Copy` の所要時間）を任意に
 延ばせる。
 
-これは本タスクが作る問題ではなく、現在の実装が既に持つ性質である。ただし本設計は「隙の長さが
+これは本タスクが作る問題ではなく、現在の実装が既に持つ性質である。ただし本設計は「起動区間の長さが
 コマンドの実行時間に依存しない」ことを主張する文書であるため、**長さの上限が攻撃者の影響下に
 あることを明記する**。staging の行き先を信頼できるディレクトリへ固定する、あるいは複製に上限を
 設ける対処は、本タスクの範囲外とする（fd-bound 実行が使える環境では staging 自体が走らない）。
@@ -1064,7 +1064,7 @@ kill の隙と後始末の隙が開くとき、出力ポンプの読み取り go
 
 | 文書 | 箇所 | 更新後 |
 |---|---|---|
-| `docs/dev/architecture_design/security-architecture.ja.md` | 行 1196（Residual Risks 1件目） | コマンド実行の経路が起こす非参加 goroutine は起動の隙から無くなったこと、隙は staging と `fork`／`execve` に縮まったこと、残るのは Slack 送信ワーカー・`Start()` 中の露出・kill の隙と後始末の隙であることへ置き換える |
+| `docs/dev/architecture_design/security-architecture.ja.md` | 行 1196（Residual Risks 1件目） | コマンド実行の経路が起こす非参加 goroutine は起動区間から無くなったこと、隙は staging と `fork`／`execve` に縮まったこと、残るのは Slack 送信ワーカー・`Start()` 中の露出・kill 区間と後始末区間であることへ置き換える |
 | 同上 | 行 1197（Residual Risks 2件目） | 再入ガードが同期を伴わず単一 goroutine を前提とする点は維持する。本設計は前提を強めこそすれ変えない |
 | `docs/dev/architecture_design/security-architecture.md` | 行 1201-1202 | 上記の英語版 |
 | `docs/user/security-risk-assessment.ja.md` | 行 99-100（残存リスク） | 利用者向けの言い回しで同じ内容へ置き換える |
@@ -1122,7 +1122,7 @@ sequenceDiagram
     EX->>EX: ctx.Done() を受信（タイムアウトまたはシグナル）
     alt run-as 実行（killReelevated）
         EX->>PM: WithPrivileges(executionCtx, kill)
-        PM->>PM: seteuid(0)（kill の隙が開く）
+        PM->>PM: seteuid(0)（kill 区間が開く）
         PM->>CH: Process.Kill()
         PM->>PM: seteuid(originalUID) と識別子検査
         PM-->>EX: nil
@@ -1144,7 +1144,7 @@ sequenceDiagram
 | `select` の直前に子が終わっていた（`Kill` が `os.ErrProcessDone`） | エラーとせず、そのまま待機結果を読む |
 | kill の `WithPrivileges` が失敗した | `ErrKillAfterCancel` に PID を添えて返す。待機は `killGraceDelay` で打ち切る |
 | `killGraceDelay` の間に子が終わらない（孫プロセスがパイプを保持しているなど） | ポンプの読み取り端を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
-| 起動の隙が閉じた後に書き込み端の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
+| 起動区間が閉じた後に書き込み端の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
 | 隙の中で復帰に失敗した | 既存の `emergencyShutdown` が即座にプロセスを終える。子プロセスと、staging フォールバックのときは staged copy が残る。その旨を doc コメントに記す |
 
 **回収できなかったときの staged copy。** `ErrChildNotReaped` の経路では子プロセスが生きたままだが、
@@ -1218,11 +1218,11 @@ flowchart LR
 
 | 資源 | 所有者 | 解放する場所 |
 |---|---|---|
-| パイプの書き込み端（親側の複製） | `outputPump` | 起動の隙が閉じた直後（隙の外）。`Start()` の成功・失敗の別を問わず必ず通る（§3.1、§3.2 要点3） |
+| パイプの書き込み端（親側の複製） | `outputPump` | 起動区間が閉じた直後（隙の外）。`Start()` の成功・失敗の別を問わず必ず通る（§3.1、§3.2 要点3） |
 | パイプの読み取り端 | `outputPump` | 読み取り goroutine の終了時。`start` へ到達しなかった経路では `preparedCommand.release()` |
-| 複製した検証済み記述子（`ExtraFiles`） | `preparedCommand` | 起動の隙が閉じた直後（隙の外）。`Start()` が `ExtraFiles` を子へ複製し終えているので、`Wait()` を待つ必要は無い |
+| 複製した検証済み記述子（`ExtraFiles`） | `preparedCommand` | 起動区間が閉じた直後（隙の外）。`Start()` が `ExtraFiles` を子へ複製し終えているので、`Wait()` を待つ必要は無い |
 | `os.DevNull` | `preparedCommand` | 監督フェーズの最後、または `release()` |
-| staged copy とその親ディレクトリ | `preparedCommand` | 子プロセスの終了後、または回収を諦めた後（後始末の隙の中。通常実行では隙なし）。`Start()` が失敗した場合は起動の隙の中 |
+| staged copy とその親ディレクトリ | `preparedCommand` | 子プロセスの終了後、または回収を諦めた後（後始末区間の中。通常実行では隙なし）。`Start()` が失敗した場合は起動区間の中 |
 
 書き込み端と検証済み記述子を隙の外で閉じるのは、隙の中身を AC-04 の一覧に留めるためである
 （§3.4、§7.2）。どちらも隙の中に置く必然性は無い。前者は読み取りがまだ始まっていないため、
@@ -1231,7 +1231,7 @@ flowchart LR
 | 失敗経路 | 解放されるもの |
 |---|---|
 | 準備フェーズの失敗 | それまでに作った記述子すべて。呼び出し元へは `preparedCommand` を返さない |
-| すでにキャンセルされた context | 準備フェーズで作ったすべて（起動の隙を開く前に `release()`） |
+| すでにキャンセルされた context | 準備フェーズで作ったすべて（起動区間を開く前に `release()`） |
 | `Start()` の失敗 | パイプ両端、複製した記述子、staged copy |
 | `Start()` は成功したが書き込み端の解放が失敗 | kill・回収・後始末を通した後、上表のとおり |
 | `Wait()` が返った後 | 上表のとおり |
@@ -1267,8 +1267,8 @@ goroutine の不在（AC-02）は、テスト用の `PrivilegeManager` 実装が
 そこで **goroutine の集合全体**を基準に採り、`fn` の外側で採った基準集合との差分が空であることを
 確かめる。基準集合の採取は隙を開く直前に行い、テストランナーやログ機構が持つ goroutine の
 出入りは、スタックの先頭フレームで同定して除外する。
-kill の隙については、§5.3 のとおり読み取り goroutine が生きていることが設計上の前提なので、
-同じ検査を「起動の隙では0本、kill の隙では読み取り goroutine と待機 goroutine のみ」という
+kill 区間については、§5.3 のとおり読み取り goroutine が生きていることが設計上の前提なので、
+同じ検査を「起動区間では0本、kill 区間では読み取り goroutine と待機 goroutine のみ」という
 期待値で行い、想定外の goroutine が増えたら落ちるようにする。
 
 ### 7.2 静的検査（AC-03、AC-04）
@@ -1276,21 +1276,21 @@ kill の隙については、§5.3 のとおり読み取り goroutine が生き�
 隙の中で行う操作は、リストと実装が離れると意味を失う。そこで、本リポジトリに既にある
 go/ast による guard test（[`identity_mutation_guard_test.go`](../../../internal/runner/base/privilege/identity_mutation_guard_test.go)）
 と同じ方式で、`WithPrivileges` へ渡す関数から到達する呼び出しを許可リストと突き合わせる検査を
-置く。検査は3つの隙それぞれについて行い、許可するものを次のとおり定める。
+置く。検査は3つの区間それぞれについて行い、許可するものを次のとおり定める。
 
-| 隙 | 許可する呼び出し |
+| 区間 | 許可する呼び出し |
 |---|---|
-| 起動の隙 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close` |
-| kill の隙 | `(*os.Process).Kill` のみ |
-| 後始末の隙 | `os.RemoveAll` のみ |
+| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close` |
+| kill 区間 | `(*os.Process).Kill` のみ |
+| 後始末区間 | `os.RemoveAll` のみ |
 
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
 ある。許可リストに無い呼び出しが増えれば、実行せずにビルドが赤くなる。
 
 このリストが AC-04 の一覧と一致するのは偶然ではない。記述子を閉じる処理（ポンプの書き込み端、
-複製した検証済み記述子）は、当初は隙の内側に置く設計だったが、`(*os.File).Close` を起動の隙で
+複製した検証済み記述子）は、当初は隙の内側に置く設計だったが、`(*os.File).Close` を起動区間で
 無条件に許すことになり、許可リストが「隙の中では任意の記述子を閉じてよい」という意味に薄まる。
-どちらも隙の外へ出せる処理だったので出した（§6.3）。`bindingStagedCopy` で起動の隙が行う
+どちらも隙の外へ出せる処理だったので出した（§6.3）。`bindingStagedCopy` で起動区間が行う
 `execCmd.Path` への代入は呼び出しではなくフィールドへの代入なので、この検査の対象外である。
 検査は「代入以外の呼び出しがリストに収まること」を見る。
 
@@ -1337,10 +1337,10 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 `elevation_count` と経過時間を読む。
 
 計測の範囲は、**3つの隙すべてを operation 付きで数え、時間は隙ごとに分けて記録する**。計測を
-起動の隙だけに狭めると、`elevation_count` は構造上つねに 1 になり、AC-06（昇格と復帰の対は1組）を
-主張するテストが、kill の隙や後始末の隙が余分に開いても落ちなくなる。CLAUDE.md の「テストは主張する
+起動区間だけに狭めると、`elevation_count` は構造上つねに 1 になり、AC-06（昇格と復帰の対は1組）を
+主張するテストが、kill 区間や後始末区間が余分に開いても落ちなくなる。CLAUDE.md の「テストは主張する
 理由で落ちられなければならない」に反するので、数えるのは全部にする。AC-05（隙の長さがコマンドの
-実行時間に依存しない）が比べるのは、そのうち起動の隙の時間だけである。隙を operation で区別
+実行時間に依存しない）が比べるのは、そのうち起動区間の時間だけである。隙を operation で区別
 できるようにするのが §3.3 の `OperationKillAfterCancel`／`OperationStagingCleanup` である。
 
 なお現在の計測は `WithPrivileges` 全体を囲んでおり、そのままではコマンドの実行時間を含み続ける
@@ -1379,7 +1379,7 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 | テスト | 外すもの |
 |---|---|
 | AC-01 | `Stdout`／`Stderr` への代入を `outputWrapper` に戻す |
-| AC-02 | 読み取り goroutine の起動を起動の隙の内側へ移す |
+| AC-02 | 読み取り goroutine の起動を起動区間の内側へ移す |
 | AC-06、AC-09 | kill の `WithPrivileges` 包みを外す／二重にする |
 | AC-07 | キャンセル由来のエラー合成を外し、`*exec.ExitError` だけを返す |
 | AC-12 | `release()` の呼び出しを1経路だけ落とす |
@@ -1415,12 +1415,12 @@ goroutine や watchdog が残っている状態を作らない。
 
 ## 9. 将来の拡張性
 
-- **kill の隙と後始末の隙から goroutine を追い出す。** §5.3 の残存リスクを消すには、隙を開く前に
+- **kill 区間と後始末区間から goroutine を追い出す。** §5.3 の残存リスクを消すには、隙を開く前に
   出力ポンプを止め、閉じてから再開する仕組みが要る。止めている間の出力の扱いを決める必要があり、
   本タスクでは扱わない。着手するなら、ポンプが読み取りを一時停止する契約を先に決めるのが自然で
   ある。
 - **Slack 送信ワーカーを隙の外へ出すとき。** 本設計はコマンド実行の側の非参加 goroutine を
-  起動の隙から無くす。残る発生源はログ機構だけになるので、通知経路の設計を単独で検討できる。
+  起動区間から無くす。残る発生源はログ機構だけになるので、通知経路の設計を単独で検討できる。
 - **特権操作を別プロセスへ切り出すかどうか。** 0170 設計文書 §10.2 の判断は未決のままである。
   本設計は隙を `fork`／`execve` へ縮めることでこの判断の緊急度を下げるが、判断を代替しない。
 - **グループ単位の並列実行を導入するとき。** 特権操作を行う goroutine が実行 goroutine だけである
@@ -1442,10 +1442,10 @@ goroutine や watchdog が残っている状態を作らない。
 
 | 箇所 | 要件定義書 | 本設計 | 理由 |
 |---|---|---|---|
-| AC-03、AC-04 | 起動の隙の中は staging の `chown`／`chmod` と `Start()` だけ | staging フォールバックでは複製の作成も隙の中 | 隙の外で作ると staged copy の所有者が起動者になり、作成から権限変更までの間に差し替えられる（§3.4 差分1） |
+| AC-03、AC-04 | 起動区間の中は staging の `chown`／`chmod` と `Start()` だけ | staging フォールバックでは複製の作成も隙の中 | 隙の外で作ると staged copy の所有者が起動者になり、作成から権限変更までの間に差し替えられる（§3.4 差分1） |
 | AC-06 | 昇格と復帰の対は1組（kill の分を除く） | staging フォールバックのときだけ、後始末のためにもう1組使う | staged copy は root 所有のディレクトリの中にあり、隙の外からは削除できない。`Start()` の直後に削除するとシェバンつきスクリプトが動かなくなる（§3.4 差分2） |
 | AC-16 | 返すエラーの種別が現在と一致する | キャンセル由来の kill では `context.DeadlineExceeded` もたどれるようにする | 現在の挙動では AC-07（タイムアウトとして報告される）を満たせない（§4.2） |
-| AC-06 | 隙は `WithPrivileges` の呼び出しで開く | kill の隙と後始末の隙に専用の `Operation` を足す（`runnertypes` と `privilege` の変更を伴う） | 既存の operation は `prepareExecution` の `switch` で弾かれ、流用すると監査ログで3つの隙を区別できず AC-06／AC-09 を検証できない（§3.3） |
+| AC-06 | 隙は `WithPrivileges` の呼び出しで開く | kill 区間と後始末区間に専用の `Operation` を足す（`runnertypes` と `privilege` の変更を伴う） | 既存の operation は `prepareExecution` の `switch` で弾かれ、流用すると監査ログで3つの隙を区別できず AC-06／AC-09 を検証できない（§3.3） |
 
 ### A.2 採らなかった案
 
@@ -1457,7 +1457,7 @@ goroutine や watchdog が残っている状態を作らない。
   ディレクトリの中身を差し替えられるため、差分1の競合が残る。
 - **`Wait()` を実行 goroutine で呼び、キャンセルの見張りを別 goroutine に置く。** `exec.CommandContext`
   と同じ構造になり、kill が別 goroutine から `WithPrivileges` を呼ぶことになる（原則4に反する）。
-- **kill の隙の前に出力ポンプを止める。** 残存リスク（§5.3）は消えるが、止めている間の出力の扱いを
+- **kill 区間の前に出力ポンプを止める。** 残存リスク（§5.3）は消えるが、止めている間の出力の扱いを
   決める設計が要る。§9 へ送る。
 - **`OutputWriter` が `nil` のとき、標準エラー出力の末尾を落とす。** `os/exec` の
   `prefixSuffixSaver` を再実装せずに済むが、失敗したコマンドの診断に要るのは末尾であり、
@@ -1465,10 +1465,10 @@ goroutine や watchdog が残っている状態を作らない。
 - **上限に達したら書き込みエラーを返して読み取り端を閉じる（`OutputWriter` が `nil` の経路）。**
   `Capture` を持つ経路と実装を揃えられるが、子プロセスが `SIGPIPE` を受けるため、標準エラー出力を
   多く出してから成功するコマンドが失敗するようになる。`Cmd.Output()` は最後まで読み捨てる（§4.3）。
-- **書き込み端と検証済み記述子の解放を起動の隙の内側に置く。** `Start()` の直後という不変条件は
+- **書き込み端と検証済み記述子の解放を起動区間の内側に置く。** `Start()` の直後という不変条件は
   隙の外でも同じ1箇所で守れる一方、静的検査の許可リストに `(*os.File).Close` を無条件で
   加えることになる（§7.2）。
-- **kill の隙と後始末の隙で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
+- **kill 区間と後始末区間で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
   監査ログに同じ operation の昇格が最大3組並び、AC-06／AC-09 をログから検証できなくなる（§3.3）。
 - **`canRunPrivilegedIntegrationTest` に実 UID の条件を足す。** 述語が1つで済むが、同関数を使う
   既存の補助グループ統合テストが、走っていたすべての環境でスキップに変わる（§7.3）。
