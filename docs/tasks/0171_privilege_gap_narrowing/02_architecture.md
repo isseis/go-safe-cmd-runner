@@ -146,12 +146,12 @@ flowchart LR
 
 | 発生源 | 現在 | 本設計後 |
 |---|---|---|
-| `os/exec` の出力コピー goroutine（2本） | `Stdout`／`Stderr` が `*os.File` ではないため、`Start()` が起こす | `Stdout`／`Stderr` に、出力中継で用意した `*os.File`（パイプの書き込み端）を渡すので、`os/exec` は goroutine を起こさない |
+| `os/exec` の出力コピー goroutine（2本） | `Stdout`／`Stderr` が `*os.File` ではないため、`Start()` が起こす | `Stdout`／`Stderr` に、出力中継で用意した `*os.File`（パイプの書き込み側）を渡すので、`os/exec` は goroutine を起こさない |
 | `exec.CommandContext` の watchdog goroutine（1本） | `Start()` が `ctx.Done()` を見張る goroutine を起こす | `exec.Command` を使い、キャンセルの待機を実行 goroutine の `select` で行うので起きない |
 | Slack 送信ワーカー（1本） | ログ機構が持つ。コマンド実行とは独立に生きている | 変わらない（要件定義書のスコープ外） |
 
 `os/exec` が出力コピー goroutine を起こすのは、`Cmd.Stdout`／`Cmd.Stderr` が `*os.File` でないときに
-限られる。パイプを親側で用意して書き込み端を渡せば、子プロセスへ渡す記述子はそのまま `*os.File`
+限られる。パイプを親側で用意して書き込み側を渡せば、子プロセスへ渡す記述子はそのまま `*os.File`
 となり、`os/exec` の側には何も残らない。読み取りは自前の goroutine が行うが、これは起動区間が
 閉じてから起動する。
 
@@ -314,8 +314,8 @@ sequenceDiagram
     participant OW as "OutputWriter"
 
     EX->>PUMP: newOutputPump(outputWriter)
-    PUMP-->>EX: パイプ2組（読み取り端・書き込み端）
-    EX->>CMD: Stdout/Stderr に書き込み端(*os.File)を設定
+    PUMP-->>EX: パイプ2組（読み取り側・書き込み側）
+    EX->>CMD: Stdout/Stderr に書き込み側(*os.File)を設定
     EX->>PM: WithPrivileges(executionCtx, startPrepared)
     PM->>PM: seteuid(0)（起動区間が開く）
     PM-->>EX: startPrepared を呼ぶ
@@ -324,7 +324,7 @@ sequenceDiagram
     EX-->>PM: startPrepared が戻る（started = true）
     PM->>PM: seteuid(originalUID) と識別子検査（起動区間が閉じる）
     PM-->>EX: nil
-    EX->>PUMP: releaseChildEnds()（親側の書き込み端を閉じる）
+    EX->>PUMP: releaseChildEnds()（親側の書き込み側を閉じる）
     EX->>PUMP: start()（読み取り goroutine を2本起こす）
     EX->>W: go execCmd.Wait()
     PUMP->>OW: Write(StdoutStream, data)
@@ -336,10 +336,10 @@ sequenceDiagram
 ```
 
 矢印 A ->> B は「A が B を呼ぶ」、破線の矢印 B -->> A は「B が A へ制御を戻す」を表す。
-`seteuid(0)` から `seteuid(originalUID)` までが起動区間である。書き込み端を閉じるのは隙の**外**、
+`seteuid(0)` から `seteuid(originalUID)` までが起動区間である。書き込み側を閉じるのは隙の**外**、
 `WithPrivileges` が戻った直後である。`Start()` の成否によらず必ず通る1箇所という不変条件（§3.2 要点3）
 はこの位置でも守れる一方、隙の内側に置くと AC-04 が定める「隙の中は `chown`／`chmod` と `Start()`
-だけ」から外れるため、外に出している。閉じるまでの間（隙が閉じるまでの数マイクロ秒）親が書き込み端を
+だけ」から外れるため、外に出している。閉じるまでの間（隙が閉じるまでの数マイクロ秒）親が書き込み側を
 持ち続けるが、読み取りはまだ始まっていないので影響はない。
 
 ---
@@ -423,9 +423,9 @@ const (
 
 **起動フェーズの戻り値。** `startPrepared` は `(started bool, err error)` を返す。`started` が真の
 ときは子プロセスが既に走っており、`err` の有無にかかわらず**監督フェーズへ進んで kill と回収を
-行う**。`Start()` に成功した後に失敗しうる処理（後述の書き込み端の解放）を「起動の失敗」として
+行う**。`Start()` に成功した後に失敗しうる処理（後述の書き込み側の解放）を「起動の失敗」として
 扱うと、run-as の資格で走る子プロセスを誰も止めず誰も `Wait()` しないまま呼び出し元へ戻ることに
-なるためである。呼び出し側の骨格は次のとおりで、書き込み端の解放は隙の外の必ず通る位置に置く。
+なるためである。呼び出し側の骨格は次のとおりで、書き込み側の解放は隙の外の必ず通る位置に置く。
 
 ```go
 var started bool
@@ -519,18 +519,18 @@ func (p *outputPump) release() error
    `bytes.Buffer` を上限つきの `boundedBuffer` へ替え、構築関数を
    `newOutputWrapper(writer, stream, limit)` にする（要点6）。`Write`／`GetBuffer`／
    `GetWriteError` の署名と、転送・エラー保持の挙動は変わらない。
-2. **読み取り端は読み取り goroutine が閉じる。** `os/exec` は複製が終わった時点で
-   （エラー終了を含めて）読み取り端を閉じており、そのため上限超過時に子プロセスが
+2. **読み取り側は読み取り goroutine が閉じる。** `os/exec` は複製が終わった時点で
+   （エラー終了を含めて）読み取り側を閉じており、そのため上限超過時に子プロセスが
    `SIGPIPE` を受ける。ポンプも同じ順序を守る。これが F-004 の打ち切り挙動の土台である。
-3. **書き込み端は起動区間が閉じた直後に閉じる。** 閉じ忘れると子プロセスが終了しても
-   読み取り端が EOF に達せず、`wait` が deadline まで戻らない。所有者と時期を1箇所
+3. **書き込み側は起動区間が閉じた直後に閉じる。** 閉じ忘れると子プロセスが終了しても
+   読み取り側が EOF に達せず、`wait` が deadline まで戻らない。所有者と時期を1箇所
    （`WithPrivileges` から戻った直後、§3.1 の骨格）に定め、`Start()` が失敗した経路も同じ
    呼び出しを通す。隙の外に置くのは、隙の中身を AC-04 の定める `chown`／`chmod`／`Start()` に
    限るためである。閉じられなかった場合は記述子が残るため、`releaseChildEnds` のエラーは
    握り潰さない。ただし `Start()` が成功していれば子プロセスは既に走っているので、起動の失敗
    としては扱わず、監督フェーズの kill・回収を通してから報告する（§3.1）。
 4. **両端は `O_CLOEXEC` でなければならない。** `os.Pipe` はこれを満たす。満たさない作り方をすると、
-   読み取り端が別 UID の子プロセスへ漏れ、その子が生きている限り EOF が起きなくなる。
+   読み取り側が別 UID の子プロセスへ漏れ、その子が生きている限り EOF が起きなくなる。
    ポンプはパイプの生成を1箇所に閉じることでこの不変条件を守る。
 5. **`OutputWriter` を共有する前提は変わらない。** 読み取り goroutine は2本あり、どちらも同じ
    `OutputWriter` を呼ぶ。`OutputWriter` の実装がスレッドセーフであることという既存の契約
@@ -572,13 +572,13 @@ func (p *outputPump) release() error
    func (b *boundedBuffer) Bytes() []byte               // prefix + marker + suffix
    ```
 
-   この選択により、要点2の「上限超過で読み取り端を閉じる」経路は `Capture` を持つ場合だけの
+   この選択により、要点2の「上限超過で読み取り側を閉じる」経路は `Capture` を持つ場合だけの
    ものになる。`boundedBuffer` は容量を抑えるだけで、子プロセスの寿命にも終了コードにも
    影響しない。現在との差は §4.3 に示すとおり無い。
 7. **`wait` の deadline 経路では、終わっていない側のバッファを読まない。** `outputWrapper` の
    `buffer` と `writeErr` は、対応する読み取り goroutine が終わってから読むという不変条件の下に
    ある（現在の doc コメントが述べているとおり）。`killGraceDelay` 超過で `wait` が戻るとき、
-   読み取り goroutine は `outputWrapper.Write` の内側にいることがありうる。読み取り端を閉じても
+   読み取り goroutine は `outputWrapper.Write` の内側にいることがありうる。読み取り側を閉じても
    実行中の `Write` が即座に戻る保証は無いので、`done` チャネルが値を返した側だけを読み、
    返していない側は `nil` として扱う。`-race` 付きの AC-13 のテストが、この規則を外すと落ちる。
 
@@ -631,8 +631,8 @@ type commandOutcome struct {
   監査ログから区別できなくなる。AC-06（昇格と復帰の対は1組）と AC-09（kill の再昇格は kill だけ）は
   ログから検証する基準なので、区別できないことは検証できないことと同じである。
 - **kill の後の回収。** kill の後は待機結果を待つが、`killGraceDelay` を上限とする。子プロセスが
-  パイプの書き込み端を持ったまま離れた孫プロセスを残した場合、あるいは kill 自体が失敗した場合に、
-  ここで無限に止まらないためである。上限を越えたときはポンプの読み取り端を閉じ、
+  パイプの書き込み側を持ったまま離れた孫プロセスを残した場合、あるいは kill 自体が失敗した場合に、
+  ここで無限に止まらないためである。上限を越えたときはポンプの読み取り側を閉じ、
   `ErrChildNotReaped` に PID を添えて返す。子プロセスが残る可能性のある事象なので `Error` で
   記録する。上限を設けないと、タイムアウトの保証そのものがサイレントに失われる。
 - **kill の失敗。** `WithPrivileges` が失敗した場合（再入、昇格失敗、特権が使えない環境）は、
@@ -701,7 +701,7 @@ fd-bound 実行の経路では、複製した記述子が子プロセスの fd 3
 - 隙の長さはコマンドの実行時間ではなく実行ファイルの大きさに比例する。AC-05（隙の長さが
   コマンドの実行時間に依存しない）は成立する。ただし長さの上限は攻撃者の影響を受けうる（§5.4）。
 - 非参加 goroutine は staging の間も存在しない。後始末区間については §5.3 に記す。
-- 差分はこの2点だけである。とくに、書き込み端の解放と複製した検証済み記述子の解放は、いずれも
+- 差分はこの2点だけである。とくに、書き込み側の解放と複製した検証済み記述子の解放は、いずれも
   隙の**外**（`WithPrivileges` から戻った直後）で行う。AC-04 が定める「隙の中は `chown`／`chmod` と
   `Start()` だけ」は、差分1の複製作成を除いてそのまま成り立つ。隙の中から到達できる呼び出しの
   一覧は §7.2 に置き、静的検査で固定する。
@@ -931,7 +931,7 @@ kill した場合に限り、`ctx.Err()` と `Wait()` のエラーの両方を `
 | 複製エラーは、プロセスが正常終了したときだけ報告される | `CommandContext` | §4.2 は書き込みエラーを最優先にする。これは現在の executor が `os/exec` の既定を上書きしている挙動を引き継いだものであり、変更ではない |
 | `OutputWriter` が `nil` のとき、標準エラー出力は異常終了時だけ `Result.Stderr` に載る | `Cmd.Output()` | 同じにする。正常終了時に標準エラー出力を載せると、`group_executor` の debug ログと Slack 通知へ新たに流れ込むため |
 | `OutputWriter` が `nil` のとき、標準エラー出力は先頭 32 KiB と末尾 32 KiB を残し、中間を `\n... omitting N bytes ...\n` に置き換える（保持量は最大およそ 64 KiB） | `Cmd.Output()`（内部型 `prefixSuffixSaver{N: 32 << 10}`） | 同じにする。同じ規則の `boundedBuffer` を置く（§3.2 要点6）。末尾を落とす案は採らない。失敗したコマンドの診断に要るのは末尾であり、先頭は起動時の定型出力であることが多い |
-| `OutputWriter` が `nil` のとき、標準エラー出力が上限に達しても子プロセスは走り続け、`os/exec` は最後まで読み捨てる | `Cmd.Output()` | 同じにする。`boundedBuffer` は上限に達してもエラーを返さず、読み取り端も閉じない。ここでエラーを返すと読み取り端が閉じて子が `SIGPIPE` を受け、上限を超える標準エラー出力を書いてから成功するコマンドが失敗するようになる（AC-16 に反する） |
+| `OutputWriter` が `nil` のとき、標準エラー出力が上限に達しても子プロセスは走り続け、`os/exec` は最後まで読み捨てる | `Cmd.Output()` | 同じにする。`boundedBuffer` は上限に達してもエラーを返さず、読み取り側も閉じない。ここでエラーを返すと読み取り側が閉じて子が `SIGPIPE` を受け、上限を超える標準エラー出力を書いてから成功するコマンドが失敗するようになる（AC-16 に反する） |
 | `OutputWriter` が `nil` のとき、標準出力に上限は無い | `Cmd.Output()` | 同じにする（`bytes.Buffer` のまま） |
 
 ---
@@ -1141,8 +1141,8 @@ sequenceDiagram
 |---|---|
 | `select` の直前に子が終わっていた（`Kill` が `os.ErrProcessDone`） | エラーとせず、そのまま待機結果を読む |
 | kill の `WithPrivileges` が失敗した | `ErrKillAfterCancel` に PID を添えて返す。待機は `killGraceDelay` で打ち切る |
-| `killGraceDelay` の間に子が終わらない（孫プロセスがパイプを保持しているなど） | ポンプの読み取り端を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
-| 起動区間が閉じた後に書き込み端の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
+| `killGraceDelay` の間に子が終わらない（孫プロセスがパイプを保持しているなど） | ポンプの読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
+| 起動区間が閉じた後に書き込み側の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
 | 隙の中で復帰に失敗した | 既存の `emergencyShutdown` が即座にプロセスを終える。子プロセスと、staging フォールバックのときは staged copy が残る。その旨を doc コメントに記す |
 
 **回収できなかったときの staged copy。** `ErrChildNotReaped` の経路では子プロセスが生きたままだが、
@@ -1166,7 +1166,7 @@ flowchart TD
     C{"Capture が上限超過を返すか"}
     OK["収集を続ける"]
     ERR["最初の書き込みエラーを保持"]
-    CLOSE["読み取り端を閉じる"]
+    CLOSE["読み取り側を閉じる"]
     PIPE["子プロセスが SIGPIPE または EPIPE を受ける"]
     EXIT["子プロセスが終了し Wait が戻る"]
     RES["書き込みエラーを最優先で報告"]
@@ -1189,7 +1189,7 @@ flowchart TD
 矢印 A → B は「A の次に B が起きる」を表す。分岐の矢印のラベルは判定の結果を示す。
 
 上限超過を検出するのは `Capture.WriteOutput` であり、判定の場所も文言も現在と同じである
-（要件定義書のスコープ外）。変わるのは、読み取り端を閉じるのが `os/exec` の複製 goroutine から
+（要件定義書のスコープ外）。変わるのは、読み取り側を閉じるのが `os/exec` の複製 goroutine から
 出力中継の読み取り goroutine へ替わる点だけである。コマンドの終了を待たずに検出することも、
 子プロセスがパイプの破断で終わることも変わらない（AC-13）。報告するエラーは §4.2 の順位1により
 上限超過のままである（AC-14）。`SIGPIPE` を無視する子プロセスは今と同じく走り続け、
@@ -1216,13 +1216,13 @@ flowchart LR
 
 | 資源 | 所有者 | 解放する場所 |
 |---|---|---|
-| パイプの書き込み端（親側の複製） | `outputPump` | 起動区間が閉じた直後（隙の外）。`Start()` の成功・失敗の別を問わず必ず通る（§3.1、§3.2 要点3） |
-| パイプの読み取り端 | `outputPump` | 読み取り goroutine の終了時。`start` へ到達しなかった経路では `preparedCommand.release()` |
+| パイプの書き込み側（親側の複製） | `outputPump` | 起動区間が閉じた直後（隙の外）。`Start()` の成功・失敗の別を問わず必ず通る（§3.1、§3.2 要点3） |
+| パイプの読み取り側 | `outputPump` | 読み取り goroutine の終了時。`start` へ到達しなかった経路では `preparedCommand.release()` |
 | 複製した検証済み記述子（`ExtraFiles`） | `preparedCommand` | 起動区間が閉じた直後（隙の外）。`Start()` が `ExtraFiles` を子へ複製し終えているので、`Wait()` を待つ必要は無い |
 | `os.DevNull` | `preparedCommand` | 監督フェーズの最後、または `release()` |
 | staged copy とその親ディレクトリ | `preparedCommand` | 子プロセスの終了後、または回収を諦めた後（後始末区間の中。通常実行では隙なし）。`Start()` が失敗した場合は起動区間の中 |
 
-書き込み端と検証済み記述子を隙の外で閉じるのは、隙の中身を AC-04 の一覧に留めるためである
+書き込み側と検証済み記述子を隙の外で閉じるのは、隙の中身を AC-04 の一覧に留めるためである
 （§3.4、§7.2）。どちらも隙の中に置く必然性は無い。前者は読み取りがまだ始まっていないため、
 後者は `Start()` が既に子へ複製し終えているためである。
 
@@ -1231,7 +1231,7 @@ flowchart LR
 | 準備フェーズの失敗 | それまでに作った記述子すべて。呼び出し元へは `preparedCommand` を返さない |
 | すでにキャンセルされた context | 準備フェーズで作ったすべて（起動区間を開く前に `release()`） |
 | `Start()` の失敗 | パイプ両端、複製した記述子、staged copy |
-| `Start()` は成功したが書き込み端の解放が失敗 | kill・回収・後始末を通した後、上表のとおり |
+| `Start()` は成功したが書き込み側の解放が失敗 | kill・回収・後始末を通した後、上表のとおり |
 | `Wait()` が返った後 | 上表のとおり |
 
 いずれの経路でも実効 UID を上げたまま戻ることはない。隙の開閉は `WithPrivileges` の
@@ -1252,7 +1252,7 @@ flowchart LR
 | 出力中継 | stdout と stderr が区別されて `OutputWriter` へ渡ること、書き込みエラーが stdout 優先・最優先で報告されること（AC-14、AC-15） |
 | 互換性 | 終了コード・標準出力・標準エラー出力・エラー種別が現在と一致すること。`OutputWriter` が `nil` の経路で、正常終了時に標準エラー出力が載らないこと、64 KiB を超える標準エラー出力で先頭 32 KiB と末尾 32 KiB が残り中間が省略表示に替わること、そしてそのコマンドが**成功したままである**こと（AC-16、§4.3） |
 | kill・回収の失敗 | `ErrKillAfterCancel`／`ErrChildNotReaped` が、出力上限の超過と同時に起きたときも `errors.Is` でたどれること（§4.2）。`ErrChildNotReaped` の経路で `Result.ExitCode` が `ExitCodeUnknown` であること（§3.3） |
-| 起動後の解放失敗 | 書き込み端の解放が失敗したとき、子プロセスが kill され回収されること（プロセスが残らないこと）と、そのエラーが結果に現れること（§3.1） |
+| 起動後の解放失敗 | 書き込み側の解放が失敗したとき、子プロセスが kill され回収されること（プロセスが残らないこと）と、そのエラーが結果に現れること（§3.1） |
 | 経路の網羅 | `fdExecDisabled` の切り替えで fd-bound と staging フォールバックの双方を通ること。シェバンつきスクリプトが staging フォールバックでも実行できること（AC-17、§3.4） |
 
 goroutine の不在（AC-02）は、テスト用の `PrivilegeManager` 実装が `fn` の内側で
@@ -1285,7 +1285,7 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
 ある。許可リストに無い呼び出しが増えれば、実行せずにビルドが赤くなる。
 
-このリストが AC-04 の一覧と一致するのは偶然ではない。記述子を閉じる処理（ポンプの書き込み端、
+このリストが AC-04 の一覧と一致するのは偶然ではない。記述子を閉じる処理（ポンプの書き込み側、
 複製した検証済み記述子）は、当初は隙の内側に置く設計だったが、`(*os.File).Close` を起動区間で
 無条件に許すことになり、許可リストが「隙の中では任意の記述子を閉じてよい」という意味に薄まる。
 どちらも隙の外へ出せる処理だったので出した（§6.3）。`bindingStagedCopy` で起動区間が行う
@@ -1381,7 +1381,7 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 | AC-06、AC-09 | kill の `WithPrivileges` 包みを外す／二重にする |
 | AC-07 | キャンセル由来のエラー合成を外し、`*exec.ExitError` だけを返す |
 | AC-12 | `release()` の呼び出しを1経路だけ落とす |
-| AC-13、AC-14 | 書き込みエラー時の読み取り端の close を落とす |
+| AC-13、AC-14 | 書き込みエラー時の読み取り側の close を落とす |
 | AC-16（`errors.Join`） | `ErrKillAfterCancel`／`ErrChildNotReaped` の併記をやめ、§4.2 の順位の下位へ戻す |
 | AC-16（stderr の上限） | `boundedBuffer` を上限到達でエラーを返す実装に替える（成功したはずのコマンドが失敗する） |
 | AC-17 | staged copy を `Start()` の直後に削除する（シェバンのテストが落ちる） |
@@ -1460,10 +1460,10 @@ goroutine や watchdog が残っている状態を作らない。
 - **`OutputWriter` が `nil` のとき、標準エラー出力の末尾を落とす。** `os/exec` の
   `prefixSuffixSaver` を再実装せずに済むが、失敗したコマンドの診断に要るのは末尾であり、
   先頭は起動時の定型出力であることが多い。同じ規則の `boundedBuffer` を置くほうが安い（§3.2 要点6）。
-- **上限に達したら書き込みエラーを返して読み取り端を閉じる（`OutputWriter` が `nil` の経路）。**
+- **上限に達したら書き込みエラーを返して読み取り側を閉じる（`OutputWriter` が `nil` の経路）。**
   `Capture` を持つ経路と実装を揃えられるが、子プロセスが `SIGPIPE` を受けるため、標準エラー出力を
   多く出してから成功するコマンドが失敗するようになる。`Cmd.Output()` は最後まで読み捨てる（§4.3）。
-- **書き込み端と検証済み記述子の解放を起動区間の内側に置く。** `Start()` の直後という不変条件は
+- **書き込み側と検証済み記述子の解放を起動区間の内側に置く。** `Start()` の直後という不変条件は
   隙の外でも同じ1箇所で守れる一方、静的検査の許可リストに `(*os.File).Close` を無条件で
   加えることになる（§7.2）。
 - **kill 区間と後始末区間で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
