@@ -128,7 +128,7 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 | AC-05（D5） | `internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 同上。`02_architecture.md` §3.6 は `nsswitch.go` の行に「新規に要るテスト AC-05」と書いているが、この既存テストが同じ性質を同じ粒度で検証しているため新規テストは書かない（CLAUDE.md「重複したテストを足す前に既存を確認する」） |
 | AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に検証している |
 | AC-07（D2） | `manager_test.go::TestCompletenessSurvivesCache`（AC-19 を満たすのはこれ）、同 `::TestGroupMembership`、同 `::TestGetGroupMembers_ErrorNotCached` | **本表の当初の記述は誤りだった**。`TestGroupMembership` の `cache behavior` 系サブテストと `TestGetGroupMembers_ErrorNotCached` は `GetCacheStats` の件数しか見ておらず、`getGroupEnumeration` のキャッシュ参照を外しても通る。AC-19 を実際に満たしているのは本表が挙げていなかった `TestCompletenessSurvivesCache`（同一 GID の2回参照で列挙が1回であることを検証する）である。加えて、別 GID の未ヒットと失効後の再列挙はどのテストも検証していないため、Step 2-2 で `TestGetGroupMembers_CacheHitSkipsEnumeration` を追加した（ヒットの検証は `TestCompletenessSurvivesCache` と重なるが、同じ準備で未ヒットと失効まで公開 API の `GetGroupMembers` 上で通して検証するため、分割せず1本にまとめている） |
-| AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュ格納と再解決を既に検証している。`02_architecture.md` §3.6 の「新規に要るテスト AC-07」はこれで足りる |
+| AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | **本表の当初の記述は誤りだった**。この既存テストが検証しているのは `validateAndCacheCommand` の**キャッシュ格納**だけで、`ResolvePath` 冒頭の**キャッシュ参照**は外してもパッケージ全体が緑のままである（Step 1-0 の基準カバレッジでも、参照側の分岐にある `RUnlock` は未カバーだった）。Step 2-8 でサブテスト `returns the cached entry without re-resolving` を追加してこの分岐を引き受けた。D2 側と同じ種類の見落としである |
 | AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に検証している |
 | D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-7 では追加しない |
 | AC-10（D10） | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 冪等性と nil レシーバは検証しているが、**「`syscall.Close` が1回だけ走る」ことは検証していない**。同ファイルの既存ヘルパ `fdIsOpen`（:46）を使って前者を拡張する（新規テスト関数は追加しない） |
@@ -594,17 +594,21 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-7: D8 `ResultCollector.mu` の削除
 
-- [ ] `internal/verification/result_collector.go:24` の `mu sync.Mutex` を削除する
-- [ ] 同 49-50、58-59、89-90、108-109、117-118 の Lock／Unlock（5対10行）を削除する
-- [ ] 同 122・126 の「Deep copy … to prevent data races」を、複製の目的を
+- [x] `internal/verification/result_collector.go:24` の `mu sync.Mutex` を削除する
+- [x] 同 49-50、58-59、89-90、108-109、117-118 の Lock／Unlock（5対10行）を削除する
+- [x] 同 122・126 の「Deep copy … to prevent data races」を、複製の目的を
       「呼び出し側への内部状態の漏出を防ぐ」に改める。**複製そのものは残す**
-- [ ] `ResultCollector` 型の doc コメントに、D7 と同じ §8.3 の警告を書く。リテラルは
+- [x] `ResultCollector` 型の doc コメントに、D7 と同じ §8.3 の警告を書く。リテラルは
       `This type is not safe for concurrent use; it must not be reached from verification.Manager's
       concurrent paths.` とする（同じ理由で本コミットに置く）
-- [ ] 並行テスト `result_collector_test.go::TestResultCollector_Concurrency` を削除する。削除する
+- [x] 並行テスト `result_collector_test.go::TestResultCollector_Concurrency` を削除する。削除する
       テストが主張していた「成功・失敗の記録が集計へ正しく反映される」は
       `TestResultCollector_RecordSuccess`・`TestResultCollector_RecordFailure`・
       `TestResultCollector_GetSummary`・`TestResultCollector_MixedResults` が検証している（§1.3.4 で確認済み）
+- [x] AC-19 の確認（削除した並行テストが主張していた2つの主張それぞれ）:
+      (a) `RecordFailure` の `rc.totalFiles++` を落とし、`TestResultCollector_RecordFailure`・
+      `_GetSummary`・`_MixedResults` が失敗すること、(b) `RecordSuccess` の `rc.verifiedFiles++` を
+      落とし、`TestResultCollector_RecordSuccess`・`_GetSummary`・`_MixedResults` が失敗すること
 
 **完了条件**: `rg -n 'rc\.mu\.' internal/verification/result_collector.go` が0件。
 
@@ -612,18 +616,33 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-8: D7 `PathResolver.mu` の削除
 
-- [ ] `internal/verification/path_resolver.go:17` の `mu sync.RWMutex` を削除する
-- [ ] 同 60-62、86-91 の Lock／Unlock／RLock／RUnlock を削除する
-- [ ] `PathResolver` 型の doc コメントに `02_architecture.md` §8.3 の警告を書く。リテラルは
+- [x] `internal/verification/path_resolver.go:17` の `mu sync.RWMutex` を削除する
+- [x] 同 60-62、86-91 の Lock／Unlock／RLock／RUnlock を削除する
+- [x] `PathResolver` 型の doc コメントに `02_architecture.md` §8.3 の警告を書く。リテラルは
       `This type is not safe for concurrent use; it must not be reached from verification.Manager's
       concurrent paths.` とする。**この警告は D7 を削除する本コミットに置く**（Phase 1 の時点では
       まだ `mu` があり、警告は事実に反するため。§2 Phase 1 冒頭の差分注記を参照）
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md:437` の `PathResolver` のコード例から
+- [x] `docs/dev/architecture_design/security-architecture.ja.md:437` の `PathResolver` のコード例から
       `mu      sync.RWMutex` の行を削る
-- [ ] `/mktrans` で `docs/dev/architecture_design/security-architecture.md:437` に反映する
-- [ ] `internal/verification/path_resolver_test.go:185,187` の `resolver.mu.RLock()`／`RUnlock()` の2行を
+- [x] **計画からの差分**: `/mktrans` を使わず、英語版 `security-architecture.md:437` に同じ1行削除を
+      直接適用した。削除対象は Go のコード例の1行であり、日英で綴りが完全に同一で訳出の余地が無い
+      ためである（散文を編集する箇所では従来どおり `/mktrans` を使う。Step 3-5 の5箇所は散文を含む
+      ので `/mktrans` の対象である）
+- [x] `internal/verification/path_resolver_test.go:185,187` の `resolver.mu.RLock()`／`RUnlock()` の2行を
       削除する（間の `resolver.cache["chained_cmd"]` の読み出しは残す）
-- [ ] AC-19 の確認: キャッシュの参照を外し、`TestPathResolver_ValidateAndCacheCommand` が失敗すること
+- [x] **キャッシュヒットのサブテストを追加する（計画からの差分）**: `TestPathResolver_ResolvePath` に
+      サブテスト `returns the cached entry without re-resolving` を追加した。§1.3.4 は AC-07 の D7 側は
+      `TestPathResolver_ValidateAndCacheCommand` で足りるとしていたが、それが検証するのは
+      **キャッシュへの格納**だけであり、`ResolvePath` 冒頭の**キャッシュ参照**を外してもパッケージ全体が
+      緑のままだった。Step 1-0 の基準カバレッジでも、参照側の分岐にある `RUnlock` は未カバーの
+      ステートメントとして現れている。PATH 上に存在しないコマンド名でキャッシュを事前に埋め、
+      参照を外すと `ErrCommandNotFound` になる形にしてある（事前に「埋める前は解決できない」ことを
+      アサートしているので、再解決では成功に到達できない）
+- [x] AC-19 の確認（2つの主張それぞれ）:
+      (a) `validateAndCacheCommand` の `pr.cache[cacheKey] = resolvedPath` を落とし、
+      `TestPathResolver_ValidateAndCacheCommand/validates_and_caches_fully_resolved_path` が
+      失敗すること、(b) `ResolvePath` 冒頭のキャッシュ参照を落とし、
+      `TestPathResolver_ResolvePath/returns_the_cached_entry_without_re-resolving` が失敗すること
 
 **完了条件**: `rg -n 'pr\.mu\.|mu +sync' internal/verification/path_resolver.go` が0件、
 `rg -n 'sync\.RWMutex' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md` が0件。
@@ -1108,6 +1127,7 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 
 | テスト | 追加する検証 | 対応 AC |
 |---|---|---|
+| `internal/verification/path_resolver_test.go::TestPathResolver_ResolvePath` | サブテスト `returns the cached entry without re-resolving` を追加し、`ResolvePath` 冒頭のキャッシュ参照が実際に使われることを検証する。PATH に無いコマンド名でキャッシュを事前に埋める（Step 2-8） | AC-07（D7） |
 | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose` | 既存ヘルパ `fdIsOpen` を使い、2回目の `Close` が `syscall.Close` を走らせないこと。fd 番号の再利用は `require.Equal` で必須条件として要求し、新たに開く fd は取得箇所で `t.Cleanup` に登録する（Step 2-10） | AC-10 |
 
 ### 4.4 削除・改名するテスト
@@ -1135,7 +1155,7 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 | AC-04 | 3（衝突・同値 no-op・不正値） | Step 2-6 |
 | AC-05 | 1 | Step 2-3、Step 2-5 |
 | AC-06 | 2（ヒットの再利用・失敗の非記憶） | Step 2-4 |
-| AC-07 | 1（キャッシュ参照） | Step 2-2、Step 2-8 |
+| AC-07 | 3（D2 のキャッシュ参照・D7 のキャッシュ格納・D7 のキャッシュ参照） | Step 2-2、Step 2-8 |
 | AC-08 | 3（通常版の登録・通常版の解放・dry-run 版の登録） | Step 2-9 |
 | AC-09 | 2（stdout／stderr の識別・最初のエラー） | Step 2-1 |
 | AC-10 | 1 | Step 2-10 |
@@ -1212,9 +1232,9 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 #### PR-4: D8・D7 の削除（`verification`）
 
-- [ ] Step 2-7: D8 `ResultCollector.mu`
-- [ ] Step 2-8: D7 `PathResolver.mu`（`security-architecture` 行 437 を含む）
-- [ ] §1.3.3 の import を落とした（`result_collector.go`・`result_collector_test.go`・`path_resolver.go`）
+- [x] Step 2-7: D8 `ResultCollector.mu`
+- [x] Step 2-8: D7 `PathResolver.mu`（`security-architecture` 行 437 を含む。キャッシュ参照のサブテストを追加）
+- [x] §1.3.3 の import を落とした（`result_collector.go`・`result_collector_test.go`・`path_resolver.go`）
 
 #### PR-5: D9・D10 の削除
 
@@ -1274,7 +1294,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-04 | test | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行が本タスクの前後で変わらない |
 | AC-05 | test | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 3回呼んでも記録は1件 |
 | AC-06 | test | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | 確認済み UID は再問い合わせされず、失敗は毎回再問い合わせされる |
-| AC-07 | test | `internal/groupmembership/manager_test.go::TestGetGroupMembers_CacheHitSkipsEnumeration`（未ヒット・失効）、同 `::TestCompletenessSurvivesCache`（ヒット）、同 `::TestGetGroupMembers_ErrorNotCached`（エラーを記録しない）、`internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュヒット時・未ヒット時の返り値が変わらない。`TestGroupMembership` のキャッシュ系サブテストは `GetCacheStats` の件数のみを見るため、AC-19 の根拠には数えない（§1.3.4） |
+| AC-07 | test | `internal/groupmembership/manager_test.go::TestGetGroupMembers_CacheHitSkipsEnumeration`（未ヒット・失効）、同 `::TestCompletenessSurvivesCache`（ヒット）、同 `::TestGetGroupMembers_ErrorNotCached`（エラーを記録しない）、`internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand`（格納）、同 `::TestPathResolver_ResolvePath` のサブテスト `returns the cached entry without re-resolving`（参照） | キャッシュヒット時・未ヒット時の返り値が変わらない。`TestGroupMembership` のキャッシュ系サブテストは `GetCacheStats` の件数のみを見るため、AC-19 の根拠には数えない（§1.3.4） |
 | AC-08 | test | `internal/runner/resource/normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`internal/runner/resource/dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`internal/runner/resource/default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 登録・解放・全解放の挙動が通常版・dry-run 版とも変わらない |
 | AC-09 | test | `internal/runner/base/executor/output_wrapper_test.go::TestOutputWrapper_SeparatesStdoutAndStderr`（`outputWrapper` 単体の識別と最初のエラー）、`cmd/runner` の `TestIntegration_TempDirHandling`・`TestIntegration_ErrorCleanup`・`TestIntegration_MultipleGroups`・`TestIntegration_CommandLevelWorkdir`（`executor.go:332-333` の配線の識別。§8.4 の「stdout 用と stderr 用を入れ替える」壊し方を捕まえるのはこちらである） | stdout と stderr の内容が取り違えられず、`GetWriteError` が最初のエラーを返す |
 | AC-10 | test | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 二重 `Close` で `syscall.Close` は1回だけ走り（fd 番号の再利用で確認）、nil レシーバは `nil` を返す |
