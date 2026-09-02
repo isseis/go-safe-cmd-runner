@@ -1164,7 +1164,7 @@ Phase 3 の後に置く。
 **判定理由**: rubric (b)「Conditional checks に2件以上該当」。build-tag compilation（`//go:build test` の新規ファイルを最終的なタグと同じ条件でコンパイルするゲート）と rerun isolation（Step 4-4 の確認2が production ファイルを一時的に書き換えるため、戻し忘れると以後の実行が汚染される）の2件に該当する。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1088）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
