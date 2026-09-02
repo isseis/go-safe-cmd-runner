@@ -865,6 +865,12 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       - 外側の `fn()` は最後まで走り、外側の `WithPrivileges` は内側とは独立に自分の結果を返す
 - [x] 再入しない通常呼び出しでガードが発火しないことを確認するケースを同テストに含める
       （`WithPrivileges` を続けて2回呼び、2回目も `fn()` が呼ばれる）
+- [x] **計画に無い追加（レビュー指摘）**: ガードは sticky fail-closed であり、`inPrivilegedWindow` を
+      倒す `defer` が走らなくなると以降のすべての特権実行が拒否される。倒し漏れが起きうる2経路を
+      サブテストで固定する。(a) `fn` が panic する経路（`handleCleanup` の recover と再 panic を
+      通り抜けて倒れること）、(b) `prepareExecution` が操作種別を弾いて早期に返る経路。どちらも
+      「1回目の後の2回目が `fn` を実行する」ことで検証する。`defer` を外すと両サブテストが失敗する
+      ことを確認済みである
 
 **完了条件**: `go test -tags test -run TestWithPrivileges_ReentrantCallIsRejected -v ./internal/runner/base/privilege/`
 を一般ユーザーで実行して `--- PASS` になる（`--- SKIP` ではない）。
@@ -882,7 +888,13 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 - [x] **計画に無い追加（原則2の適用）**: `inPrivilegedWindow` フィールドに doc コメントを付け、
       再入の拒否だけが目的であること・単一の goroutine が読み書きすること・並行呼び出しに対する
       保護を与えないことを書く。維持対象に根拠を書く AC-14〜AC-17 と同じ理由が、同期機構を使わない
-      置き換え側にも当てはまる（D3・D5・D6 で平坦化したグローバルに doc を付けたのと同じ扱い）
+      置き換え側にも当てはまる（D3・D5・D6 で平坦化したグローバルに doc を付けたのと同じ扱い）。
+      **レビュー指摘を受けた加筆**: フィールドの doc には次の3点も書く。(a) 素の `bool` の無同期な
+      読み書きは、2つの goroutine から呼ばれればデータ競合であり、ガード自体が fail-open 方向に
+      成立しなくなること（「保護しない」では弱い）、(b) 捕まえるのは同一インスタンスへの再入だけで
+      あり、euid はプロセス単位なので別インスタンス経由の入れ子は捕まらないこと、(c) フラグが立つ
+      区間は特権の隙より広く、再入かつ操作種別が不正な呼び出しでは `ErrUnsupportedOperationType`
+      より `ErrReentrantPrivilegeCall` が優先されること
 - [x] 同 100-101 の `m.mu.Lock()`／`defer m.mu.Unlock()` を、入口のガードに置き換える。すなわち
       `inPrivilegedWindow` が立っていれば `fn()` を呼ばずに `ErrReentrantPrivilegeCall` を返し、
       立っていなければ立てて `defer` で倒す
@@ -973,6 +985,23 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       述べており、`02_architecture.md` §3.2・§6.3 のどの表にも載っていなかった。原則2（記述を同じ
       コミットで追随させる）の当然の適用として D11 のコミットに含める
 - [x] `/mktrans` で `design-implementation-overview.md` の対応する2箇所（91・477）へ反映する
+- [x] **設計書の表にも §8 の横断検索にも無い4箇所（レビュー指摘）**: §8 の横断検索は
+      `グローバルミューテックス`／`global mutex` という語句だけを、しかも `docs/dev/` に限って
+      探すため、次の4箇所が 0 件のまま残っていた。原則2の適用として同じコミットで直す
+      - `design-implementation-overview.ja.md:99-100` と英語版の同位置: 直上の箇条書きだけを消して
+        いたが、同じ節の `WithPrivileges` のコード例が `m.mu.Lock()`／`defer m.mu.Unlock()` のまま
+        だった。`security-architecture` と同じ再入ガードの4行に置き換える
+      - `docs/user/security-risk-assessment.ja.md:71,76-77` と英語版の同位置: 利用者向けの
+        セキュリティ評価が「**排他制御**: mutexによる競合状態防止」を実装の優秀な点として挙げ、
+        同じ古いコード例を載せていた。箇条書きを削り、コード例を差し替え、脅威モデルと同じく
+        「残存リスク」の節を追加する
+- [x] **今後の横断検索は語句ではなく機構名で行う（レビュー指摘）**: §8 の語句限定の検索の代わりに
+      `rg -n --glob '!docs/tasks/**' -e 'm\.mu\.' -e 'sync\.Mutex' -e 'mutex' -e 'ミューテックス' docs/`
+      を使う。残るのは K1（Slack 送信ワーカー）の記述だけであることを確認済みである
+- [x] **`02_architecture.md` §10.1 への加筆（レビュー指摘）**: 再入ガードが素の `bool` である以上、
+      `race_test.go` の削除と census guard test の走査対象（同期の型）の組み合わせにより、
+      単一 goroutine という前提を機械的に守るものが無くなる。並列実行を導入する者が「何も失敗しない
+      まま前提が壊れる」ことを知れるよう、その旨を将来の拡張性の節に記した
 
 #### Phase 3 の完了ゲート
 

@@ -1194,6 +1194,9 @@ if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 
 **残存リスク**:
 - 特権の隙が開いている間、参加しない goroutine は保護されない。これは未解決の設計課題である
+- `WithPrivileges` の再入ガードは同期機構を使わないため、単一の goroutine だけが呼ぶことを前提に
+  している。2つの goroutine が同時に呼ぶことはデータ競合であり、その場合はガード自体も成立しない
+  （双方が未設定を読んで隙を開けうる）
 
 ### 環境操作
 

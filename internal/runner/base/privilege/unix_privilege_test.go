@@ -597,6 +597,48 @@ func TestWithPrivileges_ReentrantCallIsRejected(t *testing.T) {
 		assert.NoError(t, outerErr, "the outer call reports its own fn's result, not the inner rejection")
 	})
 
+	// The guard is sticky fail-closed: if the reset defer ever stopped running,
+	// every later privileged execution in the process would be rejected. The
+	// two subtests below pin the reset on the paths that could strand it -- a
+	// panic in fn, which must unwind past handleCleanup's own recover-and-
+	// re-panic, and an early return before any window is opened.
+	t.Run("the flag is cleared when fn panics", func(t *testing.T) {
+		manager := newManager(t)
+
+		assert.Panics(t, func() {
+			_ = manager.WithPrivileges(elevationCtx, func() error {
+				panic("boom")
+			})
+		}, "the panic should be re-raised to the caller")
+
+		called := false
+		require.NoError(t, manager.WithPrivileges(elevationCtx, func() error {
+			called = true
+			return nil
+		}))
+		assert.True(t, called, "a call after a panicking one must not be rejected as reentrant")
+	})
+
+	t.Run("the flag is cleared when prepareExecution rejects the operation", func(t *testing.T) {
+		manager := newManager(t)
+
+		err := manager.WithPrivileges(runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileAccess,
+			CommandName: "test-command",
+		}, func() error {
+			t.Fatal("fn must not run for an unsupported operation")
+			return nil
+		})
+		require.ErrorIs(t, err, ErrUnsupportedOperationType)
+
+		called := false
+		require.NoError(t, manager.WithPrivileges(elevationCtx, func() error {
+			called = true
+			return nil
+		}))
+		assert.True(t, called, "a call after a rejected operation must not be rejected as reentrant")
+	})
+
 	t.Run("consecutive non-reentrant calls both run fn", func(t *testing.T) {
 		manager := newManager(t)
 

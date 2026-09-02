@@ -96,8 +96,11 @@ File access request → Permission check → Privilege escalation (if needed)
 ```go
 // WithPrivileges: Proper responsibility separation using Template Method pattern
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.inPrivilegedWindow { // Reject a reentrant call without running fn
+		return ErrReentrantPrivilegeCall
+	}
+	m.inPrivilegedWindow = true
+	defer func() { m.inPrivilegedWindow = false }()
 
 	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
 	if err != nil {

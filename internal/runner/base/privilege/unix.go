@@ -32,10 +32,21 @@ type UnixPrivilegeManager struct {
 	logger             *slog.Logger
 	originalUID        int
 	privilegeSupported bool
-	// inPrivilegedWindow is set for the duration of a WithPrivileges call. It
-	// exists only to reject a reentrant call made from within fn; it is read and
-	// written by the single goroutine that calls WithPrivileges and gives no
-	// protection against concurrent callers.
+	// inPrivilegedWindow is set for the whole duration of a WithPrivileges call
+	// on this manager, which is wider than the interval where the euid is
+	// actually raised: a reentrant call is rejected even when neither call
+	// escalates, so ErrReentrantPrivilegeCall takes precedence over the
+	// ErrUnsupportedOperationType such a call would otherwise get.
+	//
+	// It only catches reentry through the same manager instance. The euid is
+	// process-wide, so a nested call routed through a second manager still
+	// restores the euid under the outer fn without being noticed.
+	//
+	// It is read and written without any synchronization, because only one
+	// goroutine may call WithPrivileges. Two goroutines calling it concurrently
+	// is a data race, and this guard is then unsound in the fail-open direction
+	// as well: both can read false and open a window. It replaces what the
+	// removed lock detected, and nothing it ever claimed to exclude.
 	inPrivilegedWindow bool
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)

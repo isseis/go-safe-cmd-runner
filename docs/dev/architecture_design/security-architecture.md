@@ -1199,6 +1199,7 @@ The system implements multiple security layers:
 
 **Residual Risks**:
 - While the privilege window is open, goroutines that do not participate in it are not protected. This is an unresolved design issue
+- The reentrancy guard in `WithPrivileges` uses no synchronization primitive, so it assumes a single calling goroutine. Two goroutines calling it concurrently is a data race, and the guard itself does not hold in that case (both can read the unset flag and open a window)
 
 ### Environment Manipulation
 

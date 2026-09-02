@@ -96,8 +96,11 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 ```go
 // WithPrivileges: Proper responsibility separation using Template Method pattern
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.inPrivilegedWindow { // 再入は fn を実行せずに拒否する
+		return ErrReentrantPrivilegeCall
+	}
+	m.inPrivilegedWindow = true
+	defer func() { m.inPrivilegedWindow = false }()
 
 	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
 	if err != nil {
