@@ -1026,7 +1026,7 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 **判定理由**: `mkplan.md` step 8 のパネルモード条件のうち security-gate に該当する。既存ガードの撤去（挙動を下げる）と fail-closed な再入ガードの追加（挙動を上げる）を同時に行い、あわせて脅威モデルを改訂する。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1087）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
