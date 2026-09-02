@@ -37,9 +37,10 @@ func WithPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) Option {
 // Tests that call this function must not call t.Parallel(), since it
 // mutates state shared across the whole process.
 func SwapProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) (restore func()) {
-	previous := PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Swap(int32(p)))
+	previous := processPermissionCheckUIDPolicy
+	processPermissionCheckUIDPolicy = p
 	return func() {
-		processPermissionCheckUIDPolicy.Store(int32(previous))
+		processPermissionCheckUIDPolicy = previous
 	}
 }
 
