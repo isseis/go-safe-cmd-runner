@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"unicode"
 )
 
@@ -275,7 +274,7 @@ func splitNSSTokens(sourceList string) ([]string, bool) {
 // "once per process". It is the only place that builds the record's message
 // and attributes.
 type nssCompletenessReporter struct {
-	reported atomic.Bool
+	reported bool
 }
 
 // report emits the classification record once unless already emitted, and
@@ -287,9 +286,10 @@ func (r *nssCompletenessReporter) report(logger *slog.Logger, v completenessVerd
 	if v.completeness == completenessComplete {
 		return
 	}
-	if !r.reported.CompareAndSwap(false, true) {
+	if r.reported {
 		return
 	}
+	r.reported = true
 	logger.Warn(
 		nssCompletenessMessage,
 		slog.String("user_database_source", userDatabaseSource),
@@ -300,7 +300,15 @@ func (r *nssCompletenessReporter) report(logger *slog.Logger, v completenessVerd
 
 // processNSSCompletenessReporter is the single reporter instance shared by
 // the whole process, so that the classification record is emitted at most
-// once per process.
+// once per process. Its latch is reached only from
+// precomputeEnumerationEnvironment during startup, while the process is
+// still single-threaded; that is what makes it safe to hold without an
+// atomic.
+//
+// What actually bounds the record to one per process is the caller's own
+// early return on an already-settled verdict, which keeps a real binary from
+// reaching report a second time at all. The latch is the second line of
+// defence, and the only one the in-package tests can exercise directly.
 var processNSSCompletenessReporter nssCompletenessReporter
 
 // nsswitchVerdictValue is the classification for this process. It is written

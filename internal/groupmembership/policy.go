@@ -3,12 +3,11 @@ package groupmembership
 import (
 	"errors"
 	"fmt"
-	"sync/atomic"
 )
 
 // PermissionCheckUIDPolicy determines how the base UID used by the
 // read-safety check (CanCurrentUserSafelyReadFile) is decided.
-type PermissionCheckUIDPolicy int32
+type PermissionCheckUIDPolicy int
 
 const (
 	// PolicyUnset is the zero value and means that no policy has been
@@ -46,7 +45,7 @@ func (p PermissionCheckUIDPolicy) String() string {
 	case SudoUIDAware:
 		return "sudo-uid-aware"
 	default:
-		return fmt.Sprintf("unknown(%d)", int32(p))
+		return fmt.Sprintf("unknown(%d)", int(p))
 	}
 }
 
@@ -64,8 +63,11 @@ var ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UI
 type Option func(*GroupMembership)
 
 // processPermissionCheckUIDPolicy holds the process-wide default permission
-// check UID policy. Its zero value equals PolicyUnset.
-var processPermissionCheckUIDPolicy atomic.Int32
+// check UID policy. Its zero value equals PolicyUnset. It is written only
+// from each binary's init, which Go runs on a single goroutine before main
+// starts, and only read from then on; that is what makes it safe to hold
+// without an atomic.
+var processPermissionCheckUIDPolicy PermissionCheckUIDPolicy
 
 // SetProcessPermissionCheckUIDPolicy sets the process-wide permission check
 // UID policy. Each binary's main package calls this exactly once from init.
@@ -80,25 +82,21 @@ func SetProcessPermissionCheckUIDPolicy(p PermissionCheckUIDPolicy) error {
 		return fmt.Errorf("%w: %s", ErrInvalidPermissionCheckUIDPolicy, p)
 	}
 
-	for {
-		current := PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Load())
-		if current == p {
-			return nil
-		}
-		if current != PolicyUnset {
-			return fmt.Errorf("%w: current=%s, requested=%s", ErrPermissionCheckUIDPolicyConflict, current, p)
-		}
-		if processPermissionCheckUIDPolicy.CompareAndSwap(int32(PolicyUnset), int32(p)) {
-			return nil
-		}
-		// Another goroutine changed the value concurrently; re-evaluate.
+	current := processPermissionCheckUIDPolicy
+	if current == p {
+		return nil
 	}
+	if current != PolicyUnset {
+		return fmt.Errorf("%w: current=%s, requested=%s", ErrPermissionCheckUIDPolicyConflict, current, p)
+	}
+	processPermissionCheckUIDPolicy = p
+	return nil
 }
 
 // ProcessPermissionCheckUIDPolicy returns the current process-wide default
 // permission check UID policy. It returns PolicyUnset if unset.
 func ProcessPermissionCheckUIDPolicy() PermissionCheckUIDPolicy {
-	return PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Load())
+	return processPermissionCheckUIDPolicy
 }
 
 // effectivePermissionCheckUIDPolicy resolves the effective policy for this

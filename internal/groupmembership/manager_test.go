@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"runtime"
 	"strconv"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -1383,29 +1382,6 @@ func TestSudoUIDAdoptionReporter_ReportsOnlyOnce(t *testing.T) {
 	assert.Len(t, handler.Records(), 1)
 }
 
-// TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently verifies that the
-// once-per-lifetime guarantee holds when report is called from many
-// goroutines at once.
-func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently(t *testing.T) {
-	t.Parallel()
-
-	handler := tu.NewLogRecorder(nil)
-	logger := slog.New(handler)
-
-	var reporter sudoUIDAdoptionReporter
-	var wg sync.WaitGroup
-	wg.Add(50)
-	for range 50 {
-		go func() {
-			defer wg.Done()
-			reporter.report(logger, SudoUIDAware, 0, 1000)
-		}()
-	}
-	wg.Wait()
-
-	assert.Len(t, handler.Records(), 1)
-}
-
 // TestSudoUIDExistenceMemo_ReusesConfirmation verifies that a confirmed UID
 // is not re-queried.
 func TestSudoUIDExistenceMemo_ReusesConfirmation(t *testing.T) {
@@ -1453,69 +1429,6 @@ func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
 	assert.Equal(t, 3, calls)
 }
 
-// TestSudoUIDExistenceMemo_Concurrent verifies that the memo is safe for
-// concurrent use and that results settle to the documented behavior:
-// confirmed UIDs are not re-queried, while failed UIDs are re-queried on
-// every verify.
-func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
-	t.Parallel()
-
-	const (
-		existingUID = 1000
-		missingUID  = 2000
-	)
-
-	var lookupMutex sync.Mutex
-	lookupCounts := make(map[int]int)
-	lookup := func(uid int) error {
-		lookupMutex.Lock()
-		lookupCounts[uid]++
-		lookupMutex.Unlock()
-		if uid == missingUID {
-			return errors.New("no such user")
-		}
-		return nil
-	}
-
-	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
-	var wg sync.WaitGroup
-	wg.Add(50)
-	for i := range 50 {
-		go func(i int) {
-			defer wg.Done()
-			uid := existingUID
-			if i%2 == 1 {
-				uid = missingUID
-			}
-			_ = memo.verify(uid, lookup)
-		}(i)
-	}
-	wg.Wait()
-
-	lookupMutex.Lock()
-	existingCalls := lookupCounts[existingUID]
-	missingCalls := lookupCounts[missingUID]
-	lookupMutex.Unlock()
-
-	// Only the first confirming verify touches the user database. This is
-	// exactly 1 because verify holds the memo's lock across lookup, which
-	// single-flights the first query; relaxing that would make this 1 or
-	// more without breaking the memo's documented contract.
-	assert.Equal(t, 1, existingCalls)
-	// Failed lookups are never remembered, so every verify re-queries.
-	assert.Equal(t, 25, missingCalls)
-
-	// After the goroutines join, a confirmed UID returns nil without a
-	// re-query, while a missing UID re-queries and still fails.
-	assert.NoError(t, memo.verify(existingUID, lookup))
-	assert.Error(t, memo.verify(missingUID, lookup))
-
-	lookupMutex.Lock()
-	assert.Equal(t, 1, lookupCounts[existingUID])
-	assert.Equal(t, 26, lookupCounts[missingUID])
-	lookupMutex.Unlock()
-}
-
 // TestProcessSudoUIDAdoptionReporterIsProcessWide documents the
 // once-per-process contract of the package-level reporter instance. It is
 // the single instance production binds into the reportAdoption dependency so
@@ -1525,15 +1438,13 @@ func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
 // guarantee with freshly created instances instead (see
 // TestSudoUIDAdoptionReporter_Report).
 //
-// The instance has no production consumer until step 2-2 binds it, so this
-// test exists to keep the linter's unused check from flagging the
-// declaration in the meantime. It asserts that the fresh package instance
-// has not yet reported, which is the state every consumer depends on; it
-// deliberately does not call report, for the reason above.
+// It asserts that the package instance has not been reported through, which
+// is the state every consumer depends on; it deliberately does not call
+// report, for the reason above. It does not call t.Parallel: the latch is a
+// plain bool that getPermissionCheckUID writes, so reading it must stay on
+// the sequential pass.
 func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
-	t.Parallel()
-
-	assert.False(t, processSudoUIDAdoptionReporter.reported.Load(),
+	assert.False(t, processSudoUIDAdoptionReporter.reported,
 		"the process-wide reporter must not be reported through by tests")
 }
 
@@ -1659,7 +1570,7 @@ func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
 	settled := nsswitchVerdict()
 
 	assert.Equal(t, settled.completeness != completenessComplete,
-		processNSSCompletenessReporter.reported.Load(),
+		processNSSCompletenessReporter.reported,
 		"the startup warning must be emitted exactly when the classification is not complete")
 }
 

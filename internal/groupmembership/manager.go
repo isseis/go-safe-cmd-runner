@@ -9,8 +9,6 @@ import (
 	"os/user"
 	"slices"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -460,15 +458,16 @@ const sudoUIDEnvVar = "SUDO_UID"
 // single instance shared by the whole process satisfies "once per process".
 // It is the only place that builds the record's message and attributes.
 type sudoUIDAdoptionReporter struct {
-	reported atomic.Bool
+	reported bool
 }
 
 // report emits the adoption record once unless already emitted.
 // A failure to record must not change the read-safety verdict.
 func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionCheckUIDPolicy, realUID, permissionCheckUID int) {
-	if !r.reported.CompareAndSwap(false, true) {
+	if r.reported {
 		return
 	}
+	r.reported = true
 	logger.Warn(
 		"Permission check UID taken from SUDO_UID instead of the real UID; if this process was not started via sudo, SUDO_UID may be a stale value inherited from the environment",
 		slog.Int("permission_check_uid", permissionCheckUID),
@@ -481,7 +480,9 @@ func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionC
 
 // processSudoUIDAdoptionReporter is the single reporter instance shared by
 // the whole process, so that the adoption record is emitted at most once per
-// process.
+// process. Its latch is reached only from resolvePermissionCheckUID, which
+// runs on the one goroutine performing the read-safety check; that is what
+// makes it safe to hold without an atomic.
 var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 
 // sudoUIDExistenceMemo remembers the UIDs whose existence has already been
@@ -491,16 +492,12 @@ var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 // which does not change during the lifetime of a record or verify process),
 // so in practice it holds one entry; the memo itself imposes no bound.
 type sudoUIDExistenceMemo struct {
-	mu        sync.Mutex
 	confirmed map[int]struct{}
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and records uid as confirmed. The lock is held across lookup to
-// single-flight concurrent queries.
+// lookup and records uid as confirmed.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if _, ok := m.confirmed[uid]; ok {
 		return nil
 	}

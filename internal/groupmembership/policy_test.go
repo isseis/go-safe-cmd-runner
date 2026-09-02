@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -42,6 +41,15 @@ func TestSetProcessPermissionCheckUIDPolicy(t *testing.T) {
 		assert.Equal(t, RealUIDOnly, ProcessPermissionCheckUIDPolicy())
 	})
 
+	t.Run("unset to SudoUIDAware succeeds", func(t *testing.T) {
+		t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))
+
+		err := SetProcessPermissionCheckUIDPolicy(SudoUIDAware)
+
+		require.NoError(t, err)
+		assert.Equal(t, SudoUIDAware, ProcessPermissionCheckUIDPolicy())
+	})
+
 	t.Run("re-setting the same value is a no-op", func(t *testing.T) {
 		t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))
 
@@ -74,56 +82,6 @@ func TestSetProcessPermissionCheckUIDPolicy(t *testing.T) {
 		assert.ErrorIs(t, err, ErrInvalidPermissionCheckUIDPolicy)
 		assert.Equal(t, PolicyUnset, ProcessPermissionCheckUIDPolicy())
 	})
-}
-
-// TestSetProcessPermissionCheckUIDPolicy_Concurrent exercises the CAS retry
-// path under concurrent SetProcessPermissionCheckUIDPolicy and
-// ProcessPermissionCheckUIDPolicy calls, verifying there is no data race and
-// that once a non-PolicyUnset value is observed it never changes.
-func TestSetProcessPermissionCheckUIDPolicy_Concurrent(t *testing.T) {
-	t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))
-
-	const goroutines = 50
-	var wg sync.WaitGroup
-	errs := make([]error, goroutines)
-
-	wg.Add(goroutines + 1)
-	for i := range goroutines {
-		go func(i int) {
-			defer wg.Done()
-			p := RealUIDOnly
-			if i%2 == 1 {
-				p = SudoUIDAware
-			}
-			errs[i] = SetProcessPermissionCheckUIDPolicy(p)
-		}(i)
-	}
-
-	observed := PolicyUnset
-	go func() {
-		defer wg.Done()
-		for range 1000 {
-			p := ProcessPermissionCheckUIDPolicy()
-			if p != PolicyUnset {
-				if observed == PolicyUnset {
-					observed = p
-				} else {
-					assert.Equal(t, observed, p)
-				}
-			}
-		}
-	}()
-
-	wg.Wait()
-
-	final := ProcessPermissionCheckUIDPolicy()
-	assert.Contains(t, []PermissionCheckUIDPolicy{RealUIDOnly, SudoUIDAware}, final)
-
-	for _, err := range errs {
-		if err != nil {
-			assert.ErrorIs(t, err, ErrPermissionCheckUIDPolicyConflict)
-		}
-	}
 }
 
 // TestEffectivePermissionCheckUIDPolicy_Precedence verifies that an
