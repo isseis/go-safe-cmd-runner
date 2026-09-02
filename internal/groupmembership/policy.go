@@ -63,7 +63,10 @@ var ErrInvalidPermissionCheckUIDPolicy = errors.New("invalid permission check UI
 type Option func(*GroupMembership)
 
 // processPermissionCheckUIDPolicy holds the process-wide default permission
-// check UID policy. Its zero value equals PolicyUnset.
+// check UID policy. Its zero value equals PolicyUnset. It is written only
+// from each binary's init, which Go runs on a single goroutine before main
+// starts, and only read from then on; that is what makes it safe to hold
+// without an atomic.
 var processPermissionCheckUIDPolicy PermissionCheckUIDPolicy
 
 // SetProcessPermissionCheckUIDPolicy sets the process-wide permission check

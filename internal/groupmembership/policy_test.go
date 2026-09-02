@@ -41,6 +41,15 @@ func TestSetProcessPermissionCheckUIDPolicy(t *testing.T) {
 		assert.Equal(t, RealUIDOnly, ProcessPermissionCheckUIDPolicy())
 	})
 
+	t.Run("unset to SudoUIDAware succeeds", func(t *testing.T) {
+		t.Cleanup(SwapProcessPermissionCheckUIDPolicy(PolicyUnset))
+
+		err := SetProcessPermissionCheckUIDPolicy(SudoUIDAware)
+
+		require.NoError(t, err)
+		assert.Equal(t, SudoUIDAware, ProcessPermissionCheckUIDPolicy())
+	})
+
 	t.Run("re-setting the same value is a no-op", func(t *testing.T) {
 		t.Cleanup(SwapProcessPermissionCheckUIDPolicy(RealUIDOnly))
 

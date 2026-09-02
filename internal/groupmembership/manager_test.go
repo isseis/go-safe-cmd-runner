@@ -1438,14 +1438,12 @@ func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
 // guarantee with freshly created instances instead (see
 // TestSudoUIDAdoptionReporter_Report).
 //
-// The instance has no production consumer until step 2-2 binds it, so this
-// test exists to keep the linter's unused check from flagging the
-// declaration in the meantime. It asserts that the fresh package instance
-// has not yet reported, which is the state every consumer depends on; it
-// deliberately does not call report, for the reason above.
+// It asserts that the package instance has not been reported through, which
+// is the state every consumer depends on; it deliberately does not call
+// report, for the reason above. It does not call t.Parallel: the latch is a
+// plain bool that getPermissionCheckUID writes, so reading it must stay on
+// the sequential pass.
 func TestProcessSudoUIDAdoptionReporterIsProcessWide(t *testing.T) {
-	t.Parallel()
-
 	assert.False(t, processSudoUIDAdoptionReporter.reported,
 		"the process-wide reporter must not be reported through by tests")
 }

@@ -480,7 +480,9 @@ func (r *sudoUIDAdoptionReporter) report(logger *slog.Logger, policy PermissionC
 
 // processSudoUIDAdoptionReporter is the single reporter instance shared by
 // the whole process, so that the adoption record is emitted at most once per
-// process.
+// process. Its latch is reached only from resolvePermissionCheckUID, which
+// runs on the one goroutine performing the read-safety check; that is what
+// makes it safe to hold without an atomic.
 var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 
 // sudoUIDExistenceMemo remembers the UIDs whose existence has already been

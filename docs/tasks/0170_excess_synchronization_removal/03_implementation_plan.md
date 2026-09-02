@@ -123,7 +123,7 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 
 | AC・削除 | 既存テスト | 判断 |
 |---|---|---|
-| AC-04（D6） | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行を既に検証している |
+| AC-04（D6） | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表のうち4行を既に検証している。**実装時の訂正**: 第2行（未設定への設定）のうち `SudoUIDAware` を格納する側だけは、削除する `TestSetProcessPermissionCheckUIDPolicy_Concurrent` が唯一の in-package の検証だった（`assert.Contains` で最終値が2値のいずれかであることを見ていた）。Step 2-6 でサブテスト `unset to SudoUIDAware succeeds` を追加してこれを引き継いだ |
 | AC-05（D3） | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce` | 逐次の「1回だけ」を既に検証している |
 | AC-05（D5） | `internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 同上。`02_architecture.md` §3.6 は `nsswitch.go` の行に「新規に要るテスト AC-05」と書いているが、この既存テストが同じ性質を同じ粒度で検証しているため新規テストは書かない（CLAUDE.md「重複したテストを足す前に既存を確認する」） |
 | AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に検証している |
@@ -550,6 +550,20 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 - [x] 同 42 行の `processPermissionCheckUIDPolicy.Store(int32(previous))` を
       `processPermissionCheckUIDPolicy = previous` に変える
 - [x] 並行テスト `policy_test.go::TestSetProcessPermissionCheckUIDPolicy_Concurrent` を削除する
+- [x] **計画からの差分**: `TestSetProcessPermissionCheckUIDPolicy` にサブテスト
+      `unset to SudoUIDAware succeeds` を追加する。§7.2 の契約表の第2行は「未設定に
+      `RealUIDOnly` **または** `SudoUIDAware`」であるが、既存の4サブテストは `RealUIDOnly` 側しか
+      設定しておらず、`SudoUIDAware` を格納する側を in-package で見ていたのは削除する並行テスト
+      だけだった（§1.3.4 の訂正）。格納値を `RealUIDOnly` に固定するとこのサブテストだけが失敗する
+      ことを確認済みである
+- [x] **計画からの差分（レビュー指摘への対応）**: 平坦化した3つのプロセス全体のグローバル
+      （`processSudoUIDAdoptionReporter`・`processNSSCompletenessReporter`・
+      `processPermissionCheckUIDPolicy`）の doc コメントに、アトミックの代わりに何が安全性を担って
+      いるのか（それぞれ読み取り安全性検査の単一 goroutine、起動時の単一スレッド区間、各バイナリの
+      `init`）を1文ずつ書く。維持対象に根拠を書く AC-14〜AC-17 と同じ理由が、素の型へ落とした側にも
+      当てはまるためである。あわせて `manager_test.go::TestProcessSudoUIDAdoptionReporterIsProcessWide`
+      から `t.Parallel()` と、既に成立しなくなった「まだ production の利用者がいない」旨の
+      doc コメントを外す（`manager.go` の `getPermissionCheckUID` が現在この instance を使う）
 - [x] AC-19 の確認（`02_architecture.md` §7.2 の契約表の各分岐）:
       (a) 衝突判定の分岐を外し、異値の設定が通るようにして `TestSetProcessPermissionCheckUIDPolicy` の
       衝突ケースが失敗すること、(b) 同値再設定の早期 `return nil` を外して no-op ケースが失敗すること、
