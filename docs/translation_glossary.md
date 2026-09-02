@@ -460,6 +460,7 @@
 | 解決 | resolution | 問題解決の文脈 |
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
+| 解決する | solve | 問題・障害・課題を片づける文脈（`resolve` はシンボリックリンク解決の文脈で、上の行が担う）。「解く」は使わない（Task 0171） |
 | リソース | resource | |
 | 残存リスク | residual risk | 設計上残る既知のリスク（TOCTOU 等） |
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
@@ -518,7 +519,7 @@
 | セットアップ | setup | |
 | 共有コード | shared code | 複数タスク/モジュールが共に触るコード（0140 では `evaluateDimensions`〔判断軸の振り分け〕と名前集合）。旧称「共有境界」は使わない。標準用語「信頼境界（trust boundary）」とは別概念 |
 | シェル | shell | |
-| サイレントに | silently | |
+| 気づかれることなく | silently | 誤り・危険な操作が記録も通知もされないまま進む文脈。旧称「サイレントに」および「静かに」は使わない（Task 0171） |
 | シンプルさ | simplicity | |
 | 単一値 | single-value | 設定項目の文脈 |
 | サイズ | size | |
@@ -791,6 +792,7 @@
 | 2026-08-13 | redaction カバレッジ拡張と Slack 送信の非同期化（Task 0163 Phase 6）関連の用語を追加 (key-name-based redaction, value-format detection, separator, leading boundary, send queue, worker, stop accepting, drop, flush deadline, shutdown request, drain / abandon) |
 | 2026-08-19 | entrypoints の残 Low/Info 所見（Task 0164）関連の用語を追加 (identification token, directory permission audit) |
 | 2026-08-21 | safefileio の残所見（Task 0167）関連の用語を追加 (seam)。テスト用の差し替え箇所を指す訳語を「差し替え点」に定め、「注入点」を使わないことを明記 |
+| 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映 (solve, silently)。問題を片づける文脈の訳語を「解決する」に定め「解く」を使わないこと、`silently` の訳語を「気づかれることなく」に定め旧称「サイレントに」と「静かに」を使わないことを明記 |
 
 ---
 
