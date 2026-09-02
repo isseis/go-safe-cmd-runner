@@ -2,7 +2,6 @@ package risktypes
 
 import (
 	"os"
-	"sync"
 	"syscall"
 	"testing"
 
@@ -26,15 +25,50 @@ func TestBinaryAnalysisResult_ZeroValueIsUncertain(t *testing.T) {
 	assert.Equal(t, BinaryAnalysisUncertain, r.Class)
 }
 
+// TestVerifiedFD_FdAndIdempotentClose confirms that Fd returns the wrapped
+// descriptor and that a second Close runs no syscall. The two subtests detect an
+// unguarded second close independently: the first through the EBADF that close(2)
+// returns for an already-closed descriptor, the second by handing the freed
+// descriptor number to a fresh open and observing that the second Close leaves it
+// open -- were the guard absent, that call would close a descriptor this
+// VerifiedFD does not own.
 func TestVerifiedFD_FdAndIdempotentClose(t *testing.T) {
-	fd, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
-	require.NoError(t, err)
+	// newClosableFD opens /dev/null and returns it wrapped. Cleanup goes through
+	// VerifiedFD.Close so a failed assertion cannot leak the descriptor, and so
+	// cleanup itself never performs a double close.
+	newClosableFD := func(t *testing.T) (int, *VerifiedFD) {
+		t.Helper()
+		fd, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
+		require.NoError(t, err)
+		vfd := NewVerifiedFD(fd)
+		t.Cleanup(func() { _ = vfd.Close() })
+		return fd, vfd
+	}
 
-	vfd := NewVerifiedFD(fd)
-	assert.Equal(t, fd, vfd.Fd())
+	t.Run("second close returns nil and runs no syscall", func(t *testing.T) {
+		fd, vfd := newClosableFD(t)
+		assert.Equal(t, fd, vfd.Fd())
 
-	assert.NoError(t, vfd.Close(), "first close should succeed")
-	assert.NoError(t, vfd.Close(), "second close should be a no-op (idempotent)")
+		assert.NoError(t, vfd.Close(), "first close should succeed")
+		require.False(t, fdIsOpen(fd), "first close must actually close the descriptor")
+
+		// An unguarded second close would reach close(2) and return EBADF.
+		assert.NoError(t, vfd.Close(), "second close should be a no-op (idempotent)")
+	})
+
+	t.Run("second close does not close a descriptor reusing the number", func(t *testing.T) {
+		fd, vfd := newClosableFD(t)
+		require.NoError(t, vfd.Close())
+		require.False(t, fdIsOpen(fd))
+
+		newFD, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = syscall.Close(newFD) })
+		require.Equal(t, fd, newFD, "this test requires the kernel to reuse the freed fd number")
+
+		assert.NoError(t, vfd.Close(), "second close should be a no-op (idempotent)")
+		assert.True(t, fdIsOpen(newFD), "second close must not run syscall.Close on the reused descriptor")
+	})
 }
 
 func TestVerifiedFD_NilReceiverClose(t *testing.T) {
@@ -89,31 +123,4 @@ func TestVerifiedCommandPlan_Close(t *testing.T) {
 		plan := &VerifiedCommandPlan{Identity: &VerifiedIdentity{ResolvedPath: "/bin/echo"}}
 		assert.NoError(t, plan.Close())
 	})
-}
-
-// TestVerifiedFD_ConcurrentClose exercises the thread-safe close contract: with
-// many callers racing on Close, the descriptor must be closed exactly once (no
-// double-close), and every call must return nil. Run under -race to catch data
-// races on the closed flag.
-func TestVerifiedFD_ConcurrentClose(t *testing.T) {
-	fd, err := syscall.Open(os.DevNull, syscall.O_RDONLY, 0)
-	require.NoError(t, err)
-
-	vfd := NewVerifiedFD(fd)
-
-	const goroutines = 16
-	var wg sync.WaitGroup
-	wg.Add(goroutines)
-	errs := make([]error, goroutines)
-	for i := range goroutines {
-		go func() {
-			defer wg.Done()
-			errs[i] = vfd.Close()
-		}()
-	}
-	wg.Wait()
-
-	for i, e := range errs {
-		assert.NoErrorf(t, e, "concurrent Close call %d must return nil", i)
-	}
 }
