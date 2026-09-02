@@ -544,3 +544,112 @@ func TestRestorePrivilegesAndVerify_SavedSetCheckSkipped_NonLinux(t *testing.T) 
 
 	assert.False(t, readSavedIDsCalled, "readSavedIDs must not be consulted during restore when the saved-set is not supported")
 }
+
+// TestWithPrivileges_ReentrantCallIsRejected verifies the reentrancy guard that
+// replaced the manager's lock: a call made from within fn on the same manager
+// returns ErrReentrantPrivilegeCall without running the inner fn, so the inner
+// call never opens a privilege window and never restores the euid while the
+// outer fn is still running.
+//
+// The manager is constructed the same way as
+// TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity so that fn is
+// reached as an unprivileged user: privilegeSupported: true clears the
+// "not supported" error and originalUID: 0 makes escalatePrivileges take its
+// native-root early return instead of calling syscall.Seteuid. This test must
+// therefore never skip.
+func TestWithPrivileges_ReentrantCallIsRejected(t *testing.T) {
+	newManager := func(t *testing.T) *UnixPrivilegeManager {
+		t.Helper()
+		return &UnixPrivilegeManager{
+			logger:             slog.Default(),
+			privilegeSupported: true,
+			originalUID:        0,
+			osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+			identityVerifier:   func() error { return nil },
+			readSavedIDs:       func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported },
+		}
+	}
+
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationUserGroupExecution,
+		CommandName: "test-command",
+	}
+
+	t.Run("reentrant call is rejected and the inner fn never runs", func(t *testing.T) {
+		manager := newManager(t)
+
+		innerCalls := 0
+		outerCompleted := false
+		var innerErr error
+
+		outerErr := manager.WithPrivileges(elevationCtx, func() error {
+			innerErr = manager.WithPrivileges(elevationCtx, func() error {
+				innerCalls++
+				return nil
+			})
+			outerCompleted = true
+			return nil
+		})
+
+		assert.ErrorIs(t, innerErr, ErrReentrantPrivilegeCall, "the reentrant call should be rejected")
+		assert.Equal(t, 0, innerCalls, "the inner fn must not run")
+		assert.True(t, outerCompleted, "the outer fn should run to completion")
+		assert.NoError(t, outerErr, "the outer call reports its own fn's result, not the inner rejection")
+	})
+
+	// The guard is sticky fail-closed: if the reset defer ever stopped running,
+	// every later privileged execution in the process would be rejected. The
+	// two subtests below pin the reset on the paths that could strand it -- a
+	// panic in fn, which must unwind past handleCleanup's own recover-and-
+	// re-panic, and an early return before any window is opened.
+	t.Run("the flag is cleared when fn panics", func(t *testing.T) {
+		manager := newManager(t)
+
+		assert.Panics(t, func() {
+			_ = manager.WithPrivileges(elevationCtx, func() error {
+				panic("boom")
+			})
+		}, "the panic should be re-raised to the caller")
+
+		called := false
+		require.NoError(t, manager.WithPrivileges(elevationCtx, func() error {
+			called = true
+			return nil
+		}))
+		assert.True(t, called, "a call after a panicking one must not be rejected as reentrant")
+	})
+
+	t.Run("the flag is cleared when prepareExecution rejects the operation", func(t *testing.T) {
+		manager := newManager(t)
+
+		err := manager.WithPrivileges(runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileAccess,
+			CommandName: "test-command",
+		}, func() error {
+			t.Fatal("fn must not run for an unsupported operation")
+			return nil
+		})
+		require.ErrorIs(t, err, ErrUnsupportedOperationType)
+
+		called := false
+		require.NoError(t, manager.WithPrivileges(elevationCtx, func() error {
+			called = true
+			return nil
+		}))
+		assert.True(t, called, "a call after a rejected operation must not be rejected as reentrant")
+	})
+
+	t.Run("consecutive non-reentrant calls both run fn", func(t *testing.T) {
+		manager := newManager(t)
+
+		calls := 0
+		fn := func() error {
+			calls++
+			return nil
+		}
+
+		require.NoError(t, manager.WithPrivileges(elevationCtx, fn))
+		require.NoError(t, manager.WithPrivileges(elevationCtx, fn))
+		assert.Equal(t, 2, calls, "the guard must not fire on a call made after the previous one returned")
+	})
+}

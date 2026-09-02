@@ -2,6 +2,7 @@
 package privilege
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,10 @@ var (
 	ErrInvalidUID                      = fmt.Errorf("invalid user ID")
 	ErrPrivilegedExecutionNotSupported = fmt.Errorf("privileged execution not supported")
 )
+
+// ErrReentrantPrivilegeCall is returned when WithPrivileges is called from within
+// a privilege window on the same manager.
+var ErrReentrantPrivilegeCall = errors.New("reentrant WithPrivileges call")
 
 // Error contains detailed information about privilege operation failures
 type Error struct {

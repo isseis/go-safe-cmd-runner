@@ -193,7 +193,8 @@ type PrivilegeManager interface {
 	IsPrivilegedExecutionSupported() bool
 
 	// WithPrivileges is not reentrant: fn must not call WithPrivileges again on
-	// the same manager, directly or indirectly, or the call deadlocks. Avoiding
-	// reentrant calls is the caller's responsibility.
+	// the same manager, directly or indirectly. Implementations must not deadlock
+	// on such a call; the Unix implementation returns ErrReentrantPrivilegeCall
+	// without running fn. Avoiding reentrant calls is the caller's responsibility.
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
 }

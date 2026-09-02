@@ -68,13 +68,15 @@ go-safe-cmd-runner is a security-focused Go-based command execution system. It i
 #### Implementation Strengths
 - **Template Method Pattern**: Design with appropriate separation of responsibilities
 - **Comprehensive Auditing**: syslog recording of all privilege operations
-- **Mutual Exclusion Control**: Prevents race conditions with mutex
 - **Fail-Safe Design**: Emergency termination on privilege restoration failure
 
 ```go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+    if m.inPrivilegedWindow {                          // Reject a reentrant call
+        return ErrReentrantPrivilegeCall
+    }
+    m.inPrivilegedWindow = true
+    defer func() { m.inPrivilegedWindow = false }()
 
     execCtx, err := m.prepareExecution(elevationCtx)    // Preparation phase
     if err != nil { return err }
@@ -93,6 +95,11 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 - ✅ **Audit Trail**: Complete operation history recording
 - ✅ **Error Handling**: Appropriate emergency response
 - ✅ **Statistical Safety**: seteuid() failure rate < 0.001%
+
+#### Residual Risks
+- While the privilege window is open, the process-wide effective UID is raised. Goroutines that do not
+  participate in `WithPrivileges` also run with that effective UID and are therefore not protected. This is
+  an unresolved design issue
 
 **Design Decision**: Immediate termination on privilege restoration failure is a conservative and appropriate decision prioritizing privilege leak prevention
 

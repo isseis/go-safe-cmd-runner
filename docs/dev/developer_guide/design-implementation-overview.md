@@ -88,7 +88,6 @@ File access request → Permission check → Privilege escalation (if needed)
 #### 4. Privilege Management (`internal/runner/privilege/`)
 - **Purpose**: Controlled privilege escalation with comprehensive audit trail
 - **Key Features**:
-  - Thread-safe privilege operations using global mutex
   - Automatic privilege restoration with panic protection
   - Support for both native root and setuid binary execution
   - Emergency shutdown protocol on security failures
@@ -97,8 +96,11 @@ File access request → Permission check → Privilege escalation (if needed)
 ```go
 // WithPrivileges: Proper responsibility separation using Template Method pattern
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.inPrivilegedWindow { // Reject a reentrant call without running fn
+		return ErrReentrantPrivilegeCall
+	}
+	m.inPrivilegedWindow = true
+	defer func() { m.inPrivilegedWindow = false }()
 
 	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
 	if err != nil {
@@ -474,7 +476,6 @@ type ResourceManager interface {
 - Batch processing optimization
 
 ### 3. Privileged Operations
-- Serialization of privilege operations with global mutex
 - Fast privilege escalation/restoration using system calls
 - Metrics collection for performance monitoring
 - Resource usage tracking

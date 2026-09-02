@@ -68,13 +68,15 @@ go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマン
 #### 実装の優秀な点
 - **Template Method パターン**: 適切な責任分離による設計
 - **包括的監査**: 全権限操作のsyslog記録
-- **排他制御**: mutexによる競合状態防止
 - **フェイルセーフ設計**: 権限復元失敗時の緊急終了
 
 ```go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+    if m.inPrivilegedWindow {                          // 再入の拒否
+        return ErrReentrantPrivilegeCall
+    }
+    m.inPrivilegedWindow = true
+    defer func() { m.inPrivilegedWindow = false }()
 
     execCtx, err := m.prepareExecution(elevationCtx)    // 準備フェーズ
     if err != nil { return err }
@@ -93,6 +95,10 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 - ✅ **監査証跡**: 完全な操作履歴記録
 - ✅ **エラーハンドリング**: 適切な緊急時対応
 - ✅ **統計的安全性**: seteuid()失敗率 < 0.001%
+
+#### 残存リスク
+- 特権の隙が開いている間、プロセス全体の実効 UID が上がる。`WithPrivileges` に参加しない goroutine も
+  その実効 UID で走るため保護されない。これは未解決の設計課題である
 
 **設計判断**: 権限復帰失敗時の即座終了は、権限リーク防止を最優先した保守的で適切な判断
 
