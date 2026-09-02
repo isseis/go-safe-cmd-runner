@@ -673,7 +673,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 **判定理由**: rubric (c)「隔離された高リスクな変更」に D7 が該当する。`TestVerifyCommandDependencies_ConcurrentCallsAreRaceFree` が単一の `verification.Manager` を8 goroutine で駆動しており、その `PathResolver` フィールドから同期を外すという並行経路の判断を伴う（`02_architecture.md` §8.3 が「最も重要」とした項目）。機械的な D8 を先に置き、D7 を PR の末尾に置いている。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1085）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
