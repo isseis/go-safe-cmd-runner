@@ -127,7 +127,7 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 | AC-05（D3） | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce` | 逐次の「1回だけ」を既に検証している |
 | AC-05（D5） | `internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 同上。`02_architecture.md` §3.6 は `nsswitch.go` の行に「新規に要るテスト AC-05」と書いているが、この既存テストが同じ性質を同じ粒度で検証しているため新規テストは書かない（CLAUDE.md「重複したテストを足す前に既存を確認する」） |
 | AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に検証している |
-| AC-07（D2） | `manager_test.go::TestGroupMembership`（`ClearExpiredCache with expired entries` ほかのサブテスト）、同 `::TestGetGroupMembers_ErrorNotCached` | キャッシュヒット・未ヒット・失効を既に検証している |
+| AC-07（D2） | `manager_test.go::TestCompletenessSurvivesCache`（AC-19 を満たすのはこれ）、同 `::TestGroupMembership`、同 `::TestGetGroupMembers_ErrorNotCached` | **本表の当初の記述は誤りだった**。`TestGroupMembership` の `cache behavior` 系サブテストと `TestGetGroupMembers_ErrorNotCached` は `GetCacheStats` の件数しか見ておらず、`getGroupEnumeration` のキャッシュ参照を外しても通る。AC-19 を実際に満たしているのは本表が挙げていなかった `TestCompletenessSurvivesCache`（同一 GID の2回参照で列挙が1回であることを検証する）である。加えて、別 GID の未ヒットと失効後の再列挙はどのテストも検証していないため、Step 2-2 で `TestGetGroupMembers_CacheHitSkipsEnumeration` を追加した（ヒットの検証は `TestCompletenessSurvivesCache` と重なるが、同じ準備で未ヒットと失効まで公開 API の `GetGroupMembers` 上で通して検証するため、分割せず1本にまとめている） |
 | AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュ格納と再解決を既に検証している。`02_architecture.md` §3.6 の「新規に要るテスト AC-07」はこれで足りる |
 | AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に検証している |
 | D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-7 では追加しない |
@@ -135,8 +135,8 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 | D11 | §4.4 の表を参照。`race_test.go` の4関数の削除は、カバレッジ比較では検証できない（§4.4 の注記） | Step 3-4 で関数単位にどのテストが検証しているかを議論する |
 | AC-18（K2） | `internal/runner/base/output/capture_test.go::TestCapture_ConcurrentAccess` | K2 を検証する維持対象。削除しない |
 
-**新規に書くテストは 3 つだけである。** AC-09（`outputWrapper` の stdout／stderr 識別）、
-AC-24（再入ガード）、AC-23（census guard test）。
+**新規に書くテストは 4 つである。** AC-09（`outputWrapper` の stdout／stderr 識別）、
+AC-07 の D2 側（上表のとおり実装時に追加）、AC-24（再入ガード）、AC-23（census guard test）。
 
 #### 1.3.5 D2 が変える、公開 API の並行使用の契約（設計書に無い副作用）
 
@@ -370,8 +370,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1082）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -401,17 +401,27 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-1: D1 `outputWrapper.mu` の削除
 
-- [ ] **新規テストを先に書く**: `internal/runner/base/executor/executor_test.go` に
-      `TestOutputWrapper_SeparatesStdoutAndStderr` を追加する。stdout 用と stderr 用の
-      `outputWrapper` に**異なる内容**を書き、`GetBuffer` の返り値がそれぞれ対応することと、
+- [x] **新規テストを先に書く**: `internal/runner/base/executor/output_wrapper_test.go`（新規、
+      `package executor`）に `TestOutputWrapper_SeparatesStdoutAndStderr` を追加する。stdout 用と
+      stderr 用の `outputWrapper` に**異なる内容**を書き、`GetBuffer` の返り値がそれぞれ対応することと、
       `OutputWriter` が受け取る `OutputStream` が対応することを検証する。総量が等しいだけでは
-      取り違えを検出できないため、内容で照合する（`02_architecture.md` §8.4）
-- [ ] 同テストに、`writer.Write` が2回続けて別のエラーを返す場合に `GetWriteError` が**最初の**エラーを
-      返すことの検証を含める
-- [ ] `internal/runner/base/executor/executor.go:640` の `mu sync.Mutex` フィールドを削除する
-- [ ] 同ファイル 644-645・665-666・671-672 の `w.mu.Lock()`／`defer w.mu.Unlock()`（3対6行）を削除する
-- [ ] AC-19 の確認（2つの主張それぞれ）:
-      (a) `stdoutWrapper` と `stderrWrapper` の `stream` を入れ替えて識別のアサーションが失敗すること、
+      取り違えを検出できないため、内容で照合する（`02_architecture.md` §8.4）。
+      **計画からの差分**: 当初は `executor_test.go` に置くとしていたが、同ファイルは
+      `package executor_test`（外部テストパッケージ）であり非公開型 `outputWrapper` に届かない。
+      §4.2 が求める「パッケージ `executor` の内部テスト」を満たすため、同パッケージの新規ファイルに置いた
+      （`shell_escape_test.go`・`stagefromfd_test.go` と同じ先例）
+- [x] 同テストに、`writer.Write` が2回続けて別のエラーを返す場合に `GetWriteError` が**最初の**エラーを
+      返すことの検証を含める（サブテスト `get_write_error_returns_first_error`）
+- [x] `internal/runner/base/executor/executor.go:640` の `mu sync.Mutex` フィールドを削除する
+- [x] 同ファイル 644-645・665-666・671-672 の `w.mu.Lock()`／`defer w.mu.Unlock()`（3対6行）を削除する
+- [x] AC-19 の確認（2つの主張それぞれ）:
+      (a) `w.writer.Write(w.stream, p)` を `w.writer.Write(StdoutStream, p)` に変えて識別のアサーションが
+      失敗すること（テストが `outputWrapper` を直接構築するため、`stream` の入れ替えは production 側の
+      タグ付けを壊す形で行った）。あわせて `02_architecture.md` §8.4 が挙げる本来の壊し方
+      （`executor.go:332-333` の `StdoutStream` と `StderrStream` を入れ替える）も実行した。これは
+      `TestOutputWrapper_SeparatesStdoutAndStderr` では捕まらず、`cmd/runner` の4本の統合テスト
+      （`TestIntegration_TempDirHandling`・`_ErrorCleanup`・`_MultipleGroups`・`_CommandLevelWorkdir`）が
+      失敗する。§7 の AC-09 の行にこの4本を明記した、
       (b) `executor.go:653` の `if w.writeErr == nil` のガードを外して `writeErr` を毎回上書きさせ、
       「最初のエラー」のアサーションが失敗すること
 
@@ -421,27 +431,48 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-2: D2 `GroupMembership.cacheMutex` の削除
 
-- [ ] `internal/groupmembership/manager.go:90` の `cacheMutex sync.RWMutex` を削除する
-- [ ] 同ファイル 134-143 の RLock／RUnlock／Lock／Unlock を削除し、**二重確認（double-check）の
+- [x] `internal/groupmembership/manager.go:90` の `cacheMutex sync.RWMutex` を削除する
+- [x] 同ファイル 134-143 の RLock／RUnlock／Lock／Unlock を削除し、**二重確認（double-check）の
       再読み込みごと**不要になるので削る（`02_architecture.md` §3.2）
-- [ ] 同ファイル 419-420 の Lock／`defer Unlock` の対、434-435 の RLock／`defer RUnlock` の対
+- [x] 同ファイル 419-420 の Lock／`defer Unlock` の対、434-435 の RLock／`defer RUnlock` の対
       （2対4行）を削除する
-- [ ] `manager.go:88` の doc コメント「cache for group membership data with thread safety」から
+- [x] `manager.go:88` の doc コメント「cache for group membership data with thread safety」から
       並行性の言及を削る
-- [ ] `manager.go:145` のコメント「Double-check after acquiring write lock (another goroutine might
+- [x] `manager.go:145` のコメント「Double-check after acquiring write lock (another goroutine might
       have populated it)」を、二重確認の削除に合わせて削る
-- [ ] `manager.go:454` の「must be called with write lock held」を削る
-- [ ] **`GroupMembership` 型の doc コメントに `This type is not safe for concurrent use` の一文を書く**
+- [x] `manager.go:454` の「must be called with write lock held」を削る
+- [x] **`GroupMembership` 型の doc コメントに `This type is not safe for concurrent use` の一文を書く**
       （§1.3.5）。公開メソッド `ClearCache`・`GetCacheStats` が同期を失うためである
-- [ ] `internal/groupmembership/membership_cgo.go:299-301` のコメント段落から、ロック順序を述べる部分
+- [x] `internal/groupmembership/membership_cgo.go:299-301` のコメント段落から、ロック順序を述べる部分
       （`Lock ordering: GroupMembership.cacheMutex -> pwentMutex. Reverse acquisition is forbidden.`）
       だけを削る。**続く `nsswitchVerdict takes no lock at all: the classification is settled at
       startup and only read afterwards.` は真であり、独立した文として残す**
-- [ ] `internal/groupmembership/manager_test.go:152,157` の `gm.cacheMutex.Lock()`／`Unlock()` の2行を
+- [x] `internal/groupmembership/manager_test.go:152,157` の `gm.cacheMutex.Lock()`／`Unlock()` の2行を
       削除する（間のキャッシュ書き換え処理は残す）
-- [ ] AC-19 の確認: キャッシュの参照を外し、`TestGroupMembership` のキャッシュ系サブテストが失敗すること
+- [x] **未ヒットと失効の新規テストを追加する（計画からの差分）**: `manager_test.go` に
+      `TestGetGroupMembers_CacheHitSkipsEnumeration` を追加し、同じ GID の2回目の
+      `GetGroupMembers` が列挙関数を呼ばないこと・別 GID は呼ぶこと・失効後は再列挙することを
+      列挙回数で検証する。§1.3.4 が挙げていた2本（`TestGroupMembership`・
+      `TestGetGroupMembers_ErrorNotCached`）はキャッシュ参照を外しても通るため、その2本では
+      AC-19 を満たせない。ヒットについては §1.3.4 が挙げていなかった `TestCompletenessSurvivesCache`
+      が既に AC-19 を満たしており、追加分の固有の価値は未ヒットと失効にある
+- [x] AC-19 の確認: `getGroupEnumeration` のキャッシュ参照を外し、
+      `TestGetGroupMembers_CacheHitSkipsEnumeration` と `TestCompletenessSurvivesCache` の双方が
+      列挙回数のアサーションで失敗すること
 
 **完了条件**: `rg -n 'cacheMutex' internal/ cmd/` が0件。
+
+> **`02_architecture.md` §1.2 の原則5（失われる検知を置き直す）の D2 への適用**: `cacheMutex` は
+> 再入不可のロックであり、先行タスク 0169 が
+> [`0169/02_architecture.md`](../0169_groupmembership_cgo_enumeration_completeness/02_architecture.md) で
+> 論じたとおり（同 §1043 の決定記録）、`getGroupEnumeration` はロックを保持したまま列挙関数を呼ぶため、
+> そこから slog ハンドラ経由で `safefileio` → `CanCurrentUserSafelyWriteFile` →
+> `getGroupEnumeration` と再入すれば自己デッドロックする。0169 は完全性判定を起動時確定に改めて
+> ロック下での `report` を無くしたが、ロック自体が持つ再入検知は残っていた。削除により、この再入は
+> 検知されなくなる。**D11 と違って置き直しは行わない。**
+> 守っている状態が純粋なキャッシュだからである。再入が起きた場合の結果は、内側の呼び出しが同じ
+> GID を再列挙して同じ値を格納し、外側がそれを上書きすることだけであり、返り値も権限判定も変わらない。
+> 特権の隙のような不可逆な状態を持たないので、fail-closed なガードを置く対象が無い。
 
 ### PR-2 作成ポイント: single-owner buffer and cache state (D1, D2)
 
@@ -455,8 +486,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **判定理由**: rubric (c)「隔離された高リスクな変更」に D2 が該当する。公開 API 2本の並行使用の契約を変え、二重確認ロジックごと削除するため、機械的な置換では済まない。影響の重い D2 を PR の末尾に置いている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1083）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1052,7 +1083,8 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 
 | テスト | 位置 | 検証内容 | 対応 AC |
 |---|---|---|---|
-| `TestOutputWrapper_SeparatesStdoutAndStderr` | `internal/runner/base/executor/executor_test.go` | stdout と stderr に異なる内容を書き、`GetBuffer` と `OutputStream` が対応すること。`GetWriteError` が最初のエラーを返すこと | AC-09 |
+| `TestOutputWrapper_SeparatesStdoutAndStderr` | `internal/runner/base/executor/output_wrapper_test.go`（新規・`package executor`） | stdout と stderr に異なる内容を書き、`GetBuffer` と `OutputStream` が対応すること。`GetWriteError` が最初のエラーを返すこと | AC-09 |
+| `TestGetGroupMembers_CacheHitSkipsEnumeration` | `internal/groupmembership/manager_test.go` | 同じ GID の2回目の `GetGroupMembers` が列挙関数を呼ばないこと。別 GID は呼ぶこと。失効後は再列挙すること（§1.3.4 の実装時の訂正による追加） | AC-07（D2） |
 | `TestWithPrivileges_ReentrantCallIsRejected` | `internal/runner/base/privilege/unix_privilege_test.go` | 再入が `ErrReentrantPrivilegeCall` を返し `fn()` を呼ばないこと。再入しない連続呼び出しでは発火しないこと。一般ユーザーで skip されずに走ること | AC-24 |
 | `TestSyncCensusMatchesExpectation` | `internal/testutil/synccensus/census_guard_test.go` | 走査結果と期待表 16 行の双方向一致 | AC-23 |
 
@@ -1152,9 +1184,9 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 #### PR-2: D1・D2 の削除
 
-- [ ] Step 2-1: D1 `outputWrapper.mu`
-- [ ] Step 2-2: D2 `GroupMembership.cacheMutex`（公開 API の警告を含む）
-- [ ] §1.3.3 の import を落とした（`executor.go` の `sync`。`manager.go` の `sync` は D4 が未了なので**まだ落とさない**）
+- [x] Step 2-1: D1 `outputWrapper.mu`
+- [x] Step 2-2: D2 `GroupMembership.cacheMutex`（公開 API の警告と、キャッシュヒットの新規テストを含む）
+- [x] §1.3.3 の import を落とした（`executor.go` の `sync`。`manager.go` の `sync` は D4 が未了なので**まだ落とさない**）
 
 #### PR-3: D3〜D6 の削除（`groupmembership`）
 
@@ -1228,9 +1260,9 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-04 | test | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行が本タスクの前後で変わらない |
 | AC-05 | test | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 3回呼んでも記録は1件 |
 | AC-06 | test | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | 確認済み UID は再問い合わせされず、失敗は毎回再問い合わせされる |
-| AC-07 | test | `internal/groupmembership/manager_test.go::TestGroupMembership`、同 `::TestGetGroupMembers_ErrorNotCached`、`internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュヒット時・未ヒット時の返り値が変わらない |
+| AC-07 | test | `internal/groupmembership/manager_test.go::TestGetGroupMembers_CacheHitSkipsEnumeration`（未ヒット・失効）、同 `::TestCompletenessSurvivesCache`（ヒット）、同 `::TestGetGroupMembers_ErrorNotCached`（エラーを記録しない）、`internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | キャッシュヒット時・未ヒット時の返り値が変わらない。`TestGroupMembership` のキャッシュ系サブテストは `GetCacheStats` の件数のみを見るため、AC-19 の根拠には数えない（§1.3.4） |
 | AC-08 | test | `internal/runner/resource/normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`internal/runner/resource/dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`internal/runner/resource/default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 登録・解放・全解放の挙動が通常版・dry-run 版とも変わらない |
-| AC-09 | test | `internal/runner/base/executor/executor_test.go::TestOutputWrapper_SeparatesStdoutAndStderr` | stdout と stderr の内容が取り違えられず、`GetWriteError` が最初のエラーを返す |
+| AC-09 | test | `internal/runner/base/executor/output_wrapper_test.go::TestOutputWrapper_SeparatesStdoutAndStderr`（`outputWrapper` 単体の識別と最初のエラー）、`cmd/runner` の `TestIntegration_TempDirHandling`・`TestIntegration_ErrorCleanup`・`TestIntegration_MultipleGroups`・`TestIntegration_CommandLevelWorkdir`（`executor.go:332-333` の配線の識別。§8.4 の「stdout 用と stderr 用を入れ替える」壊し方を捕まえるのはこちらである） | stdout と stderr の内容が取り違えられず、`GetWriteError` が最初のエラーを返す |
 | AC-10 | test | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 二重 `Close` で `syscall.Close` は1回だけ走り（fd 番号の再利用で確認）、nil レシーバは `nil` を返す |
 | AC-10 | static | `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` | 0 件 |
 | AC-11 | static | `rg -F -c -e 'This method does not serialize privilege windows.' -e 'the process-wide euid is raised' -e 'This is an unresolved design issue' internal/runner/base/privilege/unix.go` | 3 |

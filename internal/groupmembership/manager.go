@@ -83,11 +83,18 @@ const (
 	FileOpWrite
 )
 
-// GroupMembership provides group membership checking functionality with explicit cache management
+// GroupMembership provides group membership checking functionality with explicit cache management.
+//
+// This type is not safe for concurrent use: the cache below, and the exported
+// ClearCache and GetCacheStats that share it, have no synchronization of their
+// own. No instance may be reached from a second goroutine. That obligation
+// covers more than the instances a caller creates itself: safefileio keeps a
+// package-level filesystem whose GroupMembership is shared by every
+// SafeReadFile and safe write, so calling those from a goroutine puts this
+// cache under concurrent access too.
 type GroupMembership struct {
-	// cache for group membership data with thread safety
+	// cache for group membership data
 	membershipCache map[uint32]groupMemberCache
-	cacheMutex      sync.RWMutex
 	// cleanupCounter tracks cache misses to trigger periodic cleanup
 	cleanupCounter int
 
@@ -131,18 +138,6 @@ func New(opts ...Option) *GroupMembership {
 // result for gid, including its completeness.
 func (gm *GroupMembership) getGroupEnumeration(gid uint32) (groupEnumeration, error) {
 	// Check cache first
-	gm.cacheMutex.RLock()
-	if cached, exists := gm.membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		gm.cacheMutex.RUnlock()
-		return cached.enumeration, nil
-	}
-	gm.cacheMutex.RUnlock()
-
-	// Cache miss or expired - acquire write lock and compute
-	gm.cacheMutex.Lock()
-	defer gm.cacheMutex.Unlock()
-
-	// Double-check after acquiring write lock (another goroutine might have populated it)
 	if cached, exists := gm.membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
 		return cached.enumeration, nil
 	}
@@ -416,8 +411,6 @@ func (gm *GroupMembership) ValidateRequestedPermissions(perm os.FileMode, operat
 
 // ClearCache manually clears all cached group membership data
 func (gm *GroupMembership) ClearCache() {
-	gm.cacheMutex.Lock()
-	defer gm.cacheMutex.Unlock()
 	gm.membershipCache = make(map[uint32]groupMemberCache)
 	gm.cleanupCounter = 0
 }
@@ -431,9 +424,6 @@ type CacheStats struct {
 
 // GetCacheStats returns cache statistics for monitoring and debugging
 func (gm *GroupMembership) GetCacheStats() CacheStats {
-	gm.cacheMutex.RLock()
-	defer gm.cacheMutex.RUnlock()
-
 	totalEntries := len(gm.membershipCache)
 	expiredEntries := 0
 	now := time.Now()
@@ -451,7 +441,7 @@ func (gm *GroupMembership) GetCacheStats() CacheStats {
 	}
 }
 
-// clearExpiredCache removes expired cache entries (must be called with write lock held)
+// clearExpiredCache removes expired cache entries
 func (gm *GroupMembership) clearExpiredCache() {
 	now := time.Now()
 	for gid, entry := range gm.membershipCache {

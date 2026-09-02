@@ -303,9 +303,10 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // libc's static struct passwd, but the cursor itself stays process-wide, so
 // concurrent getpwent_r calls would still steal progress from each other
 // exactly as getpwent does.
-// Lock ordering: GroupMembership.cacheMutex -> pwentMutex. Reverse
-// acquisition is forbidden. nsswitchVerdict takes no lock at all: the
-// classification is settled at startup and only read afterwards.
+//
+// nsswitchVerdict, the other package-level state consulted on this path, takes
+// no lock at all: the classification is settled at startup and only read
+// afterwards.
 var pwentMutex sync.Mutex
 
 // getGroupMembers returns all members of a group given its GID, together

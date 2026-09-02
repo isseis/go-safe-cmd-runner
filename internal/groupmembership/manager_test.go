@@ -149,12 +149,10 @@ func TestGroupMembership(t *testing.T) {
 		assert.Equal(t, 0, stats.ExpiredEntries) // Entry should not be expired yet
 
 		// Manually expire the cache entry by directly modifying the expiry time
-		gm.cacheMutex.Lock()
 		for gid, entry := range gm.membershipCache {
 			entry.expiry = time.Now().Add(-1 * time.Second) // Set expiry to 1 second ago
 			gm.membershipCache[gid] = entry
 		}
-		gm.cacheMutex.Unlock()
 
 		// Verify that GetCacheStats reports the expired entry
 		stats = gm.GetCacheStats()
@@ -919,6 +917,44 @@ func TestCanUserSafelyWriteFile_EnumerationError(t *testing.T) {
 	assert.False(t, canWrite)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, sentinelErr)
+}
+
+// TestGetGroupMembers_CacheHitSkipsEnumeration verifies that a cached
+// enumeration is reused for the same GID and that an expired entry is
+// re-enumerated. The existing cache tests observe GetCacheStats only, so they
+// still pass when the cache lookup is skipped and every call re-enumerates.
+func TestGetGroupMembers_CacheHitSkipsEnumeration(t *testing.T) {
+	callCount := 0
+	gm := newWithEnumerator(func(_ uint32) (groupEnumeration, error) {
+		callCount++
+		return groupEnumeration{members: []string{"user"}, verdict: completeVerdict()}, nil
+	})
+
+	members, err := gm.GetGroupMembers(0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"user"}, members)
+	assert.Equal(t, 1, callCount)
+
+	// Second call for the same GID must be served from the cache.
+	members, err = gm.GetGroupMembers(0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"user"}, members)
+	assert.Equal(t, 1, callCount)
+
+	// A different GID is a cache miss.
+	_, err = gm.GetGroupMembers(1)
+	require.NoError(t, err)
+	assert.Equal(t, 2, callCount)
+
+	// An expired entry is re-enumerated.
+	entry := gm.membershipCache[0]
+	entry.expiry = time.Now().Add(-time.Second)
+	gm.membershipCache[0] = entry
+
+	members, err = gm.GetGroupMembers(0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"user"}, members)
+	assert.Equal(t, 3, callCount)
 }
 
 // TestGetGroupMembers_ErrorNotCached verifies that enumeration errors are not cached
