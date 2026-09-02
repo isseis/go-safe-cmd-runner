@@ -32,21 +32,11 @@ type UnixPrivilegeManager struct {
 	logger             *slog.Logger
 	originalUID        int
 	privilegeSupported bool
-	// inPrivilegedWindow is set for the whole duration of a WithPrivileges call
-	// on this manager, which is wider than the interval where the euid is
-	// actually raised: a reentrant call is rejected even when neither call
-	// escalates, so ErrReentrantPrivilegeCall takes precedence over the
-	// ErrUnsupportedOperationType such a call would otherwise get.
-	//
-	// It only catches reentry through the same manager instance. The euid is
-	// process-wide, so a nested call routed through a second manager still
-	// restores the euid under the outer fn without being noticed.
-	//
-	// It is read and written without any synchronization, because only one
-	// goroutine may call WithPrivileges. Two goroutines calling it concurrently
-	// is a data race, and this guard is then unsound in the fail-open direction
-	// as well: both can read false and open a window. It replaces what the
-	// removed lock detected, and nothing it ever claimed to exclude.
+	// inPrivilegedWindow rejects reentrant WithPrivileges calls on this manager
+	// instance; it does not catch reentry through a second manager instance,
+	// since the euid it guards is process-wide. Unsynchronized: only one
+	// goroutine may call WithPrivileges, so concurrent callers would race and
+	// could both read false, defeating the guard.
 	inPrivilegedWindow bool
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)
@@ -93,26 +83,17 @@ func defaultIdentityVerifier() error {
 
 // WithPrivileges executes fn under the privilege state required by elevationCtx.Operation.
 //
-// For OperationUserGroupExecution this package only escalates to root; it does not read
-// elevationCtx.RunAsUser or elevationCtx.RunAsGroup. Switching to the target user, and
-// resolving the identity that switch needs, is done by the executor: it builds a
-// syscall.Credential that the kernel applies at execve time when the child process starts.
-// This package never resolves RunAsUser or RunAsGroup: resolution is done by
-// risktypes.ResolveRunAsIdentStrict, and every Operation this package accepts
-// involves escalating to root.
+// For both OperationUserGroupExecution and OperationFileValidation, this package
+// only escalates to root and restores afterwards; it never reads or resolves
+// RunAsUser/RunAsGroup. Switching to the target user is the executor's job: it
+// builds a syscall.Credential the kernel applies at execve time.
 //
-// For OperationFileValidation this package escalates to root and restores afterwards.
+// The window is not serialized: while it's open, the process-wide euid is
+// raised for every goroutine, including os/exec's copy goroutines for
+// non-*os.File writers. Fixing that needs a separate design, not a lock here.
 //
-// This method does not serialize privilege windows. While the window is open,
-// the process-wide euid is raised, so goroutines that never call WithPrivileges
-// -- including the copy goroutines os/exec starts for non-*os.File writers --
-// also run with that euid. This is an unresolved design issue: introducing
-// parallel execution requires a separate design, not a lock inside this method.
-//
-// WithPrivileges is still not reentrant: calling it on the same manager from
-// within fn returns ErrReentrantPrivilegeCall without running the inner fn, so
-// the inner call never opens a second window and never restores the euid under
-// the outer fn.
+// Not reentrant: a nested call on the same manager from within fn returns
+// ErrReentrantPrivilegeCall instead of opening a second window.
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	if m.inPrivilegedWindow {
 		return ErrReentrantPrivilegeCall
