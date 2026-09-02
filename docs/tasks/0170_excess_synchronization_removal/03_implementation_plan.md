@@ -585,7 +585,7 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 **判定理由**: rubric (c)「隔離された高リスクな変更」に D6 が該当する。CAS 再試行ループを直線的な判定と代入へ書き換えつつ、返り値と格納値の5通りの組み合わせを不変に保つ必要がある。D3〜D5 は機械的な置換なので、判断を要する D6 を PR の末尾に置いている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
