@@ -31,10 +31,10 @@ type Manager struct {
 	elfDynLibAnalyzer           *elfdynlib.DynLibAnalyzer       // initialized once at construction; re-resolves ELF deps at verify time
 	machoDynLibAnalyzer         *machodylib.MachODynLibAnalyzer // initialized once at construction; re-resolves Mach-O deps at verify time
 	security                    DirectoryValidator
-	pathResolver                *PathResolver
+	pathResolver                *PathResolver // not concurrency-safe; must stay off VerifyCommandDependencies' path
 	isDryRun                    bool
 	skipHashDirectoryValidation bool
-	resultCollector             *ResultCollector
+	resultCollector             *ResultCollector // not concurrency-safe; same constraint as pathResolver
 }
 
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
@@ -606,6 +606,11 @@ func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
 // commands of the same group pass shebang verification on a stale hash, and
 // scoping it here also keeps Manager free of per-command state that concurrent
 // callers could race on.
+//
+// Concurrent callers are supported by this method alone, not by Manager as a
+// whole. Neither pathResolver nor resultCollector is safe for concurrent use,
+// so nothing reachable from here may touch them; adding such a call would make
+// the concurrency this method advertises a silent data race.
 func (m *Manager) VerifyCommandDependencies(cmdPath string, envVars map[string]string) error {
 	verifiedDepHashes := make(map[string]string)
 	if err := m.verifyDynLibDeps(cmdPath, verifiedDepHashes); err != nil {

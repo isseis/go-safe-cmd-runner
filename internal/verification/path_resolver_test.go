@@ -60,20 +60,31 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCommandNotFound)
 	})
 
-	// A cached entry must be returned without re-resolving. The command is
-	// deliberately absent from PATH, so the only way the lookup can succeed is
-	// by consulting the cache -- re-resolution would return ErrCommandNotFound.
-	t.Run("returns the cached entry without re-resolving", func(t *testing.T) {
-		cached := NewPathResolver(dir2)
+	// A resolution must be stored and looked up under the name the caller
+	// passed, so that a second call answers from the cache. Deleting the
+	// executable after the first call makes re-resolution impossible: a fresh
+	// resolver then fails, so a second success can only come from the cache.
+	// This also catches a store and a lookup that disagree on the cache key,
+	// which would leave the cache permanently cold and silently reopen the
+	// TOCTOU window that resolving symlinks once is meant to close.
+	t.Run("answers from the cache once the command can no longer be resolved", func(t *testing.T) {
+		pathDir := tu.SafeTempDir(t)
+		cmdPath := filepath.Join(pathDir, "vanishing_cmd")
+		require.NoError(t, os.WriteFile(cmdPath, []byte("#!/bin/sh\necho hello\n"), 0o755))
 
-		_, err := cached.ResolvePath("cached-only-command")
-		require.ErrorIs(t, err, ErrCommandNotFound, "the command must be unresolvable before the cache is primed")
-
-		cached.cache["cached-only-command"] = execPath
-
-		resolved, err := cached.ResolvePath("cached-only-command")
+		caching := NewPathResolver(pathDir)
+		first, err := caching.ResolvePath("vanishing_cmd")
 		require.NoError(t, err)
-		assert.Equal(t, execPath, resolved)
+		require.Equal(t, cmdPath, first)
+
+		require.NoError(t, os.Remove(cmdPath))
+
+		_, err = NewPathResolver(pathDir).ResolvePath("vanishing_cmd")
+		require.ErrorIs(t, err, ErrCommandNotFound, "a resolver with a cold cache must fail once the executable is gone")
+
+		second, err := caching.ResolvePath("vanishing_cmd")
+		require.NoError(t, err)
+		assert.Equal(t, cmdPath, second)
 	})
 
 	t.Run("returns error when command is a directory in all PATH entries", func(t *testing.T) {
