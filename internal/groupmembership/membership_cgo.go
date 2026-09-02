@@ -302,7 +302,10 @@ func getExplicitGroupMembers(gid uint32) (members []string, found bool, err erro
 // need: it only adds a caller-supplied result buffer, avoiding a race on
 // libc's static struct passwd, but the cursor itself stays process-wide, so
 // concurrent getpwent_r calls would still steal progress from each other
-// exactly as getpwent does.
+// exactly as getpwent does. Dropping this lock would therefore not surface as
+// an error but as a silently wrong enumeration, which is why it is
+// deliberately kept by task 0170 while the locks around single-threaded state
+// were removed.
 //
 // nsswitchVerdict, the other package-level state consulted on this path, takes
 // no lock at all: the classification is settled at startup and only read

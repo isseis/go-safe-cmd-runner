@@ -903,16 +903,15 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 - [x] `unix.go:92-98` の再入不可の注意書き（`WithPrivileges is not reentrant: it holds m's mutex ...`
       から `... legitimate wait for the lock.` までの7行）を削除し、`WithPrivileges` の doc コメントに
-      次の3つのリテラルを含む記述を書く（AC-11）
-      - (a) `This method does not serialize privilege windows.`
-      - (b) `While the window is open the process-wide euid is raised, so goroutines that never call
-        WithPrivileges -- including the copy goroutines os/exec starts for non-*os.File writers --
-        also run with that euid.`
-        **実装時の差分**: 英文として読点が要るため `While the window is open, the process-wide euid
-        is raised, ...` と1文字だけ変えた。§7 の AC-11 の静的検証が検索するのは
-        `the process-wide euid is raised` であり、この語句は1行に収めてあるので検証は 3 を返す
-      - (c) `This is an unresolved design issue: introducing parallel execution requires a separate
-        design, not a lock inside this method.`
+      AC-11 の (a) 直列化しないこと、(b) 窓が開いている間はプロセス全体の euid が上がること、
+      (c) 未解決の設計課題であること、の3点を書く（AC-11）
+
+      **実装時の差分**: PR-6 のレビュー対応コミット
+      `docs(0170): condense inPrivilegedWindow and WithPrivileges comments` が本文を圧縮したため、
+      現在 `unix.go` にあるのは次の3つのリテラルであり、§7 の AC-11 の行もこれを検索する。
+      - (a) `The window is not serialized`
+      - (b) `raised for every goroutine`
+      - (c) `This is an unresolved design issue`
 - [x] あわせて、再入は `ErrReentrantPrivilegeCall` で拒否されることを doc コメントに書く
 - [x] `unix.go:248` と `unix.go:287` の
       `// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock`
@@ -1027,8 +1026,8 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1087）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -1039,65 +1038,103 @@ Phase 3 の後に置く。
 
 #### Step 4-1: テストファイルを作る
 
-- [ ] `internal/testutil/synccensus/census_guard_test.go` を新規に作る。ファイル冒頭に `//go:build test`
+- [x] `internal/testutil/synccensus/census_guard_test.go` を新規に作る。ファイル冒頭に `//go:build test`
       を置く（import する `identitymutationguard` が `//go:build test` のため。§1.3.7）
-- [ ] パッケージ名は `synccensus` とする。同じ親ディレクトリの既存パッケージ
+- [x] パッケージ名は `synccensus` とする。同じ親ディレクトリの既存パッケージ
       `internal/testutil/identitymutationguard` が `package identitymutationguard` を使っており、本件は
       その先例に揃えるものである（`test_organization.md` の `package <domain>testutil` は、他パッケージへ
       公開するヘルパを置く `testutil/` サブディレクトリの規則であり、本件は公開ヘルパを持たない）
-- [ ] テスト関数名は `TestSyncCensusMatchesExpectation` とする（§7 が参照する名前）
-- [ ] ファイル冒頭のコメントに、タグ無しで `go test ./internal/testutil/synccensus/` とパスを明示すると
+- [x] テスト関数名は `TestSyncCensusMatchesExpectation` とする（§7 が参照する名前）
+- [x] ファイル冒頭のコメントに、タグ無しで `go test ./internal/testutil/synccensus/` とパスを明示すると
       `build constraints exclude all Go files` になること、`make test` を使うことを書く
 
 #### Step 4-2: 走査を実装する
 
-- [ ] リポジトリルートからの相対パス `../../../internal` と `../../../cmd` を再帰的に走査する
-- [ ] ディレクトリ名が `testdata` のものは走査から除く
-- [ ] 各ディレクトリについて `identitymutationguard.ProductionGoFiles(t, dir)` を呼び、production
+- [x] リポジトリルートからの相対パス `../../../internal` と `../../../cmd` を再帰的に走査する
+- [x] ディレクトリ名が `testdata` のものは走査から除く
+- [x] 各ディレクトリについて `identitymutationguard.ProductionGoFiles(t, dir)` を呼び、production
       ファイルの一覧を得る（`ProductionGoFiles` は1ディレクトリ単位なので再帰は本テストが行う）
-- [ ] ファイルの読み取りに `os.ReadFile` を使う場合は、既存の
+- [x] ファイルの読み取りに `os.ReadFile` を使う場合は、既存の
       `identitymutationguard/helpers.go` と同じく `// #nosec G304 -- path is built from an os.ReadDir
       result filtered to *.go, not from external/attacker-controlled input.` を**その行に限って**付ける。
       `parser.ParseFile` にパスだけを渡して読ませる場合はこの抑制は要らない
-- [ ] 得たファイルを `go/parser` で構文解析し、`ast.Inspect` で全ノードを辿って次の3種を拾う（§1.3.8）
+- [x] 得たファイルを `go/parser` で構文解析し、`ast.Inspect` で全ノードを辿って次の3種を拾う（§1.3.8）
       - `*ast.Field` — 構造体フィールド
       - `*ast.ValueSpec` — トップレベル宣言と**関数内のローカル変数宣言の双方**（K3 がこれ）
       - `*ast.AssignStmt` — `:=` による短縮変数宣言（現在は該当なしだが、将来の追加を捕まえるため）
-- [ ] 型式を持つ宣言では、`*`／`[]`／`map[...]` を剥がしたうえで、`sync` パッケージの並行
+- [x] 型式を持つ宣言では、`*`／`[]`／`map[...]` を剥がしたうえで、`sync` パッケージの並行
       プリミティブ全体（`Mutex`／`RWMutex`／`Once`／`OnceValue`／`OnceFunc`／`OnceValues`／
       `WaitGroup`／`Map`／`Cond`／`Locker`）と `atomic` パッケージの全型を検出する
-- [ ] 型式を持たない宣言では、初期化子が `sync.OnceValue`／`sync.OnceFunc`／`sync.OnceValues` の
+- [x] 型式を持たない宣言では、初期化子が `sync.OnceValue`／`sync.OnceFunc`／`sync.OnceValues` の
       呼び出しである場合を検出する。K6 の2件はこの形でしか拾えない（`02_architecture.md` §4.5）
+- [x] **計画からの差分（レビュー指摘への対応）**: 実装時に次の4点を広げた。いずれも「捕まえるはず
+      のものを取りこぼす」側の穴であり、走査の目的（AC-23）に直結する
+      1. **総称型の実体化**を剥がす。`atomic.Pointer[T]` は `*ast.IndexExpr` が選択子を包む形になり、
+         剥がさないと**検出されない**。`sync.OnceValue[bool](f)` も同様。あわせてチャネルの要素型と
+         可変長引数の要素型も剥がす
+      2. **`sync` の型名の列挙をやめる**。上に挙げた10個の手書きの一覧は `sync.Pool` を落としており、
+         「一覧が現実から取り残される」という §4.6 が防ごうとしている状態そのものだった。`atomic` と
+         同じく、import が `sync` に解決される修飾名は型の位置に現れた時点で並行プリミティブと
+         みなす（型の位置に関数は現れない）
+      3. **`new(sync.Mutex)`** を `&sync.Mutex{}` と同様に拾う
+      4. **走査自体のテストを書く**（Step 4-2 の実装に対する単体テスト）。合成ソースを受け取る
+         `declarationsInSource` を切り出し、認識する宣言の形を表で固定した。上の3件は、リポジトリの
+         16 宣言では一度も通らない分岐にあったため、Step 4-4 の3つの確認では見つからなかった
 
 #### Step 4-3: 期待表と双方向に突き合わせる
 
-- [ ] 期待表を、ファイル・識別子・維持する短い理由の3列で持つ。詳細な根拠は production 側の
+- [x] 期待表を、ファイル・識別子・維持する短い理由の3列で持つ。詳細な根拠は production 側の
       doc コメントに置き、期待表には失敗メッセージに出る一文だけを持たせる
       （`02_architecture.md` §4.6・付録 A.4）
-- [ ] 期待表の行数は 16 になる。内訳は K1 が8、K2・K3・K4・K5 が各1、K6 が2、K7 が1、
+- [x] 期待表の行数は 16 になる。内訳は K1 が8、K2・K3・K4・K5 が各1、K6 が2、K7 が1、
       `pwentMutex` が1である
-- [ ] 「走査で見つかったが期待表に無い」と「期待表にあるが走査で見つからない」を**別々の見出し**で
+- [x] 「走査で見つかったが期待表に無い」と「期待表にあるが走査で見つからない」を**別々の見出し**で
       報告する。各行に「ファイル・識別子・（期待表にある場合は）理由」を出す
+- [x] **計画からの差分（レビュー指摘への対応）**: 突合を集合ではなく**個数**で行う。当初の実装は
+      `{ファイル, 識別子}` を鍵にした集合で突き合わせていたため、同一ファイルに同名の宣言が2つ
+      できても期待表の1行が両方を満たしてしまった（`mu`／`wg` は本リポジトリで最も多い名前であり、
+      既に censused な `mu` を持つファイルほど2つ目が足されやすい）。期待表の同一行の重複を
+      個数として数え、多い側・少ない側をそれぞれの見出しで報告する。表の列は3列のままで、16 行という
+      内訳も変わらない
+- [x] **計画からの差分（レビュー指摘への対応）**: 2つの見出しの報告を `require` から `assert` に
+      変える。改名は「1つ消えて1つ増える」形になるため、`require` だと片方しか出ず、読み手が
+      2回走らせる羽目になる（`02_architecture.md` §4.6 は失敗メッセージそのものを成果物と位置づけて
+      いる）
 
 #### Step 4-4: テストが主張する理由で失敗できることを確認する（`02_architecture.md` §8.6）
 
-3つの確認は、それぞれ別の失敗の向き・別の走査位置を突く。同じ経路を2回試すことにならないよう、
+確認は、それぞれ別の失敗の向き・別の走査位置を突く。同じ経路を2回試すことにならないよう、
 確認2で足すロックの**形**を指定する。
 
-- [ ] 確認1（期待表側の欠落）: 期待表から1行削り、「走査で見つかったが期待表に無い」で失敗すること
-- [ ] 確認2（走査側の余剰・構文位置の網羅）: production ファイルへロックを1つ**関数内のローカル
+- [x] 確認1（期待表側の欠落）: 期待表から1行削り、「走査で見つかったが期待表に無い」で失敗すること
+- [x] 確認2（走査側の余剰・構文位置の網羅）: production ファイルへロックを1つ**関数内のローカル
       `var` として**足し、同じく失敗すること。トップレベルやフィールドとして足すと確認1と同じ経路しか
       通らないため、構文位置を変える。確認後は必ず元に戻す
-- [ ] 確認3（型式を持たない宣言）: **K6 の行**（`sync.OnceValue`）を期待表から削り、「期待表にあるが
-      走査で見つからない」で失敗すること。型式だけを見る実装ではここが通ってしまうため省略できない
-- [ ] 3つの確認結果をコミットメッセージに記す
+- [x] 確認3（型式を持たない宣言）: **K6 の行**（`sync.OnceValue`）を期待表から削り、失敗すること。
+      型式だけを見る実装ではここが通ってしまうため省略できない。
+      **計画からの差分**: 当初は失敗の向きを「期待表にあるが走査で見つからない」と書いていたが、
+      これは誤りだった。期待表から行を削ると、その行は期待表側に存在しなくなるので、この向きでは
+      そもそも報告されえない。走査が型式を持たない宣言を実際に拾えている場合の失敗の向きは
+      「走査で見つかったが期待表に無い」である（型式だけを見る実装ならどちらの向きでも報告されず
+      テストが通ってしまい、それが確認3の弁別したい状態である）。実測はこの向きで失敗した。
+      あわせて「期待表にあるが走査で見つからない」の向きも報告経路として生きていることを、
+      存在しない行（`manager.go` の `cacheMutex`、D2 で削除済み）を一時的に足して確認した
+- [x] **計画からの差分（レビュー指摘への対応）**: 確認を2つ足した。確認5は Step 4-3 の個数突合を
+      直接突くものである。3つの確認はいずれも走査の同じ分岐しか通らず、レビューが見つけた3件
+      （総称型・`sync.Pool`・同名の重複）はその外側にあった。走査自体の単体テスト（Step 4-2 の
+      追記4）が本来の受け皿であり、この2件はその補強である
+      - 確認4（もう一方の向きの報告経路）: 存在しない行を期待表へ足し、「期待表にあるが走査で
+        見つからない」で失敗すること
+      - 確認5（個数の突合）: production ファイルの同一関数に同名のロックをもう1つ足し、
+        `found 2, table has 1` を含むメッセージで失敗すること。確認後は必ず元に戻す
+- [x] 5つの確認結果をコミットメッセージに記す
 
 #### Phase 4 の完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が通る。とくに `//go:build test` を付けた新規ファイルが
+- [x] `make fmt` → `make test` → `make lint` が通る。とくに `//go:build test` を付けた新規ファイルが
       `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを
       確認する
-- [ ] コミット件名を `test(0170): add sync census guard test` とする
+- [x] コミット件名を `test(0170): add sync census guard test` とする
 
 ---
 
@@ -1105,15 +1142,42 @@ Phase 3 の後に置く。
 
 **位置づけ**: `02_architecture.md` §9 の Phase 5。最終確認のみで、コード変更は伴わない。
 
-- [ ] `make deadcode > .git/0170-baseline/deadcode-after.txt` を実行し、
+- [x] `make deadcode > .git/0170-baseline/deadcode-after.txt` を実行し、
       `diff .git/0170-baseline/deadcode.txt .git/0170-baseline/deadcode-after.txt` で新たな到達不能コードの
       報告が増えていないことを確認する（AC-22）
-- [ ] `make test` を実行し、`CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の両方が通り、`-race` の警告が
+- [x] `make test` を実行し、`CGO_ENABLED=1`（`-race`）と `CGO_ENABLED=0` の両方が通り、`-race` の警告が
       1件も出ないことを確認する（AC-20）
-- [ ] `make lint` を実行し、両構成で通ることを確認する（AC-21）
-- [ ] §7 の受け入れ基準検証表の静的検証コマンドをすべて実行し、期待結果と一致することを確認する
-- [ ] §8 の横断検索チェックリストを実行する
-- [ ] `git log` を確認し、D1〜D11 が 11 コミットに分かれていることを確認する（AC-02）
+- [x] `make lint` を実行し、両構成で通ることを確認する（AC-21）
+- [x] §7 の受け入れ基準検証表の静的検証コマンドをすべて実行し、期待結果と一致することを確認する
+- [x] §8 の横断検索チェックリストを実行する
+- [x] `git log` を確認し、D1〜D11 が 11 コミットに分かれていることを確認する（AC-02）
+
+**実測結果**（PR-7 で実施）:
+
+| 項目 | 結果 |
+|---|---|
+| AC-22 `make deadcode` | 基準との `diff` が空。新たな報告は0件 |
+| AC-20 `make test` | 両構成とも通過。`-race` の警告は0件 |
+| AC-21 `make lint` | 両構成とも `0 issues.` |
+| AC-02 | `refactor(0170): remove D` が 11 件、`Rationale:` が 11 件 |
+| AC-13 | `Coverage:` が 12 件（11 の削除コミットに加え、レビュー指摘対応のコミットが1件） |
+| AC-19 | `Falsification:` が 20 件（§4.5 の主張の総数 14 以上） |
+| §8 の10項目 | すべて期待どおり（項目6 の残存リスクは `security-architecture.ja.md` の「特権昇格」の節に2項目として存在することを目視で確認した） |
+
+**Phase 5 で見つかり、この PR で直した2件**（いずれも先行 PR のレビュー対応コミットが doc コメントを
+書き換えた際に、§7 が検索するリテラルを落としていたもの。挙動には影響しない）:
+
+1. **AC-11**（`internal/runner/base/privilege/unix.go`）: PR-6 の
+   `docs(0170): condense inPrivilegedWindow and WithPrivileges comments` が
+   `This is an unresolved design issue` の一文ごと落としていた。要件 AC-11 の (c)（未解決の設計課題
+   であること）が doc コメントから読み取れなくなるため、圧縮後の文体のまま同じ一文を書き戻した。
+   あわせて §7 の AC-11 の行が検索するリテラルを、圧縮後の本文に実在する
+   `The window is not serialized`／`raised for every goroutine`／`This is an unresolved design issue`
+   の3つへ更新した（旧リテラルは折り返し位置が変わって `rg -F` では一致しない）
+2. **AC-17**（`internal/groupmembership/membership_cgo.go`）: PR-1 の
+   `docs(groupmembership): make pwentMutex comment self-contained` が
+   `silently wrong enumeration` と `deliberately kept by task 0170` の2つを落としていた。要件 AC-17 が
+   求める「外すと黙って誤った列挙結果になる」「本タスクが意図的に維持した」の2点を1文で書き戻した
 
 ---
 
@@ -1129,8 +1193,8 @@ Phase 3 の後に置く。
 
 **判定理由**: rubric (b)「Conditional checks に2件以上該当」。build-tag compilation（`//go:build test` の新規ファイルを最終的なタグと同じ条件でコンパイルするゲート）と rerun isolation（Step 4-4 の確認2が production ファイルを一時的に書き換えるため、戻し忘れると以後の実行が汚染される）の2件に該当する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1088）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1221,6 +1285,7 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 | `TestGetGroupMembers_CacheHitSkipsEnumeration` | `internal/groupmembership/manager_test.go` | 同じ GID の2回目の `GetGroupMembers` が列挙関数を呼ばないこと。別 GID は呼ぶこと。失効後は再列挙すること（§1.3.4 の実装時の訂正による追加） | AC-07（D2） |
 | `TestWithPrivileges_ReentrantCallIsRejected` | `internal/runner/base/privilege/unix_privilege_test.go` | 再入が `ErrReentrantPrivilegeCall` を返し `fn()` を呼ばないこと。再入しない連続呼び出しでは発火しないこと。一般ユーザーで skip されずに走ること | AC-24 |
 | `TestSyncCensusMatchesExpectation` | `internal/testutil/synccensus/census_guard_test.go` | 走査結果と期待表 16 行の双方向一致 | AC-23 |
+| `TestDeclarationsInSourceRecognizesDeclarationForms`、同 `TestDeclarationsInSourceResolvesAliasedImports` | 同上 | 走査が認識する宣言の形（フィールド・埋め込み・ポインタ／スライス／マップ／チャネル／可変長・総称型・トップレベル `var`・関数内 `var`・`:=`・`&T{}`・`new(T)`・`sync.OnceValue`・同名の重複）と、import を通じた修飾子の解決。合成ソースに対して検証する。**計画からの差分**: レビュー指摘への対応として実装時に追加した（Step 4-2 の追記4） | AC-23 |
 
 `outputWrapper` は非公開型なので、AC-09 のテストはパッケージ `executor` の内部テストとして書く。
 
@@ -1272,7 +1337,10 @@ D11 はさらに別扱いである。`race_test.go` の `TestUnixPrivilegeManage
 ### 4.7 テストヘルパの方針
 
 **新規のテストヘルパファイルは作らない。** 必要な走査ヘルパ（`ProductionGoFiles`）は既存の
-`internal/testutil/identitymutationguard` にあり、そのまま使える。既存の
+`internal/testutil/identitymutationguard` にあり、そのまま使える。**計画からの差分（レビュー指摘への
+対応）**: import の解決（`resolveLocalImports`）も同ファイルに既にあり、census guard test 側に写した
+実装は行単位でほぼ同一だった。新規ファイルは作らず、既存の `helpers.go` に
+`ResolveLocalImports`（dot-import を拒否する述語を引数に取る）を公開して両者から使う。既存の
 `internal/groupmembership/test_helpers.go` と `test_helpers_policy.go`（いずれも `//go:build test`）は
 D5・D6 への追随として**内容だけを変更**し、ファイルの新設・分割は行わない。
 
@@ -1296,12 +1364,12 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 ### 6.1 PR 単位の進捗
 
-- [ ] PR-1 マージ済み（対象ステップ: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
-- [ ] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
-- [ ] PR-3 マージ済み（対象ステップ: 2-3 / 2-4 / 2-5 / 2-6）
-- [ ] PR-4 マージ済み（対象ステップ: 2-7 / 2-8）
-- [ ] PR-5 マージ済み（対象ステップ: 2-9 / 2-10）
-- [ ] PR-6 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5）
+- [x] PR-1 マージ済み（対象ステップ: 1-0 / 1-1 / 1-2 / 1-3 / 1-4 / 1-5 / 1-6）
+- [x] PR-2 マージ済み（対象ステップ: 2-1 / 2-2）
+- [x] PR-3 マージ済み（対象ステップ: 2-3 / 2-4 / 2-5 / 2-6）
+- [x] PR-4 マージ済み（対象ステップ: 2-7 / 2-8）
+- [x] PR-5 マージ済み（対象ステップ: 2-9 / 2-10）
+- [x] PR-6 マージ済み（対象ステップ: 3-1 / 3-2 / 3-3 / 3-4 / 3-5）
 - [ ] PR-7 マージ済み（対象ステップ: 4-1 / 4-2 / 4-3 / 4-4、および Phase 5 の最終確認）
 
 ### 6.2 PR ごとのステップ
@@ -1342,30 +1410,30 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 - [x] Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu`
 - [x] Step 2-10: D10 `VerifiedFD.closed`
 - [x] §1.3.3 の import を落とした（`normal_manager.go`・`dryrun_manager.go`・`types.go`・`types_test.go`）
-- [ ] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
+- [x] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
 
 #### PR-6: D11 と再入ガード
 
-- [ ] Step 3-1: 再入ガードのテストを書き、一般ユーザーで skip されずに通ることを確認した
-- [ ] Step 3-2: `mu` を削除し再入ガードを実装した
-- [ ] Step 3-3: `privilege` パッケージと `runnertypes` の記述を追随させた
-- [ ] Step 3-4: `race_test.go` の4関数を削除し、関数単位にどのテストが検証しているかを記録した
-- [ ] Step 3-5: 設計文書の5箇所を日英両版で改訂した
-- [ ] Phase 3 の完了ゲート: Step 3-1〜3-5 を1コミットにまとめ、コミットメッセージの4行を書いた
+- [x] Step 3-1: 再入ガードのテストを書き、一般ユーザーで skip されずに通ることを確認した
+- [x] Step 3-2: `mu` を削除し再入ガードを実装した
+- [x] Step 3-3: `privilege` パッケージと `runnertypes` の記述を追随させた
+- [x] Step 3-4: `race_test.go` の4関数を削除し、関数単位にどのテストが検証しているかを記録した
+- [x] Step 3-5: 設計文書の5箇所を日英両版で改訂した
+- [x] Phase 3 の完了ゲート: Step 3-1〜3-5 を1コミットにまとめ、コミットメッセージの4行を書いた
 
 #### PR-7: census guard test と全体の健全性
 
-- [ ] Step 4-1: テストファイルを作った
-- [ ] Step 4-2: 走査を実装した（フィールド・`var`・`:=` の3位置）
-- [ ] Step 4-3: 期待表（16 行）と双方向に突き合わせた
-- [ ] Step 4-4: 3通りの壊し方で失敗することを確認し、確認2で足したロックを元に戻した
-- [ ] Phase 4 の完了ゲート: `//go:build test` の新規ファイルが `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを確認した
-- [ ] `make deadcode` を基準と比較した（AC-22）
-- [ ] `make test` が両構成で通り `-race` の警告が0件（AC-20）
-- [ ] `make lint` が両構成で通る（AC-21）
-- [ ] §7 のうち `<base>..HEAD` を見る行（AC-02・AC-03・AC-13 の2行目・AC-18 の2行目・AC-19）を、`.git/0170-baseline/base.sha` を `<base>` として実行した
-- [ ] §7 の残りの静的検証コマンドをすべて実行した
-- [ ] §8 の横断検索チェックリストを実行した
+- [x] Step 4-1: テストファイルを作った
+- [x] Step 4-2: 走査を実装した（フィールド・`var`・`:=` の3位置）
+- [x] Step 4-3: 期待表（16 行）と双方向に突き合わせた
+- [x] Step 4-4: 3通りの壊し方で失敗することを確認し、確認2で足したロックを元に戻した
+- [x] Phase 4 の完了ゲート: `//go:build test` の新規ファイルが `make test`（`-tags test`）と `make lint`（`--build-tags test`）の双方でコンパイルされることを確認した
+- [x] `make deadcode` を基準と比較した（AC-22）
+- [x] `make test` が両構成で通り `-race` の警告が0件（AC-20）
+- [x] `make lint` が両構成で通る（AC-21）
+- [x] §7 のうち `<base>..HEAD` を見る行（AC-02・AC-03・AC-13 の2行目・AC-18 の2行目・AC-19）を、`.git/0170-baseline/base.sha` を `<base>` として実行した
+- [x] §7 の残りの静的検証コマンドをすべて実行した
+- [x] §8 の横断検索チェックリストを実行した
 
 ---
 
@@ -1391,7 +1459,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-02 | static | `git log --oneline <base>..HEAD \| rg -c 'refactor\(0170\): remove D'` | 11 |
 | AC-02 | static | `git log <base>..HEAD --format='%s%n%b' \| rg -c '^Rationale: '` | 11 以上 |
 | AC-03 | static | `git diff --name-only <base>..HEAD \| rg -c 'internal/testutil/handlers.go'` | 0 件 |
-| AC-03 | static | `git diff --name-only <base>..HEAD \| rg -v '^(docs/\|internal/\|cmd/)'` | 0 件（変更が `docs/`・`internal/`・`cmd/` に収まる） |
+| AC-03 | static | `git diff --name-only <base>..HEAD \| rg -v '^(docs/\|internal/\|cmd/)'` | 本タスクのコミットに限れば 0 件。**PR-7 での実測時の注記**: `<base>..HEAD` には main 経由で入った無関係なコミット `1b5aa65d refactor: rename local variables shadowing the errors package` が含まれ、これが `test/security/temp_directory_race_test.go` を変更するため、素の実行は1件を返す。同ファイルを変更したのはこの1コミットだけであり（`git log <base>..HEAD -- test/security/` で確認）、本タスクのコミットは `docs/`・`internal/` に収まっている |
 | AC-04 | test | `internal/groupmembership/policy_test.go::TestSetProcessPermissionCheckUIDPolicy` | `02_architecture.md` §7.2 の契約表の全行が本タスクの前後で変わらない |
 | AC-05 | test | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 3回呼んでも記録は1件 |
 | AC-06 | test | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | 確認済み UID は再問い合わせされず、失敗は毎回再問い合わせされる |
@@ -1400,7 +1468,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-09 | test | `internal/runner/base/executor/output_wrapper_test.go::TestOutputWrapper_SeparatesStdoutAndStderr`（`outputWrapper` 単体の識別と最初のエラー）、`cmd/runner` の `TestIntegration_TempDirHandling`・`TestIntegration_ErrorCleanup`・`TestIntegration_MultipleGroups`・`TestIntegration_CommandLevelWorkdir`（`executor.go:332-333` の配線の識別。§8.4 の「stdout 用と stderr 用を入れ替える」壊し方を捕まえるのはこちらである） | stdout と stderr の内容が取り違えられず、`GetWriteError` が最初のエラーを返す |
 | AC-10 | test | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 二重 `Close` で `syscall.Close` は1回だけ走り（fd 番号の再利用で確認）、nil レシーバは `nil` を返す |
 | AC-10 | static | `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` | 0 件 |
-| AC-11 | static | `rg -F -c -e 'This method does not serialize privilege windows.' -e 'the process-wide euid is raised' -e 'This is an unresolved design issue' internal/runner/base/privilege/unix.go` | 3 |
+| AC-11 | static | `rg -F -c -e 'The window is not serialized' -e 'raised for every goroutine' -e 'This is an unresolved design issue' internal/runner/base/privilege/unix.go` | 3 |
 | AC-12 | static | `rg -ni -e 'mutex' -e 'thread.safe' -e 'safe for concurrent' -e 'protected from concurrent' -e 'acquired the .*lock' -g '!*_test.go' internal/runner/base/privilege/` | 0 件（HEAD では `unix.go:92-98,248,287` が該当するため、Step 3-3 を飛ばすと失敗する） |
 | AC-13 | static | Step 1-0 の `.git/0170-baseline/covfunc-*.txt` と削除後の `CGO_ENABLED=1 go tool cover -func` 出力を関数単位で `diff` する | カバレッジが落ちた関数が0件（ただし `privilege` パッケージについては Step 3-4 の議論で代替する） |
 | AC-13 | static | `git log <base>..HEAD --format='%s%n%b' \| rg -c '^Coverage: '` | 11 以上 |
@@ -1438,33 +1506,33 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 検索範囲から `docs/tasks/` を除くのは、完了済みタスクの文書が当時の記述をそのまま保持しており、
 本タスクで編集してはならないためである。
 
-- [ ] **削除・改名した識別子の残存参照（現行のコードと文書）**:
+- [x] **削除・改名した識別子の残存参照（現行のコードと文書）**:
       `rg -n -e 'previewExitCodeLocked' -e 'refreshDryRunResultLocked' -e 'cacheMutex' internal/ cmd/ docs/dev/`
       → 0 件
-- [ ] **`pwentMutex` の参照先**: `rg -n 'pwentMutex' internal/ cmd/ docs/dev/`
+- [x] **`pwentMutex` の参照先**: `rg -n 'pwentMutex' internal/ cmd/ docs/dev/`
       → `internal/groupmembership/membership_cgo.go` と
       `internal/testutil/synccensus/census_guard_test.go`（期待表の1行）のみ
-- [ ] **設計文書の日英差分（コード例）**:
+- [x] **設計文書の日英差分（コード例）**:
       `rg -n -e 'sync\.Mutex' -e 'sync\.RWMutex' -e 'm\.mu\.' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md`
       → 両版とも 0 件（行 309・322-323・437 を検査する）
-- [ ] **設計文書の日英差分（散文）**:
+- [x] **設計文書の日英差分（散文）**:
       `rg -n -e 'グローバルmutex' -e 'global mutex' -e 'スレッドセーフ' -e 'Thread-safe' docs/dev/architecture_design/security-architecture.ja.md docs/dev/architecture_design/security-architecture.md`
       → 両版とも 0 件（行 407・1192/1197・1256/1261 を検査する）
-- [ ] **開発者ガイドに残る特権まわりの mutex の記述**:
+- [x] **開発者ガイドに残る特権まわりの mutex の記述**:
       `rg -n -e 'グローバルミューテックス' -e 'global mutex' docs/dev/developer_guide/`
       → 0 件（Step 3-5 で `design-implementation-overview` の日英2箇所ずつを消す）
-- [ ] **脅威モデルの対策欄が空にならないこと**:
+- [x] **脅威モデルの対策欄が空にならないこと**:
       `security-architecture.ja.md` の脅威「特権処理における競合状態」の行に、対策の削除だけでなく
       残存リスクの記述が入っていることを目視で確認する（`rg` では対策欄と残存リスク欄を区別できない）
-- [ ] **旧テスト名の残存**:
+- [x] **旧テスト名の残存**:
       `rg -n -e 'TestConcurrentExecution' -e 'TestOutputCaptureIntegration_ConcurrentWrites' -e 'TestUnixPrivilegeManager_' -e 'TestVerifiedFD_ConcurrentClose' -e 'TestResultCollector_Concurrency' -e 'TestSetProcessPermissionCheckUIDPolicy_Concurrent' -e 'TestSudoUIDExistenceMemo_Concurrent' -e 'TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently' internal/ docs/dev/`
       → 0 件
-- [ ] **`synccensus` という識別子の衝突**: `rg -n 'synccensus' internal/ cmd/`
+- [x] **`synccensus` という識別子の衝突**: `rg -n 'synccensus' internal/ cmd/`
       → 新規ディレクトリとその中のファイルのみ
-- [ ] **`ErrReentrantPrivilegeCall` の判定が `errors.Is` で行われていること**:
+- [x] **`ErrReentrantPrivilegeCall` の判定が `errors.Is` で行われていること**:
       `rg -n 'ErrReentrantPrivilegeCall' internal/` → 定義1件、`unix.go` の doc コメントと `return` 、
       テストでの `errors.Is` 経由の参照（合計4件以上）。文字列比較が1件も無いこと
-- [ ] **本タスクで追加した Go の行に日本語が混入していないこと**:
+- [x] **本タスクで追加した Go の行に日本語が混入していないこと**:
       `git diff <base>..HEAD -- '*.go' | rg -c -P '^\+.*[\p{Hiragana}\p{Katakana}\p{Han}]'`
       → 0 件（既存の `error_scenarios_test.go:145` の `"echo 'こんにちは世界'"` のような既存行は
       追加行ではないので一致しない）

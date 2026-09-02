@@ -583,7 +583,7 @@ var fdExecSupported = sync.OnceValue(func() bool { ... })
 | 形 | 例 | 備考 |
 |---|---|---|
 | 修飾された型式 | `mu sync.Mutex`、`mu *sync.Mutex`、`c atomic.Int64` | `*`／`[]`／`map[...]` は剥がしてから判定する |
-| 初期化子の呼び出し式 | `= sync.OnceValue(...)`、`= sync.OnceFunc(...)`、`= sync.OnceValues(...)` | 呼び出し先が対象パッケージの関数である場合 |
+| 初期化子の呼び出し式 | `= sync.OnceValue(...)`、`= sync.OnceFunc(...)`、`= sync.OnceValues(...)`、`= sync.NewCond(...)` | 呼び出し先が `sync` パッケージの関数であれば、関数名を問わず対象とする |
 
 対象とする識別子は、AC-23 が列挙する型に限らず **`sync` パッケージの並行プリミティブ全体と
 `atomic.*` 全体**とする。すなわち `Mutex`／`RWMutex`／`Once`／`OnceValue`／`OnceFunc`／`OnceValues`／
@@ -606,6 +606,16 @@ CLAUDE.md の「リスト漏れはソース集合の range で検証する」に
 
 この機構は一方向であることを明記しておく。**根拠なく増えたロックは捕まえるが、並行経路上にある
 のに保護されていない状態は捕まえない。** §1.4 で挙げた `MultiHandler` などがこれにあたる。
+
+もう1つの限界は、走査が**宣言の型**を手がかりにすることから来る。素の `int64` を宣言して
+`atomic.AddInt64(&counter, 1)` で操作する形は、`sync`／`atomic` の型を宣言しないため走査に現れず、
+期待表にも載らない。現在の production コードにこの形は無い。必要になった時点で、`atomic` の
+関数呼び出しを検出する側へ走査を広げる。
+
+同じ理由で、`sync`／`atomic` の型に別名を付けてから使う形にも限界がある。走査は同じファイル内で
+宣言された別名（`type mutex = sync.Mutex` とその連鎖、および `type mutex sync.Mutex`）は解決するが、
+別ファイルや別パッケージで宣言された名前は解決しない。型情報を持たない構文走査だからである。
+現在の production コードにこの形は無い。必要になった時点で `go/types` による解決へ移す。
 
 ---
 
