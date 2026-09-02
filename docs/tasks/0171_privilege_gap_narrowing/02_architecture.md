@@ -34,7 +34,7 @@
 | 起動区間 | 起動フェーズが開く特権の隙。中で行うのは `Start()`（staging フォールバックのときは複製の作成も）だけ |
 | kill 区間 | キャンセル時にだけ開く特権の隙。中で行うのは `Process.Kill()` だけ |
 | 後始末区間 | run-as 実行かつ staging フォールバックのときにだけ開く特権の隙。中で行うのは staged copy の削除だけ |
-| 出力ポンプ | 子プロセスの stdout／stderr のパイプを親側で読み、`OutputWriter` へ流す部品。本タスクで新設する |
+| 出力中継 | 子プロセスの stdout／stderr のパイプを親側で読み、`OutputWriter` へ流す部品。本タスクで新設する |
 | 待機 goroutine | 監督フェーズで `execCmd.Wait()` だけを呼ぶ goroutine。起動区間が閉じた後に起動する |
 
 ---
@@ -53,7 +53,7 @@
    これらは `WithPrivileges` の参加者ではないため、特権マネージャは保護できない。
 
 本設計は、コマンド実行を**準備・起動・監督の3フェーズへ分け、通常の経路の特権の隙を起動フェーズ
-だけに縮める**。出力の受け渡しを `os/exec` の goroutine から自前の出力ポンプへ移し、キャンセルの
+だけに縮める**。出力の受け渡しを `os/exec` の goroutine から自前の出力中継へ移し、キャンセルの
 待機を watchdog goroutine から実行 goroutine の `select` へ移すことで、起動区間の中に残る goroutine
 は実行 goroutine だけになる。
 
@@ -88,8 +88,8 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     ENVD[("フィルタ済み環境変数")]
-    PREP["準備フェーズ<br>prepareCommand<br>（出力ポンプの生成を含む）"]
-    BIND{"検証済み fd を直接 exec できるか"}
+    PREP["準備フェーズ<br>prepareCommand<br>（出力中継の生成を含む）"]
+    BIND{"検証済み fd を<br>直接 exec できるか"}
 
     subgraph GAP["起動区間"]
         STAGE["stageFromFD<br>staging フォールバックのみ"]
@@ -146,7 +146,7 @@ flowchart LR
 
 | 発生源 | 現在 | 本設計後 |
 |---|---|---|
-| `os/exec` の出力コピー goroutine（2本） | `Stdout`／`Stderr` が `*os.File` ではないため、`Start()` が起こす | `Stdout`／`Stderr` に出力ポンプが作った `*os.File`（パイプの書き込み端）を渡すので、`os/exec` は goroutine を起こさない |
+| `os/exec` の出力コピー goroutine（2本） | `Stdout`／`Stderr` が `*os.File` ではないため、`Start()` が起こす | `Stdout`／`Stderr` に、出力中継で用意した `*os.File`（パイプの書き込み端）を渡すので、`os/exec` は goroutine を起こさない |
 | `exec.CommandContext` の watchdog goroutine（1本） | `Start()` が `ctx.Done()` を見張る goroutine を起こす | `exec.Command` を使い、キャンセルの待機を実行 goroutine の `select` で行うので起きない |
 | Slack 送信ワーカー（1本） | ログ機構が持つ。コマンド実行とは独立に生きている | 変わらない（要件定義書のスコープ外） |
 
@@ -204,7 +204,7 @@ flowchart TD
         A4["stageFromFD と execCmd.Start()"]
         A5["WithPrivileges が起動区間を閉じる"]
         A6["superviseCommand"]
-        A7["出力ポンプの読み取り goroutine"]
+        A7["出力中継の読み取り goroutine"]
         A8["待機 goroutine"]
 
         A1 --> A2
@@ -414,7 +414,7 @@ const (
 
 | フェーズ | 関数 | 行うこと | 特権 |
 |---|---|---|---|
-| 準備 | `prepareCommand` | 引数検査、`exec.Cmd` の組み立て、`os.DevNull` の open、環境変数の組み立て、出力ポンプの生成、fd-bound 実行のための記述子複製、`binding`／`kill` の宣言、`ctx.Err()` の確認 | 不要 |
+| 準備 | `prepareCommand` | 引数検査、`exec.Cmd` の組み立て、`os.DevNull` の open、環境変数の組み立て、出力中継の生成、fd-bound 実行のための記述子複製、`binding`／`kill` の宣言、`ctx.Err()` の確認 | 不要 |
 | 起動 | `startPrepared` | staging フォールバック時の複製作成と `execCmd.Path` の確定（§3.4）、`execCmd.Start()` | 起動区間の内側（run-as のときのみ隙を開く） |
 | 監督 | `superviseCommand` | 読み取り goroutine と待機 goroutine の起動、`ctx.Done()` との `select`、キャンセル時の kill、staging の後始末、`Result` の組み立て | 原則として不要（kill 区間・後始末区間のみ §3.3、§3.4） |
 
@@ -452,9 +452,9 @@ default:
 `superviseCommand` の第3引数が非 `nil` のときは、`ctx.Done()` を待たずに直ちにキャンセル経路
 （kill → `killGraceDelay` 付きの回収 → 後始末）へ入り、最後にこのエラーを結果へ添える。
 
-### 3.2 出力ポンプ
+### 3.2 出力中継
 
-出力ポンプは、子プロセスへ渡すパイプの親側を1つの型に閉じ込める。
+出力中継は、子プロセスへ渡すパイプの親側を1つの型に閉じ込める。
 
 ```go
 // outputPump owns the parent side of the child's stdout/stderr pipes. It hands
@@ -831,10 +831,10 @@ classDiagram
 | `internal/runner/base/executor/privileged_test_condition_test.go` | 変更 | 既存の `canRunPrivilegedIntegrationTest` は変えず、実 UID が 0 でないことまで要求する別の述語 `canRunSetuidModelIntegrationTest` を追加する（§7.3） | `TestCanRunPrivilegedIntegrationTest`（既存の表はそのまま。新しい述語の表を足す） |
 | `internal/runner/base/runnertypes/config.go` | 変更 | `Operation` に `OperationKillAfterCancel`／`OperationStagingCleanup` を追加（§3.3） | `config_test.go`（operation 一覧を検証している箇所があれば追随） |
 | `internal/runner/base/privilege/unix.go` | 変更 | `prepareExecution` の `switch` に上記2つの operation を昇格が要る側として追加（追加しないと `ErrUnsupportedOperationType` で弾かれる）。あわせて `WithPrivileges` の doc コメントから出力コピー goroutine の記述を除き、残る未解決課題（`Start()` 中の露出、kill 区間・後始末区間、別プロセス化の是非）を明示（AC-20） | `unix_privilege_test.go`（`ErrUnsupportedOperationType` の表に2行追加） |
-| `internal/runner/base/output/capture.go` | 変更 | `Capture` の doc コメントを更新。並行呼び出しの発生源が `os/exec` の per-writer goroutine から出力ポンプの読み取り goroutine へ替わる（`mutex` は必要なまま） | `internal/testutil/synccensus/census_guard_test.go` |
+| `internal/runner/base/output/capture.go` | 変更 | `Capture` の doc コメントを更新。並行呼び出しの発生源が `os/exec` の per-writer goroutine から出力中継の読み取り goroutine へ替わる（`mutex` は必要なまま） | `internal/testutil/synccensus/census_guard_test.go` |
 | `internal/redaction/error_collector.go` | 変更 | 同上の理由で doc コメントを更新（`mu` は必要なまま） | 同上 |
 | `internal/logging/log_line_tracker.go` | 変更 | 同上の理由で doc コメントを更新（`atomic.Int64` は必要なまま） | 同上 |
-| `internal/testutil/synccensus/census_guard_test.go` | 変更 | 上記3件の理由文字列を、発生源が出力ポンプであることに合わせて書き替える。出力ポンプが新しい同期プリミティブを宣言する場合は行の追加も要る（§3.2 のとおりチャネルで join するので、宣言しない設計を採る） | 同左 |
+| `internal/testutil/synccensus/census_guard_test.go` | 変更 | 上記3件の理由文字列を、発生源が出力中継であることに合わせて書き替える。出力中継が新しい同期プリミティブを宣言する場合は行の追加も要る（§3.2 のとおりチャネルで join するので、宣言しない設計を採る） | 同左 |
 | `docs/dev/architecture_design/security-architecture.ja.md` | 変更 | 特権の隙の範囲と残存リスクの記述を更新（AC-19、§5.5） | - |
 | `docs/dev/architecture_design/security-architecture.md` | 変更 | 上記の英語版。`/mktrans` で反映する | - |
 | `docs/user/security-risk-assessment.ja.md` | 変更 | 利用者向けの残存リスク記述を同じ内容へ更新（AC-19、§5.5） | - |
@@ -851,7 +851,7 @@ classDiagram
 タスク 0170 の実装計画書は、`log_line_tracker.go` と `error_collector.go` に
 `output copy goroutine` という文字列が残っていることを検証手段（AC-15）に使っている。本タスクの
 doc コメント更新でこの文字列は消えるため、0170 の追跡表の当該行が古くなることを実装計画書に
-記録し、置き換えとなる検証（出力ポンプの読み取り goroutine を指す記述の存在）を示す。
+記録し、置き換えとなる検証（出力中継の読み取り goroutine を指す記述の存在）を示す。
 
 ---
 
@@ -893,7 +893,7 @@ var ErrChildNotReaped = errors.New("command did not exit after kill")
 
 | 順位 | エラー | 根拠 |
 |---|---|---|
-| 1 | 出力ポンプの書き込みエラー（例: 出力サイズ上限超過）。stdout 側を stderr 側より優先する | 現在の実装が `Run()` の戻り値より書き込みエラーを優先し、stdout を先に調べている（`executor.go:350-354`）。上限超過が `SIGPIPE` による「broken pipe」に隠れるのを防ぐ（AC-14） |
+| 1 | 出力中継の書き込みエラー（例: 出力サイズ上限超過）。stdout 側を stderr 側より優先する | 現在の実装が `Run()` の戻り値より書き込みエラーを優先し、stdout を先に調べている（`executor.go:350-354`）。上限超過が `SIGPIPE` による「broken pipe」に隠れるのを防ぐ（AC-14） |
 | 2 | キャンセルによって kill した場合の、`ctx.Err()` と `Wait()` のエラーを両方たどれるエラー | §4.3 のとおり `os/exec` と意図して異なる。理由は下記 |
 | 3 | `Wait()` が返したエラー（`*exec.ExitError` など） | キャンセル以外で終わった場合はこれがそのまま返る |
 
@@ -1027,7 +1027,7 @@ flowchart LR
 
 ### 5.3 kill 区間と後始末区間に残る露出（残存リスク）
 
-kill 区間と後始末区間が開くとき、出力ポンプの読み取り goroutine と待機 goroutine は生きている。
+kill 区間と後始末区間が開くとき、出力中継の読み取り goroutine と待機 goroutine は生きている。
 これらは本タスクが起動区間から追い出した種類の goroutine そのものである。本設計はこれを
 受け入れる残存リスクとして扱う。理由と限界を示す。
 
@@ -1130,7 +1130,7 @@ sequenceDiagram
     EX->>EX: kill した事実・PID・killStrategy を Info で記録
     CH-->>W: 終了
     W-->>EX: 待機結果（killGraceDelay を上限に待つ）
-    EX->>EX: 出力ポンプの終了を待ち、Result を組み立てる
+    EX->>EX: 出力中継の終了を待ち、Result を組み立てる
 ```
 
 矢印 A ->> B は「A が B を呼ぶ」、B -->> A は「B が A へ戻る」を表す。
@@ -1190,7 +1190,7 @@ flowchart TD
 
 上限超過を検出するのは `Capture.WriteOutput` であり、判定の場所も文言も現在と同じである
 （要件定義書のスコープ外）。変わるのは、読み取り端を閉じるのが `os/exec` の複製 goroutine から
-出力ポンプの読み取り goroutine へ替わる点だけである。コマンドの終了を待たずに検出することも、
+出力中継の読み取り goroutine へ替わる点だけである。コマンドの終了を待たずに検出することも、
 子プロセスがパイプの破断で終わることも変わらない（AC-13）。報告するエラーは §4.2 の順位1により
 上限超過のままである（AC-14）。`SIGPIPE` を無視する子プロセスは今と同じく走り続け、
 タイムアウトに達するまで終わらない。
@@ -1249,7 +1249,7 @@ flowchart LR
 | 起動フェーズ | `WithPrivileges` に渡す関数が戻るまでの間、executor が起こした goroutine が存在しないこと（AC-02）。昇格と復帰の対が1組であること（AC-06） |
 | 監督フェーズ | キャンセル済み context での起動、終了後のキャンセル、`Start()` 失敗のそれぞれで記述子が残らないこと（AC-12） |
 | kill 経路 | `run_as` 実行では再昇格を1組だけ行い、通常実行では行わないこと（AC-09、AC-10）。再入ガードが発火しないこと（AC-11）。kill の失敗と `killGraceDelay` 超過で戻ること（§6.1） |
-| 出力ポンプ | stdout と stderr が区別されて `OutputWriter` へ渡ること、書き込みエラーが stdout 優先・最優先で報告されること（AC-14、AC-15） |
+| 出力中継 | stdout と stderr が区別されて `OutputWriter` へ渡ること、書き込みエラーが stdout 優先・最優先で報告されること（AC-14、AC-15） |
 | 互換性 | 終了コード・標準出力・標準エラー出力・エラー種別が現在と一致すること。`OutputWriter` が `nil` の経路で、正常終了時に標準エラー出力が載らないこと、64 KiB を超える標準エラー出力で先頭 32 KiB と末尾 32 KiB が残り中間が省略表示に替わること、そしてそのコマンドが**成功したままである**こと（AC-16、§4.3） |
 | kill・回収の失敗 | `ErrKillAfterCancel`／`ErrChildNotReaped` が、出力上限の超過と同時に起きたときも `errors.Is` でたどれること（§4.2）。`ErrChildNotReaped` の経路で `Result.ExitCode` が `ExitCodeUnknown` であること（§3.3） |
 | 起動後の解放失敗 | 書き込み端の解放が失敗したとき、子プロセスが kill され回収されること（プロセスが残らないこと）と、そのエラーが結果に現れること（§3.1） |
@@ -1394,7 +1394,7 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 
 | Phase | 内容 | 完了の目安 |
 |---|---|---|
-| 1 | 出力ポンプと `boundedBuffer` の追加、`Stdout`／`Stderr` を `*os.File` へ切り替え（F-001） | 既存テストが緑。AC-01、AC-15、AC-16 のテストが通る |
+| 1 | 出力中継と `boundedBuffer` の追加、`Stdout`／`Stderr` を `*os.File` へ切り替え（F-001） | 既存テストが緑。AC-01、AC-15、AC-16 のテストが通る |
 | 2 | 準備・起動・監督の3フェーズへの分解（`WithPrivileges` の範囲はまだ変えない） | 外から見える挙動が変わらないこと |
 | 3 | `exec.CommandContext` の置き換えとキャンセル・kill の実装（F-003）。`OperationKillAfterCancel` の追加を含む | AC-07、AC-10〜AC-12 のテストが通る。通常実行のタイムアウトが働く |
 | 4 | `WithPrivileges` の範囲を `startPrepared` へ縮小、staging の位置づけ変更（F-002、§3.4）。`OperationStagingCleanup` の追加を含む | AC-02、AC-04、AC-06 のテストと静的検査が通る |
@@ -1414,7 +1414,7 @@ goroutine や watchdog が残っている状態を作らない。
 ## 9. 将来の拡張性
 
 - **kill 区間と後始末区間から goroutine を追い出す。** §5.3 の残存リスクを消すには、隙を開く前に
-  出力ポンプを止め、閉じてから再開する仕組みが要る。止めている間の出力の扱いを決める必要があり、
+  出力中継を止め、閉じてから再開する仕組みが要る。止めている間の出力の扱いを決める必要があり、
   本タスクでは扱わない。着手するなら、ポンプが読み取りを一時停止する契約を先に決めるのが自然で
   ある。
 - **Slack 送信ワーカーを隙の外へ出すとき。** 本設計はコマンド実行の側の非参加 goroutine を
@@ -1455,7 +1455,7 @@ goroutine や watchdog が残っている状態を作らない。
   ディレクトリの中身を差し替えられるため、差分1の競合が残る。
 - **`Wait()` を実行 goroutine で呼び、キャンセルの見張りを別 goroutine に置く。** `exec.CommandContext`
   と同じ構造になり、kill が別 goroutine から `WithPrivileges` を呼ぶことになる（原則4に反する）。
-- **kill 区間の前に出力ポンプを止める。** 残存リスク（§5.3）は消えるが、止めている間の出力の扱いを
+- **kill 区間の前に出力中継を止める。** 残存リスク（§5.3）は消えるが、止めている間の出力の扱いを
   決める設計が要る。§9 へ送る。
 - **`OutputWriter` が `nil` のとき、標準エラー出力の末尾を落とす。** `os/exec` の
   `prefixSuffixSaver` を再実装せずに済むが、失敗したコマンドの診断に要るのは末尾であり、
