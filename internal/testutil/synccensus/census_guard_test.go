@@ -45,19 +45,6 @@ var scanRoots = []string{"../../../internal", "../../../cmd"}
 
 const repoRootPrefix = "../../../"
 
-// onceInitializerNames is the set of sync functions whose call expression is
-// the only syntax a declaration such as
-//
-//	var fdExecSupported = sync.OnceValue(func() bool { ... })
-//
-// offers: the declaration has no type expression, so a scan that inspects
-// types alone misses it entirely.
-var onceInitializerNames = map[string]struct{}{
-	"OnceValue":  {},
-	"OnceFunc":   {},
-	"OnceValues": {},
-}
-
 // declaration is one synchronization primitive found by the scan, identified
 // by the file it lives in and the name it is declared under.
 type declaration struct {
@@ -224,7 +211,9 @@ func declarationsInSource(t *testing.T, filename string, src any) []declaration 
 		file: strings.TrimPrefix(filepath.ToSlash(filename), repoRootPrefix),
 		localToImportPath: identitymutationguard.ResolveLocalImports(t, filename, file,
 			func(importPath string) bool { return importPath == "sync" || importPath == "sync/atomic" }),
+		syncTypeNames: make(map[string]struct{}),
 	}
+	sc.collectSyncTypeNames(file)
 	ast.Inspect(file, func(n ast.Node) bool {
 		sc.visit(n)
 		return true
@@ -236,25 +225,80 @@ func declarationsInSource(t *testing.T, filename string, src any) []declaration 
 type fileScanner struct {
 	file              string
 	localToImportPath map[string]string
-	found             []declaration
+	// syncTypeNames holds the file's own type names that stand for a sync or
+	// sync/atomic type, so "type mutex = sync.Mutex" cannot hide a lock behind
+	// a local spelling. Only same-file names are resolved: a name declared in
+	// another file or package still needs type information the scan does not
+	// have (see the census limitations in 02_architecture.md §4.6).
+	syncTypeNames map[string]struct{}
+	found         []declaration
+}
+
+// collectSyncTypeNames records the file's type names that resolve to a sync or
+// sync/atomic type, following chains ("type a = sync.Mutex; type b = a") by
+// iterating until nothing new is learned. Declaration order does not matter,
+// which matters because Go's is not the order the scan reads them in.
+func (sc *fileScanner) collectSyncTypeNames(file *ast.File) {
+	for {
+		grew := false
+		ast.Inspect(file, func(n ast.Node) bool {
+			spec, isType := n.(*ast.TypeSpec)
+			if !isType {
+				return true
+			}
+			if _, known := sc.syncTypeNames[spec.Name.Name]; known {
+				return true
+			}
+			if sc.matchesType(spec.Type) {
+				sc.syncTypeNames[spec.Name.Name] = struct{}{}
+				grew = true
+			}
+			return true
+		})
+		if !grew {
+			return
+		}
+	}
 }
 
 func (sc *fileScanner) visit(n ast.Node) {
 	switch n := n.(type) {
-	case *ast.Field:
-		// Struct fields, and also function parameters and results: a
-		// parameter typed *sync.Mutex is over-reported rather than missed,
-		// which is the safe direction for a guard.
-		if !sc.matchesType(n.Type) {
-			return
+	case *ast.StructType:
+		// Only a struct field can be embedded, so this is the one place an
+		// unnamed *ast.Field means "the type name is the field name". Reading
+		// every *ast.Field that way would also catch unnamed parameters and
+		// results -- func() []sync.Mutex has both an unnamed field and no name
+		// to report -- and name the declaration after its syntax rather than
+		// after anything a reader could act on.
+		for _, field := range n.Fields.List {
+			if !sc.matchesType(field.Type) {
+				continue
+			}
+			if len(field.Names) == 0 {
+				sc.record(embeddedFieldName(field.Type))
+				continue
+			}
+			for _, name := range field.Names {
+				sc.record(name.Name)
+			}
 		}
-		if len(n.Names) == 0 {
-			// Embedded field: the type name is the field name.
-			sc.record(embeddedFieldName(n.Type))
-			return
-		}
-		for _, name := range n.Names {
-			sc.record(name.Name)
+
+	case *ast.FuncType:
+		// Named parameters and results: a parameter typed *sync.Mutex is
+		// over-reported rather than missed, which is the safe direction for a
+		// guard. Unnamed ones declare nothing, so there is nothing to report.
+		for _, list := range []*ast.FieldList{n.Params, n.Results} {
+			if list == nil {
+				continue
+			}
+			for _, field := range list.List {
+				if !sc.matchesType(field.Type) {
+					continue
+				}
+				for _, name := range field.Names {
+					sc.record(name.Name)
+				}
+			}
 		}
 
 	case *ast.ValueSpec:
@@ -316,7 +360,9 @@ func (sc *fileScanner) record(name string) {
 // matchesType reports whether expr is a type expression from sync or
 // sync/atomic, after peeling off the layers a declaration can wrap one in:
 // pointer, slice/array, map value, channel element, variadic element, and the
-// index of a generic instantiation such as atomic.Pointer[T].
+// index of a generic instantiation such as atomic.Pointer[T]. A bare
+// identifier matches when the file declares it as a name for such a type
+// (see collectSyncTypeNames).
 //
 // Every exported type of either package is a synchronization primitive, and a
 // type position holds nothing else, so neither package needs a hand-kept list
@@ -340,7 +386,11 @@ func (sc *fileScanner) matchesType(expr ast.Expr) bool {
 		case *ast.IndexListExpr:
 			expr = e.X
 		default:
-			pkg, _, ok := sc.qualifiedName(expr)
+			if ident, isIdent := expr.(*ast.Ident); isIdent {
+				_, isSyncName := sc.syncTypeNames[ident.Name]
+				return isSyncName
+			}
+			pkg, ok := sc.qualifierImportPath(expr)
 			if !ok {
 				return false
 			}
@@ -351,7 +401,8 @@ func (sc *fileScanner) matchesType(expr ast.Expr) bool {
 
 // matchesInitializer reports whether expr is an initializer that declares a
 // synchronization primitive without naming its type: a composite literal such
-// as sync.Mutex{}, or a call to one of the sync.Once* constructors.
+// as sync.Mutex{}, or a call to a sync constructor such as sync.OnceValue or
+// sync.NewCond.
 func (sc *fileScanner) matchesInitializer(expr ast.Expr) bool {
 	switch e := expr.(type) {
 	case *ast.UnaryExpr:
@@ -378,35 +429,42 @@ func (sc *fileScanner) matchesInitializer(expr ast.Expr) bool {
 			}
 			break
 		}
-		pkg, name, ok := sc.qualifiedName(fun)
-		if !ok || pkg != "sync" {
-			return false
-		}
-		_, isOnce := onceInitializerNames[name]
-		return isOnce
+		// Any call into sync counts, for the reason matchesType keeps no list
+		// of type names: a function position holds nothing but package
+		// members, and every function sync exports (OnceFunc, OnceValue,
+		// OnceValues, NewCond) returns a synchronization primitive. A
+		// hand-kept list of constructor names is exactly how sync.NewCond
+		// would slip through.
+		//
+		// sync/atomic is deliberately not included here: its functions return
+		// plain values (atomic.AddInt64 yields an int64), so a call to one
+		// declares no primitive.
+		pkg, ok := sc.qualifierImportPath(fun)
+		return ok && pkg == "sync"
 	default:
 		return false
 	}
 }
 
-// qualifiedName resolves a selector expression such as sync.Mutex to the
-// import path of its qualifier and the selected name, so an aliased import
-// still matches and a local identifier that merely shares a package's name
-// does not.
-func (sc *fileScanner) qualifiedName(expr ast.Expr) (importPath, name string, ok bool) {
+// qualifierImportPath resolves the qualifier of a selector expression such as
+// sync.Mutex to its import path, so an aliased import still matches and a local
+// identifier that merely shares a package's name does not. The selected name is
+// not reported: neither caller looks at it, since every member of sync and
+// sync/atomic counts.
+func (sc *fileScanner) qualifierImportPath(expr ast.Expr) (importPath string, ok bool) {
 	sel, isSelector := expr.(*ast.SelectorExpr)
 	if !isSelector {
-		return "", "", false
+		return "", false
 	}
 	ident, isIdent := sel.X.(*ast.Ident)
 	if !isIdent {
-		return "", "", false
+		return "", false
 	}
 	path, isImported := sc.localToImportPath[ident.Name]
 	if !isImported {
-		return "", "", false
+		return "", false
 	}
-	return path, sel.Sel.Name, true
+	return path, true
 }
 
 // embeddedFieldName renders the field name an embedded type contributes, e.g.
@@ -415,6 +473,12 @@ func embeddedFieldName(expr ast.Expr) string {
 	for {
 		switch e := expr.(type) {
 		case *ast.StarExpr:
+			expr = e.X
+		case *ast.IndexExpr:
+			// An embedded generic type, atomic.Pointer[int], contributes the
+			// name of the generic type itself.
+			expr = e.X
+		case *ast.IndexListExpr:
 			expr = e.X
 		case *ast.SelectorExpr:
 			return e.Sel.Name
@@ -514,6 +578,51 @@ func TestDeclarationsInSourceRecognizesDeclarationForms(t *testing.T) {
 			name: "explicitly instantiated OnceValue initializer",
 			body: "var probe = sync.OnceValue[bool](func() bool { return true })",
 			want: []string{"probe"},
+		},
+		{
+			name: "NewCond initializer",
+			body: "var mu sync.Mutex\n\nvar cond = sync.NewCond(&mu)",
+			want: []string{"mu", "cond"},
+		},
+		{
+			name: "NewCond short variable declaration",
+			body: "func f() {\nmu := sync.Mutex{}\ncond := sync.NewCond(&mu)\n_ = cond\n}",
+			want: []string{"mu", "cond"},
+		},
+		{
+			name: "a local name for a sync type does not hide a declaration",
+			body: "type mutex = sync.Mutex\n\nvar mu mutex",
+			want: []string{"mu"},
+		},
+		{
+			name: "a chain of local names is followed",
+			body: "type mutex = sync.Mutex\n\ntype guard = mutex\n\nvar mu guard",
+			want: []string{"mu"},
+		},
+		{
+			name: "a local name declared after its use still resolves",
+			body: "var mu mutex\n\ntype mutex = sync.Mutex",
+			want: []string{"mu"},
+		},
+		{
+			name: "a defined type over a sync type is a primitive",
+			body: "type mutex sync.Mutex\n\nvar mu mutex",
+			want: []string{"mu"},
+		},
+		{
+			name: "an unnamed result type reports no declaration",
+			body: "func newMus() []sync.Mutex { return nil }",
+			want: nil,
+		},
+		{
+			name: "an unnamed function parameter reports no declaration",
+			body: "type s struct{ fn func(*sync.Mutex) }",
+			want: nil,
+		},
+		{
+			name: "a named function parameter is reported",
+			body: "func f(mu *sync.Mutex) { _ = mu }",
+			want: []string{"mu"},
 		},
 		{
 			name: "a plain integer used with atomic operations is out of scope",

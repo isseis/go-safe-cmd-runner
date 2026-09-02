@@ -903,16 +903,15 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 - [x] `unix.go:92-98` の再入不可の注意書き（`WithPrivileges is not reentrant: it holds m's mutex ...`
       から `... legitimate wait for the lock.` までの7行）を削除し、`WithPrivileges` の doc コメントに
-      次の3つのリテラルを含む記述を書く（AC-11）
-      - (a) `This method does not serialize privilege windows.`
-      - (b) `While the window is open the process-wide euid is raised, so goroutines that never call
-        WithPrivileges -- including the copy goroutines os/exec starts for non-*os.File writers --
-        also run with that euid.`
-        **実装時の差分**: 英文として読点が要るため `While the window is open, the process-wide euid
-        is raised, ...` と1文字だけ変えた。§7 の AC-11 の静的検証が検索するのは
-        `the process-wide euid is raised` であり、この語句は1行に収めてあるので検証は 3 を返す
-      - (c) `This is an unresolved design issue: introducing parallel execution requires a separate
-        design, not a lock inside this method.`
+      AC-11 の (a) 直列化しないこと、(b) 窓が開いている間はプロセス全体の euid が上がること、
+      (c) 未解決の設計課題であること、の3点を書く（AC-11）
+
+      **実装時の差分**: PR-6 のレビュー対応コミット
+      `docs(0170): condense inPrivilegedWindow and WithPrivileges comments` が本文を圧縮したため、
+      現在 `unix.go` にあるのは次の3つのリテラルであり、§7 の AC-11 の行もこれを検索する。
+      - (a) `The window is not serialized`
+      - (b) `raised for every goroutine`
+      - (c) `This is an unresolved design issue`
 - [x] あわせて、再入は `ErrReentrantPrivilegeCall` で拒否されることを doc コメントに書く
 - [x] `unix.go:248` と `unix.go:287` の
       `// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock`
