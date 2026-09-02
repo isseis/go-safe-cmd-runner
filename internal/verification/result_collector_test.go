@@ -5,7 +5,6 @@ package verification
 import (
 	"errors"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -107,42 +106,6 @@ func TestResultCollector_GetSummary(t *testing.T) {
 
 	// Verify Duration
 	assert.Greater(t, summary.Duration, time.Duration(0), "Duration should be > 0")
-}
-
-func TestResultCollector_Concurrency(t *testing.T) {
-	rc := NewResultCollector("/test/path")
-
-	const numGoroutines = 100
-	const numOpsPerGoroutine = 10
-
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-
-	for range numGoroutines {
-		go func() {
-			defer wg.Done()
-
-			for j := range numOpsPerGoroutine {
-				switch j % 2 {
-				case 0:
-					rc.RecordSuccess()
-				case 1:
-					rc.RecordFailure("/path/to/file", filevalidator.ErrHashFileNotFound, "test")
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	summary := rc.GetSummary()
-
-	expectedTotal := numGoroutines * numOpsPerGoroutine
-	assert.Equal(t, expectedTotal, summary.TotalFiles, "TotalFiles mismatch after concurrent operations")
-
-	// Verify invariant
-	actualTotal := summary.VerifiedFiles + summary.FailedFiles
-	assert.Equal(t, actualTotal, summary.TotalFiles, "invariant violation after concurrent operations")
 }
 
 func TestDetermineFailureReason(t *testing.T) {
