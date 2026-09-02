@@ -495,24 +495,24 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-3: D3 `sudoUIDAdoptionReporter.reported` の `bool` 化
 
-- [ ] `internal/groupmembership/manager.go:473` の `reported atomic.Bool` を `reported bool` に変える
-- [ ] 同 479 行の `if !r.reported.CompareAndSwap(false, true) { return }` を
+- [x] `internal/groupmembership/manager.go:473` の `reported atomic.Bool` を `reported bool` に変える
+- [x] 同 479 行の `if !r.reported.CompareAndSwap(false, true) { return }` を
       `if r.reported { return }` ＋ `r.reported = true` に置き換える
-- [ ] `internal/groupmembership/manager_test.go:1500` の `processSudoUIDAdoptionReporter.reported.Load()` を
+- [x] `internal/groupmembership/manager_test.go:1500` の `processSudoUIDAdoptionReporter.reported.Load()` を
       `processSudoUIDAdoptionReporter.reported` に変える
-- [ ] 並行テスト `manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` を削除する
-- [ ] AC-19 の確認: `reported` の判定を外し、`TestSudoUIDAdoptionReporter_ReportsOnlyOnce` が失敗すること
+- [x] 並行テスト `manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently` を削除する
+- [x] AC-19 の確認: `reported` の判定を外し、`TestSudoUIDAdoptionReporter_ReportsOnlyOnce` が失敗すること
 
 **完了条件**: `rg -n 'func TestSudoUIDAdoptionReporter_ReportsOnlyOnceConcurrently' internal/` が0件。
 
 #### Step 2-4: D4 `sudoUIDExistenceMemo.mu` の削除
 
-- [ ] `internal/groupmembership/manager.go:504` の `mu sync.Mutex` を削除する
-- [ ] 同 512-513 の `m.mu.Lock()`／`defer m.mu.Unlock()` を削除する
-- [ ] `manager.go:509-510` の doc コメントから「The lock is held across lookup to single-flight
+- [x] `internal/groupmembership/manager.go:504` の `mu sync.Mutex` を削除する
+- [x] 同 512-513 の `m.mu.Lock()`／`defer m.mu.Unlock()` を削除する
+- [x] `manager.go:509-510` の doc コメントから「The lock is held across lookup to single-flight
       concurrent queries」の single-flight の主張を削る
-- [ ] 並行テスト `manager_test.go::TestSudoUIDExistenceMemo_Concurrent` を削除する
-- [ ] AC-19 の確認（2つの主張それぞれ）:
+- [x] 並行テスト `manager_test.go::TestSudoUIDExistenceMemo_Concurrent` を削除する
+- [x] AC-19 の確認（2つの主張それぞれ）:
       (a) memo の参照を外し、`TestSudoUIDExistenceMemo_ReusesConfirmation` が失敗すること、
       (b) 失敗した確認も memo に記録するように変え、`TestSudoUIDExistenceMemo_DoesNotRememberFailures` が
       失敗すること
@@ -521,36 +521,36 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 #### Step 2-5: D5 `nssCompletenessReporter.reported` の `bool` 化
 
-- [ ] `internal/groupmembership/nsswitch.go:278` の `reported atomic.Bool` を `reported bool` に変える
-- [ ] 同 290 行の `CompareAndSwap(false, true)` を `if r.reported { return }` ＋ `r.reported = true` に
+- [x] `internal/groupmembership/nsswitch.go:278` の `reported atomic.Bool` を `reported bool` に変える
+- [x] 同 290 行の `CompareAndSwap(false, true)` を `if r.reported { return }` ＋ `r.reported = true` に
       置き換える
-- [ ] `internal/groupmembership/test_helpers.go:45` の `.Store(false)` を `= false` に変える
-- [ ] `internal/groupmembership/test_helpers.go:73` の `.Store(true)` を `= true` に変える
-- [ ] `internal/groupmembership/manager_test.go:1626` の `.reported.Load()` を `.reported` に変える
-- [ ] AC-19 の確認: `reported` の判定を外し、`TestNSSCompletenessReporter_ReportsOnlyOnce` が失敗すること
+- [x] `internal/groupmembership/test_helpers.go:45` の `.Store(false)` を `= false` に変える
+- [x] `internal/groupmembership/test_helpers.go:73` の `.Store(true)` を `= true` に変える
+- [x] `internal/groupmembership/manager_test.go:1626` の `.reported.Load()` を `.reported` に変える
+- [x] AC-19 の確認: `reported` の判定を外し、`TestNSSCompletenessReporter_ReportsOnlyOnce` が失敗すること
 
 **完了条件**: `rg -n '\.reported\.(Load|Store|Swap|CompareAndSwap)' internal/` が0件。
 
 #### Step 2-6: D6 `processPermissionCheckUIDPolicy` の削除
 
-- [ ] `internal/groupmembership/policy.go:68` の `var processPermissionCheckUIDPolicy atomic.Int32` を
+- [x] `internal/groupmembership/policy.go:68` の `var processPermissionCheckUIDPolicy atomic.Int32` を
       `var processPermissionCheckUIDPolicy PermissionCheckUIDPolicy` に変える
-- [ ] 同 83-95 の CAS ループを、判定と代入を続けて行う形に書き換える。`02_architecture.md` §7.2 の
+- [x] 同 83-95 の CAS ループを、判定と代入を続けて行う形に書き換える。`02_architecture.md` §7.2 の
       契約表の5行がそのまま成り立つ形にする
-- [ ] 同 94 行のコメント「Another goroutine changed the value concurrently; re-evaluate.」を削る
-- [ ] `policy.go:101` の `PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Load())` を
+- [x] 同 94 行のコメント「Another goroutine changed the value concurrently; re-evaluate.」を削る
+- [x] `policy.go:101` の `PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Load())` を
       `processPermissionCheckUIDPolicy` に変える
-- [ ] `policy.go:11` の `type PermissionCheckUIDPolicy int32` を `type PermissionCheckUIDPolicy int` に
+- [x] `policy.go:11` の `type PermissionCheckUIDPolicy int32` を `type PermissionCheckUIDPolicy int` に
       戻す（`int32` は `atomic.Int32` の都合であって設計上の要請ではない）
-- [ ] `policy.go:49` の `fmt.Sprintf("unknown(%d)", int32(p))` を `fmt.Sprintf("unknown(%d)", int(p))` に
+- [x] `policy.go:49` の `fmt.Sprintf("unknown(%d)", int32(p))` を `fmt.Sprintf("unknown(%d)", int(p))` に
       変える
-- [ ] `internal/groupmembership/test_helpers_policy.go:40` の
+- [x] `internal/groupmembership/test_helpers_policy.go:40` の
       `previous := PermissionCheckUIDPolicy(processPermissionCheckUIDPolicy.Swap(int32(p)))` を
       `previous := processPermissionCheckUIDPolicy` ＋ `processPermissionCheckUIDPolicy = p` に置き換える
-- [ ] 同 42 行の `processPermissionCheckUIDPolicy.Store(int32(previous))` を
+- [x] 同 42 行の `processPermissionCheckUIDPolicy.Store(int32(previous))` を
       `processPermissionCheckUIDPolicy = previous` に変える
-- [ ] 並行テスト `policy_test.go::TestSetProcessPermissionCheckUIDPolicy_Concurrent` を削除する
-- [ ] AC-19 の確認（`02_architecture.md` §7.2 の契約表の各分岐）:
+- [x] 並行テスト `policy_test.go::TestSetProcessPermissionCheckUIDPolicy_Concurrent` を削除する
+- [x] AC-19 の確認（`02_architecture.md` §7.2 の契約表の各分岐）:
       (a) 衝突判定の分岐を外し、異値の設定が通るようにして `TestSetProcessPermissionCheckUIDPolicy` の
       衝突ケースが失敗すること、(b) 同値再設定の早期 `return nil` を外して no-op ケースが失敗すること、
       (c) `PolicyUnset`／不正値の弾きを外して不正値ケースが失敗すること
@@ -1190,11 +1190,11 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 #### PR-3: D3〜D6 の削除（`groupmembership`）
 
-- [ ] Step 2-3: D3 `sudoUIDAdoptionReporter.reported`
-- [ ] Step 2-4: D4 `sudoUIDExistenceMemo.mu`
-- [ ] Step 2-5: D5 `nssCompletenessReporter.reported`
-- [ ] Step 2-6: D6 `processPermissionCheckUIDPolicy`
-- [ ] §1.3.3 の import を落とした（`manager.go` の `sync/atomic` は D3 のコミット、`sync` は D4 のコミット、`manager_test.go` の `sync` は D3・D4 の後のコミット、`policy.go` と `policy_test.go` は D6 のコミット）
+- [x] Step 2-3: D3 `sudoUIDAdoptionReporter.reported`
+- [x] Step 2-4: D4 `sudoUIDExistenceMemo.mu`
+- [x] Step 2-5: D5 `nssCompletenessReporter.reported`
+- [x] Step 2-6: D6 `processPermissionCheckUIDPolicy`
+- [x] §1.3.3 の import を落とした（`manager.go` の `sync/atomic` は D3 のコミット、`sync` は D4 のコミット、`manager_test.go` の `sync` は D3・D4 の後のコミット、`policy.go` と `policy_test.go` は D6 のコミット）
 
 #### PR-4: D8・D7 の削除（`verification`）
 
