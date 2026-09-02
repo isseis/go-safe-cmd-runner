@@ -87,7 +87,6 @@ flowchart TD
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    NULL[("os.DevNull")]
     ENVD[("フィルタ済み環境変数")]
     PREP["準備フェーズ<br>prepareCommand<br>（出力ポンプの生成を含む）"]
     BIND{"exec の束縛"}
@@ -102,7 +101,6 @@ flowchart TD
     PUMPG["読み取り goroutine<br>stdout / stderr"]
     RES["Result の組み立て"]
 
-    NULL --> PREP
     ENVD --> PREP
     PREP --> BIND
     BIND -->|"fd-bound 実行"| START
@@ -114,7 +112,7 @@ flowchart TD
     WAITG --> RES
     PUMPG --> RES
 
-    class NULL,ENVD data
+    class ENVD data
     class PREP,BIND,SUP,RES process
     class STAGE,START,WAITG,PUMPG enhanced
 ```
