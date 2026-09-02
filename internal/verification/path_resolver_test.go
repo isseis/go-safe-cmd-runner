@@ -60,6 +60,22 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 		assert.ErrorIs(t, err, ErrCommandNotFound)
 	})
 
+	// A cached entry must be returned without re-resolving. The command is
+	// deliberately absent from PATH, so the only way the lookup can succeed is
+	// by consulting the cache -- re-resolution would return ErrCommandNotFound.
+	t.Run("returns the cached entry without re-resolving", func(t *testing.T) {
+		cached := NewPathResolver(dir2)
+
+		_, err := cached.ResolvePath("cached-only-command")
+		require.ErrorIs(t, err, ErrCommandNotFound, "the command must be unresolvable before the cache is primed")
+
+		cached.cache["cached-only-command"] = execPath
+
+		resolved, err := cached.ResolvePath("cached-only-command")
+		require.NoError(t, err)
+		assert.Equal(t, execPath, resolved)
+	})
+
 	t.Run("returns error when command is a directory in all PATH entries", func(t *testing.T) {
 		// Create a directory with the same name in both PATH directories
 		err = os.Mkdir(filepath.Join(dir2, "testdir"), 0o755)
@@ -182,9 +198,7 @@ func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, realPath, path)
 
-		resolver.mu.RLock()
 		cached := resolver.cache["chained_cmd"]
-		resolver.mu.RUnlock()
 		assert.Equal(t, realPath, cached)
 	})
 

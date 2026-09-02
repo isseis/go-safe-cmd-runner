@@ -434,7 +434,6 @@ pathResolver := NewPathResolver(common.SecurePathEnv)
 type PathResolver struct {
     pathEnv string          // セキュア固定PATH使用
     cache   map[string]string
-    mu      sync.RWMutex
 }
 ```
 

@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
 )
 
 // PathResolver provides secure path resolution with caching.
+//
+// This type is not safe for concurrent use; it must not be reached from
+// verification.Manager's concurrent paths.
 type PathResolver struct {
 	pathEnv string
 	cache   map[string]string
-	mu      sync.RWMutex
 }
 
 // NewPathResolver creates a new PathResolver with the specified configuration.
@@ -57,9 +58,7 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 		return "", fmt.Errorf("%w: %w: %s", ErrCommandNotFound, ErrCommandNotExecutable, cacheKey)
 	}
 
-	pr.mu.Lock()
 	pr.cache[cacheKey] = resolvedPath
-	pr.mu.Unlock()
 	return resolvedPath, nil
 }
 
@@ -83,12 +82,9 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 //  4. TOCTOU vulnerabilities are mitigated by resolving symlinks once at the start
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
-	pr.mu.RLock()
 	if cached, exists := pr.cache[command]; exists {
-		pr.mu.RUnlock()
 		return cached, nil
 	}
-	pr.mu.RUnlock()
 
 	// If absolute path, verify it exists and is not a directory.
 	if filepath.IsAbs(command) {
