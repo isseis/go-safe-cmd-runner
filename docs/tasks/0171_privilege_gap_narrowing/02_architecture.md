@@ -89,7 +89,7 @@ flowchart TD
 
     ENVD[("フィルタ済み環境変数")]
     PREP["準備フェーズ<br>prepareCommand<br>（出力ポンプの生成を含む）"]
-    BIND{"exec の束縛"}
+    BIND{"検証済み fd を直接 exec できるか"}
 
     subgraph GAP["起動区間"]
         STAGE["stageFromFD<br>staging フォールバックのみ"]
