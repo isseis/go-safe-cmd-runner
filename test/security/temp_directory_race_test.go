@@ -63,11 +63,11 @@ func TestTempDirectory_ConcurrentAccess(t *testing.T) {
 	close(errorChan)
 
 	// Check for any errors
-	var errors []error
+	var errs []error
 	for err := range errorChan {
-		errors = append(errors, err)
+		errs = append(errs, err)
 	}
-	require.Empty(t, errors, "Concurrent operations should not fail: %v", errors)
+	require.Empty(t, errs, "Concurrent operations should not fail: %v", errs)
 }
 
 // TestTempDirectory_ConcurrentCleanup tests concurrent cleanup operations
@@ -111,11 +111,11 @@ func TestTempDirectory_ConcurrentCleanup(t *testing.T) {
 	close(errorChan)
 
 	// Check for errors
-	var errors []error
+	var errs []error
 	for err := range errorChan {
-		errors = append(errors, err)
+		errs = append(errs, err)
 	}
-	require.Empty(t, errors, "Cleanup operations should not fail: %v", errors)
+	require.Empty(t, errs, "Cleanup operations should not fail: %v", errs)
 
 	// Verify all directories are removed
 	for _, dirPath := range dirs {
@@ -172,11 +172,11 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 	close(errorChan)
 
 	// Check for errors
-	var errors []error
+	var errs []error
 	for err := range errorChan {
-		errors = append(errors, err)
+		errs = append(errs, err)
 	}
-	require.Empty(t, errors, "Concurrent file operations should not fail: %v", errors)
+	require.Empty(t, errs, "Concurrent file operations should not fail: %v", errs)
 
 	// Verify file still exists and has been modified
 	_, err = os.Stat(sharedFile)

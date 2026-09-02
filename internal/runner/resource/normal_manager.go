@@ -349,16 +349,16 @@ func (n *NormalResourceManager) CleanupAllTempDirs() error {
 	// Iterate over a copy: CleanupTempDir removes entries from n.tempDirs.
 	tempDirs := slices.Clone(n.tempDirs)
 
-	var errors []error
+	var cleanupErrs []error
 
 	for _, dir := range tempDirs {
 		if err := n.CleanupTempDir(dir); err != nil {
-			errors = append(errors, err)
+			cleanupErrs = append(cleanupErrs, err)
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("%w: %v", ErrTempDirCleanupFailed, errors)
+	if len(cleanupErrs) > 0 {
+		return fmt.Errorf("%w: %v", ErrTempDirCleanupFailed, cleanupErrs)
 	}
 
 	return nil
