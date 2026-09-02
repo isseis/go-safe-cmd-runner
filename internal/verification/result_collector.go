@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -19,9 +18,11 @@ const (
 	logLevelError = "error"
 )
 
-// ResultCollector collects file verification results in dry-run mode
+// ResultCollector collects file verification results in dry-run mode.
+//
+// This type is not safe for concurrent use; it must not be reached from
+// verification.Manager's concurrent paths.
 type ResultCollector struct {
-	mu              sync.Mutex
 	startTime       time.Time
 	totalFiles      int
 	verifiedFiles   int
@@ -46,18 +47,12 @@ func NewResultCollector(hashDirPath string) *ResultCollector {
 
 // RecordSuccess records a successful file verification
 func (rc *ResultCollector) RecordSuccess() {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	rc.totalFiles++
 	rc.verifiedFiles++
 }
 
 // RecordFailure records a file verification failure
 func (rc *ResultCollector) RecordFailure(filePath string, err error, context string) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	rc.totalFiles++
 
 	reason := determineFailureReason(err)
@@ -86,9 +81,6 @@ func (rc *ResultCollector) RecordFailure(filePath string, err error, context str
 // fallback) should be recorded as BOTH a failure (for the verification
 // attempt) and an unverified usage (for the adopted content).
 func (rc *ResultCollector) RecordUnverifiedContent(filePath, context string, reason UnverifiedReason, failure FailureReason) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	usage := UnverifiedFileUsage{
 		Path:    filePath,
 		Reason:  string(reason),
@@ -105,26 +97,20 @@ func (rc *ResultCollector) RecordUnverifiedContent(filePath, context string, rea
 
 // SetHashDirStatus sets the hash directory status
 func (rc *ResultCollector) SetHashDirStatus(exists bool) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	rc.hashDirStatus.Exists = exists
 	rc.hashDirStatus.Validated = true
 }
 
 // GetSummary returns the verification summary
 func (rc *ResultCollector) GetSummary() FileVerificationSummary {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
 	duration := time.Since(rc.startTime)
 
-	// Deep copy failures slice to prevent data races
+	// Deep copy the failures slice so internal state does not leak to callers
 	failuresCopy := make([]FileVerificationFailure, len(rc.failures))
 	copy(failuresCopy, rc.failures)
 
-	// Deep copy unverified files slice to prevent data races, including the
-	// memory pointed to by the Failure field
+	// Deep copy the unverified files slice, including the memory pointed to by
+	// the Failure field, so internal state does not leak to callers
 	unverifiedCopy := make([]UnverifiedFileUsage, len(rc.unverifiedFiles))
 	for i := range rc.unverifiedFiles {
 		unverifiedCopy[i] = rc.unverifiedFiles[i]
