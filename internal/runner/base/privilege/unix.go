@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 	"syscall"
 	"time"
 
@@ -33,7 +32,11 @@ type UnixPrivilegeManager struct {
 	logger             *slog.Logger
 	originalUID        int
 	privilegeSupported bool
-	mu                 sync.Mutex
+	// inPrivilegedWindow is set for the duration of a WithPrivileges call. It
+	// exists only to reject a reentrant call made from within fn; it is read and
+	// written by the single goroutine that calls WithPrivileges and gives no
+	// protection against concurrent callers.
+	inPrivilegedWindow bool
 	// osExit is a function for os.Exit to enable testing of emergencyShutdown
 	osExit func(code int)
 	// identityVerifier checks that EUID==UID and EGID==GID; injectable for testing
@@ -89,16 +92,22 @@ func defaultIdentityVerifier() error {
 //
 // For OperationFileValidation this package escalates to root and restores afterwards.
 //
-// WithPrivileges is not reentrant: it holds m's mutex for the duration of fn, so
-// calling WithPrivileges on the same manager from within fn deadlocks. Avoiding
-// that is the caller's responsibility.
+// This method does not serialize privilege windows. While the window is open,
+// the process-wide euid is raised, so goroutines that never call WithPrivileges
+// -- including the copy goroutines os/exec starts for non-*os.File writers --
+// also run with that euid. This is an unresolved design issue: introducing
+// parallel execution requires a separate design, not a lock inside this method.
 //
-// This is not detected at runtime: neither a "currently held" flag nor TryLock
-// can tell a goroutine's own reentrant call apart from another goroutine's
-// legitimate wait for the lock.
+// WithPrivileges is still not reentrant: calling it on the same manager from
+// within fn returns ErrReentrantPrivilegeCall without running the inner fn, so
+// the inner call never opens a second window and never restores the euid under
+// the outer fn.
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.inPrivilegedWindow {
+		return ErrReentrantPrivilegeCall
+	}
+	m.inPrivilegedWindow = true
+	defer func() { m.inPrivilegedWindow = false }()
 
 	execCtx, err := m.prepareExecution(elevationCtx)
 	if err != nil {
@@ -245,7 +254,6 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndVerify(execCtx *executionCont
 }
 
 // escalatePrivileges performs the actual privilege escalation (private method)
-// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) escalatePrivileges(elevationCtx runnertypes.ElevationContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
 		return fmt.Errorf("%w: privilege execution not supported", runnertypes.ErrPrivilegedExecutionNotAvailable)
@@ -284,7 +292,6 @@ func (m *UnixPrivilegeManager) escalatePrivileges(elevationCtx runnertypes.Eleva
 }
 
 // restorePrivileges restores original privileges (private method)
-// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) restorePrivileges() error {
 	// For native root execution, no privilege restoration is needed
 	if m.originalUID == 0 {

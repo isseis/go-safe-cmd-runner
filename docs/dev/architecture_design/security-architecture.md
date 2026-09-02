@@ -306,7 +306,7 @@ type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
-    mu                 sync.Mutex  // Prevents race conditions
+    inPrivilegedWindow bool  // Flag for rejecting reentrant calls
     osExit             func(code int)                      // Injectable os.Exit for testing
     identityVerifier   func() error                         // Verifies EUID==UID / EGID==GID (injectable for testing)
     readSavedIDs       func() (suid, sgid int, err error)   // Reads saved-set-uid/gid (injectable for testing)
@@ -319,8 +319,11 @@ type UnixPrivilegeManager struct {
 ```go
 // Location: internal/runner/base/privilege/unix.go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()  // Global lock for thread safety
-    defer m.mu.Unlock()
+    if m.inPrivilegedWindow {  // Reject a reentrant call without running fn
+        return ErrReentrantPrivilegeCall
+    }
+    m.inPrivilegedWindow = true
+    defer func() { m.inPrivilegedWindow = false }()
 
     // 1. Record saved-set-uid/gid and decide whether escalation is needed, based on the operation type
     execCtx, err := m.prepareExecution(elevationCtx)
@@ -404,7 +407,6 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 - Prevents continued execution in compromised state
 
 #### Security Guarantees
-- Thread-safe privilege operations with global mutex
 - Automatic privilege restoration with panic protection
 - Two-layer defense via post-restoration EUID/EGID match verification and the saved-set-uid/gid invariant check
 - Comprehensive audit logging of all privilege operations
@@ -1193,8 +1195,10 @@ The system implements multiple security layers:
 **Countermeasures**:
 - Controlled privilege escalation
 - Automatic privilege restoration
-- Thread-safe operations
 - Emergency shutdown on failure
+
+**Residual Risks**:
+- While the privilege window is open, goroutines that do not participate in it are not protected. This is an unresolved design issue
 
 ### Environment Manipulation
 
@@ -1257,7 +1261,6 @@ The system implements multiple security layers:
 - Minimal string operations
 
 ### Privilege Operations
-- Global mutex prevents race conditions but serializes privilege operations
 - Fast privilege escalation/restoration using system calls
 - Metrics collection for performance monitoring
 

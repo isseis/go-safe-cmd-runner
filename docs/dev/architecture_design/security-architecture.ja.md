@@ -306,7 +306,7 @@ type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
-    mu                 sync.Mutex  // 競合状態を防止
+    inPrivilegedWindow bool  // 再入を拒否するためのフラグ
     osExit             func(code int)                      // テスト用に注入可能なos.Exit
     identityVerifier   func() error                         // EUID==UID / EGID==GID の検証（テスト用に注入可能）
     readSavedIDs       func() (suid, sgid int, err error)   // saved-set-uid/gidの読み取り（テスト用に注入可能）
@@ -319,8 +319,11 @@ type UnixPrivilegeManager struct {
 ```go
 // 場所: internal/runner/base/privilege/unix.go
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()  // スレッドセーフティのためのグローバルロック
-    defer m.mu.Unlock()
+    if m.inPrivilegedWindow {  // 再入は fn を実行せずに拒否する
+        return ErrReentrantPrivilegeCall
+    }
+    m.inPrivilegedWindow = true
+    defer func() { m.inPrivilegedWindow = false }()
 
     // 1. saved-set-uid/gidを記録し、operationの種別から昇格要否を決定
     execCtx, err := m.prepareExecution(elevationCtx)
@@ -404,7 +407,6 @@ func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
 - 侵害された状態での継続実行防止
 
 #### セキュリティ保証
-- グローバルmutexによるスレッドセーフな特権操作
 - パニック保護付きの自動特権復元
 - 復元後のEUID/EGID一致検証とsaved-set-uid/gid不変条件チェックによる二重防御
 - すべての特権操作の包括的監査ログ
@@ -1188,8 +1190,10 @@ if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 **対策**:
 - 制御された特権昇格
 - 自動特権復元
-- スレッドセーフ操作
 - 失敗時の緊急シャットダウン
+
+**残存リスク**:
+- 特権の隙が開いている間、参加しない goroutine は保護されない。これは未解決の設計課題である
 
 ### 環境操作
 
@@ -1252,7 +1256,6 @@ if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 - 最小限の文字列操作
 
 ### 特権操作
-- グローバルmutexが競合状態を防ぐが特権操作を直列化
 - システムコールを使用した高速特権昇格/復元
 - パフォーマンス監視のためのメトリクス収集
 
