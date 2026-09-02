@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"unicode"
 )
 
@@ -275,7 +274,7 @@ func splitNSSTokens(sourceList string) ([]string, bool) {
 // "once per process". It is the only place that builds the record's message
 // and attributes.
 type nssCompletenessReporter struct {
-	reported atomic.Bool
+	reported bool
 }
 
 // report emits the classification record once unless already emitted, and
@@ -287,9 +286,10 @@ func (r *nssCompletenessReporter) report(logger *slog.Logger, v completenessVerd
 	if v.completeness == completenessComplete {
 		return
 	}
-	if !r.reported.CompareAndSwap(false, true) {
+	if r.reported {
 		return
 	}
+	r.reported = true
 	logger.Warn(
 		nssCompletenessMessage,
 		slog.String("user_database_source", userDatabaseSource),

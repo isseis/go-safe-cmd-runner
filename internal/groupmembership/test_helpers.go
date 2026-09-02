@@ -42,7 +42,7 @@ func resetNsswitchClassification(t *testing.T) {
 // reporter to the state they have before startup settles them.
 func clearNsswitchClassification() {
 	nsswitchVerdictValue = completenessVerdict{}
-	processNSSCompletenessReporter.reported.Store(false)
+	processNSSCompletenessReporter.reported = false
 }
 
 // startupNsswitchClassification is the verdict that settling the
@@ -70,7 +70,7 @@ func settleStartupNsswitchClassification() {
 // classification and deny.
 func restoreStartupNsswitchClassification() {
 	nsswitchVerdictValue = startupNsswitchClassification
-	processNSSCompletenessReporter.reported.Store(true)
+	processNSSCompletenessReporter.reported = true
 }
 
 // useNsswitchVerdict fixes the completeness verdict for this process for the

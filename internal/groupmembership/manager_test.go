@@ -1572,7 +1572,7 @@ func TestNsswitchVerdictReportsWhatItSettled(t *testing.T) {
 	settled := nsswitchVerdict()
 
 	assert.Equal(t, settled.completeness != completenessComplete,
-		processNSSCompletenessReporter.reported.Load(),
+		processNSSCompletenessReporter.reported,
 		"the startup warning must be emitted exactly when the classification is not complete")
 }
 
