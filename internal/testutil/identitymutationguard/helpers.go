@@ -282,13 +282,24 @@ func RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) (
 	return sc.sites, sc.valueRefs
 }
 
-// resolveLocalImports maps each import's local identifier (alias if
-// present, else the path's last element) to its full import path, so a
-// selector's package qualifier can be resolved regardless of aliasing. A
-// dot-import of a tracked identity-mutation package is rejected outright,
-// since it would make references unqualified and defeat selector-based
-// detection.
+// resolveLocalImports maps each import's local identifier to its import path,
+// rejecting a dot-import of a tracked identity-mutation package.
 func resolveLocalImports(t *testing.T, filename string, file *ast.File) map[string]string {
+	t.Helper()
+	return ResolveLocalImports(t, filename, file, isTrackedImportPath)
+}
+
+// ResolveLocalImports maps each import's local identifier (alias if present,
+// else the path's last element) to its full import path, so a selector's
+// package qualifier can be resolved regardless of aliasing. A dot-import of a
+// path that rejectDotImport accepts fails the test outright, since such an
+// import makes references unqualified and defeats selector-based detection;
+// pass a predicate that reports the paths the caller's scan depends on seeing
+// qualified.
+//
+// Guard tests in other packages share this so that import resolution -- the
+// step every selector-based scan depends on -- has one implementation.
+func ResolveLocalImports(t *testing.T, filename string, file *ast.File, rejectDotImport func(importPath string) bool) map[string]string {
 	t.Helper()
 
 	localToImportPath := make(map[string]string)
@@ -296,8 +307,8 @@ func resolveLocalImports(t *testing.T, filename string, file *ast.File) map[stri
 		path, err := strconv.Unquote(imp.Path.Value)
 		require.NoErrorf(t, err, "failed to unquote import path %s in %s", imp.Path.Value, filename)
 		if imp.Name != nil && imp.Name.Name == "." {
-			require.Falsef(t, isTrackedImportPath(path),
-				"dot-import of identity-mutation package is forbidden: %s in %s", path, filename)
+			require.Falsef(t, rejectDotImport(path),
+				"dot-import of %s makes its references unqualified and defeats the scan: %s", path, filename)
 			continue
 		}
 		local := path

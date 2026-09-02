@@ -90,8 +90,10 @@ func defaultIdentityVerifier() error {
 //
 // The window is not serialized: while it's open, the process-wide euid is
 // raised for every goroutine, including os/exec's copy goroutines for
-// non-*os.File writers. This is an unresolved design issue: introducing
-// parallel execution needs a separate design, not a lock here.
+// non-*os.File writers. This is an unresolved design issue -- those copy
+// goroutines already run at euid 0 on every privileged command, without any
+// parallel execution feature -- and fixing it needs a separate design, not a
+// lock here.
 //
 // Not reentrant: a nested call on the same manager from within fn returns
 // ErrReentrantPrivilegeCall instead of opening a second window.

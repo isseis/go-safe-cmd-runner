@@ -22,37 +22,28 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/testutil/identitymutationguard"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // scanRoots are the directories the census covers, relative to this file.
 // Paths are reported relative to the repository root, so repoRootPrefix is
 // stripped from every scanned path before it reaches the expectation table.
+//
+// Production Go files outside these two trees (scripts/verification/) are out
+// of scope on purpose: the census covers what the runner binaries build.
+//
+// filepath.WalkDir does not follow directory symlinks, so a package reached
+// only through a symlinked directory would be skipped silently. No such
+// directory exists here. An unreadable directory does fail loudly, since
+// WalkDir reports the error to the callback, which returns it.
 var scanRoots = []string{"../../../internal", "../../../cmd"}
 
 const repoRootPrefix = "../../../"
-
-// syncPrimitiveNames is the set of sync package types that provide
-// concurrency control. It is deliberately wider than the types this task
-// removed: a census that only listed the removed types would let a
-// newly introduced sync.Map or sync.Cond through unnoticed.
-var syncPrimitiveNames = map[string]struct{}{
-	"Mutex":      {},
-	"RWMutex":    {},
-	"Once":       {},
-	"OnceValue":  {},
-	"OnceFunc":   {},
-	"OnceValues": {},
-	"WaitGroup":  {},
-	"Map":        {},
-	"Cond":       {},
-	"Locker":     {},
-}
 
 // onceInitializerNames is the set of sync functions whose call expression is
 // the only syntax a declaration such as
@@ -78,6 +69,20 @@ func (d declaration) String() string {
 	return d.file + ": " + d.name
 }
 
+// describeCount renders one mismatch line. The counts are only spelled out
+// when the name is declared more than once on either side, so the common
+// one-for-one case stays readable.
+func (d declaration) describeCount(delta, found, expected int, reason string) string {
+	line := d.String()
+	if found > 1 || expected > 1 {
+		line += fmt.Sprintf(" (found %d, table has %d: %d unaccounted for)", found, expected, delta)
+	}
+	if reason != "" {
+		line += " (" + reason + ")"
+	}
+	return line
+}
+
 // expectation is one row of the census: a declaration that is expected to
 // exist, with the short reason it is kept. The detailed rationale lives in
 // the doc comment next to the declaration itself; the reason here is only
@@ -89,8 +94,11 @@ type expectation struct {
 	reason string
 }
 
-// expectedDeclarations is the census. Every synchronization primitive left in
-// production code after task 0170 appears here exactly once.
+// expectedDeclarations is the census: one row per synchronization primitive
+// left in production code after task 0170. Rows are matched by multiplicity,
+// so a file that declares two primitives under the same name (two functions
+// each with a local "mu", say) needs two rows; one row would otherwise cover
+// both and hide the second addition.
 var expectedDeclarations = []expectation{
 	{"internal/logging/slack_sender.go", "mu", "guards the dispatcher fields against the send worker goroutine"},
 	{"internal/logging/slack_sender.go", "aggregateOnce", "Flush and Close can both reach the aggregate report from different goroutines"},
@@ -113,40 +121,40 @@ var expectedDeclarations = []expectation{
 // TestSyncCensusMatchesExpectation checks the scan and the expectation table
 // against each other in both directions.
 func TestSyncCensusMatchesExpectation(t *testing.T) {
-	found := scanProductionDeclarations(t)
+	foundCounts := make(map[declaration]int)
+	for _, decl := range scanProductionDeclarations(t) {
+		foundCounts[decl]++
+	}
 
-	expected := make(map[declaration]string, len(expectedDeclarations))
+	expectedCounts := make(map[declaration]int, len(expectedDeclarations))
+	reasons := make(map[declaration]string, len(expectedDeclarations))
 	for _, e := range expectedDeclarations {
 		decl := declaration{file: e.file, name: e.name}
-		_, duplicate := expected[decl]
-		require.Falsef(t, duplicate, "duplicate expectation row for %s", decl)
-		expected[decl] = e.reason
+		expectedCounts[decl]++
+		reasons[decl] = e.reason
 	}
 
-	var undeclared []string
-	for _, decl := range found {
-		if _, ok := expected[decl]; !ok {
-			undeclared = append(undeclared, decl.String())
+	var undeclared, missing []string
+	for decl, count := range foundCounts {
+		if surplus := count - expectedCounts[decl]; surplus > 0 {
+			undeclared = append(undeclared, decl.describeCount(surplus, count, expectedCounts[decl], ""))
 		}
 	}
-
-	foundSet := make(map[declaration]struct{}, len(found))
-	for _, decl := range found {
-		foundSet[decl] = struct{}{}
-	}
-	var missing []string
-	for decl, reason := range expected {
-		if _, ok := foundSet[decl]; !ok {
-			missing = append(missing, decl.String()+" ("+reason+")")
+	for decl, count := range expectedCounts {
+		if shortfall := count - foundCounts[decl]; shortfall > 0 {
+			missing = append(missing, decl.describeCount(shortfall, foundCounts[decl], count, reasons[decl]))
 		}
 	}
+	sort.Strings(undeclared)
 	sort.Strings(missing)
 
-	require.Emptyf(t, undeclared,
+	// Both directions are reported: a rename removes one declaration and adds
+	// another, and seeing only half of that costs the reader a second run.
+	assert.Emptyf(t, undeclared,
 		"found in production code but not in the expectation table:\n%s\n"+
 			"Either document why the concurrent access is real and add a row, or remove the declaration.",
 		strings.Join(undeclared, "\n"))
-	require.Emptyf(t, missing,
+	assert.Emptyf(t, missing,
 		"in the expectation table but not found in production code:\n%s\n"+
 			"The declaration was removed or renamed; drop or update the row.",
 		strings.Join(missing, "\n"))
@@ -196,16 +204,26 @@ func scanProductionDeclarations(t *testing.T) []declaration {
 // is most likely to take.
 func declarationsInFile(t *testing.T, path string) []declaration {
 	t.Helper()
-
-	fset := token.NewFileSet()
 	// Passing a nil source lets go/parser read the file itself, so this scan
 	// never opens a path of its own.
-	file, err := parser.ParseFile(fset, path, nil, 0)
-	require.NoErrorf(t, err, "failed to parse %s", path)
+	return declarationsInSource(t, path, nil)
+}
+
+// declarationsInSource is declarationsInFile over source held in memory, so
+// the recognized declaration forms can be tested against synthetic snippets
+// rather than only against whatever the repository happens to contain today.
+// A nil src makes go/parser read filename instead.
+func declarationsInSource(t *testing.T, filename string, src any) []declaration {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, 0)
+	require.NoErrorf(t, err, "failed to parse %s", filename)
 
 	sc := &fileScanner{
-		file:              strings.TrimPrefix(filepath.ToSlash(path), repoRootPrefix),
-		localToImportPath: resolveLocalImports(t, path, file),
+		file: strings.TrimPrefix(filepath.ToSlash(filename), repoRootPrefix),
+		localToImportPath: identitymutationguard.ResolveLocalImports(t, filename, file,
+			func(importPath string) bool { return importPath == "sync" || importPath == "sync/atomic" }),
 	}
 	ast.Inspect(file, func(n ast.Node) bool {
 		sc.visit(n)
@@ -295,9 +313,15 @@ func (sc *fileScanner) record(name string) {
 	sc.found = append(sc.found, declaration{file: sc.file, name: name})
 }
 
-// matchesType reports whether expr is a type expression naming a sync
-// primitive or any atomic type, after peeling off pointer, slice, array and
-// map layers so that *sync.Mutex and map[int]*sync.Mutex both match.
+// matchesType reports whether expr is a type expression from sync or
+// sync/atomic, after peeling off the layers a declaration can wrap one in:
+// pointer, slice/array, map value, channel element, variadic element, and the
+// index of a generic instantiation such as atomic.Pointer[T].
+//
+// Every exported type of either package is a synchronization primitive, and a
+// type position holds nothing else, so neither package needs a hand-kept list
+// of type names to stay in step with -- a list is exactly how sync.Pool would
+// slip through.
 func (sc *fileScanner) matchesType(expr ast.Expr) bool {
 	for {
 		switch e := expr.(type) {
@@ -307,22 +331,20 @@ func (sc *fileScanner) matchesType(expr ast.Expr) bool {
 			expr = e.Elt
 		case *ast.MapType:
 			expr = e.Value
+		case *ast.ChanType:
+			expr = e.Value
+		case *ast.Ellipsis:
+			expr = e.Elt
+		case *ast.IndexExpr:
+			expr = e.X
+		case *ast.IndexListExpr:
+			expr = e.X
 		default:
-			pkg, name, ok := sc.qualifiedName(expr)
+			pkg, _, ok := sc.qualifiedName(expr)
 			if !ok {
 				return false
 			}
-			switch pkg {
-			case "sync":
-				_, isPrimitive := syncPrimitiveNames[name]
-				return isPrimitive
-			case "sync/atomic":
-				// Every exported type of sync/atomic is a synchronization
-				// primitive, and a type position holds nothing else.
-				return true
-			default:
-				return false
-			}
+			return pkg == "sync" || pkg == "sync/atomic"
 		}
 	}
 }
@@ -338,7 +360,25 @@ func (sc *fileScanner) matchesInitializer(expr ast.Expr) bool {
 	case *ast.CompositeLit:
 		return sc.matchesType(e.Type)
 	case *ast.CallExpr:
-		pkg, name, ok := sc.qualifiedName(e.Fun)
+		// new(sync.Mutex), the sibling form of &sync.Mutex{}.
+		if ident, isIdent := e.Fun.(*ast.Ident); isIdent && ident.Name == "new" && len(e.Args) == 1 {
+			return sc.matchesType(e.Args[0])
+		}
+		// An explicit instantiation, sync.OnceValue[bool](f), puts the
+		// selector under an index expression.
+		fun := e.Fun
+		for {
+			switch indexed := fun.(type) {
+			case *ast.IndexExpr:
+				fun = indexed.X
+				continue
+			case *ast.IndexListExpr:
+				fun = indexed.X
+				continue
+			}
+			break
+		}
+		pkg, name, ok := sc.qualifiedName(fun)
 		if !ok || pkg != "sync" {
 			return false
 		}
@@ -394,29 +434,135 @@ func identNames(idents []*ast.Ident) []string {
 	return names
 }
 
-// resolveLocalImports maps each import's local identifier to its import path.
-// A dot-import of sync or sync/atomic would make declarations unqualified and
-// invisible to this scan, so it is rejected outright.
-func resolveLocalImports(t *testing.T, filename string, file *ast.File) map[string]string {
-	t.Helper()
-
-	localToImportPath := make(map[string]string)
-	for _, imp := range file.Imports {
-		path, err := strconv.Unquote(imp.Path.Value)
-		require.NoErrorf(t, err, "failed to unquote import path %s in %s", imp.Path.Value, filename)
-		if imp.Name != nil && imp.Name.Name == "." {
-			require.Falsef(t, path == "sync" || path == "sync/atomic",
-				"dot-import of %s hides synchronization declarations from the census: %s", path, filename)
-			continue
-		}
-		local := path
-		if idx := strings.LastIndex(path, "/"); idx >= 0 {
-			local = path[idx+1:]
-		}
-		if imp.Name != nil {
-			local = imp.Name.Name
-		}
-		localToImportPath[local] = path
+// TestDeclarationsInSourceRecognizesDeclarationForms pins the syntax the scan
+// must recognize. The census itself only exercises the handful of forms this
+// repository happens to use today, which leaves most of the scan untested and
+// lets a form the repository does not use yet -- atomic.Pointer[T], say --
+// pass unnoticed the day someone adds it.
+func TestDeclarationsInSourceRecognizesDeclarationForms(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "struct field",
+			body: "type s struct{ mu sync.Mutex }",
+			want: []string{"mu"},
+		},
+		{
+			name: "embedded field takes the type name",
+			body: "type s struct{ sync.Mutex }",
+			want: []string{"Mutex"},
+		},
+		{
+			name: "pointer slice and map wrappers are peeled",
+			body: "type s struct{\na *sync.Mutex\nb []sync.RWMutex\nc map[string]*sync.Mutex\n}",
+			want: []string{"a", "b", "c"},
+		},
+		{
+			name: "channel and variadic element types are peeled",
+			body: "type s struct{ ch chan sync.Mutex }\nfunc f(mus ...sync.Mutex) {}",
+			want: []string{"ch", "mus"},
+		},
+		{
+			name: "generic instantiation is peeled",
+			body: "type s struct{\np atomic.Pointer[int]\nv atomic.Value\n}",
+			want: []string{"p", "v"},
+		},
+		{
+			name: "sync.Pool is a primitive like any other",
+			body: "var pool sync.Pool",
+			want: []string{"pool"},
+		},
+		{
+			name: "top level var",
+			body: "var mu sync.Mutex",
+			want: []string{"mu"},
+		},
+		{
+			name: "function local var",
+			body: "func f() {\nvar wg sync.WaitGroup\n_ = wg\n}",
+			want: []string{"wg"},
+		},
+		{
+			name: "two declarations sharing a name are recorded separately",
+			body: "func f() {\nvar mu sync.Mutex\n_ = mu\n}\n\nfunc g() {\nvar mu sync.Mutex\n_ = mu\n}",
+			want: []string{"mu", "mu"},
+		},
+		{
+			name: "short variable declaration",
+			body: "func f() {\nmu := sync.Mutex{}\n_ = mu\n}",
+			want: []string{"mu"},
+		},
+		{
+			name: "address-of composite literal",
+			body: "var mu = &sync.Mutex{}",
+			want: []string{"mu"},
+		},
+		{
+			name: "new call",
+			body: "var mu = new(sync.RWMutex)",
+			want: []string{"mu"},
+		},
+		{
+			name: "type-less OnceValue initializer",
+			body: "var probe = sync.OnceValue(func() bool { return true })",
+			want: []string{"probe"},
+		},
+		{
+			name: "explicitly instantiated OnceValue initializer",
+			body: "var probe = sync.OnceValue[bool](func() bool { return true })",
+			want: []string{"probe"},
+		},
+		{
+			name: "a plain integer used with atomic operations is out of scope",
+			body: "var counter int64\n\nfunc f() { atomic.AddInt64(&counter, 1) }",
+			want: nil,
+		},
+		{
+			name: "a qualifier that is not an import does not match",
+			body: "type notSync struct{ Mutex int }\n\nvar shadow notSync\n\nvar mu = shadow.Mutex",
+			want: nil,
+		},
 	}
-	return localToImportPath
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := "package p\n\nimport (\n\"sync\"\n\"sync/atomic\"\n)\n\nvar _, _ = sync.Mutex{}, atomic.Int64{}\n\n" + tt.body + "\n"
+			var got []string
+			for _, decl := range declarationsInSource(t, "synthetic.go", src) {
+				got = append(got, decl.name)
+			}
+			// The header declares one sync and one atomic value so that both
+			// imports are used; those two are anonymous (_) and are dropped
+			// here so each case asserts on its own body alone.
+			got = withoutBlanks(got)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestDeclarationsInSourceResolvesAliasedImports checks that the qualifier is
+// resolved through the file's imports rather than matched by spelling, in both
+// directions: an alias for sync still matches, and another package aliased to
+// "sync" does not.
+func TestDeclarationsInSourceResolvesAliasedImports(t *testing.T) {
+	aliased := declarationsInSource(t, "aliased.go",
+		"package p\n\nimport s \"sync\"\n\ntype t struct{ mu s.Mutex }\n")
+	assert.Equal(t, []declaration{{file: "aliased.go", name: "mu"}}, aliased)
+
+	decoy := declarationsInSource(t, "decoy.go",
+		"package p\n\nimport sync \"errors\"\n\nvar _ = sync.New\n\ntype t struct{ mu sync.Mutex }\n")
+	assert.Empty(t, decoy, "a package aliased to sync must not be mistaken for sync")
+}
+
+func withoutBlanks(names []string) []string {
+	var kept []string
+	for _, name := range names {
+		if name != "_" {
+			kept = append(kept, name)
+		}
+	}
+	return kept
 }
