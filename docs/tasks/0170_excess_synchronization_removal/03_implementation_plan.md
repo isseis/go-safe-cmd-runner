@@ -840,7 +840,7 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 削除対象の `race_test.go` の4関数はいずれも `IsPrivilegedExecutionSupported()` が偽のとき skip する
 ため、同じ形を真似ると AC-24 の唯一の実行可能検証が空振りになる。
 
-- [ ] 既存の `internal/runner/base/privilege/unix_privilege_test.go::TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity`
+- [x] 既存の `internal/runner/base/privilege/unix_privilege_test.go::TestWithPrivileges_UserGroupExecutionDoesNotChangeIdentity`
       （:103-133）が使っている構成をそのまま流用する。すなわち `&UnixPrivilegeManager{...}` を手で
       構築し、次の4つを与える。**`fn` に到達できるのはこの構成のためであり、操作種別のためではない**
       （`OperationUserGroupExecution` は `unix.go:151-153` で `needsPrivilegeEscalation` を**真**にする）
@@ -851,17 +851,19 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
         `emergencyShutdown` を呼ばないようにする
       - `readSavedIDs: func() (int, int, error) { return -1, -1, ErrSavedSetNotSupported }` —
         saved-set 不変条件の検査を飛ばす
-- [ ] `osExit` には `func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") }` を与え、
+- [x] `osExit` には `func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") }` を与え、
       緊急停止経路に入った場合にテストが黙って通らないようにする
-- [ ] `ElevationContext.Operation` には `runnertypes.OperationUserGroupExecution` を指定する
+- [x] `ElevationContext.Operation` には `runnertypes.OperationUserGroupExecution` を指定する
       （`prepareExecution` の `switch` が受け付ける2つの操作種別のうちの1つ。`default` は
       `ErrUnsupportedOperationType` を返すため、他の種別では `fn` の手前で戻ってしまう）
-- [ ] `TestWithPrivileges_ReentrantCallIsRejected` を追加し、次の3点を検証する
+- [x] `TestWithPrivileges_ReentrantCallIsRejected` を追加し、2つのサブテスト
+      （`reentrant call is rejected and the inner fn never runs` と
+      `consecutive non-reentrant calls both run fn`）に分けて、次の3点を検証する
       - 外側の `fn()` の中から同一マネージャの `WithPrivileges` を呼ぶと `errors.Is(err,
         ErrReentrantPrivilegeCall)` が真になる
       - 内側の `fn()` が**1度も呼ばれない**（呼び出し回数カウンタで確認する）
       - 外側の `fn()` は最後まで走り、外側の `WithPrivileges` は内側とは独立に自分の結果を返す
-- [ ] 再入しない通常呼び出しでガードが発火しないことを確認するケースを同テストに含める
+- [x] 再入しない通常呼び出しでガードが発火しないことを確認するケースを同テストに含める
       （`WithPrivileges` を続けて2回呼び、2回目も `fn()` が呼ばれる）
 
 **完了条件**: `go test -tags test -run TestWithPrivileges_ReentrantCallIsRejected -v ./internal/runner/base/privilege/`
@@ -869,34 +871,41 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 #### Step 3-2: `mu` の削除と再入ガードの実装
 
-- [ ] `internal/runner/base/privilege/errors.go` に
+- [x] `internal/runner/base/privilege/errors.go` に
       `ErrReentrantPrivilegeCall = errors.New("reentrant WithPrivileges call")` を追加し、doc コメントに
       `ErrReentrantPrivilegeCall is returned when WithPrivileges is called from within a privilege
       window on the same manager.` と書く。このファイルの既存のセンチネルは `fmt.Errorf` で作られて
       いるため、`errors` の import を追加する。書式引数を取らないので `errors.New` を使うのが正しく、
       周囲に合わせて `fmt.Errorf` に直す必要はない
-- [ ] `internal/runner/base/privilege/unix.go:36` の `mu sync.Mutex` を削除し、
+- [x] `internal/runner/base/privilege/unix.go:36` の `mu sync.Mutex` を削除し、
       非公開の `inPrivilegedWindow bool` フィールドを追加する
-- [ ] 同 100-101 の `m.mu.Lock()`／`defer m.mu.Unlock()` を、入口のガードに置き換える。すなわち
+- [x] **計画に無い追加（原則2の適用）**: `inPrivilegedWindow` フィールドに doc コメントを付け、
+      再入の拒否だけが目的であること・単一の goroutine が読み書きすること・並行呼び出しに対する
+      保護を与えないことを書く。維持対象に根拠を書く AC-14〜AC-17 と同じ理由が、同期機構を使わない
+      置き換え側にも当てはまる（D3・D5・D6 で平坦化したグローバルに doc を付けたのと同じ扱い）
+- [x] 同 100-101 の `m.mu.Lock()`／`defer m.mu.Unlock()` を、入口のガードに置き換える。すなわち
       `inPrivilegedWindow` が立っていれば `fn()` を呼ばずに `ErrReentrantPrivilegeCall` を返し、
       立っていなければ立てて `defer` で倒す
 
 #### Step 3-3: `privilege` パッケージとインターフェースの記述を追随させる（AC-11・AC-12・AC-24）
 
-- [ ] `unix.go:92-98` の再入不可の注意書き（`WithPrivileges is not reentrant: it holds m's mutex ...`
+- [x] `unix.go:92-98` の再入不可の注意書き（`WithPrivileges is not reentrant: it holds m's mutex ...`
       から `... legitimate wait for the lock.` までの7行）を削除し、`WithPrivileges` の doc コメントに
       次の3つのリテラルを含む記述を書く（AC-11）
       - (a) `This method does not serialize privilege windows.`
       - (b) `While the window is open the process-wide euid is raised, so goroutines that never call
         WithPrivileges -- including the copy goroutines os/exec starts for non-*os.File writers --
         also run with that euid.`
+        **実装時の差分**: 英文として読点が要るため `While the window is open, the process-wide euid
+        is raised, ...` と1文字だけ変えた。§7 の AC-11 の静的検証が検索するのは
+        `the process-wide euid is raised` であり、この語句は1行に収めてあるので検証は 3 を返す
       - (c) `This is an unresolved design issue: introducing parallel execution requires a separate
         design, not a lock inside this method.`
-- [ ] あわせて、再入は `ErrReentrantPrivilegeCall` で拒否されることを doc コメントに書く
-- [ ] `unix.go:248` と `unix.go:287` の
+- [x] あわせて、再入は `ErrReentrantPrivilegeCall` で拒否されることを doc コメントに書く
+- [x] `unix.go:248` と `unix.go:287` の
       `// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock`
       の2行を削除する
-- [ ] `internal/runner/base/runnertypes/config.go:195-197` の
+- [x] `internal/runner/base/runnertypes/config.go:195-197` の
       `// WithPrivileges is not reentrant: fn must not call WithPrivileges again on` /
       `// the same manager, directly or indirectly, or the call deadlocks. Avoiding` /
       `// reentrant calls is the caller's responsibility.` を
@@ -914,12 +923,12 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 `internal/runner/base/privilege/race_test.go` の4関数を削除する。ファイル全体がこの4関数だけで
 構成されるため、結果としてファイルごと削除になる。
 
-- [ ] `TestUnixPrivilegeManager_ConcurrentAccess` を削除する
-- [ ] `TestUnixPrivilegeManager_NoDeadlock` を削除する
-- [ ] `TestUnixPrivilegeManager_RaceConditionProtection` を削除する
-- [ ] `TestUnixPrivilegeManager_LockSerialization` を削除する
-- [ ] `race_test.go` を削除する
-- [ ] **カバレッジ比較ではなく、関数単位にどのテストが検証しているかを議論して AC-13 を満たす。** 4関数のうち3つ
+- [x] `TestUnixPrivilegeManager_ConcurrentAccess` を削除する
+- [x] `TestUnixPrivilegeManager_NoDeadlock` を削除する
+- [x] `TestUnixPrivilegeManager_RaceConditionProtection` を削除する
+- [x] `TestUnixPrivilegeManager_LockSerialization` を削除する
+- [x] `race_test.go` を削除する
+- [x] **カバレッジ比較ではなく、関数単位にどのテストが検証しているかを議論して AC-13 を満たす。** 4関数のうち3つ
       （`ConcurrentAccess`・`NoDeadlock`・`RaceConditionProtection`）は冒頭で
       `if !manager.IsPrivilegedExecutionSupported() { t.Skip(...) }` を行うため、setuid されて
       いない測定環境では**カバレッジに1行も寄与しない**。残る `LockSerialization` には skip が無く
@@ -943,32 +952,32 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 日本語版を先に編集し、英語版へは `/mktrans` で反映する（§1.3.6）。6箇所のうち行 437 は Step 2-8 で
 済んでいるので、ここで扱うのは残り5箇所である。
 
-- [ ] `security-architecture.ja.md:309` の構造体定義のコード例から `mu sync.Mutex  // 競合状態を防止`
+- [x] `security-architecture.ja.md:309` の構造体定義のコード例から `mu sync.Mutex  // 競合状態を防止`
       の行を削り、`inPrivilegedWindow bool` の行を加える
-- [ ] `security-architecture.ja.md:322-323` の `WithPrivileges` のコード例から
+- [x] `security-architecture.ja.md:322-323` の `WithPrivileges` のコード例から
       `m.mu.Lock()  // スレッドセーフティのためのグローバルロック` と `defer m.mu.Unlock()` の2行を削り、
       再入ガードの2行に置き換える
-- [ ] `security-architecture.ja.md:407` の Security Guarantees の
+- [x] `security-architecture.ja.md:407` の Security Guarantees の
       `- グローバルmutexによるスレッドセーフな特権操作` の行を削除する
-- [ ] `security-architecture.ja.md:1192` の脅威モデルで、脅威「特権処理における競合状態」への対策欄の
+- [x] `security-architecture.ja.md:1192` の脅威モデルで、脅威「特権処理における競合状態」への対策欄の
       `- スレッドセーフ操作` を削除し、**残存リスク**として
       「特権の隙が開いている間、参加しない goroutine は保護されない。これは未解決の設計課題である」を
       記す。対策を消すだけで脅威を対策なしのまま残さない（`02_architecture.md` §6.3(1)）
-- [ ] `security-architecture.ja.md:1256` の Performance の
+- [x] `security-architecture.ja.md:1256` の Performance の
       `- グローバルmutexが競合状態を防ぐが特権操作を直列化` の行を削除する
-- [ ] `/mktrans` で `security-architecture.md` の対応する5箇所（309・322-323・407・1197・1261）へ反映する
-- [ ] **設計書の表に無い2箇所（PR-4 のレビューで発見）**:
+- [x] `/mktrans` で `security-architecture.md` の対応する5箇所（309・322-323・407・1197・1261）へ反映する
+- [x] **設計書の表に無い2箇所（PR-4 のレビューで発見）**:
       `docs/dev/developer_guide/design-implementation-overview.ja.md:91` の
       「グローバルミューテックスを使用したスレッドセーフな特権操作」と同 `:477` の
       「グローバルミューテックスによる特権操作の直列化」を削除する。どちらも D11 が取り下げる性質を
       述べており、`02_architecture.md` §3.2・§6.3 のどの表にも載っていなかった。原則2（記述を同じ
       コミットで追随させる）の当然の適用として D11 のコミットに含める
-- [ ] `/mktrans` で `design-implementation-overview.md` の対応する2箇所（91・477）へ反映する
+- [x] `/mktrans` で `design-implementation-overview.md` の対応する2箇所（91・477）へ反映する
 
 #### Phase 3 の完了ゲート
 
-- [ ] `make fmt` → `make test` → `make lint` が通る
-- [ ] コミット件名を `refactor(0170): remove D11 UnixPrivilegeManager.mu and add reentrancy guard` とし、
+- [x] `make fmt` → `make test` → `make lint` が通る
+- [x] コミット件名を `refactor(0170): remove D11 UnixPrivilegeManager.mu and add reentrancy guard` とし、
       本文に Phase 2 と同じ `Rationale:`／`Race observation:`／`Coverage:`／`Falsification:` を含める。
       `Falsification:` には「`inPrivilegedWindow` の判定を外すと
       `TestWithPrivileges_ReentrantCallIsRejected` が失敗する」ことを書く
