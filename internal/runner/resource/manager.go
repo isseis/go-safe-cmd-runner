@@ -49,7 +49,7 @@ func (e ExecutionMode) String() string {
 }
 
 // CommandToken is a unique identifier for a command execution
-// Used to safely update debug information even in parallel execution scenarios
+// It identifies a previously recorded analysis so debug info can be attached later
 type CommandToken string
 
 // Manager manages all side-effects (commands, filesystem, privileges, etc.)
@@ -72,8 +72,8 @@ type Manager interface {
 	GetDryRunResults() *DryRunResult
 
 	// FinalizeDryRunResults records fileVerification (nil clears any
-	// previously recorded summary) and atomically returns the finalized
-	// dry-run results, with PreviewExitCode computed from the summary just
+	// previously recorded summary) and returns the finalized dry-run
+	// results in one call, with PreviewExitCode computed from the summary just
 	// recorded. Returns nil for normal execution mode. Callers that need the
 	// exit code to reflect a verification summary must use this instead of
 	// GetDryRunResults, since a separate "set then get" pair would leave the
