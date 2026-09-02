@@ -124,17 +124,17 @@ func validateVariableName(varName, level, field string) error {
 // It checks global timeout, template timeouts, and command-level timeouts.
 // Returns an aggregated error containing all negative timeout violations found.
 func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
-	var errors []string
+	var msgs []string
 
 	// Check global timeout
 	if cfg.Global.Timeout != nil && *cfg.Global.Timeout < 0 {
-		errors = append(errors, fmt.Sprintf("global timeout got %d", *cfg.Global.Timeout))
+		msgs = append(msgs, fmt.Sprintf("global timeout got %d", *cfg.Global.Timeout))
 	}
 
 	// Check template timeouts
 	for templateName, template := range cfg.CommandTemplates {
 		if template.Timeout != nil && *template.Timeout < 0 {
-			errors = append(errors, fmt.Sprintf("template '%s' timeout got %d",
+			msgs = append(msgs, fmt.Sprintf("template '%s' timeout got %d",
 				templateName, *template.Timeout))
 		}
 	}
@@ -143,14 +143,14 @@ func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
 	for groupIdx, group := range cfg.Groups {
 		for cmdIdx, cmd := range group.Commands {
 			if cmd.Timeout != nil && *cmd.Timeout < 0 {
-				errors = append(errors, fmt.Sprintf("command '%s' in group '%s' (groups[%d].commands[%d]) got %d",
+				msgs = append(msgs, fmt.Sprintf("command '%s' in group '%s' (groups[%d].commands[%d]) got %d",
 					cmd.Name, group.Name, groupIdx, cmdIdx, *cmd.Timeout))
 			}
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("%w: %s", ErrNegativeTimeout, strings.Join(errors, "; "))
+	if len(msgs) > 0 {
+		return fmt.Errorf("%w: %s", ErrNegativeTimeout, strings.Join(msgs, "; "))
 	}
 
 	return nil

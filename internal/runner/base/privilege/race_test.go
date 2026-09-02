@@ -126,7 +126,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 	var wg sync.WaitGroup
 	var privilegedCount int32
 	var mu sync.Mutex
-	var errors []error
+	var errs []error
 
 	// Launch many goroutines simultaneously to try to trigger race conditions
 	for range numGoroutines {
@@ -153,7 +153,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 			})
 			if err != nil {
 				mu.Lock()
-				errors = append(errors, err)
+				errs = append(errs, err)
 				mu.Unlock()
 			}
 		})
@@ -162,7 +162,7 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 	wg.Wait()
 
 	// All operations should have succeeded
-	assert.Empty(t, errors, "No operations should have failed due to race conditions")
+	assert.Empty(t, errs, "No operations should have failed due to race conditions")
 	assert.Equal(t, int32(numGoroutines), privilegedCount, "All goroutines should have seen elevated privileges")
 
 	// Verify we're back to original privileges

@@ -388,10 +388,28 @@ func TestNormalResourceManager_CreateTempDir(t *testing.T) {
 	assert.Equal(t, expectedPath, path)
 
 	// Check that path is tracked
-	f.Manager.mu.RLock()
 	assert.Contains(t, f.Manager.tempDirs, expectedPath)
-	f.Manager.mu.RUnlock()
 
+	f.MockFS.AssertExpectations(t)
+}
+
+// TestNormalResourceManager_CleanupAllTempDirs covers the release of every
+// tracked directory. Three entries are seeded so the test fails if the
+// implementation iterates n.tempDirs directly instead of a copy: removing
+// entries while ranging over the same slice skips alternate entries, leaving
+// temp directories behind.
+func TestNormalResourceManager_CleanupAllTempDirs(t *testing.T) {
+	f := createTestNormalResourceManager()
+	tempPaths := []string{"/tmp/scr-a-1", "/tmp/scr-b-2", "/tmp/scr-c-3"}
+
+	f.Manager.tempDirs = append(f.Manager.tempDirs, tempPaths...)
+	for _, p := range tempPaths {
+		f.MockFS.On("RemoveAll", p).Return(nil)
+	}
+
+	assert.NoError(t, f.Manager.CleanupAllTempDirs())
+
+	assert.Empty(t, f.Manager.tempDirs, "every tracked directory must be untracked")
 	f.MockFS.AssertExpectations(t)
 }
 
@@ -400,9 +418,7 @@ func TestNormalResourceManager_CleanupTempDir(t *testing.T) {
 	tempPath := testTempPath
 
 	// Add path to tracking
-	f.Manager.mu.Lock()
 	f.Manager.tempDirs = append(f.Manager.tempDirs, tempPath)
-	f.Manager.mu.Unlock()
 
 	f.MockFS.On("RemoveAll", tempPath).Return(nil)
 
@@ -411,9 +427,7 @@ func TestNormalResourceManager_CleanupTempDir(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Check that path is no longer tracked
-	f.Manager.mu.RLock()
 	assert.NotContains(t, f.Manager.tempDirs, tempPath)
-	f.Manager.mu.RUnlock()
 
 	f.MockFS.AssertExpectations(t)
 }

@@ -129,7 +129,7 @@ import を残すと `imported and not used` でコンパイルが落ち、その
 | AC-06（D4） | `manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | memo のヒットと失敗の非記憶を既に検証している |
 | AC-07（D2） | `manager_test.go::TestCompletenessSurvivesCache`（AC-19 を満たすのはこれ）、同 `::TestGroupMembership`、同 `::TestGetGroupMembers_ErrorNotCached` | **本表の当初の記述は誤りだった**。`TestGroupMembership` の `cache behavior` 系サブテストと `TestGetGroupMembers_ErrorNotCached` は `GetCacheStats` の件数しか見ておらず、`getGroupEnumeration` のキャッシュ参照を外しても通る。AC-19 を実際に満たしているのは本表が挙げていなかった `TestCompletenessSurvivesCache`（同一 GID の2回参照で列挙が1回であることを検証する）である。加えて、別 GID の未ヒットと失効後の再列挙はどのテストも検証していないため、Step 2-2 で `TestGetGroupMembers_CacheHitSkipsEnumeration` を追加した（ヒットの検証は `TestCompletenessSurvivesCache` と重なるが、同じ準備で未ヒットと失効まで公開 API の `GetGroupMembers` 上で通して検証するため、分割せず1本にまとめている） |
 | AC-07（D7） | `internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand` | **本表の当初の記述は誤りだった**。この既存テストが検証しているのは `validateAndCacheCommand` の**キャッシュ格納**だけで、`ResolvePath` 冒頭の**キャッシュ参照**は外してもパッケージ全体が緑のままである（Step 1-0 の基準カバレッジでも、参照側の分岐にある `RUnlock` は未カバーだった）。Step 2-8 でサブテスト `answers from the cache once the command can no longer be resolved` を追加してこの分岐を引き受けた（格納側と参照側でキーが食い違う壊れ方も同時に捕まえる）。D2 側と同じ種類の見落としである |
-| AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 通常版・dry-run 版の登録／解放／全解放を既に検証している |
+| AC-08（D9） | `normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir` | 通常版・dry-run 版の登録／解放を既に検証している。**本表の当初の記述は誤りだった**: 全解放の欄に挙げていた `default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` は dry-run のサブテストしか持たず、しかも `tempDirs` が空のマネージャに対して呼ぶため、通常版の `NormalResourceManager.CleanupAllTempDirs` に一度も到達しない（基準カバレッジでも同関数は 0.0%）。通常版の全解放は Step 2-9 で追加した `normal_manager_test.go::TestNormalResourceManager_CleanupAllTempDirs` が引き受ける |
 | D8 | `result_collector_test.go::TestResultCollector_RecordSuccess`（:34）、同 `::TestResultCollector_RecordFailure`（:47）、同 `::TestResultCollector_GetSummary`（:91）、同 `::TestResultCollector_MixedResults`（:335） | 削除する `TestResultCollector_Concurrency` が主張していた「成功・失敗の記録が集計へ正しく反映される」は、この4本が検証している。確認済みなので Step 2-7 では追加しない |
 | AC-10（D10） | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 冪等性と nil レシーバは検証しているが、**「`syscall.Close` が1回だけ走る」ことは検証していない**。同ファイルの既存ヘルパ `fdIsOpen`（:46）を使って前者を拡張する（新規テスト関数は追加しない） |
 | D11 | §4.4 の表を参照。`race_test.go` の4関数の削除は、カバレッジ比較では検証できない（§4.4 の注記） | Step 3-4 で関数単位にどのテストが検証しているかを議論する |
@@ -674,8 +674,8 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1085）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -683,48 +683,74 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 
 D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断なので1コミットにまとめる。
 
-- [ ] `internal/runner/resource/normal_manager.go:42` の `mu sync.RWMutex` を削除する
-- [ ] 同 328-330、343-350、357-360 の Lock／Unlock／RLock／RUnlock を削除する
-- [ ] `internal/runner/resource/dryrun_manager.go:91` の `mu sync.RWMutex` を削除する
-- [ ] 同ファイルの `d.mu.` の Lock／Unlock／RLock／RUnlock をすべて削除する
+- [x] `internal/runner/resource/normal_manager.go:42` の `mu sync.RWMutex` を削除する
+- [x] 同 328-330、343-350、357-360 の Lock／Unlock／RLock／RUnlock を削除する
+- [x] `internal/runner/resource/dryrun_manager.go:91` の `mu sync.RWMutex` を削除する
+- [x] 同ファイルの `d.mu.` の Lock／Unlock／RLock／RUnlock をすべて削除する
       （`rg -n 'd\.mu\.' internal/runner/resource/dryrun_manager.go` が返す全行）
-- [ ] `dryrun_manager.go:540` の `previewExitCodeLocked` を `previewExitCode` に改名し、
+- [x] `dryrun_manager.go:540` の `previewExitCodeLocked` を `previewExitCode` に改名し、
       呼び出し側（同 534・909 行）を追随させる
-- [ ] `dryrun_manager.go:895` の `refreshDryRunResultLocked` を `refreshDryRunResult` に改名し、
+- [x] `dryrun_manager.go:895` の `refreshDryRunResultLocked` を `refreshDryRunResult` に改名し、
       呼び出し側（同 870・885 行）を追随させる
-- [ ] 改名した2関数の名前を含むコメント（`dryrun_manager.go:84`・`537`・`569`・`866`・`877`・`892`）を
+- [x] 改名した2関数の名前を含むコメント（`dryrun_manager.go:84`・`537`・`569`・`866`・`877`・`892`）を
       新しい名前に合わせて直す
-- [ ] `dryrun_manager.go:564-570` の「Concurrent calls are serialized with mu.」を含む並行性の主張と、
+- [x] `dryrun_manager.go:564-570` の「Concurrent calls are serialized with mu.」を含む並行性の主張と、
       `:864-866` の「it must hold the exclusive lock: a read lock would let concurrent callers race」の
       記述を削る
-- [ ] `internal/runner/resource/normal_manager_test.go:391,393,403,405,414,416` の `f.Manager.mu` の
+- [x] `internal/runner/resource/normal_manager_test.go:391,393,403,405,414,416` の `f.Manager.mu` の
       Lock／RLock／Unlock／RUnlock（3対6行）を削除する（間の `tempDirs` へのアクセスは残す）
-- [ ] `TestDryRunExecutionAcrossIndependentManagers` の doc コメントに、各 goroutine が自分の
+- [x] `TestDryRunExecutionAcrossIndependentManagers` の doc コメントに、各 goroutine が自分の
       マネージャを構築して同一インスタンスを共有しないことが D9 を許す根拠である旨を書き足す
       （Step 1-6 から持ち越した分）
-- [ ] AC-19 の確認（通常版・dry-run 版の両方）:
+- [x] **計画に無かった記述の追随（実装時に発見）**: `dryrun_manager.go:75` の
+      「Preview decision tracking (guarded by mu)」と `:486` の `recordPreviewDecision` の
+      「It locks once.」も `mu` の存在を前提にしているため、同じコミットで削った。§3.2 の表は
+      `:84`／`:564-570`／`:864-866` の3箇所しか挙げていないが、原則2（記述を同じコミットで追随
+      させる）の当然の適用である
+- [x] **計画からの差分**: `NormalResourceManager.CleanupAllTempDirs` の `tempDirs` の複製は
+      **残す**。この複製は並行性のためではなく、`CleanupTempDir` が反復中に `n.tempDirs` を
+      書き換えるためである。ロックを外すと複製の理由が読めなくなるので、その旨を1行の
+      コメントに書いた（D8 の「複製の目的を書き換える」と同じ扱い）。あわせて複製と削除を
+      `slices.Clone`／`slices.Index`＋`slices.Delete` に置き換えた（CLAUDE.md の `slices` 優先）
+- [x] **`Manager` インターフェース側の並行性の主張を削る（計画に無し・レビュー指摘）**:
+      `internal/runner/resource/manager.go:52` の `CommandToken` の「Used to safely update debug
+      information even in parallel execution scenarios」と、同 `:75` の `FinalizeDryRunResults` の
+      「atomically returns」を削る。前者は `UpdateCommandDebugInfo` が無同期で `tokenToIndex` と
+      `resourceAnalyses` を書き換えるようになった以上、成り立たない。後者は実装側の doc を本コミットで
+      「in a single operation」に直したのにインターフェース側だけが同期の語を残していた。D11 が
+      `runnertypes/config.go` に対して行うのと同じ、原則4（契約側を同じコミットで動かす）の適用である
+- [x] **`CleanupAllTempDirs` の新規テストを追加する（計画からの差分・レビュー指摘）**:
+      `normal_manager_test.go` に `TestNormalResourceManager_CleanupAllTempDirs` を追加した。
+      §1.3.4 と §7 の AC-08 の行は全解放を `default_manager_test.go::TestDefaultResourceManager_
+      CleanupAllTempDirs` が検証しているとしていたが、同テストは dry-run のサブテストしか持たず、
+      しかも `tempDirs` が空のマネージャに対して呼ぶため、通常版の実装に一度も到達しない
+      （基準カバレッジでも `NormalResourceManager.CleanupAllTempDirs` は 0.0% である）。
+      本コミットが理由を書き直した複製そのものが未検証のままになるので、3件を登録した状態で
+      全解放を通し、全件が `RemoveAll` され `tempDirs` が空になることを検証する
+- [x] AC-19 の確認（通常版・dry-run 版の両方）:
       (a) `NormalResourceManager.CreateTempDir` の `tempDirs` への登録を落とし、
       `TestNormalResourceManager_CreateTempDir` が失敗すること、
       (b) `NormalResourceManager.CleanupTempDir` の登録解除を落とし、
       `TestNormalResourceManager_CleanupTempDir` が失敗すること、
       (c) `DryRunResourceManager` 側で同じく登録を落とし、`TestDryRunResourceManager_CreateTempDir` が
-      失敗すること
+      失敗すること、(d) `CleanupAllTempDirs` の `slices.Clone` を `n.tempDirs` の直接参照に変えると
+      （反復中の削除で1件飛ばしになり）`TestNormalResourceManager_CleanupAllTempDirs` が失敗すること
 
 **完了条件**: `rg -n 'Locked\b' internal/runner/resource/dryrun_manager.go` が0件、
 `rg -n '\.mu\.' internal/runner/resource/` が0件。
 
 #### Step 2-10: D10 `VerifiedFD.closed` の `bool` 化と契約の取り下げ
 
-- [ ] `internal/runner/base/risktypes/types.go:33` の `closed atomic.Bool` を `closed bool` に変える
-- [ ] 同 54 行の `if f.closed.Swap(true) { return nil }` を
+- [x] `internal/runner/base/risktypes/types.go:33` の `closed atomic.Bool` を `closed bool` に変える
+- [x] 同 54 行の `if f.closed.Swap(true) { return nil }` を
       `if f.closed { return nil }` ＋ `f.closed = true` に置き換える
-- [ ] 型 doc コメントの `Contract` 節（22-24 行）の
+- [x] 型 doc コメントの `Contract` 節（22-24 行）の
       `Close is idempotent and safe for concurrent use: it guarantees the underlying descriptor is
       closed exactly once even if several callers race, and a nil receiver returns nil.` を
       `Close is idempotent: a second call from the same goroutine is a no-op, and a nil receiver
       returns nil. It provides no protection against concurrent calls; only the owning goroutine
       may call it.` に置き換える
-- [ ] `Close` の doc コメント（47-49 行）の
+- [x] `Close` の doc コメント（47-49 行）の
       `Close closes the underlying descriptor. It is idempotent, safe for concurrent use, and safe to
       call on a nil receiver. The atomic swap ensures syscall.Close runs for exactly one caller,
       avoiding a double-close race (CWE-1341).` を
@@ -732,8 +758,8 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
       goroutine runs no syscall -- and safe to call on a nil receiver. There is no protection
       against concurrent calls: only the goroutine that owns this VerifiedFD may call Close.` に
       置き換える
-- [ ] 並行テスト `types_test.go::TestVerifiedFD_ConcurrentClose` を削除する
-- [ ] `types_test.go::TestVerifiedFD_FdAndIdempotentClose` を拡張し、既存ヘルパ `fdIsOpen`（:46）を用いて
+- [x] 並行テスト `types_test.go::TestVerifiedFD_ConcurrentClose` を削除する
+- [x] `types_test.go::TestVerifiedFD_FdAndIdempotentClose` を拡張し、既存ヘルパ `fdIsOpen`（:46）を用いて
       「2回目の `Close` が `syscall.Close` を走らせない」ことを検証する。手順は次のとおり厳密に定める
       1. 1回目の `Close` の後、`fdIsOpen(fd)` が偽であることを確認する
       2. `syscall.Open(os.DevNull, syscall.O_RDONLY, 0)` で新しい fd を取り、**その場で**
@@ -743,14 +769,31 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
          番号の再利用を**必須条件として明示的に要求する**。再利用されなかった場合は skip でも
          暗黙の成功でもなく、テストの失敗とする（そうしないとアサーションが同語反復になる）
       4. 2回目の `vfd.Close()` を呼び、`fdIsOpen(newFD)` が真のままであることを確認する
-- [ ] AC-19 の確認: `closed` の判定を外し、拡張後の `TestVerifiedFD_FdAndIdempotentClose` が失敗すること
+- [x] **拡張したテストを2つのサブテストに分ける（計画からの差分・レビュー指摘）**: 上の手順1〜4は
+      サブテスト `second close does not close a descriptor reusing the number` としてそのまま実装した。
+      加えて、再利用に依存しない検出器を失わないためにサブテスト
+      `second close returns nil and runs no syscall` を置く。ガードを外した2回目の `Close` は
+      閉じ済みの fd に対する `close(2)` として EBADF を返すため、再オープンを挟まない側では
+      `assert.NoError` がそのまま検出器になる。fd 番号の再利用はプロセス全体の状態に依存する
+      前提なので、それだけに寄りかからない
+- [x] **開いた fd はすべて取得箇所で `t.Cleanup` に登録する**。`VerifiedFD` が所有する fd の後始末は
+      `vfd.Close()` 経由で行い、cleanup 自身が二重 close を起こさないようにする
+- [x] AC-19 の確認: `closed` の判定を外すと、2つのサブテストが**別々の検出器**で失敗すること
+      （再オープン無しの側は EBADF、再利用の側は「他人の fd を閉じた」ことの検出）
+- [x] **§7.1 の「並行テストを残したまま `-race`」の扱い（レビュー指摘）**: D10 ではこの実測は
+      構成上の意味を持たない。削除する `TestVerifiedFD_ConcurrentClose` は取り下げようとしている
+      契約そのものを符号化しているため、素の `bool` に対して必ず競合を報告する。実際に測ると
+      `types.go:54`（read）と `:57`（write）で `WARNING: DATA RACE` が出る。これは
+      「そのテストにとって atomic が効いていた」ことの証拠であって、production が descriptor を
+      共有することの証拠ではない。コミットメッセージの `Race observation:` には両方の実測
+      （テストを残した場合の報告と、削除後の無報告）と、そのどちらも到達可能性を語らないことを書いた
 
 **完了条件**: `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` が0件。
 
 #### Phase 2 の完了ゲート
 
-- [ ] `git log --oneline` に `refactor(0170): remove D1` 〜 `remove D10` の 10 コミットが並ぶ
-- [ ] `make fmt` → `make test` → `make lint` が通る
+- [x] `git log --oneline` に `refactor(0170): remove D1` 〜 `remove D10` の 10 コミットが並ぶ
+- [x] `make fmt` → `make test` → `make lint` が通る
 
 ---
 
@@ -766,8 +809,8 @@ D9 は2ファイルにまたがるが、同じ `tempDirs` 管理の1つの判断
 
 **判定理由**: rubric (b)「Conditional checks に2件以上該当」。resource cleanup at acquisition（Step 2-10 で新規に開く fd を取得箇所で `t.Cleanup` に登録する）と real cleanup/close API existence（`VerifiedFD.Close` の契約取り下げ）の2件に該当する。影響の重い D10 を PR の末尾に置いている。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した（https://github.com/isseis/go-safe-cmd-runner/pull/1086）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1258,9 +1301,9 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 
 #### PR-5: D9・D10 の削除
 
-- [ ] Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu`
-- [ ] Step 2-10: D10 `VerifiedFD.closed`
-- [ ] §1.3.3 の import を落とした（`normal_manager.go`・`dryrun_manager.go`・`types.go`・`types_test.go`）
+- [x] Step 2-9: D9 `NormalResourceManager.mu`／`DryRunResourceManager.mu`
+- [x] Step 2-10: D10 `VerifiedFD.closed`
+- [x] §1.3.3 の import を落とした（`normal_manager.go`・`dryrun_manager.go`・`types.go`・`types_test.go`）
 - [ ] Phase 2 の完了ゲート: PR-2〜PR-5 の 10 コミットが main に並ぶ（PR-5 マージ後にリポジトリ履歴で確認する）
 
 #### PR-6: D11 と再入ガード
@@ -1315,7 +1358,7 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-05 | test | `internal/groupmembership/manager_test.go::TestSudoUIDAdoptionReporter_ReportsOnlyOnce`、`internal/groupmembership/nsswitch_test.go::TestNSSCompletenessReporter_ReportsOnlyOnce` | 3回呼んでも記録は1件 |
 | AC-06 | test | `internal/groupmembership/manager_test.go::TestSudoUIDExistenceMemo_ReusesConfirmation`、同 `::TestSudoUIDExistenceMemo_DoesNotRememberFailures` | 確認済み UID は再問い合わせされず、失敗は毎回再問い合わせされる |
 | AC-07 | test | `internal/groupmembership/manager_test.go::TestGetGroupMembers_CacheHitSkipsEnumeration`（未ヒット・失効）、同 `::TestCompletenessSurvivesCache`（ヒット）、同 `::TestGetGroupMembers_ErrorNotCached`（エラーを記録しない）、`internal/verification/path_resolver_test.go::TestPathResolver_ValidateAndCacheCommand`（格納）、同 `::TestPathResolver_ResolvePath` のサブテスト `answers from the cache once the command can no longer be resolved`（参照とキーの一致） | キャッシュヒット時・未ヒット時の返り値が変わらない。`TestGroupMembership` のキャッシュ系サブテストは `GetCacheStats` の件数のみを見るため、AC-19 の根拠には数えない（§1.3.4） |
-| AC-08 | test | `internal/runner/resource/normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、`internal/runner/resource/dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`internal/runner/resource/default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs` | 登録・解放・全解放の挙動が通常版・dry-run 版とも変わらない |
+| AC-08 | test | `internal/runner/resource/normal_manager_test.go::TestNormalResourceManager_CreateTempDir`、同 `::TestNormalResourceManager_CleanupTempDir`、同 `::TestNormalResourceManager_CleanupAllTempDirs`（Step 2-9 で追加。通常版の全解放を検証する唯一のテスト）、`internal/runner/resource/dryrun_manager_test.go::TestDryRunResourceManager_CreateTempDir`、同 `::TestDryRunResourceManager_CleanupTempDir`、`internal/runner/resource/default_manager_test.go::TestDefaultResourceManager_CleanupAllTempDirs`（dry-run の委譲のみ） | 登録・解放・全解放の挙動が通常版・dry-run 版とも変わらない |
 | AC-09 | test | `internal/runner/base/executor/output_wrapper_test.go::TestOutputWrapper_SeparatesStdoutAndStderr`（`outputWrapper` 単体の識別と最初のエラー）、`cmd/runner` の `TestIntegration_TempDirHandling`・`TestIntegration_ErrorCleanup`・`TestIntegration_MultipleGroups`・`TestIntegration_CommandLevelWorkdir`（`executor.go:332-333` の配線の識別。§8.4 の「stdout 用と stderr 用を入れ替える」壊し方を捕まえるのはこちらである） | stdout と stderr の内容が取り違えられず、`GetWriteError` が最初のエラーを返す |
 | AC-10 | test | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 二重 `Close` で `syscall.Close` は1回だけ走り（fd 番号の再利用で確認）、nil レシーバは `nil` を返す |
 | AC-10 | static | `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` | 0 件 |

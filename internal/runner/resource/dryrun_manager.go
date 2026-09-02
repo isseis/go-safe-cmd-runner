@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/user"
-	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -72,7 +71,7 @@ type DryRunResourceManager struct {
 	executionPhase  ExecutionPhase
 	executionError  *ExecutionError
 
-	// Preview decision tracking (guarded by mu): set as commands are previewed so
+	// Preview decision tracking: set as commands are previewed so
 	// PreviewExitCode can report whether any command would be denied and whether a
 	// deny was caused by verification being unavailable.
 	previewPolicyDeny              bool
@@ -81,14 +80,11 @@ type DryRunResourceManager struct {
 	// fileVerification is the file-verification summary produced by the
 	// verification.Manager for the dry-run preview. It is set via
 	// FinalizeDryRunResults once the verification manager has finished walking
-	// the configuration/template files, and consulted by previewExitCodeLocked so
+	// the configuration/template files, and consulted by previewExitCode so
 	// that unverified content (UnverifiedFiles) and verification failures
 	// (Failures) together determine the exit code: tampering signal
 	// (hash_mismatch) -> 1, environment cause only -> 3.
 	fileVerification *verification.FileVerificationSummary
-
-	// State management
-	mu sync.RWMutex
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode.
@@ -218,9 +214,6 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 // recordAnalysis records the analysis and returns a unique command token
 func (d *DryRunResourceManager) recordAnalysis(analysis Analysis) CommandToken {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	tokenID := d.nextTokenID
 	d.nextTokenID++
 
@@ -489,7 +482,7 @@ func isVerificationUnavailable(reason risktypes.ReasonCode) bool {
 }
 
 // recordPreviewDecision records a deny for the exit-code computation and, for a
-// deny, appends a SecurityRisk so the formatter surfaces it. It locks once.
+// deny, appends a SecurityRisk so the formatter surfaces it.
 func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCommand, assessment risktypes.RiskAssessment, denied, verificationUnavailable bool) {
 	if !denied {
 		return
@@ -500,8 +493,6 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 	} else if assessment.Blocking {
 		description = fmt.Sprintf("Command would be denied (blocking: %s)", assessment.BlockingReason)
 	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	if verificationUnavailable {
 		d.previewVerificationUnavailable = true
 	} else {
@@ -529,15 +520,13 @@ func (d *DryRunResourceManager) recordPreviewDecision(cmd *runnertypes.RuntimeCo
 //  4. DryRunExitAllow (= 0): every previewed command would be allowed and no
 //     unverified content or verification failure exists.
 func (d *DryRunResourceManager) PreviewExitCode() int {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return d.previewExitCodeLocked()
+	return d.previewExitCode()
 }
 
-// previewExitCodeLocked computes the preview exit code. The caller must hold mu
-// (read or write). The priority is documented in PreviewExitCode above:
+// previewExitCode computes the preview exit code. The priority is documented
+// in PreviewExitCode above:
 // policy deny -> tampering signal -> environment cause -> allow.
-func (d *DryRunResourceManager) previewExitCodeLocked() int {
+func (d *DryRunResourceManager) previewExitCode() int {
 	if d.previewPolicyDeny {
 		return DryRunExitPolicyDeny
 	}
@@ -561,16 +550,13 @@ func (d *DryRunResourceManager) previewExitCodeLocked() int {
 // PreviewExitCode. A nil summary clears the field so the preview returns to
 // its environment-only behavior. Production code should prefer
 // FinalizeDryRunResults, which records the summary and returns the
-// finalized results in one locked call; this standalone setter remains for
+// finalized results in one call; this standalone setter remains for
 // callers (e.g. PreviewExitCode-focused tests) that only need to update the
 // recorded summary.
 //
-// Concurrent calls are serialized with mu. The summary is treated as
-// read-only after assignment; previewExitCodeLocked inspects it without
-// copying and so requires the lock held by the caller.
+// The summary is treated as read-only after assignment; previewExitCode
+// inspects it without copying.
 func (d *DryRunResourceManager) SetFileVerification(summary *verification.FileVerificationSummary) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.fileVerification = summary
 }
 
@@ -777,18 +763,12 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand) A
 
 // SetExecutionStatus sets the execution status and phase
 func (d *DryRunResourceManager) SetExecutionStatus(status ExecutionStatus, phase ExecutionPhase) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	d.executionStatus = status
 	d.executionPhase = phase
 }
 
 // SetExecutionError sets the execution error and automatically updates status to StatusError
 func (d *DryRunResourceManager) SetExecutionError(errType, message, component string, details map[string]any, phase ExecutionPhase) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	d.executionError = &ExecutionError{
 		Type:      errType,
 		Message:   message,
@@ -860,39 +840,29 @@ func (d *DryRunResourceManager) calculateSummary() *ExecutionSummary {
 
 // GetDryRunResults returns the dry-run results
 func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
-	// This mutates d.dryRunResult (slice copy, status/phase/error/summary/exit code),
-	// so it must hold the exclusive lock: a read lock would let concurrent callers
-	// race on those writes. The helpers below (calculateSummary,
-	// previewExitCodeLocked) are lock-free and run under this held lock.
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	return d.refreshDryRunResultLocked()
+	return d.refreshDryRunResult()
 }
 
 // FinalizeDryRunResults records fileVerification and returns the finalized
-// dry-run results in a single locked operation. Consolidating the two steps
+// dry-run results in a single operation. Consolidating the two steps
 // removes the ordering dependency that a separate SetFileVerification +
 // GetDryRunResults pair would otherwise place on the caller: PreviewExitCode
-// (computed inside refreshDryRunResultLocked) always reflects the summary
+// (computed inside refreshDryRunResult) always reflects the summary
 // passed here.
 func (d *DryRunResourceManager) FinalizeDryRunResults(fileVerification *verification.FileVerificationSummary) *DryRunResult {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	d.fileVerification = fileVerification
 
-	result := d.refreshDryRunResultLocked()
+	result := d.refreshDryRunResult()
 	if result != nil {
 		result.FileVerification = fileVerification
 	}
 	return result
 }
 
-// refreshDryRunResultLocked updates d.dryRunResult from current state
+// refreshDryRunResult updates d.dryRunResult from current state
 // (resource analyses, execution status, summary, preview exit code) and
-// returns it. The caller must hold mu.
-func (d *DryRunResourceManager) refreshDryRunResultLocked() *DryRunResult {
+// returns it.
+func (d *DryRunResourceManager) refreshDryRunResult() *DryRunResult {
 	if d.dryRunResult == nil {
 		return nil
 	}
@@ -906,24 +876,18 @@ func (d *DryRunResourceManager) refreshDryRunResultLocked() *DryRunResult {
 	d.dryRunResult.Phase = d.executionPhase
 	d.dryRunResult.Error = d.executionError
 	d.dryRunResult.Summary = d.calculateSummary()
-	d.dryRunResult.PreviewExitCode = d.previewExitCodeLocked()
+	d.dryRunResult.PreviewExitCode = d.previewExitCode()
 
 	return d.dryRunResult
 }
 
 // RecordAnalysis records a resource analysis
 func (d *DryRunResourceManager) RecordAnalysis(analysis *Analysis) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
 }
 
 // RecordGroupAnalysis records a group-level resource analysis with debug info
 func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	analysis := Analysis{
 		Type:      TypeGroup,
 		Operation: OperationAnalyze,
@@ -951,9 +915,6 @@ func (d *DryRunResourceManager) UpdateCommandDebugInfo(token CommandToken, debug
 	if token == "" {
 		return ErrInvalidCommandToken
 	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	// Find the command resource analysis by token
 	index, ok := d.tokenToIndex[token]

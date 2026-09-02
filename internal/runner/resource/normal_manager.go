@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
+	"slices"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
@@ -39,7 +39,6 @@ type NormalResourceManager struct {
 	auditLogger *audit.Logger
 
 	// State management
-	mu       sync.RWMutex
 	tempDirs []string
 }
 
@@ -325,9 +324,7 @@ func (n *NormalResourceManager) CreateTempDir(groupName string) (string, error) 
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
-	n.mu.Lock()
 	n.tempDirs = append(n.tempDirs, tempDir)
-	n.mu.Unlock()
 
 	return tempDir, nil
 }
@@ -340,35 +337,28 @@ func (n *NormalResourceManager) CleanupTempDir(tempDirPath string) error {
 	}
 
 	// Remove from tracking
-	n.mu.Lock()
-	for i, dir := range n.tempDirs {
-		if dir == tempDirPath {
-			n.tempDirs = append(n.tempDirs[:i], n.tempDirs[i+1:]...)
-			break
-		}
+	if i := slices.Index(n.tempDirs, tempDirPath); i >= 0 {
+		n.tempDirs = slices.Delete(n.tempDirs, i, i+1)
 	}
-	n.mu.Unlock()
 
 	return nil
 }
 
 // CleanupAllTempDirs cleans up all temporary directories in normal mode
 func (n *NormalResourceManager) CleanupAllTempDirs() error {
-	n.mu.RLock()
-	tempDirs := make([]string, len(n.tempDirs))
-	copy(tempDirs, n.tempDirs)
-	n.mu.RUnlock()
+	// Iterate over a copy: CleanupTempDir removes entries from n.tempDirs.
+	tempDirs := slices.Clone(n.tempDirs)
 
-	var errors []error
+	var cleanupErrs []error
 
 	for _, dir := range tempDirs {
 		if err := n.CleanupTempDir(dir); err != nil {
-			errors = append(errors, err)
+			cleanupErrs = append(cleanupErrs, err)
 		}
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("%w: %v", ErrTempDirCleanupFailed, errors)
+	if len(cleanupErrs) > 0 {
+		return fmt.Errorf("%w: %v", ErrTempDirCleanupFailed, cleanupErrs)
 	}
 
 	return nil

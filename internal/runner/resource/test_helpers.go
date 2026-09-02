@@ -35,7 +35,7 @@ func defaultTestEvaluator() risk.Evaluator {
 }
 
 // permissiveTestEvaluator always allows commands at Low risk. It is used by
-// manager-mechanics tests (error handling, output capture, concurrency) that
+// manager-mechanics tests (error handling, output capture, execution flow) that
 // build commands which are not absolute paths and are not exercising risk
 // classification; risk gating is covered by the risk package and the dedicated
 // risk-control tests that use the standard evaluator.

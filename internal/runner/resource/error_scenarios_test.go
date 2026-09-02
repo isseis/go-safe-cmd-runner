@@ -296,7 +296,7 @@ func TestExecutionConsistencyAcrossModes(t *testing.T) {
 	for _, mode := range executionModes {
 		t.Run(mode.name+"_concurrent", func(t *testing.T) {
 			results := make(chan *ExecutionResult, numGoroutines*commandsPerGoroutine)
-			errors := make(chan error, numGoroutines*commandsPerGoroutine)
+			errCh := make(chan error, numGoroutines*commandsPerGoroutine)
 
 			for i := range numGoroutines {
 				go func(goroutineID int) {
@@ -320,7 +320,7 @@ func TestExecutionConsistencyAcrossModes(t *testing.T) {
 
 						_, result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 						if err != nil {
-							errors <- err
+							errCh <- err
 						} else {
 							results <- result
 						}
@@ -337,7 +337,7 @@ func TestExecutionConsistencyAcrossModes(t *testing.T) {
 				select {
 				case result := <-results:
 					collectedResults = append(collectedResults, result)
-				case err := <-errors:
+				case err := <-errCh:
 					collectedErrors = append(collectedErrors, err)
 				}
 			}
@@ -601,6 +601,9 @@ func TestFormatterErrorScenarios(t *testing.T) {
 // concurrently against dry-run execution. Each goroutine constructs its own
 // DryRunResourceManager, so no DryRunResourceManager instance is shared
 // between goroutines; the goroutines themselves are genuinely concurrent.
+// Each goroutine owns its own manager, so this test neither exercises nor
+// contradicts the single-owner assumption behind removing DryRunResourceManager's
+// lock; the basis for that assumption is production reachability, not this test.
 func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 	const numGoroutines = 10
 	const commandsPerGoroutine = 5
@@ -613,7 +616,7 @@ func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 	}
 
 	results := make(chan *DryRunResult, numGoroutines)
-	errors := make(chan error, numGoroutines)
+	errCh := make(chan error, numGoroutines)
 
 	for i := range numGoroutines {
 		go func(goroutineID int) {
@@ -623,7 +626,7 @@ func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, permissiveTestEvaluator{}, nil)
 			if err != nil {
-				errors <- fmt.Errorf("failed to create DryRunResourceManager: %w", err)
+				errCh <- fmt.Errorf("failed to create DryRunResourceManager: %w", err)
 				return
 			}
 
@@ -646,7 +649,7 @@ func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 
 				_, _, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 				if err != nil {
-					errors <- err
+					errCh <- err
 					return
 				}
 			}
@@ -664,7 +667,7 @@ func TestDryRunExecutionAcrossIndependentManagers(t *testing.T) {
 		select {
 		case result := <-results:
 			collectedResults = append(collectedResults, result)
-		case err := <-errors:
+		case err := <-errCh:
 			collectedErrors = append(collectedErrors, err)
 		}
 	}
