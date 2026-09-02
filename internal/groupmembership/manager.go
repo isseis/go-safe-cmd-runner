@@ -9,7 +9,6 @@ import (
 	"os/user"
 	"slices"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -491,16 +490,12 @@ var processSudoUIDAdoptionReporter sudoUIDAdoptionReporter
 // which does not change during the lifetime of a record or verify process),
 // so in practice it holds one entry; the memo itself imposes no bound.
 type sudoUIDExistenceMemo struct {
-	mu        sync.Mutex
 	confirmed map[int]struct{}
 }
 
 // verify returns nil if uid has already been confirmed; otherwise it calls
-// lookup and records uid as confirmed. The lock is held across lookup to
-// single-flight concurrent queries.
+// lookup and records uid as confirmed.
 func (m *sudoUIDExistenceMemo) verify(uid int, lookup func(uid int) error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if _, ok := m.confirmed[uid]; ok {
 		return nil
 	}

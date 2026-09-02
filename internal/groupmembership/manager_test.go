@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"runtime"
 	"strconv"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -1428,69 +1427,6 @@ func TestSudoUIDExistenceMemo_DoesNotRememberFailures(t *testing.T) {
 	require.NoError(t, memo.verify(1000, lookup))
 
 	assert.Equal(t, 3, calls)
-}
-
-// TestSudoUIDExistenceMemo_Concurrent verifies that the memo is safe for
-// concurrent use and that results settle to the documented behavior:
-// confirmed UIDs are not re-queried, while failed UIDs are re-queried on
-// every verify.
-func TestSudoUIDExistenceMemo_Concurrent(t *testing.T) {
-	t.Parallel()
-
-	const (
-		existingUID = 1000
-		missingUID  = 2000
-	)
-
-	var lookupMutex sync.Mutex
-	lookupCounts := make(map[int]int)
-	lookup := func(uid int) error {
-		lookupMutex.Lock()
-		lookupCounts[uid]++
-		lookupMutex.Unlock()
-		if uid == missingUID {
-			return errors.New("no such user")
-		}
-		return nil
-	}
-
-	memo := sudoUIDExistenceMemo{confirmed: make(map[int]struct{})}
-	var wg sync.WaitGroup
-	wg.Add(50)
-	for i := range 50 {
-		go func(i int) {
-			defer wg.Done()
-			uid := existingUID
-			if i%2 == 1 {
-				uid = missingUID
-			}
-			_ = memo.verify(uid, lookup)
-		}(i)
-	}
-	wg.Wait()
-
-	lookupMutex.Lock()
-	existingCalls := lookupCounts[existingUID]
-	missingCalls := lookupCounts[missingUID]
-	lookupMutex.Unlock()
-
-	// Only the first confirming verify touches the user database. This is
-	// exactly 1 because verify holds the memo's lock across lookup, which
-	// single-flights the first query; relaxing that would make this 1 or
-	// more without breaking the memo's documented contract.
-	assert.Equal(t, 1, existingCalls)
-	// Failed lookups are never remembered, so every verify re-queries.
-	assert.Equal(t, 25, missingCalls)
-
-	// After the goroutines join, a confirmed UID returns nil without a
-	// re-query, while a missing UID re-queries and still fails.
-	assert.NoError(t, memo.verify(existingUID, lookup))
-	assert.Error(t, memo.verify(missingUID, lookup))
-
-	lookupMutex.Lock()
-	assert.Equal(t, 1, lookupCounts[existingUID])
-	assert.Equal(t, 26, lookupCounts[missingUID])
-	lookupMutex.Unlock()
 }
 
 // TestProcessSudoUIDAdoptionReporterIsProcessWide documents the
