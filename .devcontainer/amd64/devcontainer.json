@@ -11,6 +11,7 @@
         "SSH_AUTH_SOCK": "/ssh-agent.sock"
     },
     "postCreateCommand": "cd /workspaces/ubuntu && pre-commit install",
+    "postStartCommand": "sudo chown \"$(id -u):$(id -g)\" /ssh-agent.sock 2>/dev/null || true",
     "customizations": {
         "vscode": {
             "settings": {
