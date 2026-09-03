@@ -268,6 +268,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 
 	pc, err := e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
 	if err != nil {
+		e.logStagingWarnings(pc)
 		return nil, err
 	}
 	result, err := e.startAndSupervise(ctx, pc)

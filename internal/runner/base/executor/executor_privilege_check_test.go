@@ -94,11 +94,10 @@ func TestApplyCredential_NilCredIsNoop(t *testing.T) {
 	assert.Nil(t, execCmd.SysProcAttr, "SysProcAttr must stay nil for normal execution")
 }
 
-// TestPrepareCommand_CredentialWiring verifies that prepareCommand -- the
-// prepare phase that in production is followed by applyCredential's effect
-// being built in -- wires the resolved run-as identity's Uid/Gid/Groups onto
-// the resulting exec.Cmd exactly, since the kernel relies on these fields
-// (not the resolvedIdent struct) at execve time.
+// TestPrepareCommand_CredentialWiring verifies that prepareCommand wires the
+// resolved run-as identity's Uid/Gid/Groups onto the resulting exec.Cmd
+// exactly -- it calls applyCredential itself -- since the kernel relies on
+// these fields (not the resolvedIdent struct) at execve time.
 func TestPrepareCommand_CredentialWiring(t *testing.T) {
 	e := NewDefaultExecutor().(*DefaultExecutor)
 

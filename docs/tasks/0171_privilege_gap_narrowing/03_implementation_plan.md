@@ -124,9 +124,10 @@
 | 箇所 | 波及 | 対応 |
 |---|---|---|
 | `executor_test.go::TestExecute_ContextCancellation` | キャンセル済み context での起動は、現在 `exec.CommandContext` が `Start` で `ctx.Err()` を返し、`executeCommandWithPath` は `result` を非 `nil` のまま返す。テストは `assert.NotNil(t, result)` を主張している。新設計では準備フェーズで `ctx.Err()` を検査して早期に戻るため、素直に書くと `result` が `nil` になる | `superviseCommand` を通らない早期リターンでも `&Result{ExitCode: ExitCodeUnknown}` を返し、既存テストを変更せずに緑を保つ。この不変条件を Phase 3 の作業項目に明記する。同じ主張の新規テストは作らない |
-| `executor_privilege_check_test.go::TestPrepareExecCommand_CredentialWiring` | `prepareExecCommand` が無くなる | `prepareCommand` と `applyCredential` の組で同じ配線を主張する形へ書き替える |
+| `executor_privilege_check_test.go::TestPrepareExecCommand_CredentialWiring` | `prepareExecCommand` が無くなる | `TestPrepareCommand_CredentialWiring` へ書き替え: `prepareCommand`（内部で `applyCredential` を呼ぶ）が返す `preparedCommand.execCmd` の `SysProcAttr.Credential` の Uid／Gid／Groups を主張する。`t.Cleanup` で `preparedCommand.release()` を呼ぶ |
 | `output_wrapper_test.go` の3箇所の構造体リテラル | 構築関数が `newOutputWrapper` に変わる | リテラルを `newOutputWrapper(recorder, StdoutStream, 0)` などへ書き替える。主張の内容は変えない |
-| `stagefromfd_test.go::TestStageFromFD_*` | `stageFromFD` のシグネチャと失敗時の後始末は変わらない | テスト本体は変更しない。`stageFromFD` の doc コメントだけ更新する |
+| `stagefromfd_test.go::TestStageFromFD_*` | シグネチャが `pc *preparedCommand` を受け、`cleanupFn func() error` を返す形へ変わる（警告値の運び先が `preparedCommand.stagingWarn` となるため）。失敗時の後始末の中身は変わらない | 呼び出し2箇所を新シグネチャへ合わせる（使い捨ての `preparedCommand{}` を渡し、エラーを受け取る）。ディレクトリを残さないという既存の主張は変えない |
+| `Start()` 失敗パスの返るエラー | 旧コードは複製検証記述子／`os.DevNull`／staging ディレクトリの close 失敗を `Logger.Warn` するだけでエラーに含めなかった。新コードは `pc.release()` がそれらを `errors.Join` で返るエラーへ入れる（設計文書 §3.1 の骨格の形） | 二重失敗（`Start()` 失敗と close 失敗の同時）のとき、返るエラーに以前より1つ多い join された cause が含まれうる（新しい失敗は起きず、元の cause は `errors.Is` でたどれる）。§3.1 骨格の帰結であり、§5.6 の1点には含めない |
 | `test/security/output_security_test.go:181,252` | コメントが `prepareExecCommand` を名指ししている | Phase 2 でコメントを直す |
 | `internal/testutil/synccensus/census_guard_test.go` | `capture.go` の `mutex`、`log_line_tracker.go` の `lineCounter`、`error_collector.go` の `mu` の理由文字列が実態と合わなくなる | 3行の `reason` を出力中継の読み取り goroutine を指す文言へ書き替える。出力中継は同期プリミティブを宣言しない（設計文書 §3.2、チャネルで join する）ので行の追加は起きない |
 | 0170 実装計画書の検証コマンド3行と完了条件2箇所 | Phase 6 の doc コメント更新で、`unix.go` の `This is an unresolved design issue`（0170 AC-11、`:1471`）、`capture.go` の2つのリテラル（0170 AC-14、`:1475` と本文 `:278`）、`log_line_tracker.go`／`error_collector.go` の `output copy goroutine`（0170 AC-15、`:1478` と本文 `:297`）がいずれも消える | 5箇所すべてに、本タスク（0171）で文言が置き換わった旨の注記と置換後の検証コマンドを併記する（Phase 6）。0170 の他の行は触らない |

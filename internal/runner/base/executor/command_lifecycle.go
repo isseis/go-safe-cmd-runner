@@ -141,15 +141,25 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 
 	pc := &preparedCommand{outputWriter: outputWriter}
 
-	// The prepare phase failed: release what it acquired so far. A release
-	// failure is reported the way the pre-lifecycle code reported it (a
+	// The prepare phase failed: release what it acquired so far. The
+	// staged-copy removal error is carried on pc, not logged here: the
+	// prepare phase runs inside the privilege window for run-as execution,
+	// and nothing inside a window may log. A failure to release the other
+	// descriptors is reported the way the pre-lifecycle code reported it (a
 	// warning), not joined into the error that identifies the prepare
-	// failure.
+	// failure. pc is returned even on failure so the caller records the
+	// carried staging failures after the window closes.
 	fail := func(err error) (*preparedCommand, error) {
+		if pc.stageCleanup != nil {
+			if rmErr := pc.stageCleanup(); rmErr != nil {
+				pc.stagingCleanupErr = rmErr
+			}
+			pc.stageCleanup = nil
+		}
 		if releaseErr := pc.release(); releaseErr != nil {
 			e.Logger.Warn("Failed to release command resources", "error", releaseErr)
 		}
-		return nil, err
+		return pc, err
 	}
 
 	var identity *risktypes.VerifiedIdentity
