@@ -1317,8 +1317,7 @@ goroutine について取り除いたのと同じ危険であり、ログ出力�
 **既に開いている stderr の記述子への書き込み**を隙の中で許す。
 
 ```go
-os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v
-", dir, rmErr))
+os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v\n", dir, rmErr))
 ```
 
 これが上の禁止と両立するのは、危険の所在が「I/O 一般」ではなく「**パスを開くこと**」だからである。
