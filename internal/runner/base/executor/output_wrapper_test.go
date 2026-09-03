@@ -45,8 +45,8 @@ func (r *streamRecorder) Close() error { return nil }
 func TestOutputWrapper_SeparatesStdoutAndStderr(t *testing.T) {
 	t.Run("stdout_and_stderr_do_not_mix", func(t *testing.T) {
 		recorder := &streamRecorder{}
-		stdoutWrapper := &outputWrapper{writer: recorder, stream: StdoutStream}
-		stderrWrapper := &outputWrapper{writer: recorder, stream: StderrStream}
+		stdoutWrapper := newOutputWrapper(recorder, StdoutStream, 0)
+		stderrWrapper := newOutputWrapper(recorder, StderrStream, 0)
 
 		n, err := stdoutWrapper.Write([]byte("out-1"))
 		require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestOutputWrapper_SeparatesStdoutAndStderr(t *testing.T) {
 		firstErr := errors.New("first write failure")
 		secondErr := errors.New("second write failure")
 		recorder := &streamRecorder{errs: []error{firstErr, secondErr}}
-		wrapper := &outputWrapper{writer: recorder, stream: StdoutStream}
+		wrapper := newOutputWrapper(recorder, StdoutStream, 0)
 
 		n, err := wrapper.Write([]byte("a"))
 		require.ErrorIs(t, err, firstErr)

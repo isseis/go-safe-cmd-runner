@@ -145,53 +145,53 @@
 `internal/runner/base/executor/output_wrapper_test.go`、
 `internal/runner/base/executor/executor_test.go`
 
-- [ ] `output_pump.go` に `boundedBuffer` を実装する。`newBoundedBuffer(limit int) *boundedBuffer`、
+- [x] `output_pump.go` に `boundedBuffer` を実装する。`newBoundedBuffer(limit int) *boundedBuffer`、
       `Write(p []byte) (int, error)`（常に `len(p), nil` を返す）、`Bytes() []byte`。
       `limit == 0` は上限なしで `bytes.Buffer` と同じ振る舞いにする。
       省略表示は `os/exec` の `prefixSuffixSaver` と同じく `"\n... omitting %d bytes ...\n"` とする。
-- [ ] `outputWrapper` の `buffer` の型を `bytes.Buffer` から `boundedBuffer` へ替え、
+- [x] `outputWrapper` の `buffer` の型を `bytes.Buffer` から `boundedBuffer` へ替え、
       構築関数 `newOutputWrapper(writer OutputWriter, stream OutputStream, limit int) *outputWrapper`
       を追加する。`Write`／`GetBuffer`／`GetWriteError` のシグネチャと挙動は変えない。
-- [ ] `outputWrapper` の doc コメントを書き替える。現在の
+- [x] `outputWrapper` の doc コメントを書き替える。現在の
       「Each wrapper is written by exactly one goroutine: os/exec starts one copy
       goroutine per non-\*os.File writer, ...」以下の、`os/exec` の copy goroutine と
       `Cmd.WaitDelay` に依拠した記述を、「出力中継の読み取り goroutine が1本ずつ書き、
       `buffer`／`writeErr` はその goroutine の `done` チャネルが値を返した後にだけ読む」
       という不変条件の記述へ置き換える。
-- [ ] `output_wrapper_test.go` の3箇所の `&outputWrapper{writer: …, stream: …}` を
+- [x] `output_wrapper_test.go` の3箇所の `&outputWrapper{writer: …, stream: …}` を
       `newOutputWrapper(…, …, 0)` へ置き換える（主張は変えない）。
-- [ ] `output_pump.go` に、テストから差し替えられるパイプ生成の口
+- [x] `output_pump.go` に、テストから差し替えられるパイプ生成の口
       `var pipeFn = os.Pipe` を置く（`newOutputPump` はこれを呼ぶ）。
       パイプ生成失敗の経路をテストから通すために要る。
-- [ ] `output_pump.go` に `pumpStream` と `outputPump` を実装する。API は設計文書 §3.2 のとおり:
+- [x] `output_pump.go` に `pumpStream` と `outputPump` を実装する。API は設計文書 §3.2 のとおり:
       `newOutputPump(writer OutputWriter, stderrLimit int) (*outputPump, error)`、
       `childFiles()`、`releaseChildEnds() error`（冪等）、`start()`、
       `wait(deadline time.Duration) (stdout, stderr []byte, writeErr error, timedOut bool)`、
       `release() error`。
-- [ ] `wait` の `deadline` の規約を決めて doc コメントへ書く: **`deadline == 0` は上限なし**
+- [x] `wait` の `deadline` の規約を決めて doc コメントへ書く: **`deadline == 0` は上限なし**
       （kill を経ない通常の経路で使う）。非 0 は kill 後の回収に使う上限である。
       `boundedBuffer` の `limit == 0` と同じ「0 = 制限なし」の規約に揃える。
-- [ ] 読み取り goroutine が、`io.Copy` の終了時（エラー終了を含む）に自分の読み取り側を閉じ、
+- [x] 読み取り goroutine が、`io.Copy` の終了時（エラー終了を含む）に自分の読み取り側を閉じ、
       結果を `done` チャネル（バッファ1）へ送るようにする。`WaitGroup` は使わない
       （同期プリミティブを宣言しないため。設計文書 §3.2）。
-- [ ] `wait` の deadline 経路で、`done` が値を返していない側のバッファと `writeErr` を読まず
+- [x] `wait` の deadline 経路で、`done` が値を返していない側のバッファと `writeErr` を読まず
       `nil` を返し、`timedOut` を真にする（設計文書 §3.2 要点7）。
-- [ ] `output_pump.go` にエラー変数 `ErrOutputPipe` を設計文書 §4.1 の文言で定義する。
+- [x] `output_pump.go` にエラー変数 `ErrOutputPipe` を設計文書 §4.1 の文言で定義する。
       設計文書 §4.1 はエラー変数をまとめて挙げているが、この1つだけは `output_pump.go` に置く。
       Phase 1 の時点では `command_lifecycle.go` がまだ無く、この PR 単独で
       グリーンゲートを通す必要があるためである（残りは Phase 2・Phase 3 で定義する）。
-- [ ] `newOutputPump` のパイプ生成に失敗したときは `ErrOutputPipe` を返し、
+- [x] `newOutputPump` のパイプ生成に失敗したときは `ErrOutputPipe` を返し、
       それまでに作った記述子を解放する。
-- [ ] `executeCommandWithPath` の出力取り込みを出力中継に置き換える。
+- [x] `executeCommandWithPath` の出力取り込みを出力中継に置き換える。
       `outputWriter != nil` の経路も `nil` の経路も同じ出力中継を通し、
       `stderrLimit` は前者で 0、後者で `32 << 10` とする。
       `execCmd.Stdout`／`Stderr` には `childFiles()` が返す `*os.File` を渡す。
       `outputWriter == nil` の経路では、`Result.Stderr` へ標準エラー出力を載せるのは
       異常終了時だけという `Cmd.Output()` の性質を維持する（設計文書 §4.3）。
-- [ ] 書き込み側の解放（`releaseChildEnds`）を `Start()` の直後に置き、
+- [x] 書き込み側の解放（`releaseChildEnds`）を `Start()` の直後に置き、
       `Start()` の成否によらず必ず通る位置にする。
-- [ ] `executor.go` から `execCmd.Run()`／`execCmd.Output()` の呼び出しを削除する。
-- [ ] 出力中継の `wait` が返す `writeErr` を `Execute` の戻り値のエラーへ載せる。
+- [x] `executor.go` から `execCmd.Run()`／`execCmd.Output()` の呼び出しを削除する。
+- [x] 出力中継の `wait` が返す `writeErr` を `Execute` の戻り値のエラーへ載せる。
       Phase 1 では「書き込みエラーが出たらそれを返す」ところまでとし、
       `*exec.ExitError` との優先順位と `errors.Join` による併記は Phase 3-d で確定させる。
       この配線が無いと、下の `TestExecute_OutputLimitAbortsRunningChild` は
@@ -201,34 +201,34 @@
 このファイルでは記述子の実数を数えない。`numOpenFDs` は `package executor_test` にあり、
 `package executor` からは参照できないため）
 
-- [ ] `TestBoundedBuffer_UnlimitedBehavesLikeBytesBuffer`: `limit == 0` で入力がそのまま返る。
-- [ ] `TestBoundedBuffer_KeepsPrefixAndSuffix`: `limit` を超えた入力で、先頭 `limit` バイトと
+- [x] `TestBoundedBuffer_UnlimitedBehavesLikeBytesBuffer`: `limit == 0` で入力がそのまま返る。
+- [x] `TestBoundedBuffer_KeepsPrefixAndSuffix`: `limit` を超えた入力で、先頭 `limit` バイトと
       末尾 `limit` バイトが残り、中間が省略表示に替わる。境界値として
       「ちょうど `limit`」「`limit`+1」「`2*limit`」「`2*limit`+1」を含める。
-- [ ] `TestBoundedBuffer_WriteNeverFails`: 上限超過後の `Write` も `(len(p), nil)` を返す。
-- [ ] `TestOutputPump_SeparatesStreams`: stdout と stderr が別々に `OutputWriter` へ渡り、
+- [x] `TestBoundedBuffer_WriteNeverFails`: 上限超過後の `Write` も `(len(p), nil)` を返す。
+- [x] `TestOutputPump_SeparatesStreams`: stdout と stderr が別々に `OutputWriter` へ渡り、
       `streamRecorder` の記録で取り違えが起きない。
-- [ ] `TestOutputPump_WriteErrorPrefersStdout`: 両ストリームで書き込みエラーが起きたとき、
+- [x] `TestOutputPump_WriteErrorPrefersStdout`: 両ストリームで書き込みエラーが起きたとき、
       `wait` が返す `writeErr` は stdout 側である。
-- [ ] `TestOutputPump_PipeCreationFailureReleasesDescriptors`: `pipeFn` を、2回目の呼び出しで
+- [x] `TestOutputPump_PipeCreationFailureReleasesDescriptors`: `pipeFn` を、2回目の呼び出しで
       失敗する関数へ差し替え（`t.Cleanup` で元へ戻す）、`newOutputPump` が `ErrOutputPipe` を返し、
       1回目に作ったパイプが解放されることを確かめる。
-- [ ] `TestOutputPump_ReleaseIsIdempotent`: `start()` へ到達しなかった経路で `release()` と
+- [x] `TestOutputPump_ReleaseIsIdempotent`: `start()` へ到達しなかった経路で `release()` と
       `releaseChildEnds()` を二重に呼んでもエラーにならない。
-- [ ] `TestOutputPump_WaitDeadlineDoesNotReadUnfinishedStream`: 読み取りが終わらない側について
+- [x] `TestOutputPump_WaitDeadlineDoesNotReadUnfinishedStream`: 読み取りが終わらない側について
       `wait` が `nil` と `timedOut == true` を返す。`-race` 付きで走らせて、
       終わっていない側のバッファを読んでいないことを検出できる形にする。
 
 **テスト**（`executor_test.go`、`package executor_test`。`Execute` から見た互換性と打ち切り挙動）
 
-- [ ] `TestExecute_NilOutputWriter_StderrPrefixSuffixBound`: `outputWriter` が `nil` の経路で、
+- [x] `TestExecute_NilOutputWriter_StderrPrefixSuffixBound`: `outputWriter` が `nil` の経路で、
       64 KiB を超える標準エラー出力を出して**異常終了**するコマンドについて、
       `Result.Stderr` に先頭 32 KiB と末尾 32 KiB が残り、中間が
       `\n... omitting N bytes ...\n` に置き換わる（`Cmd.Output()` と同じ規則。設計文書 §4.3）。
-- [ ] `TestExecute_NilOutputWriter_LargeStderrStillSucceeds`: 同じ経路で、
+- [x] `TestExecute_NilOutputWriter_LargeStderrStillSucceeds`: 同じ経路で、
       64 KiB を超える標準エラー出力を出してから**正常終了**するコマンドが成功したままであり、
       `Result.Stderr` が空である（`Cmd.Output()` は正常終了時に標準エラー出力を載せない）。
-- [ ] `TestExecute_OutputLimitAbortsRunningChild`: 一定バイト数を超えたら固定のエラーを返す
+- [x] `TestExecute_OutputLimitAbortsRunningChild`: 一定バイト数を超えたら固定のエラーを返す
       `OutputWriter` のスタブ（`executor_test.go` にローカルに置く。`output.Capture` は使わない）を
       渡し、10 秒間出力を出し続けるコマンドが 2 秒以内に打ち切られ、返るエラーから
       そのスタブのエラーを `errors.Is` でたどれることを確かめる。

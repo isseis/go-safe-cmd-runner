@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -235,6 +239,102 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	assert.Error(t, err, "Expected error due to context cancellation")
 	assert.ErrorIs(t, err, context.Canceled, "Error should indicate context cancellation")
 	assert.NotNil(t, result, "Result should still be returned even on failure")
+}
+
+// TestExecute_NilOutputWriter_StderrPrefixSuffixBound checks that the
+// outputWriter == nil path bounds stderr to the same 32 KiB prefix/suffix
+// os/exec applies to Cmd.Output's stderr: on an abnormal exit the retained
+// head and tail reach Result.Stderr with the omission marker between them.
+func TestExecute_NilOutputWriter_StderrPrefixSuffixBound(t *testing.T) {
+	const stderrTotal = 70 * 1024 // beyond the 2 * 32 KiB retention
+	const retained = 32 * 1024    // the prefix and the suffix size
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+	)
+	script := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' 'x' >&2; exit 1", stderrTotal)
+	cmd := executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", script}, executortestutil.WithWorkDir(""))
+
+	result, err := e.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.ExitCode)
+
+	want := strings.Repeat("x", retained) +
+		"\n... omitting " + strconv.Itoa(stderrTotal-2*retained) + " bytes ...\n" +
+		strings.Repeat("x", retained)
+	assert.Equal(t, want, result.Stderr)
+}
+
+// TestExecute_NilOutputWriter_LargeStderrStillSucceeds checks that the
+// outputWriter == nil path keeps Cmd.Output's success rule: stderr is drained
+// and bounded in memory, but not reported when the command exits
+// successfully.
+func TestExecute_NilOutputWriter_LargeStderrStillSucceeds(t *testing.T) {
+	const stderrTotal = 70 * 1024
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+	)
+	script := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' 'x' >&2; exit 0", stderrTotal)
+	cmd := executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", script}, executortestutil.WithWorkDir(""))
+
+	result, err := e.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Empty(t, result.Stderr)
+}
+
+// limitAbortingWriter is an OutputWriter that fails once more than limit
+// bytes have passed through it, mirroring output.Capture's size-limit
+// behavior. It is mutex-guarded because the pump reaches an OutputWriter
+// from one reader goroutine per stream.
+type limitAbortingWriter struct {
+	mu    sync.Mutex
+	limit int
+	total int
+	err   error
+}
+
+func (w *limitAbortingWriter) Write(_ executor.OutputStream, data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.total += len(data)
+	if w.total > w.limit {
+		return w.err
+	}
+	return nil
+}
+
+func (w *limitAbortingWriter) Close() error { return nil }
+
+// TestExecute_OutputLimitAbortsRunningChild checks the streaming size-limit
+// abort without privileges: a command that would keep writing for far longer
+// than the assertion window is killed shortly after the limit is exceeded,
+// and the stub's error is the one reported.
+func TestExecute_OutputLimitAbortsRunningChild(t *testing.T) {
+	const (
+		limit      = 1024
+		streamSize = 10 * 1024 * 1024 * 1024 // a full 10 GiB: long minutes without the abort
+	)
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+	)
+	abortErr := errors.New("output size limit exceeded")
+	writer := &limitAbortingWriter{limit: limit, err: abortErr}
+
+	cmd := executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", fmt.Sprintf("yes x | head -c %d", streamSize)}, executortestutil.WithWorkDir(""))
+
+	start := time.Now()
+	result, err := e.Execute(context.Background(), nil, cmd, map[string]string{}, writer)
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, abortErr)
+	require.Less(t, elapsed, 2*time.Second, "the child must be aborted shortly after the limit, not after it finishes")
+	require.NotNil(t, result)
 }
 
 func TestExecute_EnvironmentVariables(t *testing.T) {
