@@ -460,6 +460,7 @@
 | 解決 | resolution | 問題解決の文脈 |
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
+| 解決する | solve | 問題・障害・課題を片づける文脈（`resolve` はシンボリックリンク解決の文脈で、上の行が担う）。「解く」は使わない（Task 0171） |
 | リソース | resource | |
 | 残存リスク | residual risk | 設計上残る既知のリスク（TOCTOU 等） |
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
@@ -518,7 +519,7 @@
 | セットアップ | setup | |
 | 共有コード | shared code | 複数タスク/モジュールが共に触るコード（0140 では `evaluateDimensions`〔判断軸の振り分け〕と名前集合）。旧称「共有境界」は使わない。標準用語「信頼境界（trust boundary）」とは別概念 |
 | シェル | shell | |
-| サイレントに | silently | |
+| サイレントに | silently | 誤り・危険な操作が記録も通知もされないまま進む文脈。「静かに」は「音がしない」の意が前に出て、検知されないという含意を担わないため使わない（Task 0171） |
 | シンプルさ | simplicity | |
 | 単一値 | single-value | 設定項目の文脈 |
 | サイズ | size | |
@@ -655,7 +656,7 @@
 | 作業ディレクトリ | working directory | |
 | 書き込み権限 | write permission | ファイル／ディレクトリへの書き込み可否 |
 | ワークスペース | workspace | |
-| 隙 | window | 攻撃・競合の文脈（競合の隙、TOCTOU の隙）。検査から使用までのあいだに攻撃が入り込める時間差を指す。「窓」「ウィンドウ」は使わない。信号処理・走査範囲の window（後方スキャン窓など）は別概念で、この項の対象外 |
+| 隙 | window | 攻撃・競合の文脈（競合の隙、TOCTOU の隙）。検査から使用までのあいだに攻撃が入り込める時間差を指す。「窓」「ウィンドウ」は使わない。信号処理・走査範囲の window（後方スキャン窓など）は別概念で、この項の対象外。この概念全体・単発の言及には「隙」を使うが、複数の隙を名前付きで並べて論じる文書（例: Task 0171 の「起動の隙」「kill の隙」「後始末の隙」）では、個別の隙を指す複合語の後部要素には代わりに「区間」を使う（起動区間、kill 区間、後始末区間）。「〜の隙」を英語の修飾語（kill など）に直接付けると不自然になるための使い分けであり、「隙」の訳語自体を変えるものではない |
 | Wrapper | wrapper | ラッパー |
 | 書き込み | write | |
 
@@ -791,6 +792,8 @@
 | 2026-08-13 | redaction カバレッジ拡張と Slack 送信の非同期化（Task 0163 Phase 6）関連の用語を追加 (key-name-based redaction, value-format detection, separator, leading boundary, send queue, worker, stop accepting, drop, flush deadline, shutdown request, drain / abandon) |
 | 2026-08-19 | entrypoints の残 Low/Info 所見（Task 0164）関連の用語を追加 (identification token, directory permission audit) |
 | 2026-08-21 | safefileio の残所見（Task 0167）関連の用語を追加 (seam)。テスト用の差し替え箇所を指す訳語を「差し替え点」に定め、「注入点」を使わないことを明記 |
+| 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映 (solve, silently)。問題を片づける文脈の訳語を「解決する」に定め「解く」を使わないこと、`silently` の訳語を「サイレントに」に定め「静かに」を使わないことを明記 |
+| 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映（window）。名前付きの個別の隙を指す複合語では「〜の隙」ではなく「〜区間」を使うことを明記（起動区間、kill 区間、後始末区間）。「隙」自体の訳語（window）は変更しない |
 
 ---
 
