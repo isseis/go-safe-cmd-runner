@@ -349,7 +349,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 
 	// Start the child, then release the pipe write ends on every path
 	// (success or failure): the read ends never reach EOF otherwise, and
-	// the pump would block until its deadline.
+	// the pump's wait blocks on them.
 	startErr := execCmd.Start()
 	closeErr := pump.releaseChildEnds()
 

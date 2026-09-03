@@ -190,7 +190,7 @@ func closeUnlessClosed(f *os.File) error {
 // boundedBuffer reproduces the rule os/exec's unexported prefixSuffixSaver
 // applies to Cmd.Output's stderr, so callers with no OutputWriter keep
 // seeing the same output as today. A limit of 0 disables the bound and the
-// type degenerates to bytes.Buffer.
+// type degenerates to bytes.Buffer. limit must be non-negative.
 //
 // Write never fails and never signals the limit to its caller: reaching the
 // bound must not stop the reader draining stderr, since a command that

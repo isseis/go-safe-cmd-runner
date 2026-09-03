@@ -1449,8 +1449,8 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 
 | Phase | 内容 | 完了の目安 |
 |---|---|---|
-| 1 | 出力中継と `boundedBuffer` の追加、`Stdout`／`Stderr` を `*os.File` へ切り替え（F-001） | 既存テストが緑。AC-01、AC-15、AC-16 のテストが通る |
-| 2 | 準備・起動・監督の3フェーズへの分解（`WithPrivileges` の範囲はまだ変えない） | 外から見える挙動が変わらないこと |
+| 1 | 出力中継と `boundedBuffer` の追加、`Stdout`／`Stderr` を `*os.File` へ切り替え（F-001） | 既存テストが緑。AC-15、AC-16 のテストが通る（AC-01 の検証は `exec.Cmd` が外から観測できる Phase 2 へ移動。実装計画書 §3.1 参照） |
+| 2 | 準備・起動・監督の3フェーズへの分解（`WithPrivileges` の範囲はまだ変えない） | 外から見える挙動が変わらないこと。AC-01 のテストが通る |
 | 3 | `exec.CommandContext` の置き換えとキャンセル・kill の実装（F-003）。`OperationKillAfterCancel` の追加を含む | AC-07、AC-10〜AC-12 のテストが通る。通常実行のタイムアウトが働く |
 | 4 | `WithPrivileges` の範囲を `startPrepared` へ縮小、staging の位置づけ変更（F-002、§3.4）。`OperationStagingCleanup` の追加を含む | AC-02、AC-04、AC-06 のテストと静的検査が通る |
 | 5 | 統合テストと実行経路の整備（F-007） | 特権のある環境で AC-05、AC-07、AC-08、AC-13 が通る |

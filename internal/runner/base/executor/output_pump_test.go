@@ -50,7 +50,8 @@ func TestBoundedBuffer_KeepsPrefixAndSuffix(t *testing.T) {
 	const limit = 4
 	tests := []struct {
 		name  string
-		input string
+		input string   // written in one Write; empty when parts is set
+		parts []string // written in this order; empty for a single Write
 		want  string
 	}{
 		{
@@ -80,24 +81,32 @@ func TestBoundedBuffer_KeepsPrefixAndSuffix(t *testing.T) {
 		},
 		{
 			name:  "across multiple writes",
-			input: "", // written in three parts below
+			parts: []string{"abcd", "abcde", "fgh"},
 			want:  "abcd\n... omitting 4 bytes ...\nefgh",
+		},
+		{
+			name:  "ring wrap",
+			parts: []string{"abcd", "efgh", "ijklm"}, // the ring copy wraps its write position
+			want:  "abcd\n... omitting 5 bytes ...\njklm",
+		},
+		{
+			name:  "two-iteration ring",
+			parts: []string{"abcd", "efgh", "ij", "klmno"}, // one write overruns a full ring
+			want:  "abcd\n... omitting 7 bytes ...\nlmno",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := newBoundedBuffer(limit)
-			if tt.name == "across multiple writes" {
-				for _, part := range []string{"abcd", "abcde", "fgh"} {
-					n, err := buf.Write([]byte(part))
-					require.NoError(t, err)
-					assert.Equal(t, len(part), n)
-				}
-			} else {
-				n, err := buf.Write([]byte(tt.input))
+			writes := tt.parts
+			if len(writes) == 0 {
+				writes = []string{tt.input}
+			}
+			for _, part := range writes {
+				n, err := buf.Write([]byte(part))
 				require.NoError(t, err)
-				assert.Equal(t, len(tt.input), n)
+				assert.Equal(t, len(part), n)
 			}
 			assert.Equal(t, tt.want, string(buf.Bytes()))
 		})
@@ -199,6 +208,44 @@ func TestOutputPump_WriteErrorPrefersStdout(t *testing.T) {
 	assert.NotErrorIs(t, writeErr, stderrErr)
 	assert.Equal(t, "o", string(stdout), "the chunk is buffered before the failing write")
 	assert.Equal(t, "e", string(stderr))
+}
+
+// TestOutputPump_WaitDeadlineReadsFinishedStreamOnly checks the mixed
+// deadline case: a stream that finished before the deadline is collected,
+// while the unfinished one is reported as nil. It also pins release after a
+// timed-out wait: it must close the still-open ends without error, which is
+// how a later kill path stops a reader still running.
+func TestOutputPump_WaitDeadlineReadsFinishedStreamOnly(t *testing.T) {
+	recorder := &streamRecorder{}
+	pump, err := newOutputPump(recorder, 0)
+	require.NoError(t, err)
+	stdoutFile, stderrFile := pump.childFiles()
+	pump.start()
+
+	// The stdout stream reaches EOF; the stderr stream is left open, so at
+	// the deadline one reader is finished and the other is not.
+	_, err = stdoutFile.Write([]byte("done"))
+	require.NoError(t, err)
+	_ = stdoutFile.Close()
+
+	stdout, stderr, writeErr, timedOut := pump.wait(50 * time.Millisecond)
+	require.True(t, timedOut)
+	assert.Equal(t, "done", string(stdout), "a finished stream is still collected")
+	assert.Nil(t, stderr, "an unfinished stream must be reported as nil")
+	assert.NoError(t, writeErr)
+	assert.Equal(t, []streamWrite{{stream: StdoutStream, data: "done"}}, recorder.writes)
+
+	// release after the timed-out wait closes what the readers did not:
+	// the still-open stderr write end and read end, and the already-closed
+	// stdout write end again. None of that may error.
+	require.NoError(t, pump.release())
+
+	_ = stderrFile.Close()
+	select {
+	case <-pump.stderr.done:
+	case <-time.After(time.Second):
+		t.Fatal("stderr reader did not finish after the write end closed")
+	}
 }
 
 // TestOutputPump_PipeCreationFailureReleasesDescriptors checks that a pipe
