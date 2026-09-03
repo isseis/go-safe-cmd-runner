@@ -262,13 +262,17 @@ func TestOutputPump_PipeCreationFailureReleasesDescriptors(t *testing.T) {
 			firstRead, firstWrite = r, w
 			return r, w, err
 		}
-		return nil, nil, errors.New("second pipe creation failed")
+		return nil, nil, errSecondPipe
 	}
 	t.Cleanup(func() { pipeFn = origPipeFn })
 
 	pump, err := newOutputPump(nil, 0)
 	require.ErrorIs(t, err, ErrOutputPipe)
 	require.Nil(t, pump)
+	// The underlying failure stays reachable: a caller that wants to tell
+	// descriptor exhaustion (syscall.EMFILE) from other pipe failures reads
+	// it through errors.Is, so the cause must be wrapped, not formatted in.
+	assert.ErrorIs(t, err, errSecondPipe)
 
 	// The first pipe's ends were released on the failure: closing them again
 	// reports already-closed.
@@ -322,4 +326,40 @@ func TestOutputPump_WaitDeadlineDoesNotReadUnfinishedStream(t *testing.T) {
 			t.Fatalf("reader %s did not finish after the write end closed", s.wrapper.stream)
 		}
 	}
+}
+
+// errSecondPipe stands in for the errno os.Pipe reports; the test asserts it
+// is reachable through the ErrOutputPipe wrapper.
+var errSecondPipe = errors.New("second pipe creation failed")
+
+// TestNewBoundedBuffer_RejectsNegativeLimit checks that a negative limit is
+// rejected at construction. Without the check, Write slices p past its
+// length on the first write larger than the limit and panics there instead,
+// far from the mistake.
+func TestNewBoundedBuffer_RejectsNegativeLimit(t *testing.T) {
+	assert.Panics(t, func() { newBoundedBuffer(-1) })
+
+	// The limits the executor actually passes must stay constructible: 0 for
+	// the OutputWriter path, nilWriterStderrLimit for the Cmd.Output path.
+	// This fails if either is ever edited into an invalid shape.
+	for _, limit := range []int{0, nilWriterStderrLimit} {
+		assert.NotPanics(t, func() { newBoundedBuffer(limit) })
+	}
+}
+
+// TestOutputPump_StartRejectsSecondCall checks the guard on start. A second
+// call would leave one reader per stream blocked forever on the send to
+// done, which has room for a single value -- a goroutine leak no test could
+// see, since the read ends are closed by then.
+func TestOutputPump_StartRejectsSecondCall(t *testing.T) {
+	pump, err := newOutputPump(nil, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pump.release() })
+
+	pump.start()
+	assert.Panics(t, func() { pump.start() })
+
+	require.NoError(t, pump.releaseChildEnds())
+	_, _, _, timedOut := pump.wait(time.Second)
+	assert.False(t, timedOut, "the readers started by the first call must still finish")
 }

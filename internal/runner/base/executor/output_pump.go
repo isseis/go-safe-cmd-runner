@@ -28,8 +28,9 @@ var pipeFn = os.Pipe
 // has returned. The two reading goroutines join through buffered channels,
 // not a WaitGroup, so the pump declares no synchronization primitive.
 type outputPump struct {
-	stdout *pumpStream
-	stderr *pumpStream
+	stdout  *pumpStream
+	stderr  *pumpStream
+	started bool // guards start against a second call; see start
 }
 
 // pumpStream is one direction: the pipe pair plus the wrapper that buffers
@@ -48,13 +49,13 @@ type pumpStream struct {
 func newOutputPump(writer OutputWriter, stderrLimit int) (*outputPump, error) {
 	stdoutRead, stdoutWrite, err := pipeFn()
 	if err != nil {
-		return nil, fmt.Errorf("%w: stdout: %v", ErrOutputPipe, err)
+		return nil, fmt.Errorf("%w: stdout: %w", ErrOutputPipe, err)
 	}
 	stderrRead, stderrWrite, err := pipeFn()
 	if err != nil {
 		_ = stdoutRead.Close()
 		_ = stdoutWrite.Close()
-		return nil, fmt.Errorf("%w: stderr: %v", ErrOutputPipe, err)
+		return nil, fmt.Errorf("%w: stderr: %w", ErrOutputPipe, err)
 	}
 	return &outputPump{
 		stdout: &pumpStream{
@@ -90,10 +91,26 @@ func (p *outputPump) releaseChildEnds() error {
 	)
 }
 
-// start launches one reader goroutine per stream. It must not be called
-// before the privilege window has closed: the readers run at the process's
-// current effective UID. Each pump is started at most once.
+// start launches one reader goroutine per stream.
+//
+// It must not be called before the privilege window has closed: the readers
+// run at the process's current effective UID, and every OutputWriter.Write
+// they perform runs there too. That is not yet true of this package:
+// executeWithUserGroup still wraps the whole of executeCommandWithPath in
+// PrivMgr.WithPrivileges, so for a run-as command the readers do run at
+// euid 0. Narrowing the window to the start phase is what makes the
+// sentence above a fact rather than a requirement on the caller.
+//
+// Calling start twice would leave a reader per stream blocked forever on
+// the send to done, which has room for one value: a silent goroutine leak,
+// since the read ends are closed by then and nothing reports the second
+// reader's outcome. The pump has one call site today, so a second call is a
+// programming error and is rejected as one.
 func (p *outputPump) start() {
+	if p.started {
+		panic("outputPump.start called twice: the second reader per stream would block on done forever")
+	}
+	p.started = true
 	go p.stdout.run()
 	go p.stderr.run()
 }
@@ -206,7 +223,14 @@ type boundedBuffer struct {
 	skipped   int64        // bytes dropped between prefix and suffix
 }
 
+// newBoundedBuffer builds a buffer bounded to limit bytes of prefix and
+// limit bytes of suffix; 0 means unbounded. A negative limit is a
+// programming error: Write would slice p past its length on the first call
+// larger than the limit, so it is rejected here rather than reached there.
 func newBoundedBuffer(limit int) *boundedBuffer {
+	if limit < 0 {
+		panic(fmt.Sprintf("newBoundedBuffer: limit must not be negative, got %d", limit))
+	}
 	return &boundedBuffer{limit: limit}
 }
 
