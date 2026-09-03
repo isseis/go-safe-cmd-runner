@@ -4,7 +4,6 @@
 package executor
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -29,6 +28,11 @@ import (
 // rights would allow) and without exposing it to other users sharing the
 // staging parent directory (e.g. /tmp).
 const stagedExecMode = 0o550
+
+// nilWriterStderrLimit bounds how many bytes of stderr are retained for runs
+// without an OutputWriter, matching the 32 KiB prefix/suffix limit os/exec
+// applies to Cmd.Output's stderr.
+const nilWriterStderrLimit = 32 << 10
 
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
@@ -269,6 +273,10 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 // unverified binaries before they reach an allowed plan, so this branch does not
 // weaken the production guarantee.
 //
+// The child's stdout and stderr are pipe write ends handed to exec.Cmd as
+// *os.File, so os/exec starts no copy goroutine of its own; the output pump
+// reads the other ends into the wrappers.
+//
 // cred is the kernel-level credential to pass to the child process via
 // SysProcAttr.Credential (used for run-as execution). When nil, no credential
 // override is applied (normal execution).
@@ -323,52 +331,80 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risk
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Set up output capture
-	var stdout, stderr []byte
-	var cmdErr error
-
-	if outputWriter != nil {
-		// Create buffered wrappers that both capture output and write to OutputWriter
-		stdoutWrapper := &outputWrapper{writer: outputWriter, stream: StdoutStream}
-		stderrWrapper := &outputWrapper{writer: outputWriter, stream: StderrStream}
-
-		execCmd.Stdout = stdoutWrapper
-		execCmd.Stderr = stderrWrapper
-
-		// Run the command
-		cmdErr = execCmd.Run()
-
-		// Get the captured output
-		stdout = stdoutWrapper.GetBuffer()
-		stderr = stderrWrapper.GetBuffer()
-
-		// Check if there was a write error (e.g., size limit exceeded)
-		// If so, prefer that error over the broken pipe error from the command
-		// This is important because when the writer returns an error, the command
-		// receives SIGPIPE and exits with "signal: broken pipe", which masks the
-		// real cause of the failure (e.g., output size limit exceeded)
-		if writeErr := stdoutWrapper.GetWriteError(); writeErr != nil {
-			cmdErr = writeErr
-		} else if writeErr := stderrWrapper.GetWriteError(); writeErr != nil {
-			cmdErr = writeErr
-		}
-	} else {
-		// Otherwise, capture output in memory
-		stdout, cmdErr = execCmd.Output()
-		if exitErr, ok := cmdErr.(*exec.ExitError); ok {
-			stderr = exitErr.Stderr
-		}
+	// Set up output capture. The child writes into *os.File pipe ends, so
+	// os/exec starts no copy goroutine of its own; the pump reads the other
+	// ends into the wrappers. Without an OutputWriter, stderr is bounded to
+	// the same prefix/suffix limit os/exec applies to Cmd.Output's stderr.
+	stderrLimit := 0
+	if outputWriter == nil {
+		stderrLimit = nilWriterStderrLimit
 	}
+	pump, err := newOutputPump(outputWriter, stderrLimit)
+	if err != nil {
+		return nil, err
+	}
+	stdoutFile, stderrFile := pump.childFiles()
+	execCmd.Stdout = stdoutFile
+	execCmd.Stderr = stderrFile
+
+	// Start the child, then release the pipe write ends on every path
+	// (success or failure): the read ends never reach EOF otherwise, and
+	// the pump's wait blocks on them.
+	startErr := execCmd.Start()
+	closeErr := pump.releaseChildEnds()
+
+	if startErr != nil {
+		// The child never ran: release the read ends as well.
+		releaseErr := pump.release()
+		result := &Result{ExitCode: ExitCodeUnknown}
+		e.Logger.Error("Command execution failed",
+			"error", startErr,
+			"command", cmdLine,
+			"exit_code", result.ExitCode)
+		return result, fmt.Errorf("command execution failed: %w", errors.Join(startErr, closeErr, releaseErr))
+	}
+
+	// Reap the child in its own goroutine. exec.CommandContext still kills
+	// it on context cancellation.
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- execCmd.Wait()
+	}()
+
+	// Read the child's output into the wrappers.
+	pump.start()
+
+	waitErr := <-waitCh
+	stdout, stderr, writeErr, _ := pump.wait(0)
 
 	// Prepare the result
 	result := &Result{
 		Stdout: string(stdout),
-		Stderr: string(stderr),
+	}
+	if outputWriter != nil {
+		result.Stderr = string(stderr)
+	} else if _, isExitError := errors.AsType[*exec.ExitError](waitErr); isExitError {
+		// Match Cmd.Output: without an OutputWriter, stderr is reported
+		// only when the command exited abnormally.
+		result.Stderr = string(stderr)
 	}
 	if execCmd.ProcessState != nil {
 		result.ExitCode = execCmd.ProcessState.ExitCode()
 	} else {
 		result.ExitCode = ExitCodeUnknown // Use constant for unknown exit code
+	}
+
+	cmdErr := waitErr
+	// A write error (e.g. output size limit exceeded) outranks the broken
+	// pipe error the child exits with once the reader closed the pipe: it
+	// is the real cause of the failure.
+	if writeErr != nil {
+		cmdErr = writeErr
+	}
+	// A write end that could not be released leaks a descriptor, so it is
+	// reported alongside the run's own outcome.
+	if closeErr != nil {
+		cmdErr = errors.Join(cmdErr, closeErr)
 	}
 
 	if cmdErr != nil {
@@ -632,24 +668,34 @@ func (fs *osFileSystem) FileExists(path string) (bool, error) {
 // outputWrapper is an io.Writer that both captures output in a buffer
 // and writes to an OutputWriter with a specific stream name.
 //
-// Each wrapper is written by exactly one goroutine: os/exec starts one copy
-// goroutine per non-*os.File writer, and Execute gives stdout and stderr
-// separate wrapper instances. buffer and writeErr are read only after
-// cmd.Wait() returns, which happens after those goroutines finish -- this last
-// step holds because Cmd.WaitDelay is left zero; setting it would let Wait
-// return while a copy goroutine is still writing. The shared OutputWriter is
-// the part reached from both goroutines, and OutputWriter implementations are
-// required to be thread-safe (see the interface contract in interface.go).
+// Each wrapper is written by exactly one goroutine: the output pump starts
+// one reader goroutine per stream, and Execute gives stdout and stderr
+// separate wrapper instances. buffer and writeErr are read only after that
+// reader goroutine's done channel has yielded a value, which happens after
+// the goroutine has stopped writing -- the pump's wait enforces this order.
+// The shared OutputWriter is the part reached from both goroutines, and
+// OutputWriter implementations are required to be thread-safe (see the
+// interface contract in interface.go).
 type outputWrapper struct {
 	writer   OutputWriter
 	stream   OutputStream
-	buffer   bytes.Buffer
+	buffer   *boundedBuffer
 	writeErr error // Stores the first write error encountered
 }
 
+// newOutputWrapper builds the wrapper for one stream. limit bounds how many
+// bytes the wrapper retains in memory; 0 means unbounded.
+func newOutputWrapper(writer OutputWriter, stream OutputStream, limit int) *outputWrapper {
+	return &outputWrapper{
+		writer: writer,
+		stream: stream,
+		buffer: newBoundedBuffer(limit),
+	}
+}
+
 func (w *outputWrapper) Write(p []byte) (n int, err error) {
-	// Write to buffer for capturing
-	w.buffer.Write(p)
+	// Write to buffer for capturing. boundedBuffer.Write never fails.
+	_, _ = w.buffer.Write(p)
 
 	// Also write to the OutputWriter
 	if w.writer != nil {
