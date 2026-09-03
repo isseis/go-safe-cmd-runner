@@ -55,7 +55,7 @@ func TestExecute_NoPrivilegeLeakDoesNotCallExit(t *testing.T) {
 }
 
 // TestApplyCredential_SetsCredentialFields verifies that applyCredential -- the
-// helper executeCommandWithPath uses to wire SysProcAttr.Credential for run-as
+// helper prepareCommand uses to wire SysProcAttr.Credential for run-as
 // execution -- copies the resolved run-as identity's Uid/Gid/Groups onto the
 // resulting exec.Cmd exactly, since the kernel relies on these fields (not the
 // resolvedIdent struct) at execve time.
@@ -94,11 +94,12 @@ func TestApplyCredential_NilCredIsNoop(t *testing.T) {
 	assert.Nil(t, execCmd.SysProcAttr, "SysProcAttr must stay nil for normal execution")
 }
 
-// TestPrepareExecCommand_CredentialWiring exercises the same call sequence
-// executeCommandWithPath uses in production (prepareExecCommand followed by
-// applyCredential) end to end, and asserts the resulting exec.Cmd carries the
-// resolved run-as identity's Uid/Gid/Groups.
-func TestPrepareExecCommand_CredentialWiring(t *testing.T) {
+// TestPrepareCommand_CredentialWiring verifies that prepareCommand -- the
+// prepare phase that in production is followed by applyCredential's effect
+// being built in -- wires the resolved run-as identity's Uid/Gid/Groups onto
+// the resulting exec.Cmd exactly, since the kernel relies on these fields
+// (not the resolvedIdent struct) at execve time.
+func TestPrepareCommand_CredentialWiring(t *testing.T) {
 	e := NewDefaultExecutor().(*DefaultExecutor)
 
 	cred := &syscall.Credential{
@@ -108,15 +109,14 @@ func TestPrepareExecCommand_CredentialWiring(t *testing.T) {
 		NoSetGroups: false,
 	}
 
-	execCmd, cleanup, err := e.prepareExecCommand(context.Background(), nil, "/bin/echo", []string{"hello"}, cred)
+	cmd := createTestCommand("/bin/echo", []string{"hello"})
+	pc, err := e.prepareCommand(context.Background(), nil, "/bin/echo", cmd, map[string]string{}, nil, cred)
 	require.NoError(t, err)
-	defer cleanup()
+	t.Cleanup(func() { _ = pc.release() })
 
-	applyCredential(execCmd, cred)
-
-	require.NotNil(t, execCmd.SysProcAttr)
-	require.NotNil(t, execCmd.SysProcAttr.Credential)
-	assert.Equal(t, cred.Uid, execCmd.SysProcAttr.Credential.Uid)
-	assert.Equal(t, cred.Gid, execCmd.SysProcAttr.Credential.Gid)
-	assert.Equal(t, cred.Groups, execCmd.SysProcAttr.Credential.Groups)
+	require.NotNil(t, pc.execCmd.SysProcAttr)
+	require.NotNil(t, pc.execCmd.SysProcAttr.Credential)
+	assert.Equal(t, cred.Uid, pc.execCmd.SysProcAttr.Credential.Uid)
+	assert.Equal(t, cred.Gid, pc.execCmd.SysProcAttr.Credential.Gid)
+	assert.Equal(t, cred.Groups, pc.execCmd.SysProcAttr.Credential.Groups)
 }

@@ -15,12 +15,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createTestCommand creates a RuntimeCommand for testing purposes
-func createTestCommand(cmd string, args []string) *runnertypes.RuntimeCommand {
+// testCommandOption customizes the RuntimeCommand that createTestCommand
+// builds: the run-as user/group and the command-level output size limit.
+type testCommandOption func(*runnertypes.CommandSpec)
+
+// withRunAs sets the run-as user and/or group on the command spec.
+//
+//nolint:unused // consumed by the lifecycle tests added in a later phase
+func withRunAs(user, group string) testCommandOption {
+	return func(spec *runnertypes.CommandSpec) {
+		spec.RunAsUser = user
+		spec.RunAsGroup = group
+	}
+}
+
+// withOutputSizeLimit sets the command-level output size limit in bytes.
+//
+//nolint:unused // consumed by the lifecycle tests added in a later phase
+func withOutputSizeLimit(limit int64) testCommandOption {
+	return func(spec *runnertypes.CommandSpec) {
+		spec.OutputSizeLimit = &limit
+	}
+}
+
+// createTestCommand creates a RuntimeCommand for testing purposes.
+//
+//nolint:unparam // the options are consumed by the lifecycle tests added in a later phase
+func createTestCommand(cmd string, args []string, opts ...testCommandOption) *runnertypes.RuntimeCommand {
 	spec := &runnertypes.CommandSpec{
 		Name: "test_cmd",
 		Cmd:  cmd,
 		Args: args,
+	}
+	for _, opt := range opts {
+		opt(spec)
 	}
 
 	rtCmd, err := runnertypes.NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit(), "test_group")

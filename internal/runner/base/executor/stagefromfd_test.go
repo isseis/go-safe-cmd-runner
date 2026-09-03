@@ -63,7 +63,8 @@ func TestStageFromFD_ChownFailure_CleansUpStagingDir(t *testing.T) {
 	// EPERM for a non-root caller.
 	cred := &syscall.Credential{Gid: 65534}
 
-	_, _, err := e.stageFromFD(identity, cred)
+	pc := &preparedCommand{}
+	_, _, err := e.stageFromFD(pc, identity, cred)
 	require.Error(t, err)
 
 	after := scrStageDirs(t)
@@ -88,7 +89,8 @@ func TestStageFromFD_OpenFileFailure_CleansUpStagingDir(t *testing.T) {
 
 	before := scrStageDirs(t)
 
-	_, _, err := e.stageFromFD(identity, nil)
+	pc := &preparedCommand{}
+	_, _, err := e.stageFromFD(pc, identity, nil)
 	require.Error(t, err)
 
 	after := scrStageDirs(t)

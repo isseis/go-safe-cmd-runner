@@ -270,20 +270,20 @@
 `internal/runner/base/executor/stagefromfd_test.go`、
 `test/security/output_security_test.go`
 
-- [ ] `command_lifecycle.go` に `execBinding`（`bindingUnset`／`bindingVerifiedFD`／
+- [x] `command_lifecycle.go` に `execBinding`（`bindingUnset`／`bindingVerifiedFD`／
       `bindingStagedCopy`／`bindingResolvedPath`）と `killStrategy`（`killUnset`／
       `killDirect`／`killReelevated`）を定義する。零値は宣言し忘れを表し、
       `switch` の `default` は失敗側へ倒す。
-- [ ] `preparedCommand` を設計文書 §3.1 のフィールド構成で定義する。`stagingRequest` は
+- [x] `preparedCommand` を設計文書 §3.1 のフィールド構成で定義する。`stagingRequest` は
       staged path の確定を起動フェーズへ移す Phase 3-d で定義する（この Phase では
       staging は準備フェーズに残るので、使い手がいない）。
-- [ ] `command_lifecycle.go` に `commandOutcome`（設計文書 §3.3）と、エラー変数
+- [x] `command_lifecycle.go` に `commandOutcome`（設計文書 §3.3）と、エラー変数
       `ErrExecBindingUnset` を設計文書 §4.1 の文言で定義する。どちらも本 Phase の
       `prepareCommand`（`binding` の `switch` の `default`）と `superviseCommand`
       （待機結果の受け渡し）が使うため、ここで入れる。
-- [ ] `preparedCommand.release() error` を実装し、準備フェーズが確保した記述子
+- [x] `preparedCommand.release() error` を実装し、準備フェーズが確保した記述子
       （出力中継、複製した検証済み記述子、`os.DevNull`）と staged copy をすべて解放する。
-- [ ] `prepareCommand` を実装する。`prepareExecCommand` の3経路の選択、`applyCredential`、
+- [x] `prepareCommand` を実装する。`prepareExecCommand` の3経路の選択、`applyCredential`、
       `os.DevNull` の open、作業ディレクトリと環境変数の設定、出力中継の生成、
       `binding`／`kill` の宣言をここへ集める。**この Phase では `exec.CommandContext` を
       使い続ける**。`bindingStagedCopy` の経路も現行どおり `prepareCommand` の中で
@@ -294,22 +294,22 @@
       `executor_test.go` の既存2件（`sleep 2` を 100ms のタイムアウトで殺す表の行と
       `TestExecute_ContextCancellation`）が落ち、PR-2 は単独でグリーンゲートを通らない。
       本 Phase の「挙動不変」はこの一点で決まる。
-- [ ] `startPrepared(pc *preparedCommand) (started bool, err error)` を実装する。
+- [x] `startPrepared(pc *preparedCommand) (started bool, err error)` を実装する。
       この Phase の中身は `execCmd.Start()` の呼び出しだけである（staging は
       `prepareCommand` に残る）。`Start()` に成功したら `started` を真にする。
       `stageFromFD` の呼び出しをここへ移すのは Phase 3-d で、`exec.Command` への
       切り替えと同じ PR で行う。
-- [ ] `superviseCommand(ctx, pc, startupErr) (*Result, error)` を実装する。この Phase では
+- [x] `superviseCommand(ctx, pc, startupErr) (*Result, error)` を実装する。この Phase では
       まだキャンセル経路を持たず、待機 goroutine の起動・出力中継の `wait`・`Result` の
       組み立てまでを行う。
-- [ ] `executeCommandWithPath` を削除し、`executeWithUserGroup`／`executeNormal` を
+- [x] `executeCommandWithPath` を削除し、`executeWithUserGroup`／`executeNormal` を
       設計文書 §3.1 の骨格（`started` の判定を含む3分岐）へ組み替える。
       この Phase では `WithPrivileges` が `prepareCommand`＋`startPrepared`＋
       `superviseCommand` の全体を包んだままにする。
-- [ ] `prepareExecCommand` を削除する。
-- [ ] `test/security/output_security_test.go:181` と `:252` のコメント中の
+- [x] `prepareExecCommand` を削除する。
+- [x] `test/security/output_security_test.go:181` と `:252` のコメント中の
       `prepareExecCommand/stageFromFD` を `prepareCommand/stageFromFD` へ直す。
-- [ ] `stageFromFD` から `Logger.Warn` を2箇所とも取り除く（設計文書 §7.2）。隙の中では
+- [x] `stageFromFD` から `Logger.Warn` を2箇所とも取り除く（設計文書 §7.2）。隙の中では
       ログを出さない。記録したい内容は値として隙の外へ運ぶ。
       - `executor.go:488`（staging ディレクトリの削除失敗）: 後始末の関数の型を
         `cleanupFn func()` から `func() error` へ変え、`os.RemoveAll` のエラーを返す。
@@ -325,10 +325,10 @@
       - `executor.go:531`（staging 元の複製記述子の close 失敗）: `stageFromFD` も
         `startPrepared` も隙の内側にいるため戻り値では外へ出せない。
         `preparedCommand` へ `stagingWarn error` フィールドを足してそこへ載せる。
-- [ ] `preparedCommand` に `stagingWarn error` を足し、その doc コメントへ
+- [x] `preparedCommand` に `stagingWarn error` を足し、その doc コメントへ
       「staging は成功しているのでエラーとしては返さない。隙の中でログを出さないために
       値として運ぶだけである」ことを英語で書く。
-- [ ] `stagingWarn` と `cleanupFn()` の戻り値を記録する位置は、この Phase では
+- [x] `stagingWarn` と `cleanupFn()` の戻り値を記録する位置は、この Phase では
       **`WithPrivileges` から戻った後**（`executeWithUserGroup`／`executeNormal` の中）に置く。
       この Phase の `WithPrivileges` は準備から監督までを包むので、隙の外で記録できる
       最初の地点がここである。**`startPrepared` の呼び出し元は隙の内側なので、そこへ
@@ -336,32 +336,32 @@
       開くことが許されており、隙の中で呼べばその `open` が実効 UID 0 で行われる）。
       Phase 4-a では隙が `startPrepared` だけへ縮むので、記録は「隙の直後」という位置づけの
       まま、より早い地点へ移る。
-- [ ] `stagefromfd_test.go` の `stageFromFD` 呼び出し2箇所（`:66`、`:91`）を、
+- [x] `stagefromfd_test.go` の `stageFromFD` 呼び出し2箇所（`:66`、`:91`）を、
       `cleanupFn func() error` に合わせて受け方だけ直す。ディレクトリを残さないという
       既存の主張は変えない。
-- [ ] `stageFromFD` の doc コメントに、この関数が特権の隙の内側で呼ばれることと、
+- [x] `stageFromFD` の doc コメントに、この関数が特権の隙の内側で呼ばれることと、
       その結果として staged copy が root 所有になること、および隙の中でログを出さないため
       警告を戻り値で返すことを書き足す（設計文書 §3.4 差分1、§7.2）。
       「起動区間の内側」と限定できるのは呼び出しが `startPrepared` へ移る Phase 3-d 以降なので、
       その1語はそこで足す。
-- [ ] `executor_logging_test.go` の `createTestCommand` へ可変長オプション引数を足し、
+- [x] `executor_logging_test.go` の `createTestCommand` へ可変長オプション引数を足し、
       run-as ユーザー／グループと出力サイズ上限を指定できるようにする（同パッケージの
       新規テストが使う）。既存の2引数呼び出しは変えずに済む形にする。
-- [ ] `TestPrepareExecCommand_CredentialWiring` を `TestPrepareCommand_CredentialWiring` へ
+- [x] `TestPrepareExecCommand_CredentialWiring` を `TestPrepareCommand_CredentialWiring` へ
       書き替え、`prepareCommand` が返す `preparedCommand.execCmd` に対して
       `SysProcAttr.Credential` の Uid／Gid／Groups を主張する形にする。
       検査後は `preparedCommand.release()` を `t.Cleanup` で呼ぶ。
 
 **テスト**（`executor_lifecycle_test.go`、`//go:build test`、`package executor`）
 
-- [ ] `TestPrepareCommand_ChildStreamsAreOSFiles`: `prepareCommand` が返す `execCmd` の
+- [x] `TestPrepareCommand_ChildStreamsAreOSFiles`: `prepareCommand` が返す `execCmd` の
       `Stdout` と `Stderr` が、`outputWriter` が非 `nil` の場合と `nil` の場合の両方で
       `*os.File` である（型アサーションで確認）。`t.Cleanup` で `release()` を呼ぶ。
       **設計文書 §8 は AC-01 の検証を Phase 1 に置いているが、型アサーションの対象となる
       `prepareCommand` が入るのは本 Phase なので、ここで行う。** Phase 1 の時点では
       `executeCommandWithPath` の内側にしか `exec.Cmd` が無く、外から観測できない。
 
-- [ ] `TestStageFromFD_ReportsFailuresWithoutLogging` を足す。`tu.NewRecordingLogger` を
+- [x] `TestStageFromFD_ReportsFailuresWithoutLogging` を足す。`tu.NewRecordingLogger` を
       `DefaultExecutor.Logger` に差し、`stageFromFD` の後始末が失敗する状況
       （既存 `TestStageFromFD_ChownFailure_CleansUpStagingDir` と同じ作り方で
       ディレクトリを先に読み取り専用にする）で、次の3つを主張する。
