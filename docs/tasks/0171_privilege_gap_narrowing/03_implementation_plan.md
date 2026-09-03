@@ -50,8 +50,14 @@
    互いに独立だが、本書の分解では Phase 3 が Phase 2 の成果物（`preparedCommand`、
    `superviseCommand`）を前提とするため、実際の順序は 1 → 2 → 3 → 4 → 5 → 6 に固定する。
    Phase 4（隙の縮小）は Phase 1 と Phase 3 の両方が入った後に行う。
-2. **Phase ごとに独立したコミットへ分ける。** 問題が出たときは Phase 単位で revert する
-   （設計文書 §8「戻し方」）。実行時に旧経路へ切り替える設定項目は追加しない。
+2. **Phase ごとに独立した PR へ分ける（Phase 3 と Phase 4 だけは2つに分ける）。**
+   問題が出たときは PR 単位で revert する（設計文書 §8「戻し方」）。PR の区切りは §3.2 に示す。
+   Phase 3 は、新しい隙を開かない 3-a〜3-c（PR-3）と、キャンセル・kill を実装する
+   3-d・3-e（PR-4）に分ける。
+   Phase 4 は、挙動を変える 4-a とその挙動テスト 4-b（PR-5）と、静的検査だけを足す
+   4-c（PR-6）に分ける。隙の範囲を現状へ戻すときは PR-6 → PR-5 の順に revert する
+   （PR-6 の静的検査は PR-5 が作った隙の形を前提にするため、PR-5 だけを戻すと赤くなる）。
+   実行時に旧経路へ切り替える設定項目は追加しない。
 3. **各 Phase の完了ゲートは `make fmt` → `make test` → `make lint` の全緑とする。**
    Phase 5 は加えて `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/`
    を通し、`integration` タグ付きファイルが同じタグ組み合わせでコンパイルできることを確かめる。
@@ -170,6 +176,10 @@
       （同期プリミティブを宣言しないため。設計文書 §3.2）。
 - [ ] `wait` の deadline 経路で、`done` が値を返していない側のバッファと `writeErr` を読まず
       `nil` を返し、`timedOut` を真にする（設計文書 §3.2 要点7）。
+- [ ] `output_pump.go` にエラー変数 `ErrOutputPipe` を設計文書 §4.1 の文言で定義する。
+      設計文書 §4.1 はエラー変数をまとめて挙げているが、この1つだけは `output_pump.go` に置く。
+      Phase 1 の時点では `command_lifecycle.go` がまだ無く、この PR 単独で
+      グリーンゲートを通す必要があるためである（残りは Phase 2・Phase 3 で定義する）。
 - [ ] `newOutputPump` のパイプ生成に失敗したときは `ErrOutputPipe` を返し、
       それまでに作った記述子を解放する。
 - [ ] `executeCommandWithPath` の出力取り込みを出力中継に置き換える。
@@ -181,6 +191,11 @@
 - [ ] 書き込み側の解放（`releaseChildEnds`）を `Start()` の直後に置き、
       `Start()` の成否によらず必ず通る位置にする。
 - [ ] `executor.go` から `execCmd.Run()`／`execCmd.Output()` の呼び出しを削除する。
+- [ ] 出力中継の `wait` が返す `writeErr` を `Execute` の戻り値のエラーへ載せる。
+      Phase 1 では「書き込みエラーが出たらそれを返す」ところまでとし、
+      `*exec.ExitError` との優先順位と `errors.Join` による併記は Phase 3-d で確定させる。
+      この配線が無いと、下の `TestExecute_OutputLimitAbortsRunningChild` は
+      子が `SIGPIPE` で死んだ `*exec.ExitError` を受け取って落ちる。
 
 **テスト**（`output_pump_test.go`、`//go:build test`、`package executor`。
 このファイルでは記述子の実数を数えない。`numOpenFDs` は `package executor_test` にあり、
@@ -224,6 +239,25 @@
 `executor_test.go`／`executor_fdexec_test.go`／`output_wrapper_test.go` が変更なし（または
 上記の構築関数置き換えのみ）で通る。
 
+### PR-1 作成ポイント: output pump and bounded buffer
+
+**対象ステップ**: 1
+
+**推奨タイトル**: `feat(0171): add output pump and bounded buffer for child stdout/stderr`
+
+**レビュー観点**: パイプ記述子の生成から解放までの対称性（`release`／`releaseChildEnds` の冪等性） / `wait` の `deadline == 0` 規約と、未完了ストリームのバッファを読まないこと / `boundedBuffer` の省略表示が `Cmd.Output()` と一致すること / `outputWriter` が `nil` の経路で標準エラー出力の載せ方が変わらないこと / `writeErr` が `Execute` の戻り値へ届くこと（優先順位の確定は 3-d に譲る）
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ 1 は自前のパイプと読み取り goroutine の生存管理という並行処理を導入する隔離された高リスク step（deadline 経路の競合と記述子リーク）であるため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: 準備・起動・監督の3フェーズへの分解
 
 `WithPrivileges` で囲む範囲はまだ変えない。外から見える挙動を変えずに構造だけを組み替える。
@@ -241,6 +275,10 @@
       `killDirect`／`killReelevated`）を定義する。零値は宣言し忘れを表し、
       `switch` の `default` は失敗側へ倒す。
 - [ ] `preparedCommand` と `stagingRequest` を設計文書 §3.1 のフィールド構成で定義する。
+- [ ] `command_lifecycle.go` に `commandOutcome`（設計文書 §3.3）と、エラー変数
+      `ErrExecBindingUnset` を設計文書 §4.1 の文言で定義する。どちらも本 Phase の
+      `prepareCommand`（`binding` の `switch` の `default`）と `superviseCommand`
+      （待機結果の受け渡し）が使うため、ここで入れる。
 - [ ] `preparedCommand.release() error` を実装し、準備フェーズが確保した記述子
       （出力中継、複製した検証済み記述子、`os.DevNull`）と staged copy をすべて解放する。
 - [ ] `prepareCommand` を実装する。`prepareExecCommand` の3経路の選択、`applyCredential`、
@@ -320,28 +358,46 @@
       テストでは `t.Parallel()` を呼ばない（同一パッケージの別テストの出力を横取りするため）。
       stderr への書き込みは `Logger` を経由しないので、2つ目と3つ目は矛盾しない。
       この区別こそが設計文書 §7.2 の要点なので、同じテストで両方を主張して固定する。
-      静的検査（Phase 4-b）は「隙から `Logger` へ到達しない」ことを構文で見るのに対し、
+      静的検査（Phase 4-c）は「隙から `Logger` へ到達しない」ことを構文で見るのに対し、
       こちらは実際の挙動を見る。
 
 **完了の目安**: 既存テストがすべて緑。外から見える挙動（終了コード、標準出力、
 標準エラー出力、エラー種別）が変わらない。
+
+### PR-2 作成ポイント: command lifecycle decomposition
+
+**対象ステップ**: 2
+
+**推奨タイトル**: `feat(0171): split command execution into prepare, start and supervise phases`
+
+**レビュー観点**: 外から見える挙動（終了コード・標準出力・標準エラー出力・エラー種別）が変わらないこと / `preparedCommand.release()` が準備フェーズの確保した資源をすべて覆うこと / `stageFromFD` の2つの警告が握り潰されず戻り値と `stagingWarn` で運ばれること / redaction を通らない `os.Stderr` への直書きが staging ディレクトリの削除失敗の1件に限られ、その制約が doc コメントに書かれていること / `bindingStagedCopy` で `exec.Command` を使わない理由が実装に反映されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 挙動を変えない構造の組み替えであり、未踏の設計判断・パネルモードの引き金（重い統合テスト／CI／外部資源の面、security-gate／移行）・approach 未確定・隔離された高リスク step のいずれにも当たらないため。隙の中のログ出力の全廃とredaction を通らない stderr 書き込みは設計文書 §7.2 で判断済みで、実装は1箇所に限られる。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
+- [ ] §8 の `executeCommandWithPath`／`prepareExecCommand`／`exec.CommandContext` の横断検索が 0 件を返す
+- [ ] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: `exec.CommandContext` の置き換えとキャンセル・kill（F-003）
 
 **前提**: 本 Phase は Phase 2 が作る `command_lifecycle.go`／`preparedCommand`／
 `superviseCommand` の上に載る。Phase 2 より前には入れられない。
 
-**変更するファイル**: `internal/runner/base/executor/command_lifecycle.go`、
-`internal/runner/base/executor/executor.go`、
-`internal/runner/base/executor/test_helpers.go`、
-`internal/runner/base/runnertypes/config.go`、
+**変更するファイル（3-a〜3-c）**: `internal/runner/base/runnertypes/config.go`、
 `internal/runner/base/privilege/unix.go`、
 `internal/runner/base/privilege/testutil/mocks.go`、
-`internal/runner/base/audit/logger.go`、
-`internal/runner/base/executor/executor_lifecycle_test.go`、
-`internal/runner/base/executor/executor_fdexec_test.go`、
 `internal/runner/base/privilege/unix_privilege_test.go`、
-`internal/runner/group_executor_test.go`
+`internal/runner/base/audit/logger.go`、
+`internal/runner/base/executor/command_lifecycle.go`、
+`internal/runner/base/executor/executor.go`、
+`internal/runner/base/executor/test_helpers.go`
 
 #### 3-a. 型と定数
 
@@ -349,9 +405,10 @@
 - [ ] `privilege/unix.go` の `prepareExecution` の `switch` の
       `case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation:` へ
       `runnertypes.OperationKillAfterCancel` を足す。
-- [ ] `command_lifecycle.go` に `commandOutcome` と、エラー変数
-      `ErrOutputPipe`／`ErrExecBindingUnset`／`ErrKillStrategyUnset`／
-      `ErrKillAfterCancel`／`ErrChildNotReaped` を設計文書 §4.1 の文言で定義する。
+- [ ] `command_lifecycle.go` にエラー変数 `ErrKillStrategyUnset`／`ErrKillAfterCancel`／
+      `ErrChildNotReaped` を設計文書 §4.1 の文言で定義する。設計文書 §4.1 の残り2つは
+      先に入っている（`ErrOutputPipe` は Phase 1、`ErrExecBindingUnset` は Phase 2）。
+      いずれも本 Phase のキャンセル・kill 経路が最初の利用者である。
 - [ ] `killGraceDelay` を `DefaultExecutor` の非公開フィールドにし、`NewDefaultExecutor` の
       既定値を `5 * time.Second` とする。値の根拠（kill 後に子が回収されるのを待つ上限であり、
       これを超えたら孫プロセスがパイプを保持していると見なす）を doc コメントへ書く。
@@ -359,7 +416,72 @@
       既存の `WithFdExecDisabled`／`WithExitFunc` と同じ形にする。これが無いと
       `ErrChildNotReaped` の経路を通すテストが1本あたり5秒かかる。
 
-#### 3-b. 監督フェーズのキャンセル経路
+#### 3-b. 監査メトリクス
+
+- [ ] `audit.PrivilegeMetrics` に隙ごとの内訳を追加する:
+      `ByOperation map[runnertypes.Operation]time.Duration`。`ElevationCount` と
+      `TotalDuration` は残し、意味も変えない。
+- [ ] `audit.Logger.LogUserGroupExecution` が `ByOperation` の各要素を、operation 名を含む
+      一意なキーで出すようにする（キー: `"privilege_duration_" + string(op) + "_us"`、
+      値: `slog.Int64` のマイクロ秒）。ミリ秒では起動区間（数十マイクロ秒）が 0 に潰れて
+      AC-05 を検証できないため、マイクロ秒で出す。キーは operation 名でソートした順に足す。
+- [ ] `executeWithUserGroup` の計測を隙ごとに分け、隙を1つ閉じるたびに `ElevationCount` を
+      1増やし、`ByOperation` へ経過時間を加算する。この時点で実際に開く隙は
+      `user_group_execution`（まだ `prepareCommand` から `superviseCommand` までを包む）1つだけで、
+      `ByOperation` にもこのキーしか現れない。`kill_after_cancel` は 3-d が kill 経路を配線した
+      時点から、`staging_cleanup` はその隙を作る 4-a から、同じ枠へ加算されるようになる。
+      値そのものが意味を持つのは隙が縮んだ後（AC-05 の検証は 4-a より後の統合テスト）であり、
+      本ステップが固定するのは内訳の出し方だけである。
+
+#### 3-c. モックの拡張
+
+- [ ] `privilege/testutil/mocks.go` の `MockPrivilegeManager` へ次の3つを足す。
+      既存の `Supported`／`ElevationCalls`／`ShouldFail`／`ExecFn` の意味は変えない。
+      - `InWindow func()`: 隙の内側、`fn` を呼ぶ直前に1回だけ呼ばれる。
+        隙が開いている**その瞬間の状態**（goroutine 集合、子プロセスの生死）を採るためのもので、
+        `fn` の中で何が呼ばれたかは観測できない（呼び出し集合の主張は §7.2 の静的検査が担う）。
+      - `FailFor map[runnertypes.Operation]error`: operation 別の失敗注入。
+        `ShouldFail` は全 operation を同時に失敗させるため、起動区間を成功させて
+        kill 区間だけを失敗させる経路が作れない。
+      - `UnixPrivilegeManager` と同じ再入ガード: 隙が開いている間の再入を検知して
+        新しいセンチネルエラー `ErrMockReentrantPrivilegeCall` を返す。
+        `privilege` パッケージを import すると循環するため、センチネルエラーはこのパッケージに置く。
+        ガードが無いと AC-11 の「再入ガードが発火しない」という主張が無条件に通ってしまう。
+- [ ] `unix_privilege_test.go` の `ErrUnsupportedOperationType` を主張している表へ、
+      `OperationKillAfterCancel` が**弾かれない**ことを示す行を足す。
+
+**完了の目安（3-a〜3-c）**: 新しい operation・エラー変数・監査属性・モックの注入口が入り、
+既存テストが変更なしで緑。`make test`／`make lint`／`make deadcode` が緑。
+この時点では新しい隙はまだ開かない（`OperationKillAfterCancel` を実際に使うのは 3-d）。
+
+### PR-3 作成ポイント: operation types, audit metrics and privilege mocks
+
+**対象ステップ**: 3-a / 3-b / 3-c
+
+**推奨タイトル**: `feat(0171): add kill operation type, per-operation privilege metrics and mock hooks`
+
+**レビュー観点**: `OperationKillAfterCancel` を昇格が要る側へ足す `switch` の変更が、他の operation の扱いを変えていないこと / 監査属性のキー（`privilege_duration_<op>_us`）が一意で、マイクロ秒で出ること / `MockPrivilegeManager` の再入ガードが `UnixPrivilegeManager` と同じ意味であり、`ShouldFail`／`ExecFn` の既存の意味を変えていないこと / この PR の時点では新しい隙が開かないこと（`ByOperation` に現れるのは `user_group_execution` だけ）
+
+**実装モデル要件**: standard
+
+**判定理由**: 型・定数・監査属性・テスト用注入口の追加のみで、frontier のいずれの引き金にも当たらないため。追加した operation が実際に隙を開くのは PR-4 であり、その PR を frontier-required としている。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 3（続き）: キャンセルと kill の実装
+
+**変更するファイル（3-d・3-e）**: `internal/runner/base/executor/command_lifecycle.go`、
+`internal/runner/base/executor/executor.go`、
+`internal/runner/base/executor/executor_lifecycle_test.go`、
+`internal/runner/base/executor/executor_fdexec_test.go`、
+`internal/runner/group_executor_test.go`
+
+#### 3-d. 監督フェーズのキャンセル経路
 
 - [ ] `superviseCommand` に `select { case <-ctx.Done(): … case res := <-waitCh: … }` を実装する。
       待機 goroutine は `execCmd.Wait()` だけを呼び、結果をバッファ1のチャネルへ送る。
@@ -390,35 +512,6 @@
       弾くこと、`os.ErrProcessDone` をエラーとしないこと、`killGraceDelay` を設けた理由が
       `os/exec` の `WaitDelay` 既定（上限なし）と意図的に異なることの3点。
 
-#### 3-c. 監査メトリクス
-
-- [ ] `audit.PrivilegeMetrics` に隙ごとの内訳を追加する:
-      `ByOperation map[runnertypes.Operation]time.Duration`。`ElevationCount` と
-      `TotalDuration` は残し、意味も変えない。
-- [ ] `audit.Logger.LogUserGroupExecution` が `ByOperation` の各要素を、operation 名を含む
-      一意なキーで出すようにする（キー: `"privilege_duration_" + string(op) + "_us"`、
-      値: `slog.Int64` のマイクロ秒）。ミリ秒では起動区間（数十マイクロ秒）が 0 に潰れて
-      AC-05 を検証できないため、マイクロ秒で出す。キーは operation 名でソートした順に足す。
-- [ ] `executeWithUserGroup` の計測を隙ごとに分け、起動区間・kill 区間・後始末区間の
-      それぞれについて `ElevationCount` を1増やし、`ByOperation` へ経過時間を加算する。
-
-#### 3-d. モックの拡張
-
-- [ ] `privilege/testutil/mocks.go` の `MockPrivilegeManager` へ次の3つを足す。
-      既存の `Supported`／`ElevationCalls`／`ShouldFail`／`ExecFn` の意味は変えない。
-      - `InWindow func()`: 隙の内側、`fn` を呼ぶ直前に1回だけ呼ばれる。
-        隙が開いている**その瞬間の状態**（goroutine 集合、子プロセスの生死）を採るためのもので、
-        `fn` の中で何が呼ばれたかは観測できない（呼び出し集合の主張は §7.2 の静的検査が担う）。
-      - `FailFor map[runnertypes.Operation]error`: operation 別の失敗注入。
-        `ShouldFail` は全 operation を同時に失敗させるため、起動区間を成功させて
-        kill 区間だけを失敗させる経路が作れない。
-      - `UnixPrivilegeManager` と同じ再入ガード: 隙が開いている間の再入を検知して
-        新しいセンチネルエラー `ErrMockReentrantPrivilegeCall` を返す。
-        `privilege` パッケージを import すると循環するため、センチネルエラーはこのパッケージに置く。
-        ガードが無いと AC-11 の「再入ガードが発火しない」という主張が無条件に通ってしまう。
-- [ ] `unix_privilege_test.go` の `ErrUnsupportedOperationType` を主張している表へ、
-      `OperationKillAfterCancel` が**弾かれない**ことを示す行を足す。
-
 #### 3-e. テスト
 
 `executor_lifecycle_test.go`（`//go:build test`、`package executor`）:
@@ -436,7 +529,7 @@
 - [ ] `TestSupervise_KillRunsOnExecutingGoroutine`: 起動区間と kill 区間の `InWindow` で
       `runtime.Stack(buf, false)` の goroutine ヘッダ行（`goroutine N [`）を採り、
       両者の N が一致すること、および `ErrMockReentrantPrivilegeCall` が返らないことを
-      主張する。後者はモックの再入ガード（3-d）が入って初めて意味を持つ。
+      主張する。後者はモックの再入ガード（3-c）が入って初めて意味を持つ。
 - [ ] `TestSupervise_ProcessAlreadyDoneIsNotAnError`: 子が終了した後に context が
       キャンセルされた場合、`os.ErrProcessDone` がエラーとして返らない。
 - [ ] `TestSupervise_ChildNotReapedReportsUnknownExitCode`: `WithKillGraceDelay(50ms)` を与え、
@@ -479,15 +572,32 @@
       `context.DeadlineExceeded` を返すモックを使っており、実 executor を通らないので
       この変更の効果を証明しない。
 
-**完了の目安**: 上記テストが緑。通常実行のタイムアウトが働く。`make test`／`make lint` が緑。
+**完了の目安（3-d・3-e）**: 上記テストが緑。通常実行のタイムアウトが働く。`make test`／`make lint` が緑。
+
+### PR-4 作成ポイント: cancel and kill supervision
+
+**対象ステップ**: 3-d / 3-e
+
+**推奨タイトル**: `feat(0171): replace exec.CommandContext with explicit cancel and kill handling`
+
+**レビュー観点**: kill 区間が `Process.Kill()` 1回だけを包み、`killDirect`／`killReelevated` の宣言どおりに分岐すること / `reaped == false` の後に `execCmd` のどのフィールドにも触れないこと / エラーの優先順位と `errors.Join` による併記が設計文書 §4.2 と一致すること / `killGraceDelay` 超過時に読み取り側を閉じ、`ExitCodeUnknown` を返すこと / `FailFor` と再入ガードが AC-11／AC-14 の主張を空洞化させないこと
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: ステップ 3-d が新しい特権昇格の隙（kill 区間）を実際に開く security-gate step であり、同時に `select` による待機・kill・回収打ち切りという状態機械と並行処理を持つ隔離された高リスク step でもあるため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 特権の隙の縮小と staging の位置づけ変更（F-002）
 
-**変更するファイル**: `internal/runner/base/executor/executor.go`、
+**変更するファイル（4-a・4-b）**: `internal/runner/base/executor/executor.go`、
 `internal/runner/base/executor/command_lifecycle.go`、
 `internal/runner/base/runnertypes/config.go`、
 `internal/runner/base/privilege/unix.go`、
-`internal/runner/base/executor/privileged_window_guard_test.go`（新規）、
 `internal/runner/base/executor/executor_lifecycle_test.go`
 
 #### 4-a. 隙の縮小
@@ -504,6 +614,8 @@
       `WithPrivileges`（`Operation: OperationStagingCleanup`）で包んで `os.RemoveAll` を呼ぶ。
       それ以外（通常実行）は隙を開かずに削除する（設計文書 §3.4 差分2）。
 - [ ] `ErrChildNotReaped` の経路でも staged copy を削除する（設計文書 §6.1）。
+- [ ] 後始末区間の計測を `ByOperation` へ足す（キー `staging_cleanup`）。3-b で入れた
+      計測の枠へ、この Phase で新しく開く隙の分を加える。
 - [ ] `Start()` が失敗した経路では、staged copy の削除は起動区間の中で行う（設計文書 §6.3）。
 - [ ] `preparedCommand.stagingWarn` の記録位置を確定する: `WithPrivileges` から戻った直後
       （隙の外、`releaseChildEnds` と同じ位置）で、非 `nil` なら `Logger.Warn` で記録する。
@@ -519,7 +631,69 @@
       あわせて、この経路では `stagingWarn` と後始末の戻り値が記録されないまま失われることも書く
       （記録は隙を出てから行うため。`emergencyShutdown` 自身は CRITICAL を記録する）。
 
-#### 4-b. 静的検査（`privileged_window_guard_test.go`、`//go:build test`、`package executor`）
+#### 4-b. テスト（`executor_lifecycle_test.go`）
+
+- [ ] `TestStartPrepared_NoGoroutineInsideWindow` を足す（AC-02）。次の点を守る。
+      - `MockPrivilegeManager.InWindow` の中と、隙を開く直前の2箇所で
+        `runtime.Stack(buf, true)` を採る。`buf` は `runtime.Stack` の戻り値が
+        `len(buf)` 未満になるまで倍々に伸ばす（既定サイズだと黙って切り詰められ、
+        差分が空に見える偽の緑になる）。
+      - 比較は **goroutine ID**（各ブロック冒頭の `goroutine N [` から採る N）の集合で行う。
+        文字列全体の比較にすると、状態文字列（`[running]`／`[chan receive]`）の変化だけで
+        差分が出る。基準集合に無い ID が隙の中に現れたら失敗とする。
+      - **executor パッケージのフレームで絞り込まない**（設計文書 §7.1）。`os/exec` の
+        copy goroutine は `io.Copy`／`internal/poll` のフレームしか持たないため、
+        絞ると `*os.File` への切り替えを revert してもテストが緑のままになる。
+      - 除外する goroutine は、先頭フレームで同定した**リテラルの一覧**としてテスト内に書き、
+        1件ずつ理由をコメントする。対象は Go ランタイム（`runtime.gcBgMarkWorker`、
+        `runtime.bgsweep`、`runtime.bgscavenge`、`runtime.runfinq`）、`testing` パッケージ、
+        `-race` 有効時に現れる race detector の goroutine、およびログ機構の Slack 送信ワーカー。
+      - `make test` は `-race` 付きと無し（CGO_ENABLED=0）の両方で走るので、除外一覧は
+        両方の条件で成立させる。
+- [ ] `TestExecute_SingleElevationPairPerRun` を足す（AC-06）。**正常終了する**実行で組む
+      （`executeWithUserGroup` はエラー時に `LogUserGroupExecution` を呼ばないため、
+      監査ログに `ByOperation` が出るのは成功時だけである）。
+      - fd-bound 実行: `ElevationCount == 1`、`ByOperation` のキーが
+        `user_group_execution` だけ。
+      - staging フォールバック（`WithFdExecDisabled`）: `ElevationCount == 2`、
+        キーが `user_group_execution` と `staging_cleanup`。
+- [ ] `TestStartPrepared_WaitAndPumpRunOutsideWindow` を足す（AC-04 の挙動側）。
+      `outputPump` に「`start()` が呼ばれたか」を記録する非公開フラグを足し、
+      `MockPrivilegeManager.InWindow` の時点でそのフラグが偽であること、および
+      待機 goroutine がまだ起動していないことを主張する。静的検査（`G`）が
+      「隙の中から何を呼べるか」を固定するのに対し、こちらは「隙が閉じるまで
+      `Wait()` と出力の取り込みが始まらない」という時間順序を主張する。
+- [ ] `TestExecute_ShebangScriptRunsUnderStagingFallback` を足す（AC-17）。
+      `WithFdExecDisabled` の下でシェバンつきスクリプトが実行でき、標準出力が一致する
+      （staged copy を `Start()` 直後に削除していないことの検査）。
+
+**完了の目安（4-a・4-b）**: 上記テストが緑。隙の縮小後も既存テストが変わらず通る。
+`make test`／`make lint` が緑。
+
+### PR-5 作成ポイント: privilege window narrowing
+
+**対象ステップ**: 4-a / 4-b
+
+**推奨タイトル**: `feat(0171): narrow the privilege window to the start phase`
+
+**レビュー観点**: `WithPrivileges` の `fn` が `startPrepared` の呼び出しだけになっていること / `releaseChildEnds` と検証済み記述子の解放が `Start()` の成否によらず隙の外の1箇所を通ること / staged copy の削除が3経路（正常終了・`ErrChildNotReaped`・`Start()` 失敗）すべてで行われ、`cred != nil` のときだけ後始末区間を開くこと / `stagingWarn`／`cleanupFn()` の戻り値／staged copy のパスを記録する位置がすべて隙の外にあること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: ステップ 4-a は特権昇格の範囲そのものを定義し直し、後始末区間（`OperationStagingCleanup`）を新たに開く security-gate step であり、誤ると実効 UID 0 のまま処理が続くため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+### Phase 4（続き）: 隙の中から到達する呼び出しの静的検査
+
+**変更するファイル（4-c）**: `internal/runner/base/executor/privileged_window_guard_test.go`（新規）、
+`internal/runner/base/executor/testdata/`（新規）
+
+#### 4-c. 静的検査（`privileged_window_guard_test.go`、`//go:build test`、`package executor`）
 
 既存の [`identity_mutation_guard_test.go`](../../../internal/runner/base/privilege/identity_mutation_guard_test.go)
 は**denylist 方式**（追跡対象を `Seteuid` など17個の識別子に限り、その呼び出しサイトを許可リストと
@@ -569,43 +743,25 @@
       `rejects_unlisted_call`／`rejects_logging_in_window`（後の2つが negative self-test）の
       5サブテストで構成する。
 
-#### 4-c. テスト（`executor_lifecycle_test.go`）
+**完了の目安（4-c）**: 静的検査と negative self-test が緑。`make test`／`make lint` が緑。
 
-- [ ] `TestStartPrepared_NoGoroutineInsideWindow` を足す（AC-02）。次の点を守る。
-      - `MockPrivilegeManager.InWindow` の中と、隙を開く直前の2箇所で
-        `runtime.Stack(buf, true)` を採る。`buf` は `runtime.Stack` の戻り値が
-        `len(buf)` 未満になるまで倍々に伸ばす（既定サイズだと黙って切り詰められ、
-        差分が空に見える偽の緑になる）。
-      - 比較は **goroutine ID**（各ブロック冒頭の `goroutine N [` から採る N）の集合で行う。
-        文字列全体の比較にすると、状態文字列（`[running]`／`[chan receive]`）の変化だけで
-        差分が出る。基準集合に無い ID が隙の中に現れたら失敗とする。
-      - **executor パッケージのフレームで絞り込まない**（設計文書 §7.1）。`os/exec` の
-        copy goroutine は `io.Copy`／`internal/poll` のフレームしか持たないため、
-        絞ると `*os.File` への切り替えを revert してもテストが緑のままになる。
-      - 除外する goroutine は、先頭フレームで同定した**リテラルの一覧**としてテスト内に書き、
-        1件ずつ理由をコメントする。対象は Go ランタイム（`runtime.gcBgMarkWorker`、
-        `runtime.bgsweep`、`runtime.bgscavenge`、`runtime.runfinq`）、`testing` パッケージ、
-        `-race` 有効時に現れる race detector の goroutine、およびログ機構の Slack 送信ワーカー。
-      - `make test` は `-race` 付きと無し（CGO_ENABLED=0）の両方で走るので、除外一覧は
-        両方の条件で成立させる。
-- [ ] `TestExecute_SingleElevationPairPerRun` を足す（AC-06）。**正常終了する**実行で組む
-      （`executeWithUserGroup` はエラー時に `LogUserGroupExecution` を呼ばないため、
-      監査ログに `ByOperation` が出るのは成功時だけである）。
-      - fd-bound 実行: `ElevationCount == 1`、`ByOperation` のキーが
-        `user_group_execution` だけ。
-      - staging フォールバック（`WithFdExecDisabled`）: `ElevationCount == 2`、
-        キーが `user_group_execution` と `staging_cleanup`。
-- [ ] `TestStartPrepared_WaitAndPumpRunOutsideWindow` を足す（AC-04 の挙動側）。
-      `outputPump` に「`start()` が呼ばれたか」を記録する非公開フラグを足し、
-      `MockPrivilegeManager.InWindow` の時点でそのフラグが偽であること、および
-      待機 goroutine がまだ起動していないことを主張する。静的検査（`G`）が
-      「隙の中から何を呼べるか」を固定するのに対し、こちらは「隙が閉じるまで
-      `Wait()` と出力の取り込みが始まらない」という時間順序を主張する。
-- [ ] `TestExecute_ShebangScriptRunsUnderStagingFallback` を足す（AC-17）。
-      `WithFdExecDisabled` の下でシェバンつきスクリプトが実行でき、標準出力が一致する
-      （staged copy を `Start()` 直後に削除していないことの検査）。
+### PR-6 作成ポイント: static guard for privilege windows
 
-**完了の目安**: 上記テストと静的検査が緑。`make test`／`make lint` が緑。
+**対象ステップ**: 4-c
+
+**推奨タイトル**: `test(0171): add static guard for calls reachable inside the privilege windows`
+
+**レビュー観点**: 追跡対象・到達解析の範囲・レシーバ型の同定手段という3つの前提がテストの doc コメントに書かれていること / 許可リストが設計文書 §7.2 の表と一致し、`Logger` のメソッドを1つも含まないこと / negative self-test 2種（許可リスト外の呼び出し・隙の中のログ出力）が実際に拒否されること / `golang.org/x/tools` を足さず `go/parser` と `go/types` だけで型解決していること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: ステップ 4-c は既存の `identity_mutation_guard_test.go`（denylist 方式・呼び出しグラフを辿らない）に前例が無い到達解析つきの検査であり、隔離された複雑な step にあたるため。追跡対象・解析範囲・型解決手段は 4-c 自身が先に固定しているので未踏の設計判断は残っておらず、テストだけを足す PR で挙動は変わらないため frontier-required には上げない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 統合テストと実行経路の整備（F-007）
 
@@ -696,6 +852,27 @@
 **完了の目安**: `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/`
 がコンパイルを通る。特権のある環境で AC-05／AC-07／AC-08／AC-13 が緑（§4.3 の手順で確認）。
 非特権環境では理由つきでスキップし、pre-commit が緑のままである。
+
+### PR-7 作成ポイント: privileged integration tests and execution paths
+
+**対象ステップ**: 5-a / 5-b / 5-c
+
+**推奨タイトル**: `test(0171): add privileged integration tests and their execution paths`
+
+**レビュー観点**: スキップ判定が `requireSetuidModel` の1箇所にあり、4本のテストへ書き写されていないこと / `ENVSET` が `env -i` で環境を空にする下で `TEST_RUNAS_TARGET_USER` が転送されること / 非特権環境では理由つきでスキップし、`test-ci` と pre-commit が緑のままであること / `.pre-commit-config.yaml` の必須フィールド（`name` を含む）が揃っていること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: ステップ 5-b／5-c は setuid テストバイナリという外部資源の面と、`Makefile` の CI 合成ターゲットおよび pre-commit フックを触る面を持ち、パネルモードの引き金「重い統合テスト／CI／外部資源の面」に当たるため。スキップ判定を誤ると全テストがサイレントにスキップし、無検証のまま緑になる。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` が終了コード 0（`make lint`／`make test` は `integration` タグ付きファイルをコンパイルしないため、グリーンゲートだけでは足りない）
+- [ ] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
+- [ ] §4.3 の実行手順を特権のある環境で走らせ、`--- SKIP` が無いことを確認して結果を §4.3 へ追記した
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 文書と doc コメントの更新（F-006）
 
@@ -836,9 +1013,31 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 **完了の目安**: §7 の AC-19／AC-20 の検証コマンドが期待どおりの結果を返す。
 `make test`（`synccensus` の guard test を含む）が緑。
 
+### PR-8 作成ポイント: documentation and doc comments
+
+**対象ステップ**: 6-a / 6-b / 6-c
+
+**推奨タイトル**: `docs(0171): update security documents and doc comments for the narrowed window`
+
+**レビュー観点**: §7 の AC-19／AC-20 の `rg` 検証が、旧文言の不在と新文言の存在の両方で期待どおりになること / 日本語版を先にコミットし、英語版は `/mktrans` で反映していること / 0170 実装計画書の5箇所が注記の追加にとどまり、歴史的記述を書き換えていないこと / `synccensus` の guard test の3つの理由文字列が出力中継の実態と一致すること
+
+**実装モデル要件**: standard
+
+**判定理由**: 文言の置き換えと追跡表への注記のみで、未踏の設計判断・パネルモードの引き金・approach 未確定・隔離された高リスク step のいずれにも当たらないため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] §8 の文言に関する横断検索（`output copy goroutine` の不在、置換後文言の存在、0170 追跡表の `0171` 5件以上）が期待どおり
+- [ ] §4.4 の性能測定を全変更が入った状態で行い、結果を §4.4 へ追記した
+- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ---
 
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 含む Phase | 成果物 | 判定 |
 |---|---|---|---|
@@ -857,6 +1056,45 @@ Phase 4 は Phase 1 と Phase 3 の両方が入ってから行う（設計文書
 AC-01 の検証位置は設計文書 §8 の Phase 1 から Phase 2 へ移してある。理由は Phase 2 の
 `TestPrepareCommand_ChildStreamsAreOSFiles` の項目に書いた（Phase 1 の時点では
 `exec.Cmd` が `executeCommandWithPath` の内側にしか無く、外から観測できない）。
+
+### 3.2 PR 構成
+
+PR の区切りは §2 の各ステップの直後に「PR-N 作成ポイント」として埋め込んである。
+各 PR は単独でグリーンゲート（`make test && make lint`）を通り、後続ステップのスタブを要さない。
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | 1 | `output_pump.go`（`boundedBuffer`／`outputPump`／`ErrOutputPipe`）の新設と、出力取り込みの自前化 | frontier-recommended |
+| PR-2 | 2 | `command_lifecycle.go` の新設。準備・起動・監督の3フェーズへの分解（挙動は変えない） | standard |
+| PR-3 | 3-a / 3-b / 3-c | `OperationKillAfterCancel` とエラー変数、監査メトリクスの内訳、`MockPrivilegeManager` の注入口 | standard |
+| PR-4 | 3-d / 3-e | `exec.CommandContext` の置き換え。キャンセル・kill 区間・回収打ち切りとそのテスト | frontier-required |
+| PR-5 | 4-a / 4-b | `WithPrivileges` の範囲を `startPrepared` へ縮小。後始末区間と staged copy の削除位置の変更 | frontier-required |
+| PR-6 | 4-c | `privileged_window_guard_test.go` の新設（隙から到達する呼び出しの静的検査） | frontier-recommended |
+| PR-7 | 5-a / 5-b / 5-c | 特権つき統合テスト、スキップ判定、`Makefile` ターゲット、pre-commit フック | frontier-required |
+| PR-8 | 6-a / 6-b / 6-c | doc コメント5箇所、設計・利用者向け文書4本、0170 追跡表の5箇所 | standard |
+
+Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
+
+- **Phase 3。** 3-d（キャンセル・kill）は本タスクで唯一の状態機械であり、並行処理と
+  新しい特権の隙を同時に持つ。型・定数・監査属性・モックの注入口（3-a〜3-c）と混ぜると、
+  監査属性のキーの形を読む人が kill の状態機械を読み飛ばせない。3-a〜3-c は
+  新しい隙を開かないので、単独で入れても挙動は変わらない。
+- **Phase 4。** PR-5 が挙動（隙の範囲）を変え、PR-6 はテストだけを足す。到達解析つきの
+  静的検査は、隙の縮小そのものとは別の観点（解析の正しさと許可リストの忠実さ）で読まれる。
+  PR-5 の時点でも 4-b の挙動テスト（AC-02／AC-04 の挙動側／AC-06／AC-17）が縮小を検証する。
+
+### 3.3 PR に割り当てた §2 以外の作業
+
+§2 のステップに現れない作業も、宙に浮かないよう PR へ割り当てる。
+
+| 作業 | 割り当て先 |
+|---|---|
+| §4.2「テストが主張する理由で失敗できることの確認」 | 各 PR。その PR が追加したテストの行を、その PR で確認する（各 PR 作成ポイントのチェックリスト） |
+| §4.3 統合テストの実行手順（setuid モデルでの実行と結果の追記） | PR-7 |
+| §4.4 性能の確認 | PR-8（全変更が入った状態で測るため） |
+| §8 の `executeCommandWithPath`／`prepareExecCommand`／`exec.CommandContext` の残存参照検索 | PR-2（この3つが消えるのは Phase 2） |
+| §8 の文言に関する検索と 0170 追跡表の検索 | PR-8 |
+| §8 の新規型名が executor パッケージの外へ漏れていないことの検索 | PR-2（PR-1 が入れた `boundedBuffer`／`outputPump` も併せて確認する） |
 
 ---
 
@@ -907,7 +1145,7 @@ AC-01 の検証位置は設計文書 §8 の Phase 1 から Phase 2 へ移して
       閾値（5,000 µs）を超えてテストが落ちる。
 - [ ] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
       `TestSupervise_NormalExecutionDoesNotReelevate` が落ちる。
-- [ ] AC-11: モックの再入ガード（Phase 3-d）を外すと、kill を別 goroutine から呼ぶ実装に
+- [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
       戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
 - [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
 - [ ] AC-03・AC-04（`Logger` 禁止）: `stageFromFD` に `Logger.Warn` を1行戻すと、
@@ -1015,27 +1253,29 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 |---|---|---|---|
 | 自前のパイプ管理による記述子の漏洩 | 長時間動作するプロセスで記述子を使い切る | 生成から解放までを `outputPump` と `preparedCommand.release()` に閉じ、`Start()` 失敗経路（既存テスト）とキャンセル2経路（新規テスト）を `numOpenFDs` で計数する | Phase 1、Phase 3 の `TestExecute_NoLeakOnCancellationPaths` |
 | 読み取り側の閉じ忘れによるデッドロック | `Wait()` が戻らずコマンドがハングする | 書き込み側の解放を隙の外の必ず通る1箇所に置き、長時間コマンドと大量出力の両方でテストする | Phase 1、Phase 3 |
-| `exec.CommandContext` の意味論の取りこぼし | キャンセルが効かない、または二重に kill する | 設計文書 §4.3 の対応表の各行に検証を割り当て、コード上の判断に直結する3点は `superviseCommand` の doc コメントへ残す | Phase 3-b のテスト項目と doc コメント項目 |
+| `exec.CommandContext` の意味論の取りこぼし | キャンセルが効かない、または二重に kill する | 設計文書 §4.3 の対応表の各行に検証を割り当て、コード上の判断に直結する3点は `superviseCommand` の doc コメントへ残す | Phase 3-d のテスト項目と doc コメント項目 |
 | 再昇格の追加による復帰漏れ | 実効 UID 0 のまま処理が続く | kill 経路も既存の `WithPrivileges` を通し、復帰と識別子検査を共通経路で行う。`Execute` 末尾の `identityChecker` は変更しない | Phase 3 |
 | 特権が要るテストが開発環境で常にスキップされる | 受け入れ基準が実質的に検証されない | (1) 特権と無関係な AC-13 は非特権テストを主たる証拠にする。(2) 環境変数名の取り違えを `TestRequireSetuidModel_ReadsDocumentedEnvVar` で固定する。(3) §4.3 の手順が `--- SKIP` を失敗として扱う | Phase 1、Phase 5、§4.3 |
-| 静的検査の許可リストが実装から離れる／検査が空洞化する | AC-03／AC-04 の主張が空洞化する | 許可リストを go/ast + go/types の guard test に置き、追跡対象・到達範囲・型解決手段を先に固定する。negative self-test で検査自体が落ちられることを確かめる | Phase 4-b |
-| 起動区間の中で `os.MkdirTemp` が走る（staging フォールバック時） | 「隙の中でファイルを開かない」という性質が staging 経路では成り立たない | 設計文書 §3.4 差分1 は、この配置を意図して選んでいる。複製を隙の外で作ると staged copy が起動者所有になり、差し替え可能になるためである。本タスクはこの判断を変えない。許可リストを `stageFromFD` が実際に呼ぶものだけに固定し、範囲が広がらないようにする | Phase 4-b の許可リスト |
-| 隙の中のログ出力が、ハンドラ経由で将来 `open` を行いうる | slog ハンドラはファイルを開くことが許されており、隙の中で呼べばその `open` が euid 0 で行われる。出力コピー goroutine について本タスクが取り除いたのと同じ危険 | 隙の中の `Logger` 呼び出しを全廃する（設計文書 §7.2）。`stageFromFD` の2つの警告は戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ。許可リストに `Logger` を1つも載せず、negative self-test で「隙の中のログ出力を拒否すること」を確かめる | Phase 2、Phase 4-a、Phase 4-b |
+| 静的検査の許可リストが実装から離れる／検査が空洞化する | AC-03／AC-04 の主張が空洞化する | 許可リストを go/ast + go/types の guard test に置き、追跡対象・到達範囲・型解決手段を先に固定する。negative self-test で検査自体が落ちられることを確かめる | Phase 4-c |
+| 起動区間の中で `os.MkdirTemp` が走る（staging フォールバック時） | 「隙の中でファイルを開かない」という性質が staging 経路では成り立たない | 設計文書 §3.4 差分1 は、この配置を意図して選んでいる。複製を隙の外で作ると staged copy が起動者所有になり、差し替え可能になるためである。本タスクはこの判断を変えない。許可リストを `stageFromFD` が実際に呼ぶものだけに固定し、範囲が広がらないようにする | Phase 4-c の許可リスト |
+| 隙の中のログ出力が、ハンドラ経由で将来 `open` を行いうる | slog ハンドラはファイルを開くことが許されており、隙の中で呼べばその `open` が euid 0 で行われる。出力コピー goroutine について本タスクが取り除いたのと同じ危険 | 隙の中の `Logger` 呼び出しを全廃する（設計文書 §7.2）。`stageFromFD` の2つの警告は戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ。許可リストに `Logger` を1つも載せず、negative self-test で「隙の中のログ出力を拒否すること」を確かめる | Phase 2、Phase 4-a、Phase 4-c |
 | 隙を出る前に `emergencyShutdown` やクラッシュでプロセスが死ぬと、運び出した記録が失われる | `$TMPDIR` に残った root 所有の複製の在処が誰にも分からなくなる | 失われると困る1件（staging ディレクトリの削除失敗）だけ、既に開いている stderr の記述子へも書く。パスを開かないので §7.2 の禁止と両立する。あわせて staged copy のパスを起動区間の直後に `Debug` で記録し、`emergencyShutdown` の経路でも在処が追えるようにする | Phase 2、Phase 4-a |
 | stderr への直書きが redaction ハンドラを通らない | 秘匿情報を書けば、そのまま起動者の選んだ宛先へ出る | 載せてよいのは秘匿情報を含まないと分かっている値だけ、という制約を doc コメントに書く。実際に載せるのは staging ディレクトリのパスと errno だけである | Phase 2 |
 | 隙の外へ運んだ警告を、呼び出し元が記録し忘れる | staging の失敗が誰にも見えなくなる | 通常のエラー伝播にしたので、握り潰せば `errcheck`（`.golangci.yml:9` で有効）が検出する。汎用のログバッファを置かないのはこのためで、バッファ方式の `flush` 忘れは lint でも静的検査でも捕まらない | Phase 2、`make lint` |
-| Phase 4 の同時変更が大きく、切り分けが難しい | 障害時の revert 単位が粗くなる | Phase を独立コミットに分ける。Phase 4 だけを戻せば隙の範囲が現状へ戻る | §3 のマイルストーン |
+| Phase 4 の同時変更が大きく、切り分けが難しい | 障害時の revert 単位が粗くなる | Phase を独立した PR に分け、Phase 4 は挙動を変える PR-5 と静的検査だけの PR-6 に分ける。PR-6 → PR-5 の順に戻せば隙の範囲が現状へ戻る | §3.2 の PR 構成 |
 
 ---
 
 ## 6. 実装チェックリスト
 
-- [ ] Phase 1: 出力中継と `boundedBuffer`（F-001 の土台）
-- [ ] Phase 2: 準備・起動・監督の3フェーズへの分解
-- [ ] Phase 3: `exec.CommandContext` の置き換えとキャンセル・kill（F-003）
-- [ ] Phase 4: 特権の隙の縮小と staging の位置づけ変更（F-002）
-- [ ] Phase 5: 統合テストと実行経路の整備（F-007）
-- [ ] Phase 6: 文書と doc コメントの更新（F-006）
+- [ ] PR-1 マージ済み（対象ステップ: 1）
+- [ ] PR-2 マージ済み（対象ステップ: 2）
+- [ ] PR-3 マージ済み（対象ステップ: 3-a / 3-b / 3-c）
+- [ ] PR-4 マージ済み（対象ステップ: 3-d / 3-e）
+- [ ] PR-5 マージ済み（対象ステップ: 4-a / 4-b）
+- [ ] PR-6 マージ済み（対象ステップ: 4-c）
+- [ ] PR-7 マージ済み（対象ステップ: 5-a / 5-b / 5-c）
+- [ ] PR-8 マージ済み（対象ステップ: 6-a / 6-b / 6-c）
 - [ ] §4.2 のすべての項目について、仕組みを外すとテストが落ちることを確認した
 - [ ] §4.3 の実行手順を実環境で走らせ、スキップされていないことを確認し、結果を追記した
 - [ ] §4.4 の性能測定を行い、結果を追記した
@@ -1081,7 +1321,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 種別: `test`（go/ast + go/types による静的検査を `go test` から実行する）
 - 検証: `G::TestPrivilegeWindowAllowedCalls`（サブテスト `start_window`、
   `rejects_unlisted_call`、`rejects_logging_in_window`）
-- 期待: 起動区間から到達する追跡対象の呼び出しが Phase 4-b の許可リストに収まり、
+- 期待: 起動区間から到達する追跡対象の呼び出しが Phase 4-c の許可リストに収まり、
   `Logger` へは到達しない。`testdata/` の許可リスト外呼び出しと、隙の中のログ出力は
   どちらも拒否される
 - 種別: `test`（失敗の情報が握り潰されず、かつ `Logger` を経由せずに届くこと）
@@ -1089,7 +1329,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 期待: 後始末が失敗したとき `cleanupFn()` が非 `nil` のエラーを返し、
   `Logger` の記録が1件も出ず、stderr に警告が1行出る
 - 実装: Phase 2（`Logger.Warn` の除去、戻り値化、stderr への最後の手段の記録）、
-  Phase 4-b（静的検査）
+  Phase 4-c（静的検査）
 
 ### AC-04: `WithPrivileges` の中は `chown`／`chmod` と `Start()` に限られる
 
@@ -1107,7 +1347,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 検証: `I::TestPrivilegeGap_StartWindowIndependentOfCommandDuration`
 - 期待: 1秒／5秒のコマンドとも `privilege_duration_user_group_execution_us` が 5,000 未満、
   かつ両者の差が 2,000 未満
-- 実装: Phase 3-c（監査メトリクスの内訳）、Phase 4-a（隙の縮小）
+- 実装: Phase 3-b（監査メトリクスの内訳）、Phase 4-a（隙の縮小）
 
 ### AC-06: 昇格と復帰の対は1組（kill の分を除く）
 
@@ -1128,14 +1368,14 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 期待: `Execute` がタイムアウト直後に戻り、戻り値から `context.DeadlineExceeded` と
   `Wait()` のエラーの両方を `errors.Is` でたどれる。実 executor を通した実行で
   `LogTimeoutExceeded` の記録が現れる（設計文書 §7.3 が AC-07 に課す2点目）
-- 実装: Phase 3-b（エラー合成）
+- 実装: Phase 3-d（エラー合成）
 
 ### AC-08: SIGINT／SIGTERM で子プロセスが停止する
 
 - 種別: `test`
 - 検証: `I::TestPrivilegeGap_CancelKillsChild`、`L::TestSupervise_CancelKillsChild`
 - 期待: キャンセル後、`Execute` が `killGraceDelay` 以内に戻り `context.Canceled` をたどれる
-- 実装: Phase 3-b
+- 実装: Phase 3-d
 
 ### AC-09: kill の再昇格は kill だけを含み、直後に復帰と検査を行う
 
@@ -1145,23 +1385,23 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 期待: `ElevationCalls` に `kill_after_cancel` がちょうど1回現れ、`InWindow` の時点で
   子プロセスがまだ生きている。静的検査で kill 区間から到達する追跡対象の呼び出しが
   `(*os.Process).Kill` だけである
-- 実装: Phase 3-b、Phase 4-b
+- 実装: Phase 3-d、Phase 4-c
 
 ### AC-10: 通常実行では kill の再昇格を行わない
 
 - 種別: `test`
 - 検証: `L::TestSupervise_NormalExecutionDoesNotReelevate`
 - 期待: `run_as` を伴わない実行のキャンセルで `MockPrivilegeManager.ElevationCalls` が空
-- 実装: Phase 3-b（`killStrategy` による宣言）
+- 実装: Phase 3-d（`killStrategy` による宣言）
 
 ### AC-11: `WithPrivileges` に2つの goroutine が同時に入らない
 
 - 種別: `test`
 - 検証: `L::TestSupervise_KillRunsOnExecutingGoroutine`
 - 期待: 起動区間と kill 区間の `InWindow` で採った goroutine ID が一致し、
-  `ErrMockReentrantPrivilegeCall` が返らない（モック側の再入ガードは Phase 3-d で入れる。
+  `ErrMockReentrantPrivilegeCall` が返らない（モック側の再入ガードは Phase 3-c で入れる。
   ガードが無いとこの主張は無条件に通る）
-- 実装: Phase 3-b、Phase 3-d
+- 実装: Phase 3-c、Phase 3-d
 
 ### AC-12: 終了後・キャンセル済みの場合に特権と記述子を漏らさない
 
@@ -1171,7 +1411,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
   既存 `E::TestExecute_ContextCancellation`（キャンセル済み context で `Result` が非 `nil`）
 - 期待: 3経路とも反復で記述子が増えない（`numOpenFDs` の差が 1 以下）。
   新規テストの各経路で `os.Geteuid() == os.Getuid()` が成り立つ
-- 実装: Phase 2（`release()`）、Phase 3-b（キャンセル済み context の早期リターン）
+- 実装: Phase 2（`release()`）、Phase 3-d（キャンセル済み context の早期リターン）
 
 ### AC-13: 上限超過を実行中に検出し、子を打ち切る
 
@@ -1193,7 +1433,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 期待: 子が `SIGPIPE` で異常終了しても、返るエラーの主因は書き込みエラーであり
   `*exec.ExitError` は主因として現れない。stdout 側の書き込みエラーが stderr 側より優先される。
   kill 失敗が同時に起きたときは `ErrKillAfterCancel` も併記され、両方を `errors.Is` でたどれる
-- 実装: Phase 3-b（エラーの優先順位）
+- 実装: Phase 3-d（エラーの優先順位）
 
 ### AC-15: stdout／stderr の区別と `OutputWriter` への経路が変わらない
 
@@ -1441,10 +1681,10 @@ Phase 6-c で注記を足す）。
 
 ## 10. 次のステップ
 
-本書は `draft` である。実装へ着手する前に次が要る。
+本書は `approved` である。実装は次の順で進める。
 
-- [ ] 本書のレビューと、Status を `approved` への更新
-- [ ] Phase 1 から順に実装し、Phase ごとに独立したコミットへ分ける
+- [ ] §3.2 の PR 構成に従い、PR-1 から順に実装する。1つの PR を1つのブランチで作り、
+      マージしてから次の PR のブランチへ切り替える
 
 実装完了後に残るもの（設計文書 §9、要件定義書「本タスクの後に残るもの」）:
 
