@@ -4,9 +4,9 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-02 |
-| Review date | - |
+| Review date | 2026-09-03 |
 | Reviewer | - |
 | Comments | - |
 
@@ -368,6 +368,12 @@ type preparedCommand struct {
     kill    killStrategy
     verifiedFD *os.File        // duplicated verified fd; nil unless bindingVerifiedFD
     stage      *stagingRequest // nil unless binding == bindingStagedCopy
+    // stagingWarn carries a non-fatal staging failure out of the privilege
+    // window so the caller can log it after the window closes. Nothing inside
+    // a window may log: a slog handler is free to open a file, and it would do
+    // so at euid 0. Staging succeeded when this is set, so it is not returned
+    // as an error.
+    stagingWarn error
 }
 
 // stagingRequest carries what the start phase needs to build the staged copy
@@ -617,11 +623,17 @@ type commandOutcome struct {
   流用すると、1回の実行で同じ operation の昇格が最大3組ログに並び、どれが起動でどれが kill かを
   監査ログから区別できなくなる。AC-06（昇格と復帰の対は1組）と AC-09（kill の再昇格は kill だけ）は
   ログから検証する基準なので、区別できないことは検証できないことと同じである。
-- **kill の後の回収。** kill の後は待機結果を待つが、`killGraceDelay` を上限とする。子プロセスが
-  パイプの書き込み側を持ったまま離れた孫プロセスを残した場合、あるいは kill 自体が失敗した場合に、
-  ここで無限に止まらないためである。上限を越えたときは出力中継の読み取り側を閉じ、
-  `ErrChildNotReaped` に PID を添えて返す。子プロセスが残る可能性のある事象なので `Error` で
-  記録する。上限を設けないと、タイムアウトの保証そのものがサイレントに失われる。
+- **kill の後の回収。** kill の後は待機結果を待つが、`killGraceDelay` を上限とする。kill 自体が
+  失敗した場合や、子が `SIGKILL` で終われない状態にある場合に、ここで無限に止まらないためである。
+  上限を越えたときは出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。
+  子プロセスが残る可能性のある事象なので `Error` で記録する。上限を設けないと、タイムアウトの
+  保証そのものがサイレントに失われる。
+- **出力の読み切りの打ち切り。** 回収の上限とは**別の待機**である。`Stdout`／`Stderr` を
+  `*os.File` にした結果、`Wait()` は読み取りの完了を待たない（§3.2）。したがって、パイプの
+  書き込み側を持ったまま離れた孫プロセスが延ばすのは出力中継の `wait` であって `Wait()` ではない。
+  こちらも `killGraceDelay` を上限とし、超えたときは読み切れなかった旨を隙の外で `Warn` に記録して
+  打ち切る。終了コードと `*exec.ExitError` は `Wait()` から得られているので、`ErrChildNotReaped`
+  とはせず `Result.ExitCode` も `ExitCodeUnknown` にしない。
 - **kill の失敗。** `WithPrivileges` が失敗した場合（再入、昇格失敗、特権が使えない環境）は、
   待機結果を上限付きで待ち、`ErrKillAfterCancel` を PID とともに返す。子プロセスを止められない
   ことを隠さないためである。
@@ -696,8 +708,9 @@ fd-bound 実行の経路では、複製した記述子が子プロセスの fd 3
 **この差分を主張している既存テスト。**
 [`stagefromfd_test.go`](../../../internal/runner/base/executor/stagefromfd_test.go) の
 `TestStageFromFD_*` は `stageFromFD` を隙の外（非特権）から直接呼び、`chown` 失敗時に
-ディレクトリを残さないことを確かめている。関数のシグネチャと失敗時の後始末は変わらないため
-テスト本体の変更は要らないが、「隙の内側で呼ばれる関数」であることを doc コメントで示す。
+ディレクトリを残さないことを確かめている。失敗時の後始末は変わらないので主張はそのままだが、
+後始末の関数が `func() error` になる（§7.2）ため、戻り値の受け方だけ追随させる。
+あわせて「隙の内側で呼ばれる関数」であることを doc コメントで示す。
 [`executor_privilege_check_test.go`](../../../internal/runner/base/executor/executor_privilege_check_test.go)
 の `prepareExecCommand` 呼び出しは、準備フェーズと起動フェーズへの分割に追随させる必要がある。
 
@@ -914,7 +927,7 @@ kill した場合に限り、`ctx.Err()` と `Wait()` のエラーの両方を `
 | context のキャンセル時に `Process.Kill()` を呼ぶ | `CommandContext` | 実行 goroutine の `select` が検出して kill する（§3.3）。`run_as` 実行では kill 区間を開く |
 | `Cancel` が `os.ErrProcessDone` を返した場合はエラーとしない | `CommandContext` | 同じ扱いにする（§3.3） |
 | `Wait()` のエラーを context のエラーより優先する | `CommandContext` | **意図して変える。** キャンセル由来の kill では両方をたどれるエラーを返す（§4.2 順位2） |
-| `WaitDelay` が 0 なので、`Wait()` は出力の複製が終わるまで待つ | `CommandContext` | 出力中継の `wait` が両方の読み取り goroutine の終了を待ってから結果を組み立てる。ただし kill の後は `killGraceDelay` を上限とする。上限を設けない `os/exec` の既定は、パイプを持ったまま離れた孫プロセスがいるとタイムアウトの保証そのものを失わせるため、ここは意図して変える |
+| `WaitDelay` が 0 なので、`Wait()` は出力の複製が終わるまで待つ | `CommandContext` | 出力中継の `wait` が両方の読み取り goroutine の終了を待ってから結果を組み立てる。ただし kill の後は `killGraceDelay` を上限とする。上限を設けない `os/exec` の既定は、パイプを持ったまま離れた孫プロセスがいると出力の読み切りが終わらず、タイムアウトの保証そのものを失わせるため、ここは意図して変える |
 | 複製エラーは、プロセスが正常終了したときだけ報告される | `CommandContext` | §4.2 は書き込みエラーを最優先にする。これは現在の executor が `os/exec` の既定を上書きしている挙動を引き継いだものであり、変更ではない |
 | `OutputWriter` が `nil` のとき、標準エラー出力は異常終了時だけ `Result.Stderr` に載る | `Cmd.Output()` | 同じにする。正常終了時に標準エラー出力を載せると、`group_executor` の debug ログと Slack 通知へ新たに流れ込むため |
 | `OutputWriter` が `nil` のとき、標準エラー出力は先頭 32 KiB と末尾 32 KiB を残し、中間を `\n... omitting N bytes ...\n` に置き換える（保持量は最大およそ 64 KiB） | `Cmd.Output()`（内部型 `prefixSuffixSaver{N: 32 << 10}`） | 同じにする。同じ規則の `boundedBuffer` を置く（§3.2 要点6）。末尾を落とす案は採らない。失敗したコマンドの診断に要るのは末尾であり、先頭は起動時の定型出力であることが多い |
@@ -1001,7 +1014,7 @@ flowchart LR
 |---|---|---|---|---|
 | 起動区間 | 毎回（run-as 実行） | fd-bound 実行では `Start()` だけ。staging フォールバックでは複製の作成・`chmod`・`chgrp` も | `fork`／`execve` の時間（staging では複製の時間が加わる） | Slack 送信ワーカーのみ |
 | kill 区間 | キャンセルが起きたときだけ | `Process.Kill()` だけ | システムコール1回 | 読み取り goroutine2本、待機 goroutine、Slack 送信ワーカー |
-| 後始末区間 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
+| 後始末区間 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`）と、失敗したときの stderr への1行の書き込み（§7.2） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
 
 現在と比べたときの変化は次のとおりである。
 
@@ -1128,7 +1141,8 @@ sequenceDiagram
 |---|---|
 | `select` の直前に子が終わっていた（`Kill` が `os.ErrProcessDone`） | エラーとせず、そのまま待機結果を読む |
 | kill の `WithPrivileges` が失敗した | `ErrKillAfterCancel` に PID を添えて返す。待機は `killGraceDelay` で打ち切る |
-| `killGraceDelay` の間に子が終わらない（孫プロセスがパイプを保持しているなど） | 出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
+| `killGraceDelay` の間に `Wait()` が返らない（kill が届かない、子が終われない状態にある） | 出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
+| 子は回収できたが、`killGraceDelay` の間に出力中継が読み切れない（孫プロセスがパイプの書き込み側を保持している） | 読み取り側を閉じて打ち切る。エラーとはせず、隙の外で `Warn` に記録する。終了コードは `Wait()` から得られているので `ExitCodeUnknown` にはしない。`Wait()` は読み取りを待たないので、これは上の行とは別の事象である |
 | 起動区間が閉じた後に書き込み側の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
 | 隙の中で復帰に失敗した | 既存の `emergencyShutdown` が即座にプロセスを終える。子プロセスと、staging フォールバックのときは staged copy が残る。その旨を doc コメントに記す |
 
@@ -1139,6 +1153,11 @@ staged copy の削除は行う。削除を子の終了後まで遅らせてい�
 影響も無い。削除しないと、root 所有・`0500` の検証済みバイナリの複製が `$TMPDIR` に残り、しかも
 その参照を持っていた唯一のプロセスは終了する。`emergencyShutdown` の経路だけは、プロセスが即座に
 終わるため削除できない。
+
+この経路で複製がどこに残ったかを追えるよう、**staged copy のパスを起動区間が閉じた直後に `Debug` で
+記録する**。記録は隙の外で行うので、隙の中の操作は増えない。復帰失敗はその記録より後に起きるため、
+`emergencyShutdown` で終了しても記録は残る。起動区間が閉じる前にプロセスが死んだ場合は記録できないが、
+その窓は `Start()` の直後の数マイクロ秒であり、かつその時点では複製の作成が完了しているとは限らない。
 
 ### 6.2 出力サイズ上限の超過
 
@@ -1265,9 +1284,9 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 
 | 区間 | 許可する呼び出し |
 |---|---|
-| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close` |
+| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
 | kill 区間 | `(*os.Process).Kill` のみ |
-| 後始末区間 | `os.RemoveAll` のみ |
+| 後始末区間 | `os.RemoveAll` と `(*os.File).WriteString` |
 
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
 ある。`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
@@ -1281,9 +1300,56 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 `execCmd.Path` への代入は呼び出しではなくフィールドへの代入なので、この検査の対象外である。
 検査は「代入以外の呼び出しがリストに収まること」を見る。
 
-ログ出力は隙の外で行う。`stageFromFD` が失敗時に呼ぶ `Logger.Warn` は隙の内側に残るため、
-許可リストの注記として扱い、それ以外の場所からのログ出力は許可しない。§3.3 の「kill を記録する」
-処理も隙の外に置く。
+**隙の中では `Logger` を呼ばない。例外を設けない。** slog のハンドラはファイルを開くことが
+許されており、隙の中で呼べばその `open` は euid 0 で行われる。これは本タスクが出力コピー
+goroutine について取り除いたのと同じ危険であり、ログ出力にだけ残す理由が無い。したがって
+許可リストに `Logger` のメソッドを一切載せず、静的検査は隙から到達するログ出力をすべて拒否する。
+§3.3 の「kill を記録する」処理も隙の外に置く。
+
+`stageFromFD` が持っていた2つの `Logger.Warn` は、値として隙の外へ運ぶ。
+
+| 元の記録 | 運び方 |
+|---|---|
+| staging ディレクトリの削除失敗 | 後始末の関数のシグネチャを `func()` から `func() error` へ変える。この関数を呼ぶのは呼び出し元なので、記録も呼び出し元が隙の外で行える |
+| staging 元の複製記述子の close 失敗 | `stageFromFD` も `startPrepared` も隙の内側にいるため、戻り値では隙の外へ出せない。`preparedCommand.stagingWarn` へ載せ、`WithPrivileges` から戻った直後に記録する |
+
+汎用のログバッファ（隙の中の記録を溜めて後で flush する型）は置かない。運ぶべき記録は上の2件だけで
+あり、汎用の仕組みは「flush を呼び忘れると記録がサイレントに消える」という、lint でも静的検査でも
+捕まらない失敗モードを持ち込む。上の2つはどちらも通常のエラー伝播なので、握り潰せば `errcheck` が
+検出する。
+
+**ただし、隙を出る前に死ぬ経路がある。** 隙を閉じる復帰処理そのものが失敗すると
+`emergencyShutdown` が `os.Exit` するため、「値は生成されたが、記録する行に到達しない」経路が
+実在する。panic の脱出とプロセスのクラッシュも同じである。そこで、失われると運用者が困る1件だけ、
+**既に開いている stderr の記述子への書き込み**を隙の中で許す。
+
+```go
+os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v\n", dir, rmErr))
+```
+
+これが上の禁止と両立するのは、危険の所在が「I/O 一般」ではなく「**パスを開くこと**」だからである。
+`os.Stderr` への書き込みは、特権を上げる前に起動者が開いた fd 2 への `write(2)` であり、何も開かない。
+§5.3 が読み取り goroutine を残存リスクとして受け入れる根拠（「既に開いた記述子への読み書き…パスを
+開かず exec もしない」）がそのまま当てはまる。fd 2 の向き先は起動者が選べるが、その fd を開いたのは
+起動者自身であり、起動者が既に書ける先にしか書けない。特権の獲得は無い。
+[`emergencyShutdown`](../../../internal/runner/base/privilege/unix.go) が
+「Also log to stderr as last resort」として同じことを行っており、本設計はその慣行を広げるものである。
+
+対象を1件に絞る基準は「失われうるか」ではなく「**失われると困るか**」である。
+
+| 記録 | stderr にも書くか | 理由 |
+|---|---|---|
+| staging ディレクトリの削除失敗 | 書く | root 所有の検証済みバイナリの複製が `$TMPDIR` に残り、そのパスを知る唯一のプロセスが消える。後始末に要る情報である |
+| staging 元の複製記述子の close 失敗 | 書かない | 読み取り専用の複製記述子の close 失敗であり、失われる経路ではプロセスが終了するので記述子の漏れ自体が消える |
+
+後始末の関数は、隙の中から呼ばれるとき（`Start()` 失敗時と後始末区間）も隙の外から呼ばれるとき
+（通常実行）も、区別せずに stderr へ書く。区別するには関数が「自分がどの隙にいるか」を知る必要が
+あり、設計原則5（判断は型で宣言する）に従えば引数で宣言することになる。削除の失敗は稀なので、
+まれに1行重複するほうが、文脈を運ぶ引数を足すより安い。
+
+**stderr への直書きは redaction ハンドラを通らない。** したがってこの経路に載せてよいのは、
+秘匿情報を含まないと分かっている値だけである。上の書式は staging ディレクトリのパスと errno だけを
+含む。この制約を実装の doc コメントに記す。
 
 ### 7.3 統合テスト（AC-21）
 
@@ -1455,6 +1521,17 @@ goroutine や watchdog が残っている状態を作らない。
 - **書き込み側と検証済み記述子の解放を起動区間の内側に置く。** `Start()` の直後という不変条件は
   隙の外でも同じ1箇所で守れる一方、静的検査の許可リストに `(*os.File).Close` を無条件で
   加えることになる（§7.2）。
+- **`stageFromFD` の `Logger.Warn` を許可リストの注記として隙の中に残す。** 当初の案。隙の中で
+  slog を呼べば、ハンドラが将来ファイルを開くようになったときその `open` が euid 0 で行われる。
+  本タスクが出力コピー goroutine について取り除いたのと同じ危険を、ログにだけ残す理由が無い（§7.2）。
+- **隙の中の記録を溜めて後で flush する汎用のログバッファを置く。** 運ぶべき記録が2件しかない
+  のに型と flush のライフサイクルが増え、しかも flush の呼び忘れを lint も静的検査も捕まえられない。
+  通常のエラー伝播なら握り潰しを `errcheck` が検出する（§7.2）。
+- **隙の中では stderr への書き込みも一切許さない。** 一貫はするが、隙を出る前に
+  `emergencyShutdown` で死ぬ経路で、`$TMPDIR` に残った root 所有の複製のパスが誰にも分からなくなる。
+  禁じたい危険はパスを開くことであり、既に開いた fd への `write(2)` はそれに当たらない（§7.2）。
+- **stderr への書き込みを、隙の中から呼ばれたときだけ行う。** 重複を避けられるが、後始末の関数が
+  「自分がどの隙にいるか」を引数で受け取ることになる。削除の失敗は稀で、重複する1行のほうが安い（§7.2）。
 - **kill 区間と後始末区間で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
   監査ログに同じ operation の昇格が最大3組並び、AC-06／AC-09 をログから検証できなくなる（§3.3）。
 - **`canRunPrivilegedIntegrationTest` に実 UID の条件を足す。** 述語が1つで済むが、同関数を使う
