@@ -623,11 +623,17 @@ type commandOutcome struct {
   流用すると、1回の実行で同じ operation の昇格が最大3組ログに並び、どれが起動でどれが kill かを
   監査ログから区別できなくなる。AC-06（昇格と復帰の対は1組）と AC-09（kill の再昇格は kill だけ）は
   ログから検証する基準なので、区別できないことは検証できないことと同じである。
-- **kill の後の回収。** kill の後は待機結果を待つが、`killGraceDelay` を上限とする。子プロセスが
-  パイプの書き込み側を持ったまま離れた孫プロセスを残した場合、あるいは kill 自体が失敗した場合に、
-  ここで無限に止まらないためである。上限を越えたときは出力中継の読み取り側を閉じ、
-  `ErrChildNotReaped` に PID を添えて返す。子プロセスが残る可能性のある事象なので `Error` で
-  記録する。上限を設けないと、タイムアウトの保証そのものがサイレントに失われる。
+- **kill の後の回収。** kill の後は待機結果を待つが、`killGraceDelay` を上限とする。kill 自体が
+  失敗した場合や、子が `SIGKILL` で終われない状態にある場合に、ここで無限に止まらないためである。
+  上限を越えたときは出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。
+  子プロセスが残る可能性のある事象なので `Error` で記録する。上限を設けないと、タイムアウトの
+  保証そのものがサイレントに失われる。
+- **出力の読み切りの打ち切り。** 回収の上限とは**別の待機**である。`Stdout`／`Stderr` を
+  `*os.File` にした結果、`Wait()` は読み取りの完了を待たない（§3.2）。したがって、パイプの
+  書き込み側を持ったまま離れた孫プロセスが延ばすのは出力中継の `wait` であって `Wait()` ではない。
+  こちらも `killGraceDelay` を上限とし、超えたときは読み切れなかった旨を隙の外で `Warn` に記録して
+  打ち切る。終了コードと `*exec.ExitError` は `Wait()` から得られているので、`ErrChildNotReaped`
+  とはせず `Result.ExitCode` も `ExitCodeUnknown` にしない。
 - **kill の失敗。** `WithPrivileges` が失敗した場合（再入、昇格失敗、特権が使えない環境）は、
   待機結果を上限付きで待ち、`ErrKillAfterCancel` を PID とともに返す。子プロセスを止められない
   ことを隠さないためである。
@@ -921,7 +927,7 @@ kill した場合に限り、`ctx.Err()` と `Wait()` のエラーの両方を `
 | context のキャンセル時に `Process.Kill()` を呼ぶ | `CommandContext` | 実行 goroutine の `select` が検出して kill する（§3.3）。`run_as` 実行では kill 区間を開く |
 | `Cancel` が `os.ErrProcessDone` を返した場合はエラーとしない | `CommandContext` | 同じ扱いにする（§3.3） |
 | `Wait()` のエラーを context のエラーより優先する | `CommandContext` | **意図して変える。** キャンセル由来の kill では両方をたどれるエラーを返す（§4.2 順位2） |
-| `WaitDelay` が 0 なので、`Wait()` は出力の複製が終わるまで待つ | `CommandContext` | 出力中継の `wait` が両方の読み取り goroutine の終了を待ってから結果を組み立てる。ただし kill の後は `killGraceDelay` を上限とする。上限を設けない `os/exec` の既定は、パイプを持ったまま離れた孫プロセスがいるとタイムアウトの保証そのものを失わせるため、ここは意図して変える |
+| `WaitDelay` が 0 なので、`Wait()` は出力の複製が終わるまで待つ | `CommandContext` | 出力中継の `wait` が両方の読み取り goroutine の終了を待ってから結果を組み立てる。ただし kill の後は `killGraceDelay` を上限とする。上限を設けない `os/exec` の既定は、パイプを持ったまま離れた孫プロセスがいると出力の読み切りが終わらず、タイムアウトの保証そのものを失わせるため、ここは意図して変える |
 | 複製エラーは、プロセスが正常終了したときだけ報告される | `CommandContext` | §4.2 は書き込みエラーを最優先にする。これは現在の executor が `os/exec` の既定を上書きしている挙動を引き継いだものであり、変更ではない |
 | `OutputWriter` が `nil` のとき、標準エラー出力は異常終了時だけ `Result.Stderr` に載る | `Cmd.Output()` | 同じにする。正常終了時に標準エラー出力を載せると、`group_executor` の debug ログと Slack 通知へ新たに流れ込むため |
 | `OutputWriter` が `nil` のとき、標準エラー出力は先頭 32 KiB と末尾 32 KiB を残し、中間を `\n... omitting N bytes ...\n` に置き換える（保持量は最大およそ 64 KiB） | `Cmd.Output()`（内部型 `prefixSuffixSaver{N: 32 << 10}`） | 同じにする。同じ規則の `boundedBuffer` を置く（§3.2 要点6）。末尾を落とす案は採らない。失敗したコマンドの診断に要るのは末尾であり、先頭は起動時の定型出力であることが多い |
@@ -1135,7 +1141,8 @@ sequenceDiagram
 |---|---|
 | `select` の直前に子が終わっていた（`Kill` が `os.ErrProcessDone`） | エラーとせず、そのまま待機結果を読む |
 | kill の `WithPrivileges` が失敗した | `ErrKillAfterCancel` に PID を添えて返す。待機は `killGraceDelay` で打ち切る |
-| `killGraceDelay` の間に子が終わらない（孫プロセスがパイプを保持しているなど） | 出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
+| `killGraceDelay` の間に `Wait()` が返らない（kill が届かない、子が終われない状態にある） | 出力中継の読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて返す。`Error` で記録する。`Result.ExitCode` は `ExitCodeUnknown` とし、以後 `execCmd` に触れない（§3.3）。**staged copy はこの経路でも削除する**（下記） |
+| 子は回収できたが、`killGraceDelay` の間に出力中継が読み切れない（孫プロセスがパイプの書き込み側を保持している） | 読み取り側を閉じて打ち切る。エラーとはせず、隙の外で `Warn` に記録する。終了コードは `Wait()` から得られているので `ExitCodeUnknown` にはしない。`Wait()` は読み取りを待たないので、これは上の行とは別の事象である |
 | 起動区間が閉じた後に書き込み側の解放が失敗した | 子は既に走っている。`ctx.Done()` を待たずに kill 経路へ入り、回収と後始末を行ったうえで、そのエラーを結果へ添える（§3.1） |
 | 隙の中で復帰に失敗した | 既存の `emergencyShutdown` が即座にプロセスを終える。子プロセスと、staging フォールバックのときは staged copy が残る。その旨を doc コメントに記す |
 
