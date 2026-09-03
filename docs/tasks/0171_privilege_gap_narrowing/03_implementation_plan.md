@@ -268,6 +268,14 @@
       - `executor.go:488`（staging ディレクトリの削除失敗）: 後始末の関数の型を
         `cleanupFn func()` から `func() error` へ変え、`os.RemoveAll` のエラーを返す。
         この関数を呼ぶのは呼び出し元なので、記録も呼び出し元が行える。
+        **あわせて、この1件だけは stderr へも書く**（設計文書 §7.2）。書式は
+        `os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v\n", dir, rmErr))`。
+        隙を閉じる復帰処理が失敗して `emergencyShutdown` が `os.Exit` する経路では、
+        戻り値を記録する行に到達しないためである。隙の中から呼ばれるときも外から呼ばれるときも
+        区別せずに書く（区別すると後始末の関数が自分のいる隙を引数で受け取ることになる。
+        削除の失敗は稀なので、まれに1行重複するほうが安い）。
+        doc コメントへ「この書き込みは redaction ハンドラを通らないので、
+        秘匿情報を含まないと分かっている値だけを載せる」ことを英語で書く。
       - `executor.go:531`（staging 元の複製記述子の close 失敗）: `stageFromFD` も
         `startPrepared` も隙の内側にいるため戻り値では外へ出せない。
         `preparedCommand` へ `stagingWarn error` フィールドを足してそこへ載せる。
@@ -303,10 +311,17 @@
 - [ ] `TestStageFromFD_ReportsFailuresWithoutLogging` を足す。`tu.NewRecordingLogger` を
       `DefaultExecutor.Logger` に差し、`stageFromFD` の後始末が失敗する状況
       （既存 `TestStageFromFD_ChownFailure_CleansUpStagingDir` と同じ作り方で
-      ディレクトリを先に読み取り専用にする）で、
-      (1) `cleanupFn()` が非 `nil` のエラーを返し、(2) recorder に記録が**1件も無い**
-      ことを主張する。静的検査（Phase 4-b）は「隙から到達するログ出力が無い」ことを
-      構文で見るのに対し、こちらは「失敗の情報が握り潰されず戻り値で届く」ことを見る。
+      ディレクトリを先に読み取り専用にする）で、次の3つを主張する。
+      - `cleanupFn()` が非 `nil` のエラーを返す（失敗の情報が握り潰されず戻り値で届く）
+      - recorder に記録が**1件も無い**（`Logger` は呼ばれていない）
+      - stderr に `WARNING: failed to remove staging directory` を含む1行が出る
+      3つ目は `os.Stderr` を `os.Pipe` の書き込み側へ一時的に差し替えて読み取り、
+      `t.Cleanup` で元へ戻す。`os.Stderr` はパッケージ変数なので、この差し替えを行う
+      テストでは `t.Parallel()` を呼ばない（同一パッケージの別テストの出力を横取りするため）。
+      stderr への書き込みは `Logger` を経由しないので、2つ目と3つ目は矛盾しない。
+      この区別こそが設計文書 §7.2 の要点なので、同じテストで両方を主張して固定する。
+      静的検査（Phase 4-b）は「隙から `Logger` へ到達しない」ことを構文で見るのに対し、
+      こちらは実際の挙動を見る。
 
 **完了の目安**: 既存テストがすべて緑。外から見える挙動（終了コード、標準出力、
 標準エラー出力、エラー種別）が変わらない。
@@ -492,6 +507,10 @@
 - [ ] `Start()` が失敗した経路では、staged copy の削除は起動区間の中で行う（設計文書 §6.3）。
 - [ ] `preparedCommand.stagingWarn` の記録位置を確定する: `WithPrivileges` から戻った直後
       （隙の外、`releaseChildEnds` と同じ位置）で、非 `nil` なら `Logger.Warn` で記録する。
+- [ ] `binding == bindingStagedCopy` のとき、staged copy のパスを起動区間が閉じた直後に
+      `Logger.Debug` で記録する（設計文書 §6.1）。復帰失敗による `emergencyShutdown` は
+      この記録より後に起きるため、その経路で `$TMPDIR` に残った複製の在処が追える。
+      記録は隙の外で行うので、隙の中の操作は増えない。
 - [ ] `cleanupFn()` の戻り値の記録位置を確定する: 後始末区間を閉じた後、および隙を開かない
       通常実行の削除の後で、非 `nil` なら `Logger.Warn` で記録する。
       `Start()` 失敗時の削除（起動区間の内側）の戻り値も、隙を出てから記録する。
@@ -526,12 +545,17 @@
 - [ ] **許可リストを書く。** 設計文書 §7.2 の表をそのまま写す。例外は無い。
       - 起動区間: `(*exec.Cmd).Start`、`stageFromFD`、`os.MkdirTemp`、`syscall.Dup`、
         `os.NewFile`、`os.OpenFile`、`io.Copy`、`os.Chmod`、`os.Chown`、`os.RemoveAll`、
-        `(*os.File).Stat`、`(*os.File).Close`、`syscall.Close`
+        `(*os.File).Stat`、`(*os.File).Close`、`syscall.Close`、`(*os.File).WriteString`
       - kill 区間: `(*os.Process).Kill` のみ
-      - 後始末区間: `os.RemoveAll` のみ
-- [ ] **ログ出力は3つの隙すべてで禁じる。** `Logger` のメソッドは追跡対象に含めたうえで、
-      許可リストには1つも載せない（設計文書 §7.2）。Phase 2 で `stageFromFD` から
+      - 後始末区間: `os.RemoveAll` と `(*os.File).WriteString`
+- [ ] **`Logger` の呼び出しは3つの隙すべてで禁じる。** `Logger` のメソッドは追跡対象に
+      含めたうえで、許可リストには1つも載せない（設計文書 §7.2）。Phase 2 で `stageFromFD` から
       `Logger.Warn` を取り除いてあるので、この規則は例外なしに成立する。
+      `(*os.File).WriteString` を許すのは stderr への最後の手段の記録のためであり、
+      ハンドラ経由のログ出力を許すものではない。この区別（パスを開く／既に開いた fd へ書く）を
+      テストファイルの doc コメントへ英語で書く。
+      なお `io.Copy` が既に許可リストにあるため、「開いている記述子へ書ける」という能力の階級は
+      `(*os.File).WriteString` の追加によって増えない。
 - [ ] **フィールドへの代入は対象外とする。** `bindingStagedCopy` で起動区間が行う
       `execCmd.Path` への代入は呼び出しではないため検査しない（設計文書 §7.2）。
 - [ ] **negative self-test を置く。** `testdata/` に、隙の中で許可リスト外の呼び出しを行う
@@ -886,11 +910,16 @@ AC-01 の検証位置は設計文書 §8 の Phase 1 から Phase 2 へ移して
 - [ ] AC-11: モックの再入ガード（Phase 3-d）を外すと、kill を別 goroutine から呼ぶ実装に
       戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
 - [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
-- [ ] AC-03・AC-04（ログ禁止）: `stageFromFD` に `Logger.Warn` を1行戻すと、
+- [ ] AC-03・AC-04（`Logger` 禁止）: `stageFromFD` に `Logger.Warn` を1行戻すと、
       `G::TestPrivilegeWindowAllowedCalls` と
       `TestStageFromFD_ReportsFailuresWithoutLogging` の両方が落ちる。
       `testdata/` の `rejects_logging_in_window` も、許可リストに `Logger` を1つ載せると
       通ってしまうことを確かめる（＝この self-test が不在を守れていること）。
+- [ ] AC-03・AC-04（stderr の最後の手段）: 後始末の `os.Stderr.WriteString` を消すと、
+      `TestStageFromFD_ReportsFailuresWithoutLogging` の3つ目の主張が落ちる。
+      逆に `(*os.File).WriteString` を許可リストから外すと
+      `G::TestPrivilegeWindowAllowedCalls` が落ちることも確かめ、
+      許可リストのこの1行が実装に効いていることを固定する。
 - [ ] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
       AC-18 の `static` 検査が 1 件を返して落ちる。
 - [ ] AC-19 / AC-20 の各 `static` 検査: 置換前のファイルに対して実行し、期待と異なる結果
@@ -991,7 +1020,9 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 | 特権が要るテストが開発環境で常にスキップされる | 受け入れ基準が実質的に検証されない | (1) 特権と無関係な AC-13 は非特権テストを主たる証拠にする。(2) 環境変数名の取り違えを `TestRequireSetuidModel_ReadsDocumentedEnvVar` で固定する。(3) §4.3 の手順が `--- SKIP` を失敗として扱う | Phase 1、Phase 5、§4.3 |
 | 静的検査の許可リストが実装から離れる／検査が空洞化する | AC-03／AC-04 の主張が空洞化する | 許可リストを go/ast + go/types の guard test に置き、追跡対象・到達範囲・型解決手段を先に固定する。negative self-test で検査自体が落ちられることを確かめる | Phase 4-b |
 | 起動区間の中で `os.MkdirTemp` が走る（staging フォールバック時） | 「隙の中でファイルを開かない」という性質が staging 経路では成り立たない | 設計文書 §3.4 差分1 は、この配置を意図して選んでいる。複製を隙の外で作ると staged copy が起動者所有になり、差し替え可能になるためである。本タスクはこの判断を変えない。許可リストを `stageFromFD` が実際に呼ぶものだけに固定し、範囲が広がらないようにする | Phase 4-b の許可リスト |
-| 隙の中のログ出力が、ハンドラ経由で将来 `open` を行いうる | slog ハンドラはファイルを開くことが許されており、隙の中で呼べばその `open` が euid 0 で行われる。出力コピー goroutine について本タスクが取り除いたのと同じ危険 | 隙の中のログ出力を全廃する（設計文書 §7.2）。`stageFromFD` の2つの警告は戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ。許可リストに `Logger` を1つも載せず、negative self-test で「隙の中のログ出力を拒否すること」を確かめる | Phase 2、Phase 4-a、Phase 4-b |
+| 隙の中のログ出力が、ハンドラ経由で将来 `open` を行いうる | slog ハンドラはファイルを開くことが許されており、隙の中で呼べばその `open` が euid 0 で行われる。出力コピー goroutine について本タスクが取り除いたのと同じ危険 | 隙の中の `Logger` 呼び出しを全廃する（設計文書 §7.2）。`stageFromFD` の2つの警告は戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ。許可リストに `Logger` を1つも載せず、negative self-test で「隙の中のログ出力を拒否すること」を確かめる | Phase 2、Phase 4-a、Phase 4-b |
+| 隙を出る前に `emergencyShutdown` やクラッシュでプロセスが死ぬと、運び出した記録が失われる | `$TMPDIR` に残った root 所有の複製の在処が誰にも分からなくなる | 失われると困る1件（staging ディレクトリの削除失敗）だけ、既に開いている stderr の記述子へも書く。パスを開かないので §7.2 の禁止と両立する。あわせて staged copy のパスを起動区間の直後に `Debug` で記録し、`emergencyShutdown` の経路でも在処が追えるようにする | Phase 2、Phase 4-a |
+| stderr への直書きが redaction ハンドラを通らない | 秘匿情報を書けば、そのまま起動者の選んだ宛先へ出る | 載せてよいのは秘匿情報を含まないと分かっている値だけ、という制約を doc コメントに書く。実際に載せるのは staging ディレクトリのパスと errno だけである | Phase 2 |
 | 隙の外へ運んだ警告を、呼び出し元が記録し忘れる | staging の失敗が誰にも見えなくなる | 通常のエラー伝播にしたので、握り潰せば `errcheck`（`.golangci.yml:9` で有効）が検出する。汎用のログバッファを置かないのはこのためで、バッファ方式の `flush` 忘れは lint でも静的検査でも捕まらない | Phase 2、`make lint` |
 | Phase 4 の同時変更が大きく、切り分けが難しい | 障害時の revert 単位が粗くなる | Phase を独立コミットに分ける。Phase 4 だけを戻せば隙の範囲が現状へ戻る | §3 のマイルストーン |
 
@@ -1051,13 +1082,14 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 検証: `G::TestPrivilegeWindowAllowedCalls`（サブテスト `start_window`、
   `rejects_unlisted_call`、`rejects_logging_in_window`）
 - 期待: 起動区間から到達する追跡対象の呼び出しが Phase 4-b の許可リストに収まり、
-  ログ出力へは到達しない。`testdata/` の許可リスト外呼び出しと、隙の中のログ出力は
+  `Logger` へは到達しない。`testdata/` の許可リスト外呼び出しと、隙の中のログ出力は
   どちらも拒否される
-- 種別: `test`（失敗の情報が握り潰されず戻り値で届くこと）
+- 種別: `test`（失敗の情報が握り潰されず、かつ `Logger` を経由せずに届くこと）
 - 検証: `TestStageFromFD_ReportsFailuresWithoutLogging`
 - 期待: 後始末が失敗したとき `cleanupFn()` が非 `nil` のエラーを返し、
-  `stageFromFD` の実行中にログの記録が1件も出ない
-- 実装: Phase 2（`Logger.Warn` の除去と戻り値化）、Phase 4-b（静的検査）
+  `Logger` の記録が1件も出ず、stderr に警告が1行出る
+- 実装: Phase 2（`Logger.Warn` の除去、戻り値化、stderr への最後の手段の記録）、
+  Phase 4-b（静的検査）
 
 ### AC-04: `WithPrivileges` の中は `chown`／`chmod` と `Start()` に限られる
 
@@ -1385,8 +1417,12 @@ Phase 6-c で注記を足す）。
 - [ ] `privileged_window_guard_test.go` の許可リストが設計文書 §7.2 の表と一致し、
       `Logger` のメソッドを1つも含まず、negative self-test が許可リスト外の呼び出しと
       隙の中のログ出力の両方を拒否する
-- [ ] 3つの隙のいずれからもログ出力へ到達しない。`stageFromFD` の2つの警告は
+- [ ] 3つの隙のいずれからも `Logger` へ到達しない。`stageFromFD` の2つの警告は
       戻り値と `preparedCommand.stagingWarn` で隙の外へ運ばれ、記録されている
+- [ ] 隙の中の stderr への書き込みは、staging ディレクトリの削除失敗の1件だけである。
+      その doc コメントに、redaction を通らないので秘匿情報を載せない旨が書かれている
+- [ ] staged copy のパスが起動区間の直後に `Debug` で記録され、`emergencyShutdown` の
+      経路でも `$TMPDIR` に残った複製の在処が追える
 - [ ] 3つの隙がそれぞれ専用の `Operation` で開き、監査ログから区別できる
 - [ ] `Execute` 末尾の識別子検査（`identityChecker`）の位置と意味を変えていない
 - [ ] §4.3 の手順で作った setuid テストバイナリを、実行後に削除した

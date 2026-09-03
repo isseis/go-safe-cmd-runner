@@ -8,7 +8,7 @@
 | Created | 2026-09-02 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-03: §3.1／§3.4／§7.2 を改訂。隙の中からログ出力を無くし、`stageFromFD` の警告を戻り値で隙の外へ運ぶ形にした（許可リストから `Logger.Warn` を削除）。再レビュー待ち |
+| Comments | 2026-09-03: §3.1／§3.4／§6.1／§7.2 を改訂。(1) 隙の中から `Logger` の呼び出しを無くし、`stageFromFD` の警告を戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ形にした。(2) 隙を出る前にプロセスが死ぬ経路のため、staging ディレクトリの削除失敗だけは stderr へも書く（`(*os.File).WriteString` を許可リストへ追加）。(3) staged copy のパスを起動区間の直後に `Debug` で記録する。再レビュー待ち |
 
 ## 関連文書
 
@@ -1008,7 +1008,7 @@ flowchart LR
 |---|---|---|---|---|
 | 起動区間 | 毎回（run-as 実行） | fd-bound 実行では `Start()` だけ。staging フォールバックでは複製の作成・`chmod`・`chgrp` も | `fork`／`execve` の時間（staging では複製の時間が加わる） | Slack 送信ワーカーのみ |
 | kill 区間 | キャンセルが起きたときだけ | `Process.Kill()` だけ | システムコール1回 | 読み取り goroutine2本、待機 goroutine、Slack 送信ワーカー |
-| 後始末区間 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
+| 後始末区間 | run-as 実行かつ staging フォールバックのときだけ（通常実行では隙を開かずに削除できる。§3.4 差分2） | staged copy の削除（`os.RemoveAll`）と、失敗したときの stderr への1行の書き込み（§7.2） | ディレクトリ1つの削除 | 読み取り goroutine（終了済みの場合が多い）、Slack 送信ワーカー |
 
 現在と比べたときの変化は次のとおりである。
 
@@ -1147,6 +1147,11 @@ staged copy の削除は行う。削除を子の終了後まで遅らせてい�
 その参照を持っていた唯一のプロセスは終了する。`emergencyShutdown` の経路だけは、プロセスが即座に
 終わるため削除できない。
 
+この経路で複製がどこに残ったかを追えるよう、**staged copy のパスを起動区間が閉じた直後に `Debug` で
+記録する**。記録は隙の外で行うので、隙の中の操作は増えない。復帰失敗はその記録より後に起きるため、
+`emergencyShutdown` で終了しても記録は残る。起動区間が閉じる前にプロセスが死んだ場合は記録できないが、
+その窓は `Start()` の直後の数マイクロ秒であり、かつその時点では複製の作成が完了しているとは限らない。
+
 ### 6.2 出力サイズ上限の超過
 
 ```mermaid
@@ -1272,9 +1277,9 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 
 | 区間 | 許可する呼び出し |
 |---|---|
-| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close` |
+| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
 | kill 区間 | `(*os.Process).Kill` のみ |
-| 後始末区間 | `os.RemoveAll` のみ |
+| 後始末区間 | `os.RemoveAll` と `(*os.File).WriteString` |
 
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
 ある。`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
@@ -1288,11 +1293,11 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 `execCmd.Path` への代入は呼び出しではなくフィールドへの代入なので、この検査の対象外である。
 検査は「代入以外の呼び出しがリストに収まること」を見る。
 
-**隙の中ではログを出さない。例外を設けない。** slog のハンドラはファイルを開くことが許されており、
-隙の中で呼べばその `open` は euid 0 で行われる。これは本タスクが出力コピー goroutine について
-取り除いたのと同じ危険であり、ログ出力にだけ残す理由が無い。したがって許可リストに `Logger` の
-メソッドを一切載せず、静的検査は隙から到達するログ出力をすべて拒否する。§3.3 の「kill を記録する」
-処理も隙の外に置く。
+**隙の中では `Logger` を呼ばない。例外を設けない。** slog のハンドラはファイルを開くことが
+許されており、隙の中で呼べばその `open` は euid 0 で行われる。これは本タスクが出力コピー
+goroutine について取り除いたのと同じ危険であり、ログ出力にだけ残す理由が無い。したがって
+許可リストに `Logger` のメソッドを一切載せず、静的検査は隙から到達するログ出力をすべて拒否する。
+§3.3 の「kill を記録する」処理も隙の外に置く。
 
 `stageFromFD` が持っていた2つの `Logger.Warn` は、値として隙の外へ運ぶ。
 
@@ -1305,6 +1310,40 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 あり、汎用の仕組みは「flush を呼び忘れると記録がサイレントに消える」という、lint でも静的検査でも
 捕まらない失敗モードを持ち込む。上の2つはどちらも通常のエラー伝播なので、握り潰せば `errcheck` が
 検出する。
+
+**ただし、隙を出る前に死ぬ経路がある。** 隙を閉じる復帰処理そのものが失敗すると
+`emergencyShutdown` が `os.Exit` するため、「値は生成されたが、記録する行に到達しない」経路が
+実在する。panic の脱出とプロセスのクラッシュも同じである。そこで、失われると運用者が困る1件だけ、
+**既に開いている stderr の記述子への書き込み**を隙の中で許す。
+
+```go
+os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v
+", dir, rmErr))
+```
+
+これが上の禁止と両立するのは、危険の所在が「I/O 一般」ではなく「**パスを開くこと**」だからである。
+`os.Stderr` への書き込みは、特権を上げる前に起動者が開いた fd 2 への `write(2)` であり、何も開かない。
+§5.3 が読み取り goroutine を残存リスクとして受け入れる根拠（「既に開いた記述子への読み書き…パスを
+開かず exec もしない」）がそのまま当てはまる。fd 2 の向き先は起動者が選べるが、その fd を開いたのは
+起動者自身であり、起動者が既に書ける先にしか書けない。特権の獲得は無い。
+[`emergencyShutdown`](../../../internal/runner/base/privilege/unix.go) が
+「Also log to stderr as last resort」として同じことを行っており、本設計はその慣行を広げるものである。
+
+対象を1件に絞る基準は「失われうるか」ではなく「**失われると困るか**」である。
+
+| 記録 | stderr にも書くか | 理由 |
+|---|---|---|
+| staging ディレクトリの削除失敗 | 書く | root 所有の検証済みバイナリの複製が `$TMPDIR` に残り、そのパスを知る唯一のプロセスが消える。後始末に要る情報である |
+| staging 元の複製記述子の close 失敗 | 書かない | 読み取り専用の複製記述子の close 失敗であり、失われる経路ではプロセスが終了するので記述子の漏れ自体が消える |
+
+後始末の関数は、隙の中から呼ばれるとき（`Start()` 失敗時と後始末区間）も隙の外から呼ばれるとき
+（通常実行）も、区別せずに stderr へ書く。区別するには関数が「自分がどの隙にいるか」を知る必要が
+あり、設計原則5（判断は型で宣言する）に従えば引数で宣言することになる。削除の失敗は稀なので、
+まれに1行重複するほうが、文脈を運ぶ引数を足すより安い。
+
+**stderr への直書きは redaction ハンドラを通らない。** したがってこの経路に載せてよいのは、
+秘匿情報を含まないと分かっている値だけである。上の書式は staging ディレクトリのパスと errno だけを
+含む。この制約を実装の doc コメントに記す。
 
 ### 7.3 統合テスト（AC-21）
 
@@ -1482,6 +1521,11 @@ goroutine や watchdog が残っている状態を作らない。
 - **隙の中の記録を溜めて後で flush する汎用のログバッファを置く。** 運ぶべき記録が2件しかない
   のに型と flush のライフサイクルが増え、しかも flush の呼び忘れを lint も静的検査も捕まえられない。
   通常のエラー伝播なら握り潰しを `errcheck` が検出する（§7.2）。
+- **隙の中では stderr への書き込みも一切許さない。** 一貫はするが、隙を出る前に
+  `emergencyShutdown` で死ぬ経路で、`$TMPDIR` に残った root 所有の複製のパスが誰にも分からなくなる。
+  禁じたい危険はパスを開くことであり、既に開いた fd への `write(2)` はそれに当たらない（§7.2）。
+- **stderr への書き込みを、隙の中から呼ばれたときだけ行う。** 重複を避けられるが、後始末の関数が
+  「自分がどの隙にいるか」を引数で受け取ることになる。削除の失敗は稀で、重複する1行のほうが安い（§7.2）。
 - **kill 区間と後始末区間で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
   監査ログに同じ operation の昇格が最大3組並び、AC-06／AC-09 をログから検証できなくなる（§3.3）。
 - **`canRunPrivilegedIntegrationTest` に実 UID の条件を足す。** 述語が1つで済むが、同関数を使う
