@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-02 |
-| Review date | 2026-09-03 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-09-03: §3.1／§3.4／§7.2 を改訂。隙の中からログ出力を無くし、`stageFromFD` の警告を戻り値で隙の外へ運ぶ形にした（許可リストから `Logger.Warn` を削除）。再レビュー待ち |
 
 ## 関連文書
 
@@ -368,6 +368,12 @@ type preparedCommand struct {
     kill    killStrategy
     verifiedFD *os.File        // duplicated verified fd; nil unless bindingVerifiedFD
     stage      *stagingRequest // nil unless binding == bindingStagedCopy
+    // stagingWarn carries a non-fatal staging failure out of the privilege
+    // window so the caller can log it after the window closes. Nothing inside
+    // a window may log: a slog handler is free to open a file, and it would do
+    // so at euid 0. Staging succeeded when this is set, so it is not returned
+    // as an error.
+    stagingWarn error
 }
 
 // stagingRequest carries what the start phase needs to build the staged copy
@@ -696,8 +702,9 @@ fd-bound 実行の経路では、複製した記述子が子プロセスの fd 3
 **この差分を主張している既存テスト。**
 [`stagefromfd_test.go`](../../../internal/runner/base/executor/stagefromfd_test.go) の
 `TestStageFromFD_*` は `stageFromFD` を隙の外（非特権）から直接呼び、`chown` 失敗時に
-ディレクトリを残さないことを確かめている。関数のシグネチャと失敗時の後始末は変わらないため
-テスト本体の変更は要らないが、「隙の内側で呼ばれる関数」であることを doc コメントで示す。
+ディレクトリを残さないことを確かめている。失敗時の後始末は変わらないので主張はそのままだが、
+後始末の関数が `func() error` になる（§7.2）ため、戻り値の受け方だけ追随させる。
+あわせて「隙の内側で呼ばれる関数」であることを doc コメントで示す。
 [`executor_privilege_check_test.go`](../../../internal/runner/base/executor/executor_privilege_check_test.go)
 の `prepareExecCommand` 呼び出しは、準備フェーズと起動フェーズへの分割に追随させる必要がある。
 
@@ -1281,9 +1288,23 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 `execCmd.Path` への代入は呼び出しではなくフィールドへの代入なので、この検査の対象外である。
 検査は「代入以外の呼び出しがリストに収まること」を見る。
 
-ログ出力は隙の外で行う。`stageFromFD` が失敗時に呼ぶ `Logger.Warn` は隙の内側に残るため、
-許可リストの注記として扱い、それ以外の場所からのログ出力は許可しない。§3.3 の「kill を記録する」
+**隙の中ではログを出さない。例外を設けない。** slog のハンドラはファイルを開くことが許されており、
+隙の中で呼べばその `open` は euid 0 で行われる。これは本タスクが出力コピー goroutine について
+取り除いたのと同じ危険であり、ログ出力にだけ残す理由が無い。したがって許可リストに `Logger` の
+メソッドを一切載せず、静的検査は隙から到達するログ出力をすべて拒否する。§3.3 の「kill を記録する」
 処理も隙の外に置く。
+
+`stageFromFD` が持っていた2つの `Logger.Warn` は、値として隙の外へ運ぶ。
+
+| 元の記録 | 運び方 |
+|---|---|
+| staging ディレクトリの削除失敗 | 後始末の関数のシグネチャを `func()` から `func() error` へ変える。この関数を呼ぶのは呼び出し元なので、記録も呼び出し元が隙の外で行える |
+| staging 元の複製記述子の close 失敗 | `stageFromFD` も `startPrepared` も隙の内側にいるため、戻り値では隙の外へ出せない。`preparedCommand.stagingWarn` へ載せ、`WithPrivileges` から戻った直後に記録する |
+
+汎用のログバッファ（隙の中の記録を溜めて後で flush する型）は置かない。運ぶべき記録は上の2件だけで
+あり、汎用の仕組みは「flush を呼び忘れると記録がサイレントに消える」という、lint でも静的検査でも
+捕まらない失敗モードを持ち込む。上の2つはどちらも通常のエラー伝播なので、握り潰せば `errcheck` が
+検出する。
 
 ### 7.3 統合テスト（AC-21）
 
@@ -1455,6 +1476,12 @@ goroutine や watchdog が残っている状態を作らない。
 - **書き込み側と検証済み記述子の解放を起動区間の内側に置く。** `Start()` の直後という不変条件は
   隙の外でも同じ1箇所で守れる一方、静的検査の許可リストに `(*os.File).Close` を無条件で
   加えることになる（§7.2）。
+- **`stageFromFD` の `Logger.Warn` を許可リストの注記として隙の中に残す。** 当初の案。隙の中で
+  slog を呼べば、ハンドラが将来ファイルを開くようになったときその `open` が euid 0 で行われる。
+  本タスクが出力コピー goroutine について取り除いたのと同じ危険を、ログにだけ残す理由が無い（§7.2）。
+- **隙の中の記録を溜めて後で flush する汎用のログバッファを置く。** 運ぶべき記録が2件しかない
+  のに型と flush のライフサイクルが増え、しかも flush の呼び忘れを lint も静的検査も捕まえられない。
+  通常のエラー伝播なら握り潰しを `errcheck` が検出する（§7.2）。
 - **kill 区間と後始末区間で `OperationUserGroupExecution` を流用する。** 型の追加は要らないが、
   監査ログに同じ operation の昇格が最大3組並び、AC-06／AC-09 をログから検証できなくなる（§3.3）。
 - **`canRunPrivilegedIntegrationTest` に実 UID の条件を足す。** 述語が1つで済むが、同関数を使う
