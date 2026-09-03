@@ -352,20 +352,15 @@ sequenceDiagram
 全体が `WithPrivileges` の内側に置かれている。本設計はこれを、起動だけを取り出せる形へ分ける。
 
 ```go
-// preparedCommand is a command prepared up to the point where only privileged
-// work is left. Everything it holds was created without elevated privileges.
-// For bindingStagedCopy the staged path does not exist yet, so the start phase
-// fills in execCmd.Path -- and only Path -- inside the privilege window; for
-// every other binding execCmd is complete when prepareCommand returns.
+// preparedCommand holds what prepareCommand built without privilege.
+// Exception: for bindingStagedCopy the staged path doesn't exist yet, so the
+// start phase fills in execCmd.Path -- and only Path, since Args[0] is
+// already resolvedPath -- inside the privilege window. execCmd is a struct
+// literal there rather than exec.Command's output, because exec.Command runs
+// LookPath and stores the failure in Cmd.Err before Start does anything else,
+// so it would fail on the not-yet-existing path regardless of what the window
+// later writes.
 // release() frees every descriptor prepareCommand acquired, on every path.
-//
-// bindingStagedCopy builds execCmd as a struct literal rather than through
-// exec.Command. exec.Command runs LookPath when the name has no path separator
-// and stores the failure in Cmd.Err, which Start returns before doing anything
-// else, so a command prepared around a not-yet-existing path would fail to
-// start no matter what the window writes into Path. Args[0] is
-// stagingRequest.resolvedPath, which is known at prepare time, so the window
-// has exactly one field to write.
 type preparedCommand struct {
     execCmd *exec.Cmd
     binding execBinding
@@ -457,12 +452,11 @@ default:
 出力中継は、子プロセスへ渡すパイプの親側を1つの型に閉じ込める。
 
 ```go
-// outputPump owns the parent side of the child's stdout/stderr pipes. It hands
-// the write ends to exec.Cmd (so os/exec starts no copy goroutine of its own)
-// and, once the privilege window has closed, reads the read ends on two
-// goroutines it owns. The goroutines are joined through buffered channels, not
-// a WaitGroup, so the pump declares no synchronization primitive (see the
-// census guard in section 3.6).
+// outputPump hands the pipe write ends to exec.Cmd so os/exec starts no copy
+// goroutine of its own, then reads the read ends itself once the privilege
+// window has closed. The two reading goroutines join through buffered
+// channels, not a WaitGroup, so the pump declares no synchronization
+// primitive (see the census guard in section 3.6).
 type outputPump struct {
     stdout *pumpStream
     stderr *pumpStream
@@ -477,27 +471,23 @@ type pumpStream struct {
     done      chan error
 }
 
-// newOutputPump creates both pipe pairs. stderrLimit bounds how many bytes the
-// stderr wrapper retains in memory; 0 means unbounded (see point 6).
+// stderrLimit bounds how many bytes the stderr wrapper retains in memory;
+// 0 means unbounded (see point 6).
 func newOutputPump(writer OutputWriter, stderrLimit int) (*outputPump, error)
 
-// childFiles returns the two write ends to install as Cmd.Stdout and Cmd.Stderr.
 func (p *outputPump) childFiles() (stdout, stderr *os.File)
 
-// releaseChildEnds closes the parent's copies of the write ends. The caller
-// invokes it immediately after the start phase returns -- success or failure,
-// outside the privilege window -- or the read ends never reach EOF and wait
-// blocks until its deadline. It is idempotent, so release may follow it.
+// releaseChildEnds must run immediately after the start phase returns --
+// success or failure, outside the privilege window -- or the read ends never
+// reach EOF and wait blocks until its deadline. Idempotent, so release may
+// follow it.
 func (p *outputPump) releaseChildEnds() error
 
-// start launches the two reading goroutines. It must not be called before the
-// privilege window has closed.
+// start must not be called before the privilege window has closed.
 func (p *outputPump) start()
 
-// wait blocks until both reading goroutines have finished, or until the
-// deadline passes, and returns the captured bytes and the first write error.
-// stdout's write error takes precedence over stderr's, matching the order the
-// current implementation checks them in.
+// wait's stdout write error takes precedence over stderr's, matching the
+// order the current implementation checks them in.
 //
 // A stream whose goroutine has not finished by the deadline is reported as nil
 // with timedOut true: that goroutine may still be inside outputWrapper.Write,
@@ -505,8 +495,7 @@ func (p *outputPump) start()
 // done channel has yielded is read (see point 7).
 func (p *outputPump) wait(deadline time.Duration) (stdout, stderr []byte, writeErr error, timedOut bool)
 
-// release closes every descriptor the pump still owns. Safe to call on paths
-// where start was never reached.
+// release is safe to call on paths where start was never reached.
 func (p *outputPump) release() error
 ```
 
@@ -588,8 +577,7 @@ func (p *outputPump) release() error
 待機 goroutine が呼ぶ。
 
 ```go
-// commandOutcome is what superviseCommand learns about the child: how Wait
-// ended, what the pump captured, and whether the context ended the run.
+// commandOutcome collects everything superviseCommand learns about the child.
 type commandOutcome struct {
     waitErr    error
     ctxErr     error // non-nil only when the run was ended by cancellation
