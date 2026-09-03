@@ -461,7 +461,7 @@
 | 解決 | resolution | 問題解決の文脈 |
 | 解決する | resolve / resolving | シンボリックリンク解決の文脈 |
 | 解決策 | solution | |
-| 解決する | solve | 問題・障害・課題を片づける文脈（`resolve` はシンボリックリンク解決の文脈で、上の行が担う）。「解く」は使わない（Task 0171） |
+| 解決する | solve | 問題・障害・課題を片づける文脈（シンボリックリンク解決の文脈は `resolve` の行が担う）。「解く」は使わない（Task 0171） |
 | リソース | resource | |
 | 残存リスク | residual risk | 設計上残る既知のリスク（TOCTOU 等） |
 | 制限を緩和する | weaken restrictions | セキュリティの文脈 |
