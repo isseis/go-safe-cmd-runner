@@ -404,21 +404,34 @@ func (e *DefaultExecutor) stagePrepared(pc *preparedCommand) error {
 // ErrKillAfterCancel rather than hidden, and it stops being reachable once the
 // start window shrinks to startPrepared alone.
 func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
+	// Checked before the pump is touched, not left to startPrepared's own
+	// guard: a spent preparedCommand has already released its pump, so the
+	// releaseChildEnds below would nil-deref before that guard's error could
+	// be reported.
+	if pc.spent {
+		return e.reportStartFailure(pc, ErrPreparedCommandSpent)
+	}
+
 	started, startErr := e.startPrepared(pc)
 	closeErr := pc.pump.releaseChildEnds()
 
 	if !started {
-		releaseErr := pc.release()
-		combinedErr := errors.Join(startErr, closeErr, releaseErr)
-		result := &Result{ExitCode: ExitCodeUnknown}
-		e.Logger.Error("Command execution failed",
-			"error", combinedErr,
-			"command", pc.cmdLine,
-			"exit_code", result.ExitCode)
-		return result, fmt.Errorf("command execution failed: %w", combinedErr)
+		return e.reportStartFailure(pc, errors.Join(startErr, closeErr))
 	}
 
 	return e.superviseCommand(ctx, pc, closeErr)
+}
+
+// reportStartFailure releases everything the prepare phase acquired and builds
+// the placeholder Result a run that never started has always reported.
+func (e *DefaultExecutor) reportStartFailure(pc *preparedCommand, startErr error) (*Result, error) {
+	combinedErr := errors.Join(startErr, pc.release())
+	result := &Result{ExitCode: ExitCodeUnknown}
+	e.Logger.Error("Command execution failed",
+		"error", combinedErr,
+		"command", pc.cmdLine,
+		"exit_code", result.ExitCode)
+	return result, fmt.Errorf("command execution failed: %w", combinedErr)
 }
 
 // superviseCommand reaps the child, reads its output and builds the Result,
@@ -439,10 +452,12 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (
 //     past its timeout indefinitely -- the timeout guarantee would be lost
 //     silently.
 //
-// startupErr carries a failure from the start phase (a failure to release the
-// pipe write ends, or an elevation failure once Start had already succeeded).
-// It forces the kill path -- a started child must not be abandoned -- and is
-// joined into the returned error.
+// startupErr carries a failure from the start phase -- today only a failure to
+// release the pipe write ends, since runCommand still runs inside the privilege
+// window and never sees the elevation's own error; an elevation failure after
+// Start succeeded reaches here too once the window is narrowed to
+// startPrepared. It forces the kill path -- a started child must not be
+// abandoned -- and is joined into the returned error.
 //
 // Its two log records, like runCommand's, still run inside the privilege
 // window for run-as execution; they leave it when the window is narrowed to
@@ -490,12 +505,18 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	killed := !outcome.reaped
 	if killed {
 		outcome.killErr = e.killChild(pc, proc, pid)
-		e.Logger.Info("Killed command after cancellation",
-			"command", pc.cmdLine,
-			"pid", pid,
-			"kill_strategy", pc.kill.String())
+		if outcome.killErr == nil {
+			// Only on success: a failed kill leaves the child running, which
+			// the Error record below reports. Claiming "killed" here as well
+			// would have an operator triaging a stuck child read two records
+			// that contradict each other.
+			e.Logger.Info(killedMessage(outcome.ctxErr),
+				"command", pc.cmdLine,
+				"pid", pid,
+				"kill_strategy", pc.kill.String())
+		}
 
-		timer := time.NewTimer(e.killGraceDelay)
+		timer := time.NewTimer(e.effectiveKillGraceDelay())
 		select {
 		case outcome.waitErr = <-waitCh:
 			outcome.reaped = true
@@ -508,7 +529,14 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	// no reason to abandon output, and an unbounded wait is what os/exec did.
 	drainDeadline := time.Duration(0)
 	if killed {
-		drainDeadline = e.killGraceDelay
+		drainDeadline = e.effectiveKillGraceDelay()
+	}
+	if !outcome.reaped {
+		// The child that could not be reaped is the one holding the pipe's
+		// write end, so no further output can arrive. Closing the read ends
+		// lets the drain finish now rather than running out a second full
+		// killGraceDelay for nothing.
+		_ = pc.pump.closeReadEnds()
 	}
 	var drainTimedOut bool
 	outcome.stdout, outcome.stderr, outcome.writeErr, drainTimedOut = pc.pump.wait(drainDeadline)
@@ -558,6 +586,16 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	return result, nil
 }
 
+// killedMessage names why the child was killed, so the record distinguishes a
+// run the caller cancelled from one the start phase could not finish setting
+// up.
+func killedMessage(ctxErr error) string {
+	if ctxErr != nil {
+		return "Killed command after cancellation"
+	}
+	return "Killed command after start-phase failure"
+}
+
 // rankedError picks the single error that names the run's cause, in the order
 // the design fixes:
 //
@@ -605,12 +643,24 @@ func (e *DefaultExecutor) killChild(pc *preparedCommand, proc *os.Process, pid i
 		elevationCtx := pc.killElevation
 		elevationCtx.Operation = runnertypes.OperationKillAfterCancel
 
+		// opened is set from inside the window, so it says a window opened
+		// rather than guessing from the error which of WithPrivileges'
+		// failures (re-entrancy, an unsupported operation, seteuid) happened
+		// before it could. Recording a refused elevation would put a phantom
+		// escalation in the audit log, which is the record the elevation
+		// criteria are checked against.
+		opened := false
 		start := time.Now()
-		err := e.PrivMgr.WithPrivileges(elevationCtx, func() error { return proc.Kill() })
-		pc.privilegeWindows = append(pc.privilegeWindows, privilegeWindow{
-			op:       runnertypes.OperationKillAfterCancel,
-			duration: time.Since(start),
+		err := e.PrivMgr.WithPrivileges(elevationCtx, func() error {
+			opened = true
+			return proc.Kill()
 		})
+		if opened {
+			pc.privilegeWindows = append(pc.privilegeWindows, privilegeWindow{
+				op:       runnertypes.OperationKillAfterCancel,
+				duration: time.Since(start),
+			})
+		}
 		return killOutcome(err, pid)
 	default:
 		return fmt.Errorf("%w: pid=%d", ErrKillStrategyUnset, pid)

@@ -337,6 +337,19 @@ func addPrivilegeWindow(metrics *audit.PrivilegeMetrics, op runnertypes.Operatio
 	metrics.ByOperation[op] += d
 }
 
+// effectiveKillGraceDelay returns the delay to bound the post-kill waits by.
+// A DefaultExecutor built as a struct literal -- which several tests do -- has
+// no delay configured, and a zero timer fires at once: every cancelled run
+// would report ErrChildNotReaped and an unknown exit code for a child that was
+// reaped perfectly well. An unset delay therefore means the production
+// default, not "give up immediately".
+func (e *DefaultExecutor) effectiveKillGraceDelay() time.Duration {
+	if e.killGraceDelay <= 0 {
+		return defaultKillGraceDelay
+	}
+	return e.killGraceDelay
+}
+
 // logDeferredWarnings logs pc's non-fatal resource-release failures, if any:
 // the staging warnings and release()'s failures on devNull, verifiedFD and
 // the output pump. Pre-refactor, each of these was logged individually at its

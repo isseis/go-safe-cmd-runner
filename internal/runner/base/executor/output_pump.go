@@ -168,15 +168,23 @@ loop:
 	return stdout, stderr, writeErr, timedOut
 }
 
+// closeReadEnds closes the pipe read ends, which stops the reader goroutines
+// waiting on a write end nobody left will close. Idempotent: the readers close
+// their own read ends on the normal path.
+func (p *outputPump) closeReadEnds() error {
+	return errors.Join(
+		closeUnlessClosed(p.stdout.parentEnd),
+		closeUnlessClosed(p.stderr.parentEnd),
+	)
+}
+
 // release closes every descriptor the pump holds: the pipe write ends (via
 // releaseChildEnds) and the read ends. The reader goroutines close their own
 // read ends, so on the normal path this closes only the write ends again;
 // closing an already-closed file is not an error, which makes release safe
 // on paths where start was never reached and after wait alike.
 func (p *outputPump) release() error {
-	err := p.releaseChildEnds()
-	err = errors.Join(err, closeUnlessClosed(p.stdout.parentEnd), closeUnlessClosed(p.stderr.parentEnd))
-	return err
+	return errors.Join(p.releaseChildEnds(), p.closeReadEnds())
 }
 
 // run reads the pipe read end into the wrapper until the last write end

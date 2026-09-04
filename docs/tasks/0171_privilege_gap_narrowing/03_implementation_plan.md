@@ -665,6 +665,27 @@
       `syscall.Close` で記述子を裏から閉じ `EBADF` を起こす
       （`TestPreparedCommand_ReleaseRecordsPumpFailure` と同じ手口）。
 
+レビューを受けて次の3本を追加した（いずれも計画には無かったが、3-d が新しく足した
+コードのうちテストの無い部分を覆う）。
+
+- [x] `TestKillChild_RecordsOnlyWindowsThatOpened`: 監査メトリクスへ届く隙の記録が、
+      **実際に開いた隙だけ**であること。`WithPrivileges` が `fn` に入る前に失敗した場合
+      （再入・operation 不正・昇格失敗）に記録すると、監査ログに実在しない昇格が並び、
+      その監査ログこそが AC-06／AC-09 を検証する典拠なので害がある。
+      開いたかどうかは隙の内側で立てるフラグで宣言する（エラーからの推測にしない）。
+- [x] `TestKillChild_RejectsUndeclaredAndUnavailableStrategies`: `killUnset` と
+      特権マネージャ不在の2つの fail-secure 経路で、シグナルを送らずに理由を返すこと。
+      `prepareCommand` が唯一の構築子である限り到達しないが、守っている `switch` が
+      特権の境界に載っているため主張する（設計原則5）。
+- [x] `TestSupervise_UnreapedChildDoesNotSpendASecondDrainDeadline`: 回収を諦めたときは
+      出力中継の読み取り側を閉じてから読み切りへ入り、`killGraceDelay` を2回続けて
+      使わないこと（設計文書 §6.1 の「読み取り側を閉じ」）。
+      回収できない子こそがパイプの書き込み側を握っているので、待っても出力は来ない。
+
+あわせて、kill の `Info` 記録は kill が**成功したとき**だけ出し、
+`ctx` のキャンセル由来か起動フェーズの失敗由来かを文面で分ける
+（失敗した kill を「殺した」と記録すると、直後の `Error` 記録と食い違う）。
+
 `executor_fdexec_test.go`（`package executor_test`）:
 
 - [x] `TestExecute_NoLeakOnCancellationPaths` を足す。既存の
@@ -1452,6 +1473,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 `manual`（実環境での観測）で示す。パスは省略のため次の別名を使う。
 
 - `L` = `internal/runner/base/executor/executor_lifecycle_test.go`
+- `S` = `internal/runner/base/executor/executor_supervise_test.go`
 - `P` = `internal/runner/base/executor/output_pump_test.go`
 - `G` = `internal/runner/base/executor/privileged_window_guard_test.go`
 - `I` = `internal/runner/base/executor/executor_privilege_gap_integration_test.go`
@@ -1525,8 +1547,8 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-07: タイムアウトで子プロセスが停止する
 
 - 種別: `test`
-- 検証: `I::TestPrivilegeGap_TimeoutKillsChild`、`L::TestSupervise_TimeoutJoinsContextAndWaitErrors`、
-  `internal/runner/group_executor_test.go::TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded`
+- 検証: `I::TestPrivilegeGap_TimeoutKillsChild`、`S::TestSupervise_TimeoutJoinsContextAndWaitErrors`、
+  `internal/runner/group_executor_timeout_test.go::TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded`
 - 期待: `Execute` がタイムアウト直後に戻り、戻り値から `context.DeadlineExceeded` と
   `Wait()` のエラーの両方を `errors.Is` でたどれる。実 executor を通した実行で
   `LogTimeoutExceeded` の記録が現れる（設計文書 §7.3 が AC-07 に課す2点目）
@@ -1535,14 +1557,17 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-08: SIGINT／SIGTERM で子プロセスが停止する
 
 - 種別: `test`
-- 検証: `I::TestPrivilegeGap_CancelKillsChild`、`L::TestSupervise_CancelKillsChild`
+- 検証: `I::TestPrivilegeGap_CancelKillsChild`、`S::TestSupervise_CancelKillsChild`
 - 期待: キャンセル後、`Execute` が `killGraceDelay` 以内に戻り `context.Canceled` をたどれる
 - 実装: Phase 3-d
 
 ### AC-09: kill の再昇格は kill だけを含み、直後に復帰と検査を行う
 
 - 種別: `test`
-- 検証: `L::TestSupervise_KillOpensExactlyOneReelevation`、
+- 検証: `S::TestSupervise_KillOpensExactlyOneReelevation`、
+  `S::TestKillChild_RecordsOnlyWindowsThatOpened`（監査メトリクスへ届くのは実際に開いた隙だけ）、
+  `S::TestKillChild_RejectsUndeclaredAndUnavailableStrategies`（`killUnset` と
+  特権マネージャ不在の fail-secure 側）、
   `G::TestPrivilegeWindowAllowedCalls`（サブテスト `kill_window`）
 - 期待: `ElevationCalls` に `kill_after_cancel` がちょうど1回現れ、
   kill 区間の `MockWindowPhaseBeforeFn` の時点で
@@ -1553,14 +1578,14 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-10: 通常実行では kill の再昇格を行わない
 
 - 種別: `test`
-- 検証: `L::TestSupervise_NormalExecutionDoesNotReelevate`
+- 検証: `S::TestSupervise_NormalExecutionDoesNotReelevate`
 - 期待: `run_as` を伴わない実行のキャンセルで `MockPrivilegeManager.ElevationCalls` が空
 - 実装: Phase 3-d（`killStrategy` による宣言）
 
 ### AC-11: `WithPrivileges` に2つの goroutine が同時に入らない
 
 - 種別: `test`
-- 検証: `L::TestSupervise_KillRunsOnExecutingGoroutine`
+- 検証: `S::TestSupervise_KillRunsOnExecutingGoroutine`
 - 期待: 起動区間と kill 区間の `MockWindowPhaseBeforeFn` で採った goroutine ID が一致し、
   `privilege.ErrReentrantPrivilegeCall` が返らない（モック側の再入ガードは Phase 3-c で入れる。
   ガードが無いとこの主張は無条件に通る）
@@ -1570,7 +1595,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 
 - 種別: `test`（記述子と特権の両方）
 - 検証（記述子）: `F::TestExecute_NoLeakOnCancellationPaths`（キャンセル済み context／
-  子の終了後のキャンセル）、既存 `F::TestExecute_FdBoundStartFailureNoLeak`（`Start()` 失敗）、
+  実行中のキャンセル＝ kill 経路）、既存 `F::TestExecute_FdBoundStartFailureNoLeak`（`Start()` 失敗）、
   既存 `E::TestExecute_ContextCancellation`（キャンセル済み context で `Result` が非 `nil`）
 - 期待: 3経路とも反復で記述子が増えない（`numOpenFDs` の差が 1 以下）
 - 検証（特権）: `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`
@@ -1592,9 +1617,9 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-14: 上限超過エラーが破断エラーより優先して報告される
 
 - 種別: `test`
-- 検証: `L::TestSupervise_SizeLimitErrorOutranksExitError`、
+- 検証: `S::TestSupervise_SizeLimitErrorOutranksExitError`、
   `P::TestOutputPump_WriteErrorPrefersStdout`、
-  `L::TestSupervise_KillFailureIsJoinedWithWriteError`
+  `S::TestSupervise_KillFailureIsJoinedWithWriteError`
 - 期待: 子が `SIGPIPE` で異常終了しても、返るエラーの主因は書き込みエラーであり
   `*exec.ExitError` は主因として現れない。stdout 側の書き込みエラーが stderr 側より優先される。
   kill 失敗が同時に起きたときは `ErrKillAfterCancel` も併記され、両方を `errors.Is` でたどれる

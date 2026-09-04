@@ -381,15 +381,7 @@ func TestSupervise_ChildNotReapedReportsUnknownExitCode(t *testing.T) {
 // ErrChildNotReaped.
 func TestSupervise_GrandchildHoldingPipeDoesNotBlockCompletion(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
-	t.Cleanup(func() {
-		data, err := os.ReadFile(pidFile)
-		if err != nil {
-			return
-		}
-		if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil {
-			killTestProcess(pid)
-		}
-	})
+	t.Cleanup(func() { killTestProcessFromFile(pidFile) })
 
 	logger, rec := tu.NewRecordingLogger()
 	e := NewDefaultExecutor(WithLogger(logger), WithKillGraceDelay(50*time.Millisecond)).(*DefaultExecutor)
@@ -460,7 +452,9 @@ func TestSupervise_KillFailureIsJoinedWithWriteError(t *testing.T) {
 	limitErr := errors.New("output size limit exceeded")
 	writer := &failingWriter{limit: 0, err: limitErr}
 
+	logger, rec := tu.NewRecordingLogger()
 	e := NewDefaultExecutor(
+		WithLogger(logger),
 		WithPrivilegeManager(mockPriv),
 		WithKillGraceDelay(50*time.Millisecond),
 	).(*DefaultExecutor)
@@ -488,6 +482,8 @@ func TestSupervise_KillFailureIsJoinedWithWriteError(t *testing.T) {
 	assert.ErrorIs(t, err, limitErr, "the ranked cause must still be the write error")
 	assert.ErrorIs(t, err, ErrKillAfterCancel, "a child that could not be killed must not be hidden behind it")
 	assert.ErrorIs(t, err, elevationErr)
+	assert.Empty(t, rec.RecordsAtLevel(slog.LevelInfo),
+		"a kill that failed must not also be recorded as a kill that happened")
 }
 
 // TestStartPrepared_ReleaseFailureStillKillsChild verifies that a failure
@@ -499,7 +495,8 @@ func TestSupervise_KillFailureIsJoinedWithWriteError(t *testing.T) {
 // with EBADF rather than the os.ErrClosed it treats as its idempotent success
 // case.
 func TestStartPrepared_ReleaseFailureStillKillsChild(t *testing.T) {
-	e := NewDefaultExecutor().(*DefaultExecutor)
+	logger, rec := tu.NewRecordingLogger()
+	e := NewDefaultExecutor(WithLogger(logger)).(*DefaultExecutor)
 	pc := prepareForSupervise(t, e, nil, sleepPath, "30")
 
 	started, err := e.startPrepared(pc)
@@ -508,6 +505,11 @@ func TestStartPrepared_ReleaseFailureStillKillsChild(t *testing.T) {
 	pid := pc.execCmd.Process.Pid
 	t.Cleanup(func() { killTestProcess(pid) })
 
+	// Closing the descriptors behind the *os.File's back means the numbers
+	// are free until releaseChildEnds runs, and a number handed back out
+	// meanwhile would turn the sabotaged close into a legitimate one. Nothing
+	// between these lines opens a descriptor, and no test in this package runs
+	// in parallel, so the window stays closed.
 	for _, f := range []*os.File{pc.pump.stdout.childEnd, pc.pump.stderr.childEnd} {
 		require.NoError(t, syscall.Close(int(f.Fd())))
 	}
@@ -523,4 +525,169 @@ func TestStartPrepared_ReleaseFailureStillKillsChild(t *testing.T) {
 	assert.Less(t, elapsed, 5*time.Second, "a started child must be killed, not waited out")
 	assert.False(t, processIsRunning(pid), "a child that cannot be supervised must not be left running")
 	require.NotNil(t, result)
+
+	assert.Len(t, rec.FindRecords(slog.LevelInfo, "Killed command after start-phase failure"), 1,
+		"the record must name what forced the kill; nothing cancelled this run")
+}
+
+// TestSupervise_UnreapedChildDoesNotSpendASecondDrainDeadline verifies that
+// giving up on the child also gives up on its output. The child that could not
+// be reaped is the one holding the pipe's write end, so waiting out a second
+// full killGraceDelay for output that cannot arrive only delays the report
+// that a process may still be running.
+//
+// A grandchild holds the write end open so the drain would genuinely block,
+// and Wait() is injected so the reap times out with the child still on the
+// books -- the combination the doubled deadline needs.
+func TestSupervise_UnreapedChildDoesNotSpendASecondDrainDeadline(t *testing.T) {
+	const grace = 300 * time.Millisecond
+
+	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
+	t.Cleanup(func() { killTestProcessFromFile(pidFile) })
+
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+
+	e := NewDefaultExecutor(
+		WithKillGraceDelay(grace),
+		WithWaitFn(func(cmd *exec.Cmd) error {
+			<-release
+			return cmd.Wait()
+		}),
+	).(*DefaultExecutor)
+
+	script := "sleep 30 & echo $! > " + pidFile + "; exec sleep 30"
+	pc := prepareForSupervise(t, e, nil, shPath, "-c", script)
+	startForSupervise(t, e, pc)
+
+	// Cancel only once the grandchild exists and has the pipe's write end;
+	// cancelling sooner can kill the shell before it forks, leaving nothing
+	// to hold the drain open and making the assertion below pass vacuously.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		defer cancel()
+		until := time.Now().Add(5 * time.Second)
+		for time.Now().Before(until) {
+			if _, statErr := os.Stat(pidFile); statErr == nil {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	start := time.Now()
+	_, err := e.superviseCommand(ctx, pc, nil)
+	elapsed := time.Since(start)
+
+	require.FileExists(t, pidFile, "the grandchild must have been started before the cancellation")
+	require.ErrorIs(t, err, ErrChildNotReaped)
+	// The reap deadline alone is `grace`; spending the drain deadline after it
+	// would take twice that. Half a deadline of headroom keeps the bound clear
+	// of scheduling noise while still failing on a doubled wait.
+	assert.Less(t, elapsed, grace+grace/2,
+		"the reap deadline and the drain deadline must not be spent one after the other")
+
+	releaseOnce.Do(func() { close(release) })
+}
+
+// killTestProcessFromFile kills the pid recorded in path, if the file exists.
+func killTestProcessFromFile(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil {
+		killTestProcess(pid)
+	}
+}
+
+// TestKillChild_RejectsUndeclaredAndUnavailableStrategies verifies the two
+// fail-secure arms of the kill path. A preparedCommand that never declared
+// what a kill requires must not be guessed at, and a re-elevated kill with no
+// privilege manager must not be attempted -- in both cases no signal is sent
+// and the reason is reported.
+//
+// Neither is reachable while prepareCommand is the only constructor; they are
+// tested because the switch they guard sits on a privilege boundary, where a
+// silent default would reproduce the EPERM-on-kill failure this task exists to
+// fix.
+func TestKillChild_RejectsUndeclaredAndUnavailableStrategies(t *testing.T) {
+	tests := []struct {
+		name    string
+		kill    killStrategy
+		privMgr runnertypes.PrivilegeManager
+		wantErr error
+	}{
+		{
+			name:    "undeclared_strategy",
+			kill:    killUnset,
+			privMgr: privilegetestutil.NewMockPrivilegeManager(true),
+			wantErr: ErrKillStrategyUnset,
+		},
+		{
+			name:    "reelevation_without_privilege_manager",
+			kill:    killReelevated,
+			privMgr: nil,
+			wantErr: ErrNoPrivilegeManager,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := NewDefaultExecutor(WithPrivilegeManager(tt.privMgr)).(*DefaultExecutor)
+			pc := prepareForSupervise(t, e, nil, sleepPath, "30")
+			pc.kill = tt.kill
+			pid := startForSupervise(t, e, pc)
+
+			err := e.killChild(pc, pc.execCmd.Process, pid)
+
+			require.ErrorIs(t, err, tt.wantErr)
+			assert.True(t, processIsRunning(pid), "a rejected kill must not have signalled the child")
+			assert.Empty(t, pc.privilegeWindows, "a kill that never opened a window must record none")
+		})
+	}
+}
+
+// TestKillChild_RecordsOnlyWindowsThatOpened verifies what the kill path hands
+// to the audit metrics. A window that ran must be recorded under its own
+// operation, and a window the privilege manager refused must not be: the
+// metrics become the audit log's elevation record, and a phantom escalation
+// there is indistinguishable from a real one.
+func TestKillChild_RecordsOnlyWindowsThatOpened(t *testing.T) {
+	tests := []struct {
+		name       string
+		failFor    map[runnertypes.Operation]error
+		wantWindow bool
+	}{
+		{name: "window_opened", wantWindow: true},
+		{
+			name:    "window_refused",
+			failFor: map[runnertypes.Operation]error{runnertypes.OperationKillAfterCancel: errors.New("elevation refused")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+			mockPriv.FailFor = tt.failFor
+			e := NewDefaultExecutor(WithPrivilegeManager(mockPriv)).(*DefaultExecutor)
+
+			pc := prepareForSupervise(t, e, nil, sleepPath, "30")
+			pc.kill = killReelevated
+			pid := startForSupervise(t, e, pc)
+
+			err := e.killChild(pc, pc.execCmd.Process, pid)
+
+			if !tt.wantWindow {
+				require.ErrorIs(t, err, ErrKillAfterCancel)
+				assert.Empty(t, pc.privilegeWindows, "a refused elevation must not be recorded as an opened window")
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, pc.privilegeWindows, 1)
+			assert.Equal(t, runnertypes.OperationKillAfterCancel, pc.privilegeWindows[0].op)
+			assert.Positive(t, pc.privilegeWindows[0].duration, "the window's duration is what the audit log reports")
+		})
+	}
 }
