@@ -276,6 +276,9 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 
 	pc, err := e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
 	if err != nil {
+		// prepareCommand returns a non-nil pc on failure too, carrying
+		// whatever its own release could not do cleanly.
+		e.logDeferredWarnings(pc)
 		return nil, err
 	}
 	result, err := e.runCommand(ctx, pc)
@@ -284,16 +287,16 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 }
 
 // logDeferredWarnings logs pc's non-fatal resource-release failures, if any:
-// the staging warnings and release()'s close failures on devNull and
-// verifiedFD. Pre-refactor, each of these was logged individually at its own
-// close site; decomposing execution into prepare/start/supervise moved all of
-// them behind preparedCommand.release(), which may run inside the privilege
-// window, so they are recorded as values there instead and logged here.
-// Callers must invoke logDeferredWarnings only once the privilege window (if
-// any) that produced pc has closed: nothing inside a window may log, since a
-// slog handler is free to open a file and would do so at euid 0. pc may be
-// nil when prepareCommand itself failed, in which case there is nothing to
-// log.
+// the staging warnings and release()'s failures on devNull, verifiedFD and
+// the output pump. Pre-refactor, each of these was logged individually at its
+// own close site; decomposing execution into prepare/start/supervise moved
+// all of them behind preparedCommand.release(), which may run inside the
+// privilege window, so they are recorded as values there instead and logged
+// here. Callers must invoke logDeferredWarnings only once the privilege
+// window (if any) that produced pc has closed: nothing inside a window may
+// log, since a slog handler is free to open a file and would do so at euid 0.
+// pc may be nil when the caller never reached prepareCommand, in which case
+// there is nothing to log.
 func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
 	if pc == nil {
 		return
@@ -309,6 +312,9 @@ func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
 	}
 	if pc.verifiedFDCloseErr != nil {
 		e.Logger.Warn("Failed to close duplicated verified fd", "error", pc.verifiedFDCloseErr)
+	}
+	if pc.pumpReleaseErr != nil {
+		e.Logger.Warn("Failed to release output pump", "error", pc.pumpReleaseErr)
 	}
 }
 
@@ -370,7 +376,17 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	cleanup := func() error {
 		rmErr := os.RemoveAll(dir)
 		if rmErr != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "WARNING: failed to remove staging directory %s: %v\n", dir, rmErr)
+			// The write goes to the already-open stderr descriptor and
+			// bypasses the redaction handler, so it carries only the
+			// staging directory path and the error -- never secret
+			// values. The WriteString form is deliberate: the static
+			// window guard added in a later phase allows
+			// (*os.File).WriteString by name (02_architecture.md §7.2),
+			// and a fmt.Fprintf call would force that allowlist to admit
+			// writes to arbitrary writers instead.
+			//
+			//nolint:errcheck,gosec,staticcheck // there is no further fallback if the write itself fails
+			os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v\n", dir, rmErr))
 		}
 		return rmErr
 	}

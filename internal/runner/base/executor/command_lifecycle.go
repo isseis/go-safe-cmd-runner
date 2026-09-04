@@ -75,13 +75,14 @@ type preparedCommand struct {
 
 	devNull *os.File
 
-	// devNullCloseErr and verifiedFDCloseErr record release()'s close
-	// failures on devNull and verifiedFD, the same way stagingCleanupErr
-	// does for the staged copy: release() itself may run inside the
-	// privilege window, so it records rather than logs, and the caller logs
-	// once the window has closed.
+	// devNullCloseErr, verifiedFDCloseErr and pumpReleaseErr record
+	// release()'s failures on devNull, verifiedFD and the output pump, the
+	// same way stagingCleanupErr does for the staged copy: release() itself
+	// may run inside the privilege window, so it records rather than logs,
+	// and the caller logs once the window has closed.
 	devNullCloseErr    error
 	verifiedFDCloseErr error
+	pumpReleaseErr     error
 
 	cmdLine         string // pre-formatted for logging; see FormatCommandForLog
 	hasOutputWriter bool   // whether Execute's caller supplied an OutputWriter
@@ -90,6 +91,14 @@ type preparedCommand struct {
 // release closes every descriptor prepareCommand acquired: the null-device
 // stdin, the duplicated verified descriptor (if any), the staged copy's
 // directory (if any), and the output pump. Safe to call multiple times.
+//
+// Every failure is recorded on pc as well as joined into the returned error,
+// so a caller that discards the return value (superviseCommand, which runs
+// inside the privilege window and therefore cannot log) still leaves the
+// failures where logDeferredWarnings can record them once the window has
+// closed. Each field is written only on the call that actually released the
+// resource: the fields guarding them are cleared as they are released, so a
+// second call neither re-releases nor overwrites.
 func (pc *preparedCommand) release() error {
 	var errs []error
 	if pc.devNull != nil {
@@ -108,7 +117,8 @@ func (pc *preparedCommand) release() error {
 		pc.stagingCleanup = nil
 	}
 	if pc.pump != nil {
-		errs = append(errs, pc.pump.release())
+		pc.pumpReleaseErr = pc.pump.release()
+		errs = append(errs, pc.pumpReleaseErr)
 		pc.pump = nil
 	}
 	return errors.Join(errs...)
@@ -136,6 +146,14 @@ type commandOutcome struct {
 // switching to exec.Command (so cancellation is handled by the caller
 // instead of a watchdog goroutine) is deferred to the cancellation work,
 // together with moving the staged-copy creation into the start phase.
+//
+// On failure prepareCommand releases everything it acquired and returns a
+// non-nil preparedCommand alongside the error: releasing can itself fail,
+// and prepareCommand may run inside the privilege window, where it cannot
+// log. Returning pc is what lets the caller pass it to logDeferredWarnings
+// once the window has closed instead of dropping those failures. The
+// returned pc is spent -- it carries only the recorded warnings and must not
+// be started.
 func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter, cred *syscall.Credential) (*preparedCommand, error) {
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
 	e.Logger.Debug("Executing command",
@@ -154,12 +172,20 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		hasOutputWriter: outputWriter != nil,
 	}
 
+	// The prepare phase failed: release what it acquired so far and hand pc
+	// back so the caller can record the release failures after the privilege
+	// window has closed (see the doc comment above).
+	fail := func(err error) (*preparedCommand, error) {
+		_ = pc.release()
+		return pc, err
+	}
+
 	switch {
 	case identity != nil && identity.FD != nil && !e.fdExecDisabled && fdExecSupported():
 		pc.binding = bindingVerifiedFD
 		childPath, extraFile, err := fdExecExtraFile(identity)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		// #nosec G204 - childPath is /proc/self/fd/<n> bound to the verified inode.
 		pc.execCmd = exec.CommandContext(ctx, childPath, cmd.ExpandedArgs...)
@@ -170,7 +196,12 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		pc.binding = bindingStagedCopy
 		stagedPath, cleanupFn, warn, err := e.stageFromFD(identity, cred)
 		if err != nil {
-			return nil, err
+			// stageFromFD already removed its staging directory, but it
+			// can still have failed to close the descriptor it staged
+			// from; that warning is carried out even though staging
+			// itself failed.
+			pc.stagingWarn = warn
+			return fail(err)
 		}
 		// #nosec G204 - stagedPath is a private copy of the verified inode.
 		pc.execCmd = exec.CommandContext(ctx, stagedPath, cmd.ExpandedArgs...)
@@ -197,8 +228,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 	// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		_ = pc.release()
-		return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
+		return fail(fmt.Errorf("failed to open null device for stdin: %w", err))
 	}
 	pc.devNull = devNull
 	pc.execCmd.Stdin = devNull
@@ -222,8 +252,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 	}
 	pump, err := newOutputPump(outputWriter, stderrLimit)
 	if err != nil {
-		_ = pc.release()
-		return nil, err
+		return fail(err)
 	}
 	pc.pump = pump
 	stdoutFile, stderrFile := pump.childFiles()
@@ -258,6 +287,14 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 // The pipe write ends are released here -- immediately after Start returns,
 // regardless of its outcome -- because the read ends never reach EOF
 // otherwise, which would block the pump's wait until its deadline.
+//
+// Note on the remaining in-window logging: the "Command execution failed"
+// records here and in superviseCommand still run inside the privilege window
+// for run-as execution, exactly as they did before this decomposition. This
+// phase removed the non-fatal warnings from the window (they are recorded on
+// preparedCommand and logged by logDeferredWarnings); the run's own failure
+// record follows when the window is narrowed to startPrepared, which is what
+// puts both of these call sites outside it.
 func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
 	started, startErr := e.startPrepared(pc)
 	closeErr := pc.pump.releaseChildEnds()
@@ -283,6 +320,11 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (
 // change which error superviseCommand reports first (see the priority order
 // below).
 func (e *DefaultExecutor) superviseCommand(_ context.Context, pc *preparedCommand, startupErr error) (*Result, error) {
+	// The joined error is discarded rather than logged: superviseCommand
+	// still runs inside the privilege window for run-as execution, and
+	// nothing inside a window may log. release records each failure on pc,
+	// so the caller reports them via logDeferredWarnings once the window has
+	// closed.
 	defer func() { _ = pc.release() }()
 
 	waitCh := make(chan error, 1)
