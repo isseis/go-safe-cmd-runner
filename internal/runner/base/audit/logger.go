@@ -123,11 +123,13 @@ func (l *Logger) LogUserGroupExecution(
 }
 
 // privilegeDurationByOperationAttrs renders byOperation as one slog.Int64
-// attribute per entry, keyed "privilege_duration_<operation>_us" so repeated
-// operations (e.g. multiple staging_cleanup windows) do not collide, and in
-// microseconds because the start window this task narrows privilege to is
-// tens of microseconds long -- millisecond precision would round it to zero.
-// Entries are emitted in key order so log output is deterministic.
+// attribute per entry, keyed "privilege_duration_<operation>_us" so distinct
+// operations in the same run don't collide on a single generic key (multiple
+// windows for the *same* operation are already summed into one map entry
+// before this function runs), and in microseconds because the start window
+// this task narrows privilege to is tens of microseconds long -- millisecond
+// precision would round it to zero. Entries are emitted in key order so log
+// output is deterministic.
 func privilegeDurationByOperationAttrs(byOperation map[runnertypes.Operation]time.Duration) []slog.Attr {
 	if len(byOperation) == 0 {
 		return nil

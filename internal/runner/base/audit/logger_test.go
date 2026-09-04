@@ -142,6 +142,55 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 	}
 }
 
+// TestLogger_LogUserGroupExecution_ByOperation verifies the per-operation
+// privilege-duration breakdown: keys are "privilege_duration_<op>_us", values
+// are microseconds (not milliseconds, which would round these durations to
+// zero), and multiple operations are all present regardless of map iteration
+// order.
+func TestLogger_LogUserGroupExecution_ByOperation(t *testing.T) {
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"test"},
+		executortestutil.WithName("test_cmd"),
+		executortestutil.WithRunAsUser("testuser"))
+	result := &audit.ExecutionResult{ExitCode: 0}
+	metrics := audit.PrivilegeMetrics{
+		ElevationCount: 2,
+		TotalDuration:  150 * time.Microsecond,
+		ByOperation: map[runnertypes.Operation]time.Duration{
+			runnertypes.OperationUserGroupExecution: 50 * time.Microsecond,
+			runnertypes.OperationKillAfterCancel:    100 * time.Microsecond,
+		},
+	}
+
+	logger, rec := tu.NewRecordingLogger()
+	auditLogger := audit.NewAuditLoggerWithCustom(logger)
+	auditLogger.LogUserGroupExecution(context.Background(), cmd, result, 0, metrics)
+
+	record := rec.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	record.AssertAttrs(t, map[string]any{
+		"privilege_duration_user_group_execution_us": int64(50),
+		"privilege_duration_kill_after_cancel_us":    int64(100),
+	})
+}
+
+// TestLogger_LogUserGroupExecution_ByOperationEmptyOmitsAttrs verifies that a
+// nil/empty ByOperation (the case every existing table-driven test above
+// exercises) adds no privilege_duration_* attributes at all, rather than an
+// empty or zero-valued one.
+func TestLogger_LogUserGroupExecution_ByOperationEmptyOmitsAttrs(t *testing.T) {
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"test"},
+		executortestutil.WithName("test_cmd"))
+	result := &audit.ExecutionResult{ExitCode: 0}
+
+	logger, rec := tu.NewRecordingLogger()
+	auditLogger := audit.NewAuditLoggerWithCustom(logger)
+	auditLogger.LogUserGroupExecution(context.Background(), cmd, result, 0, audit.PrivilegeMetrics{})
+
+	record := rec.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	for key := range record.Attrs {
+		assert.False(t, strings.HasPrefix(key, "privilege_duration_"), "unexpected per-operation attribute %q", key)
+	}
+}
+
 func TestLogger_LogPrivilegeEscalation(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	auditLogger := audit.NewAuditLoggerWithCustom(logger)

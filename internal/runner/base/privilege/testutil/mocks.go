@@ -53,10 +53,11 @@ type MockPrivilegeManager struct {
 	// fn's own call) would be invisible to a "before"-only sample.
 	InWindow func(phase MockWindowPhase)
 
-	// FailFor injects a failure for one specific operation, leaving every
-	// other operation to succeed even when this call also sets ShouldFail.
-	// ShouldFail fails every operation indiscriminately, which cannot express
-	// "the start window succeeds but the kill window fails".
+	// FailFor injects a failure for one specific operation. Checked only when
+	// ShouldFail is false: ShouldFail fails every operation indiscriminately
+	// and takes precedence, so a test wanting "the start window succeeds but
+	// the kill window fails" must leave ShouldFail unset and populate FailFor
+	// alone.
 	FailFor map[runnertypes.Operation]error
 
 	// inWindow mirrors UnixPrivilegeManager's unsynchronized reentrancy
