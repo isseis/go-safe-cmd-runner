@@ -336,6 +336,12 @@ func (e *DefaultExecutor) superviseCommand(_ context.Context, pc *preparedComman
 
 	waitCh := make(chan error, 1)
 	go func() {
+		// waitFn, when injected, stands in for Wait() here -- the only way to
+		// reach ErrChildNotReaped deterministically (see DefaultExecutor.waitFn).
+		if e.waitFn != nil {
+			waitCh <- e.waitFn(pc.execCmd)
+			return
+		}
 		waitCh <- pc.execCmd.Wait()
 	}()
 

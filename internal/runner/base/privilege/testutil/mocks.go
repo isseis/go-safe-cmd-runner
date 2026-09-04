@@ -58,6 +58,10 @@ type MockPrivilegeManager struct {
 	// MockWindowPhase). It observes the state of the window at that instant
 	// (goroutines, child process liveness, flags) -- not what fn itself calls,
 	// which is a job for static analysis, not this mock.
+	//
+	// A window that fails before fn -- ShouldFail or FailFor -- never calls it
+	// at all, so a test combining either with InWindow must assert that it was
+	// called rather than only on what it observed, which would pass vacuously.
 	InWindow func(phase MockWindowPhase)
 
 	// inWindow mirrors UnixPrivilegeManager's non-reentrant guard: a call to
