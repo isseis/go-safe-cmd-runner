@@ -651,16 +651,21 @@ func TestKillChild_RejectsUndeclaredAndUnavailableStrategies(t *testing.T) {
 
 // TestKillChild_RecordsOnlyWindowsThatOpened verifies what the kill path hands
 // to the audit metrics. A window that ran must be recorded under its own
-// operation, and a window the privilege manager refused must not be: the
-// metrics become the audit log's elevation record, and a phantom escalation
-// there is indistinguishable from a real one.
+// operation -- whether or not the kill inside it succeeded, since the
+// escalation happened either way -- and a window the privilege manager refused
+// must not be: the metrics become the audit log's elevation record, and a
+// phantom escalation there is indistinguishable from a real one.
 func TestKillChild_RecordsOnlyWindowsThatOpened(t *testing.T) {
 	tests := []struct {
-		name       string
-		failFor    map[runnertypes.Operation]error
+		name    string
+		failFor map[runnertypes.Operation]error
+		// reapFirst reaps the child before the kill, so Process.Kill fails
+		// with os.ErrProcessDone from inside a window that did open.
+		reapFirst  bool
 		wantWindow bool
 	}{
 		{name: "window_opened", wantWindow: true},
+		{name: "window_opened_but_kill_failed", reapFirst: true, wantWindow: true},
 		{
 			name:    "window_refused",
 			failFor: map[runnertypes.Operation]error{runnertypes.OperationKillAfterCancel: errors.New("elevation refused")},
@@ -673,9 +678,16 @@ func TestKillChild_RecordsOnlyWindowsThatOpened(t *testing.T) {
 			mockPriv.FailFor = tt.failFor
 			e := NewDefaultExecutor(WithPrivilegeManager(mockPriv)).(*DefaultExecutor)
 
-			pc := prepareForSupervise(t, e, nil, sleepPath, "30")
+			path, args := sleepPath, []string{"30"}
+			if tt.reapFirst {
+				path, args = shPath, []string{"-c", "exit 0"}
+			}
+			pc := prepareForSupervise(t, e, nil, path, args...)
 			pc.kill = killReelevated
 			pid := startForSupervise(t, e, pc)
+			if tt.reapFirst {
+				require.NoError(t, pc.execCmd.Wait())
+			}
 
 			err := e.killChild(pc, pc.execCmd.Process, pid)
 
