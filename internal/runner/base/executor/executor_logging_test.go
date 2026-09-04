@@ -19,14 +19,6 @@ import (
 // createTestCommand builds, for tests that need more than a bare cmd/args pair.
 type createTestCommandOption func(*runnertypes.CommandSpec)
 
-// withRunAs sets the run-as user and group on the command spec.
-func withRunAs(user, group string) createTestCommandOption {
-	return func(spec *runnertypes.CommandSpec) {
-		spec.RunAsUser = user
-		spec.RunAsGroup = group
-	}
-}
-
 // withOutputSizeLimit sets the command-specific output size limit in bytes.
 func withOutputSizeLimit(limit int64) createTestCommandOption {
 	return func(spec *runnertypes.CommandSpec) {

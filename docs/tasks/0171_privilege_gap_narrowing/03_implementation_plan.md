@@ -345,8 +345,14 @@
       「起動区間の内側」と限定できるのは呼び出しが `startPrepared` へ移る Phase 3-d 以降なので、
       その1語はそこで足す。
 - [x] `executor_logging_test.go` の `createTestCommand` へ可変長オプション引数を足し、
-      run-as ユーザー／グループと出力サイズ上限を指定できるようにする（同パッケージの
-      新規テストが使う）。既存の2引数呼び出しは変えずに済む形にする。
+      出力サイズ上限を指定できるようにする（同パッケージの新規テストが使う）。既存の
+      2引数呼び出しは変えずに済む形にする。**当初案にあった run-as ユーザー／グループの
+      オプション（`withRunAs`）は実装後のレビューで指摘され削除した**: `prepareCommand`
+      は run-as の資格情報を `cred` 引数で直接受け取り、`cmd.RunAsUser()`／`RunAsGroup()`
+      を読まないため、`TestPrepareCommand_CredentialWiring` に `withRunAs` を足しても
+      `prepareCommand` の実際の依存関係を検証したことにならない（cred は別途手で組み立てて
+      渡している）。run-as 経由の資格情報解決を検証する必要が生じたら、そのときのテストが
+      要る形でオプションを足し直す。
 - [x] `TestPrepareExecCommand_CredentialWiring` を `TestPrepareCommand_CredentialWiring` へ
       書き替え、`prepareCommand` が返す `preparedCommand.execCmd` に対して
       `SysProcAttr.Credential` の Uid／Gid／Groups を主張する形にする。

@@ -75,6 +75,14 @@ type preparedCommand struct {
 
 	devNull *os.File
 
+	// devNullCloseErr and verifiedFDCloseErr record release()'s close
+	// failures on devNull and verifiedFD, the same way stagingCleanupErr
+	// does for the staged copy: release() itself may run inside the
+	// privilege window, so it records rather than logs, and the caller logs
+	// once the window has closed.
+	devNullCloseErr    error
+	verifiedFDCloseErr error
+
 	cmdLine         string // pre-formatted for logging; see FormatCommandForLog
 	hasOutputWriter bool   // whether Execute's caller supplied an OutputWriter
 }
@@ -85,10 +93,12 @@ type preparedCommand struct {
 func (pc *preparedCommand) release() error {
 	var errs []error
 	if pc.devNull != nil {
-		errs = append(errs, closeUnlessClosed(pc.devNull))
+		pc.devNullCloseErr = closeUnlessClosed(pc.devNull)
+		errs = append(errs, pc.devNullCloseErr)
 	}
 	if pc.verifiedFD != nil {
-		errs = append(errs, closeUnlessClosed(pc.verifiedFD))
+		pc.verifiedFDCloseErr = closeUnlessClosed(pc.verifiedFD)
+		errs = append(errs, pc.verifiedFDCloseErr)
 	}
 	if pc.stagingCleanup != nil {
 		pc.stagingCleanupErr = pc.stagingCleanup()

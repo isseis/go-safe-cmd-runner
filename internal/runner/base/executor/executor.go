@@ -211,9 +211,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	// pc is populated inside the WithPrivileges closure below. This phase
 	// still has WithPrivileges wrap prepareCommand, startPrepared and
 	// superviseCommand together (narrowing the window to startPrepared alone
-	// is deferred to the cancellation work), so it is the only place a
-	// non-fatal staging warning collected on pc can be logged: logging from
-	// inside the closure would run at euid 0.
+	// is deferred to the cancellation work), so it is the only place the
+	// non-fatal warnings collected on pc can be logged: logging from inside
+	// the closure would run at euid 0.
 	var pc *preparedCommand
 	var result *Result
 	privilegeStart := time.Now()
@@ -232,7 +232,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
 
-	e.logStagingWarnings(pc)
+	e.logDeferredWarnings(pc)
 
 	if err != nil {
 		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
@@ -279,16 +279,22 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		return nil, err
 	}
 	result, err := e.runCommand(ctx, pc)
-	e.logStagingWarnings(pc)
+	e.logDeferredWarnings(pc)
 	return result, err
 }
 
-// logStagingWarnings logs pc's non-fatal staging failures, if any. Callers
-// must invoke it only once the privilege window (if any) that produced pc
-// has closed: nothing inside a window may log, since a slog handler is free
-// to open a file and would do so at euid 0. pc may be nil when prepareCommand
-// itself failed, in which case there is nothing to log.
-func (e *DefaultExecutor) logStagingWarnings(pc *preparedCommand) {
+// logDeferredWarnings logs pc's non-fatal resource-release failures, if any:
+// the staging warnings and release()'s close failures on devNull and
+// verifiedFD. Pre-refactor, each of these was logged individually at its own
+// close site; decomposing execution into prepare/start/supervise moved all of
+// them behind preparedCommand.release(), which may run inside the privilege
+// window, so they are recorded as values there instead and logged here.
+// Callers must invoke logDeferredWarnings only once the privilege window (if
+// any) that produced pc has closed: nothing inside a window may log, since a
+// slog handler is free to open a file and would do so at euid 0. pc may be
+// nil when prepareCommand itself failed, in which case there is nothing to
+// log.
+func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
 	if pc == nil {
 		return
 	}
@@ -297,6 +303,12 @@ func (e *DefaultExecutor) logStagingWarnings(pc *preparedCommand) {
 	}
 	if pc.stagingCleanupErr != nil {
 		e.Logger.Warn("Failed to remove staging directory", "error", pc.stagingCleanupErr)
+	}
+	if pc.devNullCloseErr != nil {
+		e.Logger.Warn("Failed to close null device", "error", pc.devNullCloseErr)
+	}
+	if pc.verifiedFDCloseErr != nil {
+		e.Logger.Warn("Failed to close duplicated verified fd", "error", pc.verifiedFDCloseErr)
 	}
 }
 

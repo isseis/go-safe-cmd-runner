@@ -108,7 +108,7 @@ func TestPrepareCommand_CredentialWiring(t *testing.T) {
 		NoSetGroups: false,
 	}
 
-	cmd := createTestCommand("/bin/echo", []string{"hello"}, withRunAs("testuser", "testgroup"))
+	cmd := createTestCommand("/bin/echo", []string{"hello"})
 	pc, err := e.prepareCommand(context.Background(), nil, "/bin/echo", cmd, nil, nil, cred)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pc.release() })
