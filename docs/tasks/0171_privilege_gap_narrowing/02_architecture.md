@@ -377,13 +377,14 @@ type preparedCommand struct {
 }
 
 // stagingRequest carries what the start phase needs to build the staged copy
-// inside the privilege window: the verified identity to copy from, the run-as
-// credential whose gid the copy is chgrp'd to, and the resolved path presented
-// to the child as argv[0].
+// inside the privilege window: the verified identity to copy from and the
+// run-as credential whose gid the copy is chgrp'd to. The resolved path the
+// child sees as argv[0] is not here -- the prepare phase has already written
+// it into execCmd.Args, and a second copy nothing reads would only invite the
+// two to disagree.
 type stagingRequest struct {
-    identity     *risktypes.VerifiedIdentity
-    cred         *syscall.Credential
-    resolvedPath string
+    identity *risktypes.VerifiedIdentity
+    cred     *syscall.Credential
 }
 
 // execBinding declares how the executed inode is bound. The zero value is
@@ -747,7 +748,6 @@ classDiagram
         <<struct>>
         -identity *risktypes.VerifiedIdentity
         -cred *syscall.Credential
-        -resolvedPath string
     }
 
     class outputPump {

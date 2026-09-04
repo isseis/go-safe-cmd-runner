@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -19,6 +20,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Command paths the lifecycle tests drive, resolved the way the executor
+// requires them: absolute and symlink-free. executortestutil.ResolveCommand
+// does the same thing but cannot be imported here -- that package imports
+// executor, and these tests are in package executor.
+var (
+	shPath    = resolveTestCommand("sh")
+	sleepPath = resolveTestCommand("sleep")
+)
+
+func resolveTestCommand(name string) string {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		panic("resolveTestCommand: " + name + ": " + err.Error())
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		panic("resolveTestCommand: " + path + ": " + err.Error())
+	}
+	return resolved
+}
 
 // TestPrepareCommand_ChildStreamsAreOSFiles verifies that prepareCommand
 // hands the child *os.File pipe ends (not an io.Writer), which is what keeps
@@ -272,73 +294,57 @@ func TestExecute_StagedCopyRemovalFailureRecorded(t *testing.T) {
 	require.Len(t, newStageDirs(before, scrStageDirs(t)), 1, "the failed removal must leave exactly one staging directory")
 }
 
-// TestExecute_PrepareFailureRecordsCarriedWarnings verifies that a failure in
-// the prepare phase does not discard the warnings the phase had already
-// collected: prepareCommand returns a non-nil preparedCommand alongside its
-// error precisely so executeNormal can hand it to logDeferredWarnings.
+// TestExecute_CancelledContextReleasesAndRecordsWarnings verifies the two
+// halves of prepareCommand's last step. An already-cancelled context must be
+// refused before anything is started -- exec.CommandContext used to do that,
+// and nothing else does now -- and the release that refusal performs must not
+// discard the warnings it collects on the way out: prepareCommand returns a
+// non-nil preparedCommand alongside its error precisely so executeNormal can
+// hand it to logDeferredWarnings.
 //
-// The failure is induced after staging has succeeded by replacing pipeFn with
-// one that first makes the fresh staging directory read-only (so the
-// subsequent cleanup cannot remove it) and then fails, which is the only
-// ordering that produces a carried warning on a failing prepare. Making
-// prepareCommand return nil on failure, or dropping executeNormal's
-// logDeferredWarnings call, leaves no record and fails this test.
+// The pump's read end is closed behind its back so release fails with EBADF
+// rather than the os.ErrClosed it treats as its idempotent success case. It is
+// closed only once the second pipe pair exists, so the freed descriptor number
+// cannot be handed straight back to it and turn the sabotage into a
+// legitimate close.
 //
-// This test must not call t.Parallel: it replaces the package-level pipeFn
-// and, via captureStderrLines, os.Stderr.
-func TestExecute_PrepareFailureRecordsCarriedWarnings(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("removing a read-only directory succeeds as root; the removal failure cannot be induced")
-	}
-
-	src := t.TempDir()
-	scriptPath := filepath.Join(src, "noop.sh")
-	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
-
+// Dropping the ctx.Err() check leaves no error to report and fails this test;
+// dropping executeNormal's logDeferredWarnings call leaves no record and fails
+// it too.
+//
+// This test must not call t.Parallel: it replaces the package-level pipeFn.
+func TestExecute_CancelledContextReleasesAndRecordsWarnings(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
-	e := NewDefaultExecutor(WithLogger(logger), WithFdExecDisabled())
+	e := NewDefaultExecutor(WithLogger(logger))
 
-	identity := openVerifiedIdentityForTest(t, scriptPath)
-	plan := &risktypes.VerifiedCommandPlan{
-		ResolvedPath: scriptPath,
-		Identity:     identity,
-		Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
-	}
-	t.Cleanup(func() { _ = plan.Close() })
-
-	before := scrStageDirs(t)
-	sweepNewStageDirs(t, before)
-
-	errPipe := errors.New("pipe creation refused by the test")
 	origPipeFn := pipeFn
 	t.Cleanup(func() { pipeFn = origPipeFn })
+	var readEnds []*os.File
 	pipeFn = func() (*os.File, *os.File, error) {
-		// Staging has already run by the time prepareCommand creates the
-		// pipes, so the staged copy's directory exists and can be locked
-		// against the cleanup that the failure below triggers.
-		for _, d := range newStageDirs(before, scrStageDirs(t)) {
-			_ = os.Chmod(filepath.Join(os.TempDir(), d), 0o500)
+		r, w, err := origPipeFn()
+		if err != nil {
+			return r, w, err
 		}
-		return nil, nil, errPipe
+		readEnds = append(readEnds, r)
+		if len(readEnds) == 2 {
+			require.NoError(t, syscall.Close(int(readEnds[0].Fd())))
+		}
+		return r, w, nil
 	}
 
-	cmd := createTestCommand(scriptPath, []string{})
-	var err error
-	lines := captureStderrLines(t, func() {
-		_, err = e.Execute(context.Background(), plan, cmd, map[string]string{}, nil)
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-	require.ErrorIs(t, err, errPipe, "the prepare failure itself must still be reported")
+	cmd := createTestCommand(sleepPath, []string{"10"})
+	result, err := e.Execute(ctx, nil, cmd, map[string]string{}, nil)
+
+	require.ErrorIs(t, err, context.Canceled, "an already-cancelled context must be refused before the command starts")
+	require.NotNil(t, result, "a refused run must still report a Result the caller can read an exit code from")
+	assert.Equal(t, ExitCodeUnknown, result.ExitCode)
 
 	warns := rec.RecordsAtLevel(slog.LevelWarn)
-	require.Len(t, warns, 1, "the warning collected before the prepare failure must not be discarded")
-	assert.Equal(t, "Failed to remove staging directory", warns[0].Message)
-	warnErr, ok := warns[0].Attrs["error"].(error)
-	require.True(t, ok, "the record must carry the carried error under the error attribute")
-	assert.ErrorIs(t, warnErr, os.ErrPermission)
-
-	require.Len(t, lines, 1, "the removal failure must also write exactly one last-resort line to stderr")
-	assert.Contains(t, lines[0], "WARNING: failed to remove staging directory")
+	require.Len(t, warns, 1, "the release failure collected while refusing the run must not be discarded")
+	assert.Equal(t, "Failed to release output pump", warns[0].Message)
 }
 
 // TestPreparedCommand_ReleaseRecordsPumpFailure verifies that release records

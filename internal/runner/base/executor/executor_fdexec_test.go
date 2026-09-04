@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
@@ -128,4 +129,77 @@ func TestExecute_FdBoundStartFailureNoLeak(t *testing.T) {
 	}
 	after := numOpenFDs(t)
 	assert.LessOrEqual(t, after, before+1, "failed fd-bound start leaked descriptors")
+}
+
+// TestExecute_NoLeakOnCancellationPaths verifies that the two cancellation
+// paths this task introduces release everything they acquired: a context that
+// was already cancelled before the run started, and a cancellation that kills
+// a running child. Both allocate pipes, a null device and a duplicated
+// verified descriptor before they give up, and neither goes through the normal
+// completion path that TestExecute_FdBoundNoLeak covers.
+//
+// The Start() failure path is already covered by
+// TestExecute_FdBoundStartFailureNoLeak and is not repeated here.
+//
+// Nothing about privileges is asserted here: this file runs unprivileged under
+// make test, where os.Geteuid() == os.Getuid() holds no matter what the
+// executor does, so such an assertion could not fail for its stated reason.
+// The privileged side is covered by the setuid-model integration tests.
+func TestExecute_NoLeakOnCancellationPaths(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("fd counting via /proc is Linux-specific")
+	}
+
+	tests := []struct {
+		name string
+		path string
+		args []string
+		// run performs one execution under a context it cancels itself.
+		run func(t *testing.T, e executor.CommandExecutor, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand)
+	}{
+		{
+			name: "already_cancelled_context",
+			path: echoCmd,
+			args: []string{"x"},
+			run: func(t *testing.T, e executor.CommandExecutor, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				_, err := e.Execute(ctx, plan, cmd, map[string]string{}, &executortestutil.MockOutputWriter{})
+				require.ErrorIs(t, err, context.Canceled)
+			},
+		},
+		{
+			name: "cancelled_while_running",
+			path: sleepCmd,
+			args: []string{"30"},
+			run: func(t *testing.T, e executor.CommandExecutor, plan *risktypes.VerifiedCommandPlan, cmd *runnertypes.RuntimeCommand) {
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+				defer cancel()
+				_, err := e.Execute(ctx, plan, cmd, map[string]string{}, &executortestutil.MockOutputWriter{})
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := executor.NewDefaultExecutor()
+			cmd := executortestutil.CreateRuntimeCommand(tt.path, tt.args, executortestutil.WithWorkDir(""))
+
+			// Warm up once so one-time allocations do not skew the count,
+			// exactly as the other no-leak tests do.
+			warm := openVerifiedPlan(t, tt.path, tt.args)
+			tt.run(t, e, warm, cmd)
+			require.NoError(t, warm.Close())
+
+			before := numOpenFDs(t)
+			for range 20 {
+				plan := openVerifiedPlan(t, tt.path, tt.args)
+				tt.run(t, e, plan, cmd)
+				require.NoError(t, plan.Close())
+			}
+			after := numOpenFDs(t)
+			assert.LessOrEqual(t, after, before+1, "cancelled execution leaked descriptors")
+		})
+	}
 }

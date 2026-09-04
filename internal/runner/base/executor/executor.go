@@ -248,23 +248,28 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		var prepErr error
 		pc, prepErr = e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
 		if prepErr != nil {
+			// The command never ran, so there is no exit code to report; the
+			// placeholder keeps Execute's promise that a failed run still
+			// yields a Result for the caller to read an exit code from.
+			result = &Result{ExitCode: ExitCodeUnknown}
 			return prepErr
 		}
+		// This closure is the start window, and it still spans the whole run.
+		// Until it is narrowed to startPrepared, the supervision phase inside
+		// it must not ask for a kill window of its own.
+		pc.supervisedInsideStartWindow = true
 		var runErr error
 		result, runErr = e.runCommand(ctx, pc)
 		return runErr
 	})
-	privilegeDuration := time.Since(privilegeStart)
-	metrics.ElevationCount++
-	metrics.TotalDuration += privilegeDuration
-	// Add to ByOperation rather than replacing it: later work adds further
-	// windows (kill_after_cancel, staging_cleanup) that close and record here
-	// too, and each must accumulate into its own key rather than clobber this
-	// one.
-	if metrics.ByOperation == nil {
-		metrics.ByOperation = make(map[runnertypes.Operation]time.Duration)
+	addPrivilegeWindow(&metrics, runnertypes.OperationUserGroupExecution, time.Since(privilegeStart))
+	// Windows the supervision phase opened (the kill window) are measured
+	// there and folded in here, where the audit logger that reports them is.
+	if pc != nil {
+		for _, w := range pc.privilegeWindows {
+			addPrivilegeWindow(&metrics, w.op, w.duration)
+		}
 	}
-	metrics.ByOperation[runnertypes.OperationUserGroupExecution] += privilegeDuration
 
 	e.logDeferredWarnings(pc)
 
@@ -313,11 +318,40 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		// prepareCommand returns a non-nil pc on failure too, carrying
 		// whatever its own release could not do cleanly.
 		e.logDeferredWarnings(pc)
-		return nil, err
+		// The command never ran, so there is no exit code to report; the
+		// placeholder keeps Execute's promise that a failed run still yields
+		// a Result for the caller to read an exit code from.
+		return &Result{ExitCode: ExitCodeUnknown}, err
 	}
 	result, err := e.runCommand(ctx, pc)
 	e.logDeferredWarnings(pc)
 	return result, err
+}
+
+// addPrivilegeWindow folds one closed privilege window into the audit
+// metrics. Each window is counted and accumulated under its own operation, so
+// a narrow start window can be told apart in the audit log from the kill
+// window that may follow it.
+func addPrivilegeWindow(metrics *audit.PrivilegeMetrics, op runnertypes.Operation, d time.Duration) {
+	metrics.ElevationCount++
+	metrics.TotalDuration += d
+	if metrics.ByOperation == nil {
+		metrics.ByOperation = make(map[runnertypes.Operation]time.Duration)
+	}
+	metrics.ByOperation[op] += d
+}
+
+// effectiveKillGraceDelay returns the delay to bound the post-kill waits by.
+// A DefaultExecutor built as a struct literal -- which several tests do -- has
+// no delay configured, and a zero timer fires at once: every cancelled run
+// would report ErrChildNotReaped and an unknown exit code for a child that was
+// reaped perfectly well. An unset delay therefore means the production
+// default, not "give up immediately".
+func (e *DefaultExecutor) effectiveKillGraceDelay() time.Duration {
+	if e.killGraceDelay <= 0 {
+		return defaultKillGraceDelay
+	}
+	return e.killGraceDelay
 }
 
 // logDeferredWarnings logs pc's non-fatal resource-release failures, if any:

@@ -519,8 +519,8 @@
 - [x] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した（[#1097](https://github.com/isseis/go-safe-cmd-runner/pull/1097)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3（続き）: キャンセルと kill の実装
 
@@ -532,11 +532,11 @@
 
 #### 3-d. 監督フェーズのキャンセル経路
 
-- [ ] `prepareCommand` の `exec.CommandContext` を `exec.Command` へ替える。Phase 2 から
+- [x] `prepareCommand` の `exec.CommandContext` を `exec.Command` へ替える。Phase 2 から
       持ち越した最後の1点であり、ここから先はキャンセル・タイムアウト時の kill を
       `superviseCommand` が自前で行う。**この置き換えと下の `select` の実装は同じ PR に入れる**
       （片方だけを入れると子を殺す担い手がいなくなる。Phase 2 の該当項目を参照）。
-- [ ] `command_lifecycle.go` へ `stagingRequest` を設計文書 §3.1 のフィールド構成で定義し、
+- [x] `command_lifecycle.go` へ `stagingRequest` を設計文書 §3.1 のフィールド構成で定義し、
       `bindingStagedCopy` の経路の `stageFromFD` 呼び出しを `prepareCommand` から
       `startPrepared` へ移す。この経路の `prepareCommand` は `exec.Cmd` を構造体リテラルで
       組み立て、`stagingRequest` を埋めるだけにする（`exec.Command` は `LookPath` を走らせ、
@@ -545,103 +545,176 @@
       `execCmd.Start()` を呼ぶ。この移動は 4-a が隙を `startPrepared` だけへ縮めたとき、
       staged copy が実効 UID 0 で作られる（＝起動者に差し替えられない）ために要る
       （設計文書 §3.4 差分1）。
-- [ ] `superviseCommand` に `select { case <-ctx.Done(): … case res := <-waitCh: … }` を実装する。
+- [x] `superviseCommand` に `select { case <-ctx.Done(): … case res := <-waitCh: … }` を実装する。
       待機 goroutine は `execCmd.Wait()` だけを呼び、結果をバッファ1のチャネルへ送る。
-- [ ] kill 対象の PID は `Start()` が成功した直後（起動区間の内側）に `execCmd.Process.Pid` から
+- [x] kill 対象の PID は `Start()` が成功した直後（起動区間の内側）に `execCmd.Process.Pid` から
       控え、kill 区間の前後を通じてこの控えた値だけを使う。`reaped == false` になった後は
       `execCmd` のどのフィールドにも触れない（`ProcessState`、`Process` を含む）。
-- [ ] `pc.kill == killReelevated` のとき、`Process.Kill()` の呼び出しだけを
+- [x] `pc.kill == killReelevated` のとき、`Process.Kill()` の呼び出しだけを
       `WithPrivileges`（`Operation: OperationKillAfterCancel`）で包む。
       `killDirect` のときは包まずに呼ぶ。`killUnset` は `ErrKillStrategyUnset` で失敗する。
-- [ ] kill したこと、対象 PID、選ばれた `killStrategy` を `Info` で記録する。
+- [x] kill したこと、対象 PID、選ばれた `killStrategy` を `Info` で記録する。
       記録は隙の外で行う（設計文書 §7.2）。
-- [ ] `Kill()` が `os.ErrProcessDone` を返した場合はエラーとして扱わない。
-- [ ] kill 後の回収（`Wait()` の完了）を `killGraceDelay` で打ち切る。超過時は出力中継の
+- [x] `Kill()` が `os.ErrProcessDone` を返した場合はエラーとして扱わない。
+- [x] kill 後の回収（`Wait()` の完了）を `killGraceDelay` で打ち切る。超過時は出力中継の
       読み取り側を閉じ、`ErrChildNotReaped` に PID を添えて `Error` で記録し、
       `Result.ExitCode` を `ExitCodeUnknown` にする。
-- [ ] 子を回収**できた**後の出力中継の `wait(killGraceDelay)` が `timedOut` を返した場合
+- [x] 子を回収**できた**後の出力中継の `wait(killGraceDelay)` が `timedOut` を返した場合
       （パイプの書き込み側を握ったまま残る孫プロセスがいる場合）は、エラーにせず
       `Logger.Warn` で記録して打ち切る。終了コードと `*exec.ExitError` は `Wait()` から
       得られているので `ExitCodeUnknown` にはしない。記録は隙の外で行う。
       **`ErrChildNotReaped` とは別の事象である**（前者は `Wait()` が返らないこと、
       後者は出力を読み切れないこと）。
-- [ ] kill の `WithPrivileges` が失敗したときは `ErrKillAfterCancel` に PID を添えて返し、
+- [x] kill の `WithPrivileges` が失敗したときは `ErrKillAfterCancel` に PID を添えて返し、
       待機は `killGraceDelay` で打ち切る。
-- [ ] エラーの優先順位を設計文書 §4.2 のとおり実装する。書き込みエラー（stdout 優先）を最優先、
+- [x] kill 区間の計測を 3-b の枠（`ByOperation` の `kill_after_cancel`）へ届ける。
+      監査メトリクスを持つのは `executeWithUserGroup` だけなので、`superviseCommand` は
+      閉じた隙を `preparedCommand.privilegeWindows` に記録するにとどめ、
+      `executeWithUserGroup` が `WithPrivileges` から戻った後にまとめて畳み込む。
+      4-a が開く後始末区間も同じ枠に載る。
+- [x] エラーの優先順位を設計文書 §4.2 のとおり実装する。書き込みエラー（stdout 優先）を最優先、
       次にキャンセル由来のエラー、最後に `Wait()` のエラー。
       `ErrKillAfterCancel`／`ErrChildNotReaped` は順位の外に置き、`errors.Join` で必ず併記する。
-- [ ] キャンセル由来の kill では、`ctx.Err()` と `Wait()` のエラーの両方を `errors.Is` で
+- [x] キャンセル由来の kill では、`ctx.Err()` と `Wait()` のエラーの両方を `errors.Is` で
       たどれる形にして返す（設計文書 §4.2 順位2、§5.6）。
-- [ ] `prepareCommand` の最後（起動区間を開く前）に `ctx.Err()` を検査し、非 `nil` なら
+- [x] `prepareCommand` の最後（起動区間を開く前）に `ctx.Err()` を検査し、非 `nil` なら
       `release()` してそのエラーを返す。**このとき呼び出し元は `&Result{ExitCode: ExitCodeUnknown}` を
       非 `nil` で返す**（既存の `TestExecute_ContextCancellation` が `result != nil` を主張しているため）。
-- [ ] `superviseCommand` の doc コメントへ、設計文書 §4.3 の対応表のうちコード上の判断に直結する
+      実装では、この扱いを準備フェーズの失敗**全体**に広げた。「キャンセルされたときだけ」を
+      区別するには呼び出し元が戻り値のエラーを調べるしかなく、"Declare, don't infer" に反する。
+      準備フェーズが失敗した以上どの経路でも終了コードは存在しないので、
+      `ExitCodeUnknown` の置き場は同じである。
+- [x] `superviseCommand` の doc コメントへ、設計文書 §4.3 の対応表のうちコード上の判断に直結する
       3点を英語で要約して残す（非機能要件「可読性」）: キャンセル済み context を準備フェーズで
       弾くこと、`os.ErrProcessDone` をエラーとしないこと、`killGraceDelay` を設けた理由が
       `os/exec` の `WaitDelay` 既定（上限なし）と意図的に異なることの3点。
 
 #### 3-e. テスト
 
-`executor_lifecycle_test.go`（`//go:build test`、`package executor`）:
+既存の `executor_lifecycle_test.go` の
+`TestExecute_PrepareFailureRecordsCarriedWarnings` は
+`TestExecute_CancelledContextReleasesAndRecordsWarnings` へ置き換える。前者は
+「staging が済んだ後に準備フェーズが失敗する」状況を作って警告の持ち出しを主張していたが、
+3-d が staging を起動フェーズへ移したのでその状況自体が作れなくなった。後者は同じ主張を、
+3-d が新しく足した準備フェーズ最後の失敗点（`ctx.Err()` の検査）で行う。
+`pipeFn` の差し替えで出力中継の読み取り側を裏から閉じ、`release()` を失敗させて
+その警告が記録されることと、キャンセル済み context が起動前に弾かれることを同時に主張する。
 
-- [ ] `TestSupervise_TimeoutJoinsContextAndWaitErrors`: タイムアウトで殺した実行の戻り値から
+`executor_supervise_test.go`（`//go:build test`、`package executor`。当初は
+`executor_lifecycle_test.go` へ足す計画だったが、監督フェーズのテストだけで
+同ファイルと同程度の分量になるため別ファイルへ分けた）:
+
+- [x] `TestSupervise_TimeoutJoinsContextAndWaitErrors`: タイムアウトで殺した実行の戻り値から
       `context.DeadlineExceeded` と `Wait()` のエラーの両方を `errors.Is` でたどれる。
-- [ ] `TestSupervise_CancelKillsChild`: `context.WithCancel` のキャンセルで子が停止し、
+- [x] `TestSupervise_CancelKillsChild`: `context.WithCancel` のキャンセルで子が停止し、
       `context.Canceled` をたどれる。
-- [ ] `TestSupervise_KillOpensExactlyOneReelevation`: `run_as` 実行のキャンセルで、
+- [x] `TestSupervise_KillOpensExactlyOneReelevation`: `run_as` 実行のキャンセルで、
       `MockPrivilegeManager.ElevationCalls` に `kill_after_cancel` がちょうど1回現れ、
       kill 区間の `MockWindowPhaseBeforeFn` の時点で子プロセスがまだ生きており、
       `MockWindowPhaseAfterFn` の時点では生きていない（＝ kill はこの隙の中で起きる）。
       隙の中の呼び出し集合そのものは静的検査（`G`）が主張するので、ここでは重ねない。
-- [ ] `TestSupervise_NormalExecutionDoesNotReelevate`: `run_as` を伴わない実行のキャンセルで、
+      本テスト群は `Execute` ではなく `prepareCommand`／`startPrepared`／`superviseCommand` を
+      直接呼び、`pc.kill` を手で `killReelevated` にする。非特権のテストは本物の `run_as` の子を
+      起動できない（`SysProcAttr.Credential` の `setgroups` が `CAP_SETGID` を要る）ためで、
+      本物の資格情報は Phase 5 の特権付き統合テストが担う。
+      なお `MockWindowPhaseAfterFn` の時点の「生きていない」は、`SIGKILL` の配送が非同期な以上
+      1回の標本では言えないので、隙を開いたまま子の消滅を待って判定する
+      （待てたこと自体が「kill はこの隙の中で起きた」の証拠になる）。
+- [x] `TestSupervise_NormalExecutionDoesNotReelevate`: `run_as` を伴わない実行のキャンセルで、
       `WithPrivileges` が一度も呼ばれない（`ElevationCalls` が空）。
-- [ ] `TestSupervise_KillRunsOnExecutingGoroutine`: 起動区間と kill 区間の
+- [x] `TestSupervise_KillRunsOnExecutingGoroutine`: 起動区間と kill 区間の
       `MockWindowPhaseBeforeFn` で
       `runtime.Stack(buf, false)` の goroutine ヘッダ行（`goroutine N [`）を採り、
       両者の N が一致すること、および `privilege.ErrReentrantPrivilegeCall` が返らないことを
       主張する。後者はモックの再入ガード（3-c）が入って初めて意味を持つ。
-- [ ] `TestSupervise_ProcessAlreadyDoneIsNotAnError`: 子が終了した後に context が
+      起動区間はテスト自身が開く（4-a が縮めた後の形）。本番の `executeWithUserGroup` は
+      この Phase ではまだ全体を包んでいるので、そこから来た run-as の kill は
+      **kill 区間を開かず直接シグナルを送る**（`preparedCommand.supervisedInsideStartWindow`）。
+      入れ子の `WithPrivileges` は再入ガードが `fn` を呼ぶ前に弾くため、開こうとすると
+      子に一切シグナルが届かず、`main` の `exec.CommandContext` の watchdog が
+      隙の内側（実効 UID 0）で殺せていた挙動に対する退行になる。
+      隙の内側なので実効 UID は既に 0 であり、直接の `Kill()` で足りる。
+      このフィールドは 4-a が隙を縮めた時点で削除する。
+- [x] `TestSupervise_ProcessAlreadyDoneIsNotAnError`: 子が終了した後に context が
       キャンセルされた場合、`os.ErrProcessDone` がエラーとして返らない。
-- [ ] `TestSupervise_ChildNotReapedReportsUnknownExitCode`: `WithKillGraceDelay(50ms)` と
+      競争に勝つのではなく競争そのものを消す作りにした: テストが自分で `Wait()` して子を回収し、
+      `startupErr` で kill 経路を強制するので、`Process.Kill()` は必ず終了済みの子を見る。
+- [x] `TestSupervise_ChildNotReapedReportsUnknownExitCode`: `WithKillGraceDelay(50ms)` と
       `WithWaitFn`（テストが解放するまで戻らない `Wait`）を与え、`ErrChildNotReaped` が返り、
       `Result.ExitCode` が `ExitCodeUnknown` であることを確かめる。注入した `Wait` は
       `t.Cleanup` で必ず解放する。**孫プロセスにパイプを握らせる作り方はこの経路を通さない**:
       `Stdout`／`Stderr` が `*os.File` なので `Wait()` は copy goroutine を待たず、
       殺された子はすぐ回収される。
-- [ ] `TestSupervise_GrandchildHoldingPipeDoesNotBlockCompletion`: `WithKillGraceDelay(50ms)` を
+- [x] `TestSupervise_GrandchildHoldingPipeDoesNotBlockCompletion`: `WithKillGraceDelay(50ms)` を
       与え、子が起こした孫プロセスがパイプの書き込み側を保持したまま残る状況
       （`/bin/sh -c 'sleep 30 & exec sleep 30'`）でキャンセルし、`Execute` が孫の寿命（30秒）を
-      待たずに戻ることと、`Result.ExitCode` が `ExitCodeUnknown` **ではない**
-      （`Wait()` から得た終了状態である）こと、出力を読み切れなかった旨の記録が1件出ることを
-      確かめる。孫プロセスはテストの後始末で確実に殺す（`t.Cleanup`）。
-- [ ] `TestSupervise_SizeLimitErrorOutranksExitError`: 書き込みエラー（出力上限超過を模した
+      待たずに戻ることと、出力を読み切れなかった旨の記録が1件出ることを確かめる。
+      孫プロセスはテストの後始末で確実に殺す（`t.Cleanup`。PID は孫自身に一時ファイルへ書かせる）。
+      **`Result.ExitCode` が `ExitCodeUnknown` ではないことは主張できない**:
+      `ExitCodeUnknown` は `-1` であり、`SIGKILL` で死んだ子の `ProcessState.ExitCode()` も `-1` で、
+      両者は値として区別できない。代わりに、終了状態が `Wait()` 由来であることを
+      `*exec.ExitError` がたどれることで示し、`ErrChildNotReaped` の経路と別物であることを
+      `NotErrorIs` で主張する。
+- [x] `TestSupervise_SizeLimitErrorOutranksExitError`: 書き込みエラー（出力上限超過を模した
       センチネルエラー）が起き、子が `SIGPIPE` で異常終了する状況で、返るエラーの主因がセンチネルエラーで
       あり、`*exec.ExitError` が主因として現れないことを主張する（AC-14 の本題）。
-- [ ] `TestSupervise_KillFailureIsJoinedWithWriteError`: `FailFor` で
+- [x] `TestSupervise_KillFailureIsJoinedWithWriteError`: `FailFor` で
       `OperationKillAfterCancel` だけを失敗させ、出力上限超過と kill 失敗が同時に起きたとき、
       センチネルエラーと `ErrKillAfterCancel` の**両方**を `errors.Is` でたどれる。
-- [ ] `TestStartPrepared_ReleaseFailureStillKillsChild`: `Start()` 成功後、
-      `pc.pump` の書き込み側を先に閉じておいて `releaseChildEnds` を `os.ErrClosed` で失敗させ
+- [x] `TestStartPrepared_ReleaseFailureStillKillsChild`: `Start()` 成功後、
+      `pc.pump` の書き込み側を先に閉じておいて `releaseChildEnds` を失敗させ
       （同一パッケージなので非公開フィールドへ到達できる）、子が kill・回収され、
-      そのエラーが結果に現れることを確かめる。
+      そのエラーが結果に現れることを確かめる。**失敗させる手段は `os.ErrClosed` ではない**:
+      `closeUnlessClosed` は `os.ErrClosed` を冪等な成功として飲むので、
+      `syscall.Close` で記述子を裏から閉じ `EBADF` を起こす
+      （`TestPreparedCommand_ReleaseRecordsPumpFailure` と同じ手口）。
+
+レビューを受けて次の3本を追加した（いずれも計画には無かったが、3-d が新しく足した
+コードのうちテストの無い部分を覆う）。
+
+- [x] `TestKillChild_RecordsOnlyWindowsThatOpened`: 監査メトリクスへ届く隙の記録が、
+      **実際に開いた隙だけ**であること。`WithPrivileges` が `fn` に入る前に失敗した場合
+      （再入・operation 不正・昇格失敗）に記録すると、監査ログに実在しない昇格が並び、
+      その監査ログこそが AC-06／AC-09 を検証する典拠なので害がある。
+      開いたかどうかは隙の内側で立てるフラグで宣言する（エラーからの推測にしない）。
+- [x] `TestKillChild_InsideStartWindowSignalsDirectly`: 起動区間の内側から来た
+      `killReelevated` の kill が、隙を開かずに直接シグナルを送ること
+      （`ElevationCalls` が空で、子が止まる）。上記の退行を止める主張である。
+- [x] `TestKillChild_RejectsUndeclaredAndUnavailableStrategies`: `killUnset` と
+      特権マネージャ不在の2つの fail-secure 経路で、シグナルを送らずに理由を返すこと。
+      `prepareCommand` が唯一の構築子である限り到達しないが、守っている `switch` が
+      特権の境界に載っているため主張する（設計原則5）。
+- [x] `TestSupervise_UnreapedChildDoesNotSpendASecondDrainDeadline`: 回収を諦めたときは
+      出力中継の読み取り側を閉じてから読み切りへ入り、`killGraceDelay` を2回続けて
+      使わないこと（設計文書 §6.1 の「読み取り側を閉じ」）。
+      回収できない子こそがパイプの書き込み側を握っているので、待っても出力は来ない。
+
+あわせて、kill の `Info` 記録は kill が**成功したとき**だけ出し、
+`ctx` のキャンセル由来か起動フェーズの失敗由来かを文面で分ける
+（失敗した kill を「殺した」と記録すると、直後の `Error` 記録と食い違う）。
 
 `executor_fdexec_test.go`（`package executor_test`）:
 
-- [ ] `TestExecute_NoLeakOnCancellationPaths` を足す。既存の
+- [x] `TestExecute_NoLeakOnCancellationPaths` を足す。既存の
       `TestExecute_FdBoundNoLeak`／`TestExecute_FdBoundStartFailureNoLeak` と同じ作法を守る:
       計測前に1回ウォームアップ実行を行ってから `before := numOpenFDs(t)` を採り、
       ループの各回で `require.NoError(t, plan.Close())` を呼ぶ。
-      対象は (a) キャンセル済み context、(b) 子の終了後のキャンセル の2経路だけとし、
+      対象は (a) キャンセル済み context、(b) 実行中のキャンセル（＝ kill 経路）の2経路だけとし、
       20 回反復して `after <= before+1` を主張する。
+      **当初 (b) は「子の終了後のキャンセル」としていたが、これに替えた**:
+      その瞬間を決定的に作れないうえ、資源の解放経路は正常終了と同じで
+      既存の `TestExecute_FdBoundNoLeak` が覆っている。本 Phase が新しく足すのは kill 経路である。
       **`Start()` 失敗の経路は既存 `TestExecute_FdBoundStartFailureNoLeak` が覆っているので作らない。**
       **特権側の主張はここには置かない。** このファイルはビルドタグ無しで `make test` から
       非特権ユーザーとして走るため、`os.Geteuid() == os.Getuid()` は executor が何をしても
       無条件に成り立ち、主張する理由で落ちられない（CLAUDE.md）。AC-12 の特権側は
       setuid モデルで走る Phase 5-b の統合テストが担う。
 
-`internal/runner/group_executor_test.go`:
+`internal/runner/group_executor_timeout_test.go`（`//go:build test`、`package runner`。
+`group_executor_test.go` はビルドタグを持たないが、このテストは `//go:build test` の
+`resource/testutil` などを要るため別ファイルにした）:
 
-- [ ] `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` を足す。実 executor
+- [x] `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` を足す。実 executor
       （モックのリソースマネージャではなく `executor.NewDefaultExecutor`）を通して
       1秒タイムアウトで `sleep 10` を実行し、`tu.NewRecordingLogger` に
       `LogTimeoutExceeded` の記録が現れることを主張する。
@@ -667,9 +740,9 @@
 
 **判定理由**: ステップ 3-d が新しい特権昇格の隙（kill 区間）を実際に開く security-gate step であり、同時に `select` による待機・kill・回収打ち切りという状態機械と並行処理を持つ隔離された高リスク step でもあるため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] PR を作成した（[#1100](https://github.com/isseis/go-safe-cmd-runner/pull/1100)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -686,6 +759,9 @@
 - [ ] `runnertypes.Operation` に `OperationStagingCleanup Operation = "staging_cleanup"` を追加し、
       `prepareExecution` の昇格が要る側の `case` へ足す。
 - [ ] `executeWithUserGroup` の `WithPrivileges` の `fn` を `startPrepared(pc)` の呼び出しだけにする。
+      あわせて `preparedCommand.supervisedInsideStartWindow` とその代入、
+      `killChild` の直接 kill の分岐、`TestKillChild_InsideStartWindowSignalsDirectly` を削除する
+      （3-d が入れた暫定措置であり、隙が縮んだ時点で kill 区間を開くのが正しくなる）。
       `prepareCommand` は隙の前、`superviseCommand` は隙の後に置く。
 - [ ] `executeNormal` は `startPrepared` を `WithPrivileges` で包まずにそのまま呼ぶ。
 - [ ] `releaseChildEnds()` と複製した検証済み記述子の解放を、`WithPrivileges` から戻った直後
@@ -1407,6 +1483,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 `manual`（実環境での観測）で示す。パスは省略のため次の別名を使う。
 
 - `L` = `internal/runner/base/executor/executor_lifecycle_test.go`
+- `S` = `internal/runner/base/executor/executor_supervise_test.go`
 - `P` = `internal/runner/base/executor/output_pump_test.go`
 - `G` = `internal/runner/base/executor/privileged_window_guard_test.go`
 - `I` = `internal/runner/base/executor/executor_privilege_gap_integration_test.go`
@@ -1480,8 +1557,8 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-07: タイムアウトで子プロセスが停止する
 
 - 種別: `test`
-- 検証: `I::TestPrivilegeGap_TimeoutKillsChild`、`L::TestSupervise_TimeoutJoinsContextAndWaitErrors`、
-  `internal/runner/group_executor_test.go::TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded`
+- 検証: `I::TestPrivilegeGap_TimeoutKillsChild`、`S::TestSupervise_TimeoutJoinsContextAndWaitErrors`、
+  `internal/runner/group_executor_timeout_test.go::TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded`
 - 期待: `Execute` がタイムアウト直後に戻り、戻り値から `context.DeadlineExceeded` と
   `Wait()` のエラーの両方を `errors.Is` でたどれる。実 executor を通した実行で
   `LogTimeoutExceeded` の記録が現れる（設計文書 §7.3 が AC-07 に課す2点目）
@@ -1490,14 +1567,17 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-08: SIGINT／SIGTERM で子プロセスが停止する
 
 - 種別: `test`
-- 検証: `I::TestPrivilegeGap_CancelKillsChild`、`L::TestSupervise_CancelKillsChild`
+- 検証: `I::TestPrivilegeGap_CancelKillsChild`、`S::TestSupervise_CancelKillsChild`
 - 期待: キャンセル後、`Execute` が `killGraceDelay` 以内に戻り `context.Canceled` をたどれる
 - 実装: Phase 3-d
 
 ### AC-09: kill の再昇格は kill だけを含み、直後に復帰と検査を行う
 
 - 種別: `test`
-- 検証: `L::TestSupervise_KillOpensExactlyOneReelevation`、
+- 検証: `S::TestSupervise_KillOpensExactlyOneReelevation`、
+  `S::TestKillChild_RecordsOnlyWindowsThatOpened`（監査メトリクスへ届くのは実際に開いた隙だけ）、
+  `S::TestKillChild_RejectsUndeclaredAndUnavailableStrategies`（`killUnset` と
+  特権マネージャ不在の fail-secure 側）、
   `G::TestPrivilegeWindowAllowedCalls`（サブテスト `kill_window`）
 - 期待: `ElevationCalls` に `kill_after_cancel` がちょうど1回現れ、
   kill 区間の `MockWindowPhaseBeforeFn` の時点で
@@ -1508,14 +1588,14 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-10: 通常実行では kill の再昇格を行わない
 
 - 種別: `test`
-- 検証: `L::TestSupervise_NormalExecutionDoesNotReelevate`
+- 検証: `S::TestSupervise_NormalExecutionDoesNotReelevate`
 - 期待: `run_as` を伴わない実行のキャンセルで `MockPrivilegeManager.ElevationCalls` が空
 - 実装: Phase 3-d（`killStrategy` による宣言）
 
 ### AC-11: `WithPrivileges` に2つの goroutine が同時に入らない
 
 - 種別: `test`
-- 検証: `L::TestSupervise_KillRunsOnExecutingGoroutine`
+- 検証: `S::TestSupervise_KillRunsOnExecutingGoroutine`
 - 期待: 起動区間と kill 区間の `MockWindowPhaseBeforeFn` で採った goroutine ID が一致し、
   `privilege.ErrReentrantPrivilegeCall` が返らない（モック側の再入ガードは Phase 3-c で入れる。
   ガードが無いとこの主張は無条件に通る）
@@ -1525,7 +1605,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 
 - 種別: `test`（記述子と特権の両方）
 - 検証（記述子）: `F::TestExecute_NoLeakOnCancellationPaths`（キャンセル済み context／
-  子の終了後のキャンセル）、既存 `F::TestExecute_FdBoundStartFailureNoLeak`（`Start()` 失敗）、
+  実行中のキャンセル＝ kill 経路）、既存 `F::TestExecute_FdBoundStartFailureNoLeak`（`Start()` 失敗）、
   既存 `E::TestExecute_ContextCancellation`（キャンセル済み context で `Result` が非 `nil`）
 - 期待: 3経路とも反復で記述子が増えない（`numOpenFDs` の差が 1 以下）
 - 検証（特権）: `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`
@@ -1547,9 +1627,9 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-14: 上限超過エラーが破断エラーより優先して報告される
 
 - 種別: `test`
-- 検証: `L::TestSupervise_SizeLimitErrorOutranksExitError`、
+- 検証: `S::TestSupervise_SizeLimitErrorOutranksExitError`、
   `P::TestOutputPump_WriteErrorPrefersStdout`、
-  `L::TestSupervise_KillFailureIsJoinedWithWriteError`
+  `S::TestSupervise_KillFailureIsJoinedWithWriteError`
 - 期待: 子が `SIGPIPE` で異常終了しても、返るエラーの主因は書き込みエラーであり
   `*exec.ExitError` は主因として現れない。stdout 側の書き込みエラーが stderr 側より優先される。
   kill 失敗が同時に起きたときは `ErrKillAfterCancel` も併記され、両方を `errors.Is` でたどれる
