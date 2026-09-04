@@ -261,7 +261,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	// windows (kill_after_cancel, staging_cleanup) that close and record here
 	// too, and each must accumulate into its own key rather than clobber this
 	// one.
-	metrics.ByOperation = map[runnertypes.Operation]time.Duration{}
+	if metrics.ByOperation == nil {
+		metrics.ByOperation = make(map[runnertypes.Operation]time.Duration)
+	}
 	metrics.ByOperation[runnertypes.OperationUserGroupExecution] += privilegeDuration
 
 	e.logDeferredWarnings(pc)
