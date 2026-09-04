@@ -14,23 +14,21 @@ import (
 
 // ErrExecBindingUnset is returned when a preparedCommand reaches the start
 // path without having declared how the executed inode is bound. It is
-// unreachable while prepareCommand is the only constructor; it exists
-// because the switch it guards sits on a privilege boundary, where failing
-// closed on an impossible input is cheaper than reasoning about whether it
-// stays impossible.
+// unreachable while prepareCommand is the only constructor; the guard sits on
+// a privilege boundary, so it fails closed rather than relying on that
+// staying true.
 var ErrExecBindingUnset = errors.New("execution binding not declared")
 
 // ErrPreparedCommandSpent is returned when a preparedCommand that
 // prepareCommand already released -- the one it returns alongside an error --
-// reaches the start path. Like ErrExecBindingUnset it guards a switch on a
-// privilege boundary; unlike it, the input it rejects is one this package can
-// actually produce, so the guard is what keeps "must not be started" from
-// being a doc comment nobody is obliged to read.
+// reaches the start path. Unlike ErrExecBindingUnset this input is one the
+// package can actually produce, so the guard is what enforces "must not be
+// started".
 var ErrPreparedCommandSpent = errors.New("prepared command already released")
 
 // execBinding declares how the executed inode is bound. The zero value is
-// bindingUnset, which the switch in startPrepared rejects, so a
-// preparedCommand whose binding was never declared cannot be started.
+// bindingUnset, which startPrepared rejects, so a preparedCommand whose
+// binding was never declared cannot be started.
 type execBinding int
 
 const (
@@ -41,7 +39,7 @@ const (
 )
 
 // killStrategy declares what a cancellation-triggered kill requires. Like
-// execBinding it has an explicit unset zero value: defaulting to "no
+// execBinding its zero value is an explicit unset: defaulting to "no
 // re-elevation" would silently reproduce the EPERM-on-kill failure this task
 // exists to fix. Not yet consumed by any kill path; that arrives with the
 // cancellation work.
@@ -68,26 +66,18 @@ type preparedCommand struct {
 	verifiedFD *os.File
 
 	// stagingCleanup removes the staged copy's directory; nil unless
-	// binding == bindingStagedCopy. release() records its result in
-	// stagingCleanupErr rather than logging it, since release() itself may
-	// run inside the privilege window.
-	stagingCleanup    func() error
-	stagingCleanupErr error
+	// binding == bindingStagedCopy.
+	stagingCleanup func() error
 
 	// stagingWarn carries a non-fatal staging failure (closing the fd staging
-	// read from) out of the privilege window so the caller can log it once
-	// the window has closed. Nothing inside a window may log: a slog handler
-	// is free to open a file, and it would do so at euid 0. Staging succeeded
-	// when this is set, so it is not returned as an error.
+	// read from) out of the privilege window. Staging succeeded when this is
+	// set, so it is not returned as an error.
 	stagingWarn error
 
 	devNull *os.File
 
-	// devNullCloseErr, verifiedFDCloseErr and pumpReleaseErr record
-	// release()'s failures on devNull, verifiedFD and the output pump, the
-	// same way stagingCleanupErr does for the staged copy: release() itself
-	// may run inside the privilege window, so it records rather than logs,
-	// and the caller logs once the window has closed.
+	// release()'s failures, recorded for the caller to log; see release().
+	stagingCleanupErr  error
 	devNullCloseErr    error
 	verifiedFDCloseErr error
 	pumpReleaseErr     error
@@ -97,24 +87,22 @@ type preparedCommand struct {
 
 	// spent marks a preparedCommand that prepareCommand released and handed
 	// back alongside an error. It carries only recorded warnings; its pump
-	// and descriptors are gone, so starting it would nil-deref. startPrepared
-	// rejects it for the same reason it rejects bindingUnset: the check sits
-	// on a privilege boundary, where failing closed costs less than trusting
-	// a caller to honour a doc comment.
+	// and descriptors are gone, so starting it would nil-deref.
 	spent bool
 }
 
 // release closes every descriptor prepareCommand acquired: the null-device
 // stdin, the duplicated verified descriptor (if any), the staged copy's
-// directory (if any), and the output pump. Safe to call multiple times.
+// directory (if any), and the output pump. Safe to call multiple times --
+// each resource's guarding field is cleared as it is released, so a second
+// call neither re-releases nor overwrites the recorded error.
 //
-// Every failure is recorded on pc as well as joined into the returned error,
-// so a caller that discards the return value (superviseCommand, which runs
-// inside the privilege window and therefore cannot log) still leaves the
-// failures where logDeferredWarnings can record them once the window has
-// closed. Each field is written only on the call that actually released the
-// resource: the fields guarding them are cleared as they are released, so a
-// second call neither re-releases nor overwrites.
+// Every failure is recorded on pc as well as joined into the returned error.
+// release may itself run inside the privilege window, where nothing may log
+// (a slog handler is free to open a file, and would do so at euid 0), so a
+// caller that discards the return value -- superviseCommand does -- still
+// leaves the failures where logDeferredWarnings can report them once the
+// window has closed.
 func (pc *preparedCommand) release() error {
 	var errs []error
 	if pc.devNull != nil {
@@ -142,9 +130,7 @@ func (pc *preparedCommand) release() error {
 
 // commandOutcome collects everything superviseCommand learns about the
 // child. reaped is always true in this phase; it becomes meaningful once the
-// kill path can give up on collecting the child (see the cancellation work,
-// which also adds the fields for a cancellation-triggered kill's outcome:
-// the ctx error and the kill error).
+// kill path can give up on collecting the child (the cancellation work).
 type commandOutcome struct {
 	waitErr  error
 	stdout   []byte
@@ -164,12 +150,9 @@ type commandOutcome struct {
 // together with moving the staged-copy creation into the start phase.
 //
 // On failure prepareCommand releases everything it acquired and returns a
-// non-nil preparedCommand alongside the error: releasing can itself fail,
-// and prepareCommand may run inside the privilege window, where it cannot
-// log. Returning pc is what lets the caller pass it to logDeferredWarnings
-// once the window has closed instead of dropping those failures. The
-// returned pc is spent -- it carries only the recorded warnings and must not
-// be started.
+// non-nil preparedCommand alongside the error, so the caller can hand it to
+// logDeferredWarnings once the privilege window has closed. That pc is spent:
+// it carries only the recorded warnings and must not be started.
 func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter, cred *syscall.Credential) (*preparedCommand, error) {
 	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
 	e.Logger.Debug("Executing command",
@@ -188,9 +171,6 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		hasOutputWriter: outputWriter != nil,
 	}
 
-	// The prepare phase failed: release what it acquired so far and hand pc
-	// back so the caller can record the release failures after the privilege
-	// window has closed (see the doc comment above).
 	fail := func(err error) (*preparedCommand, error) {
 		_ = pc.release()
 		pc.spent = true
@@ -213,10 +193,9 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		pc.binding = bindingStagedCopy
 		stagedPath, cleanupFn, warn, err := e.stageFromFD(identity, cred)
 		if err != nil {
-			// stageFromFD already removed its staging directory, but it
-			// can still have failed to close the descriptor it staged
-			// from; that warning is carried out even though staging
-			// itself failed.
+			// stageFromFD already removed its staging directory, but it can
+			// still have failed to close the descriptor it staged from; carry
+			// that warning out even though staging itself failed.
 			pc.stagingWarn = warn
 			return fail(err)
 		}
@@ -238,11 +217,10 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		pc.kill = killDirect
 	}
 
-	// Set up stdin to null device for security and stability:
-	// 1. Security: Prevents child processes from reading unexpected input from stdin
-	// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
-	//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
-	// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
+	// Bind stdin to the null device rather than inheriting it, so the child
+	// cannot read unexpected input. A nil stdin is not equivalent: commands
+	// that try to allocate a pseudo-TTY fail on it (docker-compose exec exits
+	// 255).
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
 		return fail(fmt.Errorf("failed to open null device for stdin: %w", err))
@@ -254,8 +232,8 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		pc.execCmd.Dir = cmd.EffectiveWorkDir
 	}
 
-	// Only use the filtered environment variables provided in envVars; this
-	// ensures allowlist filtering is properly enforced.
+	// Use only envVars, never the parent environment: that is what enforces
+	// allowlist filtering.
 	pc.execCmd.Env = make([]string, 0, len(envVars))
 	for k, v := range envVars {
 		pc.execCmd.Env = append(pc.execCmd.Env, fmt.Sprintf("%s=%s", k, v))
@@ -308,14 +286,10 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 // regardless of its outcome -- because the read ends never reach EOF
 // otherwise, which would block the pump's wait until its deadline.
 //
-// Note on the remaining in-window logging: three records still run inside the
-// privilege window for run-as execution, exactly as they did before this
-// decomposition -- prepareCommand's "Executing command" debug record, which
-// fires on every privileged run, and the "Command execution failed" records
-// here and in superviseCommand, which fire only on failure. This phase removed
-// the non-fatal warnings from the window (they are recorded on
-// preparedCommand and logged by logDeferredWarnings); the three above leave it
-// when the window is narrowed to startPrepared.
+// Three log records still run inside the privilege window for run-as
+// execution: prepareCommand's "Executing command" debug record and the
+// "Command execution failed" records here and in superviseCommand. They leave
+// the window when it is narrowed to startPrepared.
 func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
 	started, startErr := e.startPrepared(pc)
 	closeErr := pc.pump.releaseChildEnds()
@@ -337,15 +311,11 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (
 // superviseCommand reaps the child and reads its output, then builds the
 // Result. startupErr carries a non-fatal failure from the start phase (here,
 // only a failure to release the pipe write ends); it is joined into the
-// returned error alongside whatever the run itself produced, but it does not
-// change which error superviseCommand reports first (see the priority order
-// below).
+// returned error but does not change which error is reported first.
 func (e *DefaultExecutor) superviseCommand(_ context.Context, pc *preparedCommand, startupErr error) (*Result, error) {
-	// The joined error is discarded rather than logged: superviseCommand
-	// still runs inside the privilege window for run-as execution, and
-	// nothing inside a window may log. release records each failure on pc,
-	// so the caller reports them via logDeferredWarnings once the window has
-	// closed.
+	// Discarded rather than logged: superviseCommand still runs inside the
+	// privilege window for run-as execution. release records each failure on
+	// pc for logDeferredWarnings.
 	defer func() { _ = pc.release() }()
 
 	waitCh := make(chan error, 1)
@@ -353,10 +323,10 @@ func (e *DefaultExecutor) superviseCommand(_ context.Context, pc *preparedComman
 		waitCh <- pc.execCmd.Wait()
 	}()
 
-	// Read the child's output into the wrappers. Must not start before the
-	// privilege window has closed; that is not yet guaranteed in this phase,
-	// since WithPrivileges still wraps prepareCommand, startPrepared and
-	// superviseCommand together for run-as execution (see executor.go).
+	// Must not start before the privilege window has closed; not yet
+	// guaranteed in this phase, since WithPrivileges still wraps
+	// prepareCommand, startPrepared and superviseCommand together for run-as
+	// execution (see executor.go).
 	pc.pump.start()
 
 	outcome := commandOutcome{reaped: true}
