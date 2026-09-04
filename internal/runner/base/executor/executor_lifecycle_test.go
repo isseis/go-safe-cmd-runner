@@ -10,10 +10,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
+	privilegetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -423,4 +428,350 @@ func newStageDirs(before, after []string) []string {
 		}
 	}
 	return added
+}
+
+// runInsideStartWindow runs pc through runCommand with mockPriv's privilege
+// window wrapped around the start phase alone, the way executeWithUserGroup
+// does for a run-as command.
+//
+// pc carries no run-as credential: an unprivileged test cannot start a child
+// under one, since the kernel refuses SysProcAttr.Credential's setgroups
+// without CAP_SETGID (see the note at the top of executor_supervise_test.go).
+// The window is therefore the mock's while the child is a real process that
+// really starts inside it -- which is what the goroutine and ordering
+// assertions below need, and what a run-as run that fails at Start could not
+// give them.
+func runInsideStartWindow(t *testing.T, e *DefaultExecutor, mockPriv *privilegetestutil.MockPrivilegeManager, pc *preparedCommand) (*Result, error) {
+	t.Helper()
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationUserGroupExecution,
+		CommandName: "test_cmd",
+		RunAsUser:   "testuser",
+	}
+	return e.runCommand(context.Background(), pc, func(fn func() error) error {
+		return mockPriv.WithPrivileges(elevationCtx, fn)
+	})
+}
+
+// goroutinesExcludedFromWindowCheck lists, by the function named in a
+// goroutine's top frame, the goroutines that may come and go at any moment
+// for reasons that have nothing to do with the privilege window. Each entry
+// is matched as a prefix of the top frame's function name.
+//
+// The list must hold under both conditions make test runs: with -race and
+// with CGO_ENABLED=0 and no race detector.
+var goroutinesExcludedFromWindowCheck = []string{
+	// Go runtime goroutines the scheduler starts on demand: a GC cycle
+	// beginning inside the window would otherwise be reported as a goroutine
+	// the window started.
+	"runtime.gcBgMarkWorker",
+	"runtime.bgsweep",
+	"runtime.bgscavenge",
+	"runtime.forcegchelper",
+	// Started by the runtime the first time an object with a finalizer or
+	// cleanup is collected, which any allocation in the window can trigger.
+	"runtime.runfinq",
+	"runtime.runCleanups",
+	// The race detector's own background goroutine, present only in the
+	// -race half of make test.
+	"runtime.racefini",
+	// The testing package's per-test goroutine, plus the sampling goroutine
+	// runtime.Stack itself reports.
+	"testing.tRunner",
+	"testing.(*T).Run",
+	"runtime/pprof.writeGoroutineStacks",
+	// The logging package's Slack notification worker, which the default
+	// logger may start while the window is open.
+	"github.com/isseis/go-safe-cmd-runner/internal/logging",
+}
+
+// liveGoroutineIDs returns the IDs of the goroutines that exist right now,
+// mapped to the function named in each one's top frame, with
+// goroutinesExcludedFromWindowCheck left out.
+//
+// Comparing IDs rather than whole stack strings is deliberate: a goroutine
+// that merely changes state ([running] to [chan receive]) would otherwise
+// register as a difference. The buffer is grown until runtime.Stack fits in
+// it, since a truncated dump silently loses goroutines and would make the
+// comparison below pass for the wrong reason.
+func liveGoroutineIDs(t *testing.T) map[int]string {
+	t.Helper()
+
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+
+	ids := make(map[int]string)
+	for block := range strings.SplitSeq(string(buf), "\n\n") {
+		header, rest, ok := strings.Cut(block, "\n")
+		if !ok || !strings.HasPrefix(header, "goroutine ") {
+			continue
+		}
+		idField, _, ok := strings.Cut(strings.TrimPrefix(header, "goroutine "), " ")
+		if !ok {
+			continue
+		}
+		id, err := strconv.Atoi(idField)
+		require.NoError(t, err, "unparsable goroutine header %q", header)
+
+		topFrame, _, _ := strings.Cut(rest, "\n")
+		fn, _, _ := strings.Cut(topFrame, "(")
+		if slices.ContainsFunc(goroutinesExcludedFromWindowCheck, func(prefix string) bool {
+			return strings.HasPrefix(fn, prefix)
+		}) {
+			continue
+		}
+		ids[id] = fn
+	}
+	return ids
+}
+
+// newGoroutines returns the entries of got whose IDs are absent from baseline.
+func newGoroutines(baseline, got map[int]string) map[int]string {
+	added := make(map[int]string)
+	for id, fn := range got {
+		if _, ok := baseline[id]; !ok {
+			added[id] = fn
+		}
+	}
+	return added
+}
+
+// TestStartPrepared_NoGoroutineInsideWindow verifies that no goroutine comes
+// into existence while the privilege window is open: every goroutine the run
+// needs -- the output pump's two readers and the wait goroutine -- belongs to
+// the supervision phase, which runs after the window has closed.
+//
+// The sample taken after the start phase returns is the one that matters.
+// os/exec starts a copy goroutine per stream from inside Start when Stdout or
+// Stderr is an io.Writer rather than an *os.File, and such a goroutine does
+// not exist yet when the before-fn sample is taken: a test that sampled only
+// before fn would stay green after reverting the *os.File binding.
+//
+// Goroutines are compared by ID, and the comparison deliberately does not
+// filter by executor frames -- the os/exec copy goroutine's stack names only
+// io.Copy and internal/poll, so filtering would hide exactly the regression
+// this test exists to catch.
+func TestStartPrepared_NoGoroutineInsideWindow(t *testing.T) {
+	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+	e := NewDefaultExecutor(WithPrivilegeManager(mockPriv)).(*DefaultExecutor)
+
+	samples := make(map[privilegetestutil.MockWindowPhase]map[int]string)
+	mockPriv.InWindow = func(phase privilegetestutil.MockWindowPhase) {
+		samples[phase] = liveGoroutineIDs(t)
+	}
+
+	pc := prepareForSupervise(t, e, nil, shPath, "-c", "echo window-ok")
+
+	baseline := liveGoroutineIDs(t)
+	result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+	// Asserted before the run's outcome: a copy goroutine started inside the
+	// window also breaks the run (it writes to a pipe end the caller closes as
+	// soon as the window shuts), and checking the outcome first would report
+	// that consequence instead of the goroutine this test is about.
+	for _, phase := range []privilegetestutil.MockWindowPhase{
+		privilegetestutil.MockWindowPhaseBeforeFn,
+		privilegetestutil.MockWindowPhaseAfterFn,
+	} {
+		sample, ok := samples[phase]
+		require.Truef(t, ok, "the window must have been sampled at phase %d", phase)
+		assert.Emptyf(t, newGoroutines(baseline, sample),
+			"no goroutine may come into existence inside the privilege window (phase %d)", phase)
+	}
+
+	require.NoError(t, err)
+	assert.Equal(t, "window-ok\n", result.Stdout)
+}
+
+// TestStartPrepared_WaitAndPumpRunOutsideWindow verifies the time ordering the
+// static window guard cannot state: reading the child's output and waiting for
+// it to exit do not begin until the privilege window has closed. Where the
+// guard fixes what the window may call, this fixes when the rest of the run
+// starts.
+//
+// Both phases are sampled because the regression each catches is different: a
+// pump started before the start phase shows up in the before-fn sample, while
+// one started by startPrepared itself only exists once fn has returned.
+func TestStartPrepared_WaitAndPumpRunOutsideWindow(t *testing.T) {
+	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+
+	var waitCalled atomic.Bool
+	e := NewDefaultExecutor(
+		WithPrivilegeManager(mockPriv),
+		WithWaitFn(func(cmd *exec.Cmd) error {
+			waitCalled.Store(true)
+			return cmd.Wait()
+		}),
+	).(*DefaultExecutor)
+
+	pc := prepareForSupervise(t, e, nil, shPath, "-c", "echo ordering-ok")
+
+	type sample struct {
+		pumpStarted bool
+		waitCalled  bool
+	}
+	samples := make(map[privilegetestutil.MockWindowPhase]sample)
+	mockPriv.InWindow = func(phase privilegetestutil.MockWindowPhase) {
+		samples[phase] = sample{pumpStarted: pc.pump.started, waitCalled: waitCalled.Load()}
+	}
+
+	result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+	require.NoError(t, err)
+	assert.Equal(t, "ordering-ok\n", result.Stdout)
+	assert.True(t, waitCalled.Load(), "the wait goroutine must have run by the end of the run")
+
+	for _, phase := range []privilegetestutil.MockWindowPhase{
+		privilegetestutil.MockWindowPhaseBeforeFn,
+		privilegetestutil.MockWindowPhaseAfterFn,
+	} {
+		got, ok := samples[phase]
+		require.Truef(t, ok, "the window must have been sampled at phase %d", phase)
+		assert.Falsef(t, got.pumpStarted, "the output pump must not be reading inside the window (phase %d)", phase)
+		assert.Falsef(t, got.waitCalled, "the child must not be waited on inside the window (phase %d)", phase)
+	}
+}
+
+// prepareWithVerifiedIdentity builds a preparedCommand bound to path's
+// verified inode, so the binding under test is the one the risk evaluator's
+// plan would produce rather than the plain resolved path.
+func prepareWithVerifiedIdentity(t *testing.T, e *DefaultExecutor, path string, args ...string) *preparedCommand {
+	t.Helper()
+	identity := openVerifiedIdentityForTest(t, path)
+	t.Cleanup(func() { _ = identity.FD.Close() })
+	plan := &risktypes.VerifiedCommandPlan{
+		ResolvedPath: path,
+		Identity:     identity,
+		Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+	}
+	pc, err := e.prepareCommand(context.Background(), plan, path, createTestCommand(path, args), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = pc.release() })
+	return pc
+}
+
+// TestExecute_SingleElevationPairPerRun verifies how many privilege windows a
+// run opens: exactly one for the start phase, plus one more -- and only in the
+// staging fallback -- to remove the staged copy the start window created under
+// root ownership. Every elevation/restore pair the run performs is one call to
+// the privilege manager, so the mock's call list is the count.
+//
+// The run-as credential is stood in for rather than applied, because an
+// unprivileged test cannot complete a run under one (see runInsideStartWindow).
+// The credential's own effect -- which cleanup strategy prepareCommand
+// declares from it -- is asserted separately below, and the audit metrics
+// assembled from these windows are asserted end to end by the privileged
+// integration tests.
+func TestExecute_SingleElevationPairPerRun(t *testing.T) {
+	t.Run("fd_bound_opens_only_the_start_window", func(t *testing.T) {
+		if !fdExecSupported() {
+			t.Skip("fd-bound execution is not supported on this platform")
+		}
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+		e := NewDefaultExecutor(WithPrivilegeManager(mockPriv)).(*DefaultExecutor)
+
+		pc := prepareWithVerifiedIdentity(t, e, shPath, "-c", "echo fd-bound-ok")
+		require.Equal(t, bindingVerifiedFD, pc.binding)
+
+		result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+		require.NoError(t, err)
+		assert.Equal(t, "fd-bound-ok\n", result.Stdout)
+		assert.Equal(t, []string{"user_group_change:testuser:"}, mockPriv.ElevationCalls,
+			"an fd-bound run must open the start window and nothing else")
+		assert.Empty(t, pc.privilegeWindows, "the supervision phase must open no window of its own")
+	})
+
+	t.Run("staging_fallback_adds_the_cleanup_window", func(t *testing.T) {
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+		e := NewDefaultExecutor(WithPrivilegeManager(mockPriv), WithFdExecDisabled()).(*DefaultExecutor)
+
+		pc := prepareWithVerifiedIdentity(t, e, shPath, "-c", "echo staged-ok")
+		require.Equal(t, bindingStagedCopy, pc.binding)
+		// Stands in for the run-as credential: the copy the start window makes
+		// would then be root-owned, which is what the cleanup window is for.
+		pc.cleanup = cleanupElevated
+
+		result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+		require.NoError(t, err)
+		assert.Equal(t, "staged-ok\n", result.Stdout)
+		assert.Equal(t, []string{"user_group_change:testuser:", string(runnertypes.OperationStagingCleanup)},
+			mockPriv.ElevationCalls,
+			"the staging fallback must open the start window and then the cleanup window")
+
+		require.Len(t, pc.privilegeWindows, 1, "the cleanup window must be reported to the audit metrics")
+		assert.Equal(t, runnertypes.OperationStagingCleanup, pc.privilegeWindows[0].op)
+		assert.Positive(t, pc.privilegeWindows[0].duration, "the window's duration is what the audit log reports")
+
+		assert.NoDirExists(t, filepath.Dir(pc.stagedPath), "the staged copy must be gone once the run has finished")
+	})
+
+	t.Run("prepare_declares_the_cleanup_strategy_from_the_credential", func(t *testing.T) {
+		tests := []struct {
+			name string
+			cred *syscall.Credential
+			want stagingCleanupStrategy
+		}{
+			{name: "run_as", cred: &syscall.Credential{Uid: 1000, Gid: 1000}, want: cleanupElevated},
+			{name: "normal", cred: nil, want: cleanupDirect},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				e := NewDefaultExecutor(WithFdExecDisabled()).(*DefaultExecutor)
+				identity := openVerifiedIdentityForTest(t, shPath)
+				t.Cleanup(func() { _ = identity.FD.Close() })
+				plan := &risktypes.VerifiedCommandPlan{
+					ResolvedPath: shPath,
+					Identity:     identity,
+					Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+				}
+
+				pc, err := e.prepareCommand(context.Background(), plan, shPath, createTestCommand(shPath, nil), nil, nil, tt.cred)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = pc.release() })
+
+				require.Equal(t, bindingStagedCopy, pc.binding)
+				assert.Equal(t, tt.want, pc.cleanup)
+			})
+		}
+	})
+}
+
+// TestExecute_ShebangScriptRunsUnderStagingFallback verifies that the staged
+// copy outlives execve. A "#!" script's interpreter opens the script by path
+// after execve has returned, so removing the copy as soon as Start succeeded
+// would break such a script at an undefined moment; removing it only once the
+// child has exited is what keeps the staging fallback able to run the same
+// commands as fd-bound execution.
+func TestExecute_ShebangScriptRunsUnderStagingFallback(t *testing.T) {
+	scriptPath := filepath.Join(t.TempDir(), "shebang.sh")
+	script := "#!" + shPath + "\necho shebang-ok\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+
+	e := NewDefaultExecutor(WithFdExecDisabled())
+
+	identity := openVerifiedIdentityForTest(t, scriptPath)
+	plan := &risktypes.VerifiedCommandPlan{
+		ResolvedPath: scriptPath,
+		Identity:     identity,
+		Assessment:   risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+	}
+	t.Cleanup(func() { _ = plan.Close() })
+
+	before := scrStageDirs(t)
+	result, err := e.Execute(context.Background(), plan, createTestCommand(scriptPath, nil), map[string]string{}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Equal(t, "shebang-ok\n", result.Stdout)
+	assert.Empty(t, newStageDirs(before, scrStageDirs(t)), "the staged copy must be removed once the child has exited")
 }

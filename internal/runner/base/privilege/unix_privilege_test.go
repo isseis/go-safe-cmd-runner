@@ -66,6 +66,14 @@ func TestPrepareExecution_Success(t *testing.T) {
 			},
 			expectedPrivEscalation: true,
 		},
+		{
+			name: "staging_cleanup",
+			elevationCtx: runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationStagingCleanup,
+				CommandName: "test-command",
+			},
+			expectedPrivEscalation: true,
+		},
 	}
 
 	for _, tt := range tests {

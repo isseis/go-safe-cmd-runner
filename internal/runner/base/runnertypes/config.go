@@ -165,6 +165,10 @@ const (
 	// OperationKillAfterCancel is used when re-elevating to send a kill signal
 	// to a run-as child process after the run was cancelled or timed out.
 	OperationKillAfterCancel Operation = "kill_after_cancel"
+	// OperationStagingCleanup is used when re-elevating to remove the staged
+	// copy of a run-as command after the child has exited. The copy lives in a
+	// root-owned directory the invoking user cannot delete from.
+	OperationStagingCleanup Operation = "staging_cleanup"
 )
 
 // ElevationContext contains context information for privilege elevation
