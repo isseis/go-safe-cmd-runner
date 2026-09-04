@@ -397,12 +397,15 @@
 
 **判定理由**: 挙動を変えない構造の組み替えであり、未踏の設計判断・パネルモードの引き金（重い統合テスト／CI／外部資源の面、security-gate／移行）・approach 未確定・隔離された高リスク step のいずれにも当たらないため。隙の中のログ出力の全廃とredaction を通らない stderr 書き込みは設計文書 §7.2 で判断済みで、実装は1箇所に限られる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
-- [ ] §8 の `executeCommandWithPath`／`prepareExecCommand` の横断検索が 0 件を返す
-      （`exec.CommandContext` はこの PR ではまだ残る。その検索は PR-4 で行う）
-- [ ] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
+- [x] §8 の `executeCommandWithPath`／`prepareExecCommand` の横断検索が 0 件を返す
+      （`exec.CommandContext` はこの PR ではまだ残る。その検索は PR-4 で行う）。
+      検索中に見つかった2箇所の古いコメント（`executor_privilege_check_test.go` は
+      `prepareCommand` を、`output_pump.go` は `prepareCommand`＋`startPrepared`＋
+      `superviseCommand` を指すよう修正した）
+- [x] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）

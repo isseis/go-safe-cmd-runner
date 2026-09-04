@@ -55,7 +55,7 @@ func TestExecute_NoPrivilegeLeakDoesNotCallExit(t *testing.T) {
 }
 
 // TestApplyCredential_SetsCredentialFields verifies that applyCredential -- the
-// helper executeCommandWithPath uses to wire SysProcAttr.Credential for run-as
+// helper prepareCommand uses to wire SysProcAttr.Credential for run-as
 // execution -- copies the resolved run-as identity's Uid/Gid/Groups onto the
 // resulting exec.Cmd exactly, since the kernel relies on these fields (not the
 // resolvedIdent struct) at execve time.

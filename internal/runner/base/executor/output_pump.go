@@ -96,10 +96,11 @@ func (p *outputPump) releaseChildEnds() error {
 // It must not be called before the privilege window has closed: the readers
 // run at the process's current effective UID, and every OutputWriter.Write
 // they perform runs there too. That is not yet true of this package:
-// executeWithUserGroup still wraps the whole of executeCommandWithPath in
-// PrivMgr.WithPrivileges, so for a run-as command the readers do run at
-// euid 0. Narrowing the window to the start phase is what makes the
-// sentence above a fact rather than a requirement on the caller.
+// executeWithUserGroup still wraps prepareCommand, startPrepared and
+// superviseCommand together in PrivMgr.WithPrivileges, so for a run-as
+// command the readers do run at euid 0. Narrowing the window to the start
+// phase is what makes the sentence above a fact rather than a requirement on
+// the caller.
 //
 // Calling start twice would leave a reader per stream blocked forever on
 // the send to done, which has room for one value: a silent goroutine leak,
