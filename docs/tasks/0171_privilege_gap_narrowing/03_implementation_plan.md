@@ -628,9 +628,13 @@
       両者の N が一致すること、および `privilege.ErrReentrantPrivilegeCall` が返らないことを
       主張する。後者はモックの再入ガード（3-c）が入って初めて意味を持つ。
       起動区間はテスト自身が開く（4-a が縮めた後の形）。本番の `executeWithUserGroup` は
-      この Phase ではまだ全体を包んでいるので、run-as のキャンセルでは kill 区間が
-      起動区間の内側に入れ子になり再入ガードに弾かれる。それは `ErrKillAfterCancel` として
-      隠さず報告し、4-a で到達不能になる（`runCommand` の doc コメントに記した）。
+      この Phase ではまだ全体を包んでいるので、そこから来た run-as の kill は
+      **kill 区間を開かず直接シグナルを送る**（`preparedCommand.supervisedInsideStartWindow`）。
+      入れ子の `WithPrivileges` は再入ガードが `fn` を呼ぶ前に弾くため、開こうとすると
+      子に一切シグナルが届かず、`main` の `exec.CommandContext` の watchdog が
+      隙の内側（実効 UID 0）で殺せていた挙動に対する退行になる。
+      隙の内側なので実効 UID は既に 0 であり、直接の `Kill()` で足りる。
+      このフィールドは 4-a が隙を縮めた時点で削除する。
 - [x] `TestSupervise_ProcessAlreadyDoneIsNotAnError`: 子が終了した後に context が
       キャンセルされた場合、`os.ErrProcessDone` がエラーとして返らない。
       競争に勝つのではなく競争そのものを消す作りにした: テストが自分で `Wait()` して子を回収し、
@@ -673,6 +677,9 @@
       （再入・operation 不正・昇格失敗）に記録すると、監査ログに実在しない昇格が並び、
       その監査ログこそが AC-06／AC-09 を検証する典拠なので害がある。
       開いたかどうかは隙の内側で立てるフラグで宣言する（エラーからの推測にしない）。
+- [x] `TestKillChild_InsideStartWindowSignalsDirectly`: 起動区間の内側から来た
+      `killReelevated` の kill が、隙を開かずに直接シグナルを送ること
+      （`ElevationCalls` が空で、子が止まる）。上記の退行を止める主張である。
 - [x] `TestKillChild_RejectsUndeclaredAndUnavailableStrategies`: `killUnset` と
       特権マネージャ不在の2つの fail-secure 経路で、シグナルを送らずに理由を返すこと。
       `prepareCommand` が唯一の構築子である限り到達しないが、守っている `switch` が
@@ -752,6 +759,9 @@
 - [ ] `runnertypes.Operation` に `OperationStagingCleanup Operation = "staging_cleanup"` を追加し、
       `prepareExecution` の昇格が要る側の `case` へ足す。
 - [ ] `executeWithUserGroup` の `WithPrivileges` の `fn` を `startPrepared(pc)` の呼び出しだけにする。
+      あわせて `preparedCommand.supervisedInsideStartWindow` とその代入、
+      `killChild` の直接 kill の分岐、`TestKillChild_InsideStartWindowSignalsDirectly` を削除する
+      （3-d が入れた暫定措置であり、隙が縮んだ時点で kill 区間を開くのが正しくなる）。
       `prepareCommand` は隙の前、`superviseCommand` は隙の後に置く。
 - [ ] `executeNormal` は `startPrepared` を `WithPrivileges` で包まずにそのまま呼ぶ。
 - [ ] `releaseChildEnds()` と複製した検証済み記述子の解放を、`WithPrivileges` から戻った直後

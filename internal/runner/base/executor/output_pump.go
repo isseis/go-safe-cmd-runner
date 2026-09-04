@@ -197,8 +197,10 @@ func (s *pumpStream) run() {
 	// dying with the pipe broken; the run's outcome is the wrapper's write
 	// error, so the read error is dropped.
 	_, _ = io.Copy(s.wrapper, s.parentEnd)
-	// The read end is ours alone from here on; a close failure cannot be
-	// reported to the caller, so it is dropped.
+	// Closing again is harmless: closeReadEnds may have closed this end
+	// already to unblock the io.Copy above (that is how an abandoned child's
+	// drain is cut short), and a close failure cannot be reported to the
+	// caller, so it is dropped.
 	_ = s.parentEnd.Close()
 	s.done <- s.wrapper.GetWriteError()
 }

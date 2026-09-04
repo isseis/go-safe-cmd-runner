@@ -254,6 +254,10 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 			result = &Result{ExitCode: ExitCodeUnknown}
 			return prepErr
 		}
+		// This closure is the start window, and it still spans the whole run.
+		// Until it is narrowed to startPrepared, the supervision phase inside
+		// it must not ask for a kill window of its own.
+		pc.supervisedInsideStartWindow = true
 		var runErr error
 		result, runErr = e.runCommand(ctx, pc)
 		return runErr

@@ -81,13 +81,14 @@ func (k killStrategy) String() string {
 }
 
 // stagingRequest carries what the start phase needs to build the staged copy
-// inside the privilege window: the verified identity to copy from, the run-as
-// credential whose gid the copy is chgrp'd to, and the resolved path presented
-// to the child as argv[0].
+// inside the privilege window: the verified identity to copy from and the
+// run-as credential whose gid the copy is chgrp'd to. The resolved path the
+// child sees as argv[0] is not here -- prepareCommand has already written it
+// into execCmd.Args, and a second copy nothing reads would only invite the two
+// to disagree.
 type stagingRequest struct {
-	identity     *risktypes.VerifiedIdentity
-	cred         *syscall.Credential
-	resolvedPath string
+	identity *risktypes.VerifiedIdentity
+	cred     *syscall.Credential
 }
 
 // privilegeWindow records one closed privilege window so the caller can fold
@@ -140,6 +141,15 @@ type preparedCommand struct {
 	// Operation is stamped at the kill site rather than here, since that is
 	// where a window's purpose is decided.
 	killElevation runnertypes.ElevationContext
+
+	// supervisedInsideStartWindow declares that the supervision phase runs
+	// while the start window is still open, which is how executeWithUserGroup
+	// calls it until that window is narrowed to startPrepared. The process
+	// euid is already 0 there, so a killReelevated kill signals the child
+	// directly: asking for a second window would be refused as re-entrant and
+	// the child would never be signalled at all. Narrowing the window deletes
+	// this field along with the case it describes.
+	supervisedInsideStartWindow bool
 
 	// privilegeWindows records the windows the supervision phase opened, for
 	// the caller to fold into its audit metrics once they have closed.
@@ -267,7 +277,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		// all -- hence the struct literal. Only Path is left for the start
 		// phase to fill in; Args[0] is the resolved path either way.
 		pc.execCmd = &exec.Cmd{Args: append([]string{path}, cmd.ExpandedArgs...)}
-		pc.stage = &stagingRequest{identity: identity, cred: cred, resolvedPath: path}
+		pc.stage = &stagingRequest{identity: identity, cred: cred}
 	default:
 		pc.binding = bindingResolvedPath
 		// #nosec G204 - The command and arguments are validated before execution with e.Validate()
@@ -326,10 +336,13 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 
 	// Last thing before the start phase: an already-cancelled context must not
 	// start a process. exec.CommandContext used to refuse this; the check is
-	// here now, ahead of the privilege window, so a cancelled run opens no
-	// window and leaves no descriptor behind. A cancellation between this
-	// check and Start still starts the child, exactly as before -- the
-	// supervision phase's select picks it up and kills it.
+	// here now, as the last step of the prepare phase, so a cancelled run
+	// starts nothing and leaves no descriptor behind. It opens no privilege
+	// window of its own; for run-as execution the start window still wraps
+	// this whole phase, so the check moves outside it only once the window is
+	// narrowed to startPrepared. A cancellation between this check and Start
+	// still starts the child, exactly as before -- the supervision phase's
+	// select picks it up and kills it.
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
@@ -398,11 +411,10 @@ func (e *DefaultExecutor) stagePrepared(pc *preparedCommand) error {
 // superviseCommand's kill and drain records. They leave the window when it is
 // narrowed to startPrepared.
 //
-// For the same reason the kill window superviseCommand opens for a run-as
-// child is still nested inside the start window in this phase, so it is
-// rejected by the privilege manager's re-entrancy guard. That is reported as
-// ErrKillAfterCancel rather than hidden, and it stops being reachable once the
-// start window shrinks to startPrepared alone.
+// For the same reason a run-as child is killed directly rather than through
+// the kill window in this phase: the start window is still open around this
+// call, so the process is already at euid 0 and a second window would be
+// refused as re-entrant. See preparedCommand.supervisedInsideStartWindow.
 func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
 	// Checked before the pump is touched, not left to startPrepared's own
 	// guard: a spent preparedCommand has already released its pump, so the
@@ -441,8 +453,10 @@ func (e *DefaultExecutor) reportStartFailure(pc *preparedCommand, startErr error
 // deliberately, and are worth naming because nothing else enforces them now
 // that os/exec no longer handles cancellation:
 //   - An already-cancelled context starts no process at all. prepareCommand
-//     checks for that ahead of the start phase, so such a run opens no
-//     privilege window.
+//     checks for that as its last step, so such a run reaches neither Start
+//     nor the kill path. (It still runs inside the start window for run-as
+//     execution in this phase; the check leaves the window when the window is
+//     narrowed to startPrepared.)
 //   - Process.Kill returning os.ErrProcessDone is not a failure: the child
 //     exited between the cancellation being observed and the signal being
 //     sent.
@@ -637,6 +651,10 @@ func (e *DefaultExecutor) killChild(pc *preparedCommand, proc *os.Process, pid i
 	case killDirect:
 		return killOutcome(proc.Kill(), pid)
 	case killReelevated:
+		if pc.supervisedInsideStartWindow {
+			// Already at euid 0; see supervisedInsideStartWindow.
+			return killOutcome(proc.Kill(), pid)
+		}
 		if e.PrivMgr == nil {
 			return fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, ErrNoPrivilegeManager)
 		}
