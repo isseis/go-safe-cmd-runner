@@ -142,6 +142,36 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 	}
 }
 
+// TestLogger_LogUserGroupExecution_ByOperationAttrs pins the per-operation
+// breakdown's key format and unit: microseconds, not milliseconds, since a
+// start-phase window (tens of microseconds) would round to 0ms and become
+// indistinguishable from a window that never opened.
+func TestLogger_LogUserGroupExecution_ByOperationAttrs(t *testing.T) {
+	logger, rec := tu.NewRecordingLogger()
+	auditLogger := audit.NewAuditLoggerWithCustom(logger)
+
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"test"},
+		executortestutil.WithName("test_cmd"),
+		executortestutil.WithRunAsUser("testuser"))
+	result := &audit.ExecutionResult{ExitCode: 0}
+	metrics := audit.PrivilegeMetrics{
+		ElevationCount: 2,
+		TotalDuration:  49 * time.Microsecond,
+		ByOperation: map[runnertypes.Operation]time.Duration{
+			runnertypes.OperationUserGroupExecution: 42 * time.Microsecond,
+			runnertypes.OperationKillAfterCancel:    7 * time.Microsecond,
+		},
+	}
+
+	auditLogger.LogUserGroupExecution(context.Background(), cmd, result, 0, metrics)
+
+	rec.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully").
+		AssertAttrs(t, map[string]any{
+			"privilege_duration_user_group_execution_us": int64(42),
+			"privilege_duration_kill_after_cancel_us":    int64(7),
+		})
+}
+
 func TestLogger_LogPrivilegeEscalation(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	auditLogger := audit.NewAuditLoggerWithCustom(logger)

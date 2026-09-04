@@ -257,9 +257,12 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
-	metrics.ByOperation = map[runnertypes.Operation]time.Duration{
-		runnertypes.OperationUserGroupExecution: privilegeDuration,
-	}
+	// Add to ByOperation rather than replacing it: later work adds further
+	// windows (kill_after_cancel, staging_cleanup) that close and record here
+	// too, and each must accumulate into its own key rather than clobber this
+	// one.
+	metrics.ByOperation = map[runnertypes.Operation]time.Duration{}
+	metrics.ByOperation[runnertypes.OperationUserGroupExecution] += privilegeDuration
 
 	e.logDeferredWarnings(pc)
 

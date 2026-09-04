@@ -85,7 +85,7 @@ func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
 	}
-	if err, ok := m.FailFor[elevationCtx.Operation]; ok {
+	if err := m.FailFor[elevationCtx.Operation]; err != nil {
 		return err
 	}
 
