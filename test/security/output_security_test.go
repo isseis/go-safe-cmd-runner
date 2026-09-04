@@ -178,7 +178,7 @@ func TestSymlinkAttack(t *testing.T) {
 // only care about exit code and captured stdout content. Using a freshly
 // built binary (instead of the platform-signed system `echo`) avoids AMFI
 // killing the staged-copy exec fallback used on non-Linux platforms (see
-// prepareExecCommand/stageFromFD in internal/runner/base/executor/executor.go).
+// prepareCommand/stageFromFD in internal/runner/base/executor/command_lifecycle.go).
 func buildEchoHelper(t *testing.T) string {
 	t.Helper()
 
@@ -249,8 +249,8 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 	// The "should succeed" case below performs a real exec. On non-Linux,
 	// fdExecSupported() is false (fdexec_other.go), so the executor's
-	// TOCTOU-hardening fallback (prepareExecCommand/stageFromFD in
-	// internal/runner/base/executor/executor.go) copies the verified binary
+	// TOCTOU-hardening fallback (prepareCommand/stageFromFD in
+	// internal/runner/base/executor/command_lifecycle.go) copies the verified binary
 	// to a temp file and execs the copy instead of the original. Execing a
 	// byte-identical copy of an Apple platform-signed system binary (echo
 	// lives under the Sealed System Volume) is killed by AMFI/code-signing
