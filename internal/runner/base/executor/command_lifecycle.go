@@ -30,8 +30,7 @@ var ErrPreparedCommandSpent = errors.New("prepared command already released")
 // ErrKillStrategyUnset is returned when a preparedCommand reaches the kill
 // path without having declared what a cancellation-triggered kill requires.
 // Like ErrExecBindingUnset it is unreachable while prepareCommand is the only
-// constructor; the guard sits on a privilege boundary, so it fails closed
-// rather than relying on that staying true.
+// constructor; the guard sits on a privilege boundary, so it fails closed.
 var ErrKillStrategyUnset = errors.New("kill strategy not declared")
 
 // ErrKillAfterCancel is returned when the child could not be killed after the
@@ -53,7 +52,7 @@ var ErrStartPhaseNotRun = errors.New("start window returned without running the 
 
 // ErrChildNotReaped is returned when the child did not exit within
 // killGraceDelay after the kill, which usually means a grandchild inherited
-// the pipe. The run returns rather than blocking; the pid is logged.
+// the pipe.
 var ErrChildNotReaped = errors.New("command did not exit after kill")
 
 // execBinding declares how the executed inode is bound. The zero value is
@@ -626,8 +625,8 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 
 	waitCh := make(chan error, 1)
 	go func() {
-		// waitFn, when injected, stands in for Wait() here -- the only way to
-		// reach ErrChildNotReaped deterministically (see DefaultExecutor.waitFn).
+		// See DefaultExecutor.waitFn: injected to make the reap-timeout path
+		// reachable in tests.
 		if e.waitFn != nil {
 			waitCh <- e.waitFn(pc.execCmd)
 			return

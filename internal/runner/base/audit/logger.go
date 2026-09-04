@@ -51,10 +51,9 @@ func NewAuditLogger(redactionConfig *redaction.Config) *Logger {
 type PrivilegeMetrics struct {
 	ElevationCount int
 	TotalDuration  time.Duration
-	// ByOperation breaks TotalDuration down by the runnertypes.Operation each
-	// privilege window was opened for, so a narrow window (the start phase,
-	// tens of microseconds) can be told apart from a wide one (the whole
-	// command, potentially hours) in the audit log.
+	// ByOperation breaks TotalDuration down by the Operation each privilege
+	// window was opened for, so a narrow window (start phase, microseconds)
+	// can be told apart from a wide one (whole command, potentially hours).
 	ByOperation map[runnertypes.Operation]time.Duration
 }
 
@@ -91,10 +90,9 @@ func (l *Logger) LogUserGroupExecution(
 		slog.Int64("total_privilege_duration_ms", privilegeMetrics.TotalDuration.Milliseconds()),
 	}
 
-	// Emitted in microseconds, not milliseconds: the start-phase window is
-	// tens of microseconds and would round to 0 in milliseconds, which would
-	// make it indistinguishable from a window that never opened. Sorted by
-	// operation name so the attribute order is deterministic.
+	// Microseconds, not milliseconds: a start-phase window is tens of
+	// microseconds and would round to 0ms, indistinguishable from a window
+	// that never opened. Sorted for deterministic attribute order.
 	for _, op := range slices.Sorted(maps.Keys(privilegeMetrics.ByOperation)) {
 		baseAttrs = append(baseAttrs, slog.Int64("privilege_duration_"+string(op)+"_us", privilegeMetrics.ByOperation[op].Microseconds()))
 	}

@@ -56,9 +56,8 @@ func WithRunAsResolver(resolver risktypes.RunAsResolver) Option {
 	}
 }
 
-// WithKillGraceDelay overrides the default killGraceDelay for testing, so
-// tests that exercise the reap-timeout or output-drain-timeout paths do not
-// have to wait out the production default.
+// WithKillGraceDelay overrides killGraceDelay so tests exercising the
+// reap-timeout or drain-timeout paths need not wait out the production default.
 func WithKillGraceDelay(d time.Duration) Option {
 	return func(e *DefaultExecutor) {
 		e.killGraceDelay = d
@@ -66,8 +65,7 @@ func WithKillGraceDelay(d time.Duration) Option {
 }
 
 // WithWaitFn replaces execCmd.Wait() in the wait goroutine for testing. See
-// DefaultExecutor.waitFn for why this is the only way to exercise
-// ErrChildNotReaped deterministically.
+// DefaultExecutor.waitFn.
 func WithWaitFn(fn func(*exec.Cmd) error) Option {
 	return func(e *DefaultExecutor) {
 		e.waitFn = fn
