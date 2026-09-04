@@ -137,13 +137,21 @@ func (r *slackRecorder) texts() []string {
 // until block is closed or the request context is cancelled, which is how a
 // test pins the worker inside a send. The message is recorded before parking,
 // so "the send has started" is observable while it is still in flight.
+//
+// A parked request whose client goes away is aborted rather than answered.
+// Returning from the handler would make net/http synthesize a 200 for a client
+// that has already cancelled, and the client can still observe that response:
+// the transport's read loop may deliver it before the cancellation tears the
+// request down. A test that cancels a parked send to prove it was not
+// delivered would then see it counted as sent. ErrAbortHandler closes the
+// connection without a response, so there is no reply to race.
 func newRecordingSlackServer(t *testing.T, status int, block chan struct{}) (*slackRecorder, *httptest.Server) {
 	t.Helper()
 	rec := &slackRecorder{}
 	server := newMockSlackServer(t, func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			return
+			panic(http.ErrAbortHandler)
 		}
 		var msg SlackMessage
 		if err := json.Unmarshal(body, &msg); err == nil {
@@ -153,7 +161,7 @@ func newRecordingSlackServer(t *testing.T, status int, block chan struct{}) (*sl
 			select {
 			case <-block:
 			case <-r.Context().Done():
-				return
+				panic(http.ErrAbortHandler)
 			}
 		}
 		w.WriteHeader(status)
