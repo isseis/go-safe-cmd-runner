@@ -50,7 +50,10 @@ type MockPrivilegeManager struct {
 	// itself called (that is the static guard's job). The "after" call
 	// matters on its own: something started inside fn (e.g. a regression that
 	// reintroduces an os/exec copy goroutine, which Start creates during
-	// fn's own call) would be invisible to a "before"-only sample.
+	// fn's own call) would be invisible to a "before"-only sample. When
+	// ExecFn replaces fn, the two samples bracket ExecFn instead; they are
+	// skipped only when the window fails before running anything at all
+	// (ShouldFail or FailFor).
 	InWindow func(phase MockWindowPhase)
 
 	// FailFor injects a failure for one specific operation. Checked only when
@@ -91,14 +94,19 @@ func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	if err, ok := m.FailFor[elevationCtx.Operation]; ok {
 		return err
 	}
-	// If a custom execution function exists, prioritize and execute it
+	// If a custom execution function exists, prioritize and execute it in
+	// place of fn. It still runs inside the open window, so the InWindow
+	// samples bracket it just as they bracket fn -- skipping them here would
+	// let a test that sets both ExecFn and InWindow collect no samples at all
+	// and pass its window assertions vacuously.
+	run := fn
 	if m.ExecFn != nil {
-		return m.ExecFn()
+		run = m.ExecFn
 	}
 	if m.InWindow != nil {
 		m.InWindow(MockWindowPhaseBeforeFn)
 	}
-	err := fn()
+	err := run()
 	if m.InWindow != nil {
 		m.InWindow(MockWindowPhaseAfterFn)
 	}

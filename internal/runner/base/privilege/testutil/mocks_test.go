@@ -90,3 +90,33 @@ func TestMockPrivilegeManager_ShouldFailTakesPrecedenceOverFailFor(t *testing.T)
 	assert.ErrorIs(t, err, ErrMockPrivilegeElevationFailed)
 	assert.NotErrorIs(t, err, errKill)
 }
+
+// TestMockPrivilegeManager_InWindowBracketsExecFn pins that ExecFn, which
+// replaces fn but still runs inside the open window, is bracketed by the same
+// two InWindow samples. Without it a test setting both would collect no
+// samples and pass any window assertion vacuously.
+func TestMockPrivilegeManager_InWindowBracketsExecFn(t *testing.T) {
+	m := NewMockPrivilegeManager(true)
+	var phases []MockWindowPhase
+	m.InWindow = func(phase MockWindowPhase) {
+		phases = append(phases, phase)
+	}
+	execFnCalled := false
+	m.ExecFn = func() error {
+		execFnCalled = true
+		assert.Equal(t, []MockWindowPhase{MockWindowPhaseBeforeFn}, phases)
+		return nil
+	}
+
+	fnCalled := false
+	err := m.WithPrivileges(runnertypes.ElevationContext{Operation: runnertypes.OperationUserGroupExecution}, func() error {
+		fnCalled = true
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.True(t, execFnCalled)
+	// ExecFn takes precedence over fn; that existing behaviour is unchanged.
+	assert.False(t, fnCalled)
+	assert.Equal(t, []MockWindowPhase{MockWindowPhaseBeforeFn, MockWindowPhaseAfterFn}, phases)
+}
