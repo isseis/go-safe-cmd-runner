@@ -20,6 +20,14 @@ import (
 // stays impossible.
 var ErrExecBindingUnset = errors.New("execution binding not declared")
 
+// ErrPreparedCommandSpent is returned when a preparedCommand that
+// prepareCommand already released -- the one it returns alongside an error --
+// reaches the start path. Like ErrExecBindingUnset it guards a switch on a
+// privilege boundary; unlike it, the input it rejects is one this package can
+// actually produce, so the guard is what keeps "must not be started" from
+// being a doc comment nobody is obliged to read.
+var ErrPreparedCommandSpent = errors.New("prepared command already released")
+
 // execBinding declares how the executed inode is bound. The zero value is
 // bindingUnset, which the switch in startPrepared rejects, so a
 // preparedCommand whose binding was never declared cannot be started.
@@ -86,6 +94,14 @@ type preparedCommand struct {
 
 	cmdLine         string // pre-formatted for logging; see FormatCommandForLog
 	hasOutputWriter bool   // whether Execute's caller supplied an OutputWriter
+
+	// spent marks a preparedCommand that prepareCommand released and handed
+	// back alongside an error. It carries only recorded warnings; its pump
+	// and descriptors are gone, so starting it would nil-deref. startPrepared
+	// rejects it for the same reason it rejects bindingUnset: the check sits
+	// on a privilege boundary, where failing closed costs less than trusting
+	// a caller to honour a doc comment.
+	spent bool
 }
 
 // release closes every descriptor prepareCommand acquired: the null-device
@@ -177,6 +193,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 	// window has closed (see the doc comment above).
 	fail := func(err error) (*preparedCommand, error) {
 		_ = pc.release()
+		pc.spent = true
 		return pc, err
 	}
 
@@ -267,6 +284,9 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 // collect its output) whenever started is true, regardless of err, since a
 // running child must not be abandoned.
 func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err error) {
+	if pc.spent {
+		return false, ErrPreparedCommandSpent
+	}
 	switch pc.binding {
 	case bindingVerifiedFD, bindingStagedCopy, bindingResolvedPath:
 	default:
@@ -288,13 +308,14 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 // regardless of its outcome -- because the read ends never reach EOF
 // otherwise, which would block the pump's wait until its deadline.
 //
-// Note on the remaining in-window logging: the "Command execution failed"
-// records here and in superviseCommand still run inside the privilege window
-// for run-as execution, exactly as they did before this decomposition. This
-// phase removed the non-fatal warnings from the window (they are recorded on
-// preparedCommand and logged by logDeferredWarnings); the run's own failure
-// record follows when the window is narrowed to startPrepared, which is what
-// puts both of these call sites outside it.
+// Note on the remaining in-window logging: three records still run inside the
+// privilege window for run-as execution, exactly as they did before this
+// decomposition -- prepareCommand's "Executing command" debug record, which
+// fires on every privileged run, and the "Command execution failed" records
+// here and in superviseCommand, which fire only on failure. This phase removed
+// the non-fatal warnings from the window (they are recorded on
+// preparedCommand and logged by logDeferredWarnings); the three above leave it
+// when the window is narrowed to startPrepared.
 func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
 	started, startErr := e.startPrepared(pc)
 	closeErr := pc.pump.releaseChildEnds()

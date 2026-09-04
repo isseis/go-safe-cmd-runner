@@ -238,8 +238,10 @@ func TestExecute_StagedCopyRemovalFailureRecorded(t *testing.T) {
 	t.Cleanup(func() { _ = plan.Close() })
 
 	// The failed removal leaves the staging directory behind; note what was
-	// there beforehand so the leak can be identified and cleaned up.
+	// there beforehand so the leak can be identified, and arm the sweep now
+	// so an assertion failure below cannot leak it.
 	before := scrStageDirs(t)
+	sweepNewStageDirs(t, before)
 
 	cmd := createTestCommand(scriptPath, []string{})
 	var (
@@ -267,14 +269,7 @@ func TestExecute_StagedCopyRemovalFailureRecorded(t *testing.T) {
 	require.Len(t, lines, 1, "the removal failure must also write exactly one last-resort line to stderr")
 	assert.Contains(t, lines[0], "WARNING: failed to remove staging directory")
 
-	leaked := newStageDirs(before, scrStageDirs(t))
-	require.Len(t, leaked, 1, "the failed removal must leave exactly one staging directory")
-	t.Cleanup(func() {
-		for _, d := range leaked {
-			_ = os.Chmod(filepath.Join(os.TempDir(), d), 0o700)
-			_ = os.RemoveAll(filepath.Join(os.TempDir(), d))
-		}
-	})
+	require.Len(t, newStageDirs(before, scrStageDirs(t)), 1, "the failed removal must leave exactly one staging directory")
 }
 
 // TestExecute_PrepareFailureRecordsCarriedWarnings verifies that a failure in
@@ -312,6 +307,7 @@ func TestExecute_PrepareFailureRecordsCarriedWarnings(t *testing.T) {
 	t.Cleanup(func() { _ = plan.Close() })
 
 	before := scrStageDirs(t)
+	sweepNewStageDirs(t, before)
 
 	errPipe := errors.New("pipe creation refused by the test")
 	origPipeFn := pipeFn
@@ -343,14 +339,6 @@ func TestExecute_PrepareFailureRecordsCarriedWarnings(t *testing.T) {
 
 	require.Len(t, lines, 1, "the removal failure must also write exactly one last-resort line to stderr")
 	assert.Contains(t, lines[0], "WARNING: failed to remove staging directory")
-
-	leaked := newStageDirs(before, scrStageDirs(t))
-	t.Cleanup(func() {
-		for _, d := range leaked {
-			_ = os.Chmod(filepath.Join(os.TempDir(), d), 0o700)
-			_ = os.RemoveAll(filepath.Join(os.TempDir(), d))
-		}
-	})
 }
 
 // TestPreparedCommand_ReleaseRecordsPumpFailure verifies that release records
@@ -380,6 +368,39 @@ func TestPreparedCommand_ReleaseRecordsPumpFailure(t *testing.T) {
 	require.Error(t, releaseErr, "release must report the pump failure to callers that keep its return value")
 	require.Error(t, pc.pumpReleaseErr, "release must also record the pump failure for logDeferredWarnings")
 	assert.ErrorIs(t, releaseErr, pc.pumpReleaseErr)
+}
+
+// TestStartPrepared_RejectsSpentCommand verifies that the preparedCommand
+// prepareCommand hands back alongside an error cannot be started. Its pump and
+// descriptors are already released, so startPrepared must refuse it rather
+// than reach execCmd.Start and have runCommand nil-deref the released pump one
+// line later. Only the spent flag can catch this: the binding was assigned
+// before the failure, so the bindingUnset guard waves such a command through.
+func TestStartPrepared_RejectsSpentCommand(t *testing.T) {
+	e := NewDefaultExecutor().(*DefaultExecutor)
+
+	pc := &preparedCommand{binding: bindingResolvedPath, spent: true}
+	started, err := e.startPrepared(pc)
+
+	assert.False(t, started, "a released command must not be reported as started")
+	require.ErrorIs(t, err, ErrPreparedCommandSpent)
+}
+
+// sweepNewStageDirs registers a cleanup that chmods and removes every staging
+// directory that appears after before was captured. Tests that deliberately
+// induce a removal failure leave an unwritable scr-stage-* directory behind;
+// registering the sweep up front, rather than after the assertions, means a
+// failing assertion cannot abort the test before the cleanup exists and leak
+// that directory into os.TempDir() permanently.
+func sweepNewStageDirs(t *testing.T, before []string) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, d := range newStageDirs(before, scrStageDirs(t)) {
+			path := filepath.Join(os.TempDir(), d)
+			_ = os.Chmod(path, 0o700)
+			_ = os.RemoveAll(path)
+		}
+	})
 }
 
 // newStageDirs returns the staging directories present in after but not in
