@@ -83,10 +83,11 @@ func defaultIdentityVerifier() error {
 
 // WithPrivileges executes fn under the privilege state required by elevationCtx.Operation.
 //
-// For both OperationUserGroupExecution and OperationFileValidation, this package
-// only escalates to root and restores afterwards; it never reads or resolves
-// RunAsUser/RunAsGroup. Switching to the target user is the executor's job: it
-// builds a syscall.Credential the kernel applies at execve time.
+// For every operation it supports -- prepareExecution below holds the single
+// list of them -- this package only escalates to root and restores afterwards;
+// it never reads or resolves RunAsUser/RunAsGroup. Switching to the target user
+// is the executor's job: it builds a syscall.Credential the kernel applies at
+// execve time.
 //
 // The window is not serialized: while it's open, the process-wide euid is
 // raised for every goroutine, including os/exec's copy goroutines for
@@ -153,7 +154,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	}
 
 	switch elevationCtx.Operation {
-	case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation:
+	case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation, runnertypes.OperationKillAfterCancel:
 		execCtx.needsPrivilegeEscalation = true
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperationType, elevationCtx.Operation)
