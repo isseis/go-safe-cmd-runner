@@ -248,8 +248,9 @@ func TestSupervise_NormalExecutionDoesNotReelevate(t *testing.T) {
 // window's restore or be refused as re-entrant.
 //
 // The start window is opened by the test rather than by executeWithUserGroup,
-// which still wraps the whole run in this phase; that is the shape the window
-// takes once it is narrowed to startPrepared.
+// because an unprivileged test cannot start a child under a run-as credential
+// (see the note at the top of this file); the shape of the window is the same
+// either way.
 func TestSupervise_KillRunsOnExecutingGoroutine(t *testing.T) {
 	type sample struct {
 		phase privilegetestutil.MockWindowPhase

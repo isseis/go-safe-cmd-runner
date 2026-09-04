@@ -775,3 +775,132 @@ func TestExecute_ShebangScriptRunsUnderStagingFallback(t *testing.T) {
 	assert.Equal(t, "shebang-ok\n", result.Stdout)
 	assert.Empty(t, newStageDirs(before, scrStageDirs(t)), "the staged copy must be removed once the child has exited")
 }
+
+// TestRemoveStagedCopy_NormalExecutionDoesNotElevate verifies the narrow half
+// of the cleanup strategy: a staged copy the invoking user already owns is
+// removed without asking for privilege. Widening the condition to "whenever a
+// copy was staged" would make every non-run-as staging run request an
+// elevation it has no reason to need -- and fail outright on a binary that was
+// never installed setuid, turning runs that succeed today into errors.
+func TestRemoveStagedCopy_NormalExecutionDoesNotElevate(t *testing.T) {
+	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+	e := NewDefaultExecutor(WithPrivilegeManager(mockPriv), WithFdExecDisabled()).(*DefaultExecutor)
+
+	pc := prepareWithVerifiedIdentity(t, e, shPath, "-c", "echo unprivileged-ok")
+	require.Equal(t, bindingStagedCopy, pc.binding)
+	// Left exactly as prepareCommand declared it for a run with no run-as
+	// credential; nothing here stands in for one.
+	require.Equal(t, cleanupDirect, pc.cleanup)
+
+	result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+	require.NoError(t, err)
+	assert.Equal(t, "unprivileged-ok\n", result.Stdout)
+	assert.Equal(t, []string{"user_group_change:testuser:"}, mockPriv.ElevationCalls,
+		"removing a staged copy the invoking user owns must open no window")
+	assert.Empty(t, pc.privilegeWindows, "no cleanup window opened, so none may be recorded")
+	assert.NoDirExists(t, filepath.Dir(pc.stagedPath), "the staged copy must still be removed")
+}
+
+// TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow verifies where
+// the staged copy goes when Start fails. It must be removed while the window
+// is still open: for a run-as command the staging directory is root-owned, and
+// the caller is back at the invoking user's effective uid by the time it sees
+// the failure.
+//
+// The assertion is made from inside the window rather than after the run,
+// because preparedCommand.release removes the copy too on the unprivileged
+// path every unit test takes -- an "it is gone afterwards" check would pass
+// with the in-window removal deleted.
+func TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow(t *testing.T) {
+	// A file with neither a shebang nor a recognized binary format: staging
+	// copies it happily, and execve then refuses it with ENOEXEC, which is a
+	// Start failure reached after the copy exists.
+	notAProgram := filepath.Join(t.TempDir(), "not-a-program")
+	require.NoError(t, os.WriteFile(notAProgram, []byte("this is not a program\n"), 0o755))
+
+	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+	e := NewDefaultExecutor(WithPrivilegeManager(mockPriv), WithFdExecDisabled()).(*DefaultExecutor)
+
+	pc := prepareWithVerifiedIdentity(t, e, notAProgram)
+	require.Equal(t, bindingStagedCopy, pc.binding)
+
+	type sample struct {
+		cleanupPending bool
+		dirExists      bool
+	}
+	var afterFn sample
+	var sampled bool
+	mockPriv.InWindow = func(phase privilegetestutil.MockWindowPhase) {
+		if phase != privilegetestutil.MockWindowPhaseAfterFn {
+			return
+		}
+		sampled = true
+		_, statErr := os.Stat(filepath.Dir(pc.stagedPath))
+		afterFn = sample{cleanupPending: pc.stagingCleanup != nil, dirExists: statErr == nil}
+	}
+
+	before := scrStageDirs(t)
+	result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+	require.True(t, sampled, "the window must have been sampled after the start phase returned")
+	assert.False(t, afterFn.cleanupPending, "the staged copy must be removed before the window closes")
+	assert.False(t, afterFn.dirExists, "the staging directory must be gone before the window closes")
+
+	require.Error(t, err, "a command execve refuses must fail the run")
+	require.NotNil(t, result)
+	assert.Equal(t, ExitCodeUnknown, result.ExitCode)
+	assert.Empty(t, newStageDirs(before, scrStageDirs(t)))
+}
+
+// TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies verifies the
+// two fail-secure arms of the cleanup path, mirroring what
+// TestKillChild_RejectsUndeclaredAndUnavailableStrategies pins for the kill
+// path. Neither is reachable while prepareCommand is the only constructor;
+// they are tested because the switch they guard sits on a privilege boundary,
+// where a silent default would either leak a root-owned copy of a verified
+// binary into $TMPDIR or elevate a run that had no reason to.
+//
+// Each arm must also leave a trace: the caller discards this return value
+// (the removal may run inside the cleanup window), so a failure that is not
+// recorded on the preparedCommand reaches no log at all.
+func TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies(t *testing.T) {
+	tests := []struct {
+		name    string
+		cleanup stagingCleanupStrategy
+		privMgr runnertypes.PrivilegeManager
+		wantErr error
+	}{
+		{
+			name:    "undeclared_strategy",
+			cleanup: cleanupUnset,
+			privMgr: privilegetestutil.NewMockPrivilegeManager(true),
+			wantErr: ErrStagingCleanupStrategyUnset,
+		},
+		{
+			name:    "elevated_without_privilege_manager",
+			cleanup: cleanupElevated,
+			privMgr: nil,
+			wantErr: ErrNoPrivilegeManager,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := NewDefaultExecutor(WithPrivilegeManager(tt.privMgr)).(*DefaultExecutor)
+
+			removed := false
+			pc := &preparedCommand{
+				cleanup:        tt.cleanup,
+				stagingCleanup: func() error { removed = true; return nil },
+			}
+
+			err := e.removeStagedCopy(pc)
+
+			require.ErrorIs(t, err, tt.wantErr)
+			assert.False(t, removed, "a rejected cleanup must not have removed anything")
+			assert.ErrorIs(t, pc.stagingWindowErr, tt.wantErr,
+				"the reason the copy was left behind must be recorded for the caller to log")
+		})
+	}
+}

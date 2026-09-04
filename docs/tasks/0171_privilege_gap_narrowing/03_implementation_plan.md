@@ -783,6 +783,15 @@
 - [x] `cleanupFn()` の戻り値の記録位置を確定する: 後始末区間を閉じた後、および隙を開かない
       通常実行の削除の後で、非 `nil` なら `Logger.Warn` で記録する。
       `Start()` 失敗時の削除（起動区間の内側）の戻り値も、隙を出てから記録する。
+- [x] `privilege/unix.go` の `WithPrivileges` が隙の内側で出している `Debug` 2件
+      （「Executing privileged operation callback」「Privileged operation callback completed」）を
+      隙の外へ出す。1件目は昇格の前、2件目は復帰の後に置く。本タスクの carry-out の仕組みは
+      すべて「隙の中では何もログしない」を前提にしており、呼び出される側がその前提を
+      内側から崩していた。あわせて AC-05 が測る隙の長さからハンドラ2回分が外れる。
+- [x] `preparedCommand.stagingWindowErr` を足す。後始末が**試みられる前に**止まった理由
+      （昇格の拒否、`stagingCleanupStrategy` 未宣言）を記録する。`stagingCleanupErr`
+      （`os.RemoveAll` 自身の失敗）とは別にするのは、`release()` の隙なしの再試行が返す
+      EACCES だけを読んだ運用者が「昇格は行われた」と誤読するのを防ぐためである。
 - [x] `WithPrivileges` の中で復帰に失敗したとき、`emergencyShutdown` によりプロセスが即座に
       終わるため子プロセスと staged copy が残る旨を、`startPrepared` の doc コメントへ書く。
       あわせて、この経路では `stagingWarn` と後始末の戻り値が記録されないまま失われることも書く
@@ -815,8 +824,10 @@
       当初は監査メトリクスの `ElevationCount`／`ByOperation` を主張する計画だったが、
       特権の無いテストでは run-as 実行を最後まで走らせられない（`SysProcAttr.Credential` の
       `setgroups` が CAP_SETGID を要求し、`Start()` が EPERM で失敗する）ため、
-      同じ事実を観測できる次の3点に置き換えた。昇格と復帰の対は `WithPrivileges` の呼び出しと
-      1対1であり、`ElevationCount` はその呼び出し回数そのものである。
+      同じ事実を観測できる次の3点に置き換えた。このテストが通る成功経路では、昇格と復帰の対は
+      `WithPrivileges` の呼び出しと1対1であり、`ElevationCount` はその回数と一致する
+      （昇格を断られた呼び出しはどの区間でも `ElevationCount` に数えないが、モックの
+      呼び出し一覧には残るため、失敗経路では両者はずれる）。
       - fd-bound 実行: 特権管理器の呼び出しが起動区間の1件だけ、`pc.privilegeWindows` が空。
       - staging フォールバック（`WithFdExecDisabled`）: 呼び出しが
         `user_group_execution` と `staging_cleanup` の2件、`pc.privilegeWindows` に
@@ -837,6 +848,17 @@
 - [x] `TestExecute_ShebangScriptRunsUnderStagingFallback` を足す（AC-17）。
       `WithFdExecDisabled` の下でシェバンつきスクリプトが実行でき、標準出力が一致する
       （staged copy を `Start()` 直後に削除していないことの検査）。
+- [x] `TestRemoveStagedCopy_NormalExecutionDoesNotElevate` を足す。通常実行の staging では
+      後始末区間を開かないこと（設計文書 §3.4 差分2 の「条件を広く採ってはならない」側）。
+      kill 側の `TestSupervise_NormalExecutionDoesNotReelevate` に対応する。
+- [x] `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` を足す。`Start()` 失敗時の
+      削除が**隙が閉じる前に**済んでいることを `InWindow` の `MockWindowPhaseAfterFn` から
+      主張する。実行後に「消えている」ことを見るだけでは、特権の無いテストでは
+      `release()` の再試行が消してしまうため、削除を外しても緑のままになる。
+- [x] `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` を足す。
+      `stagingCleanupStrategy` 未宣言と、`cleanupElevated` かつ特権管理器が無い場合の
+      2つの fail-secure 分岐。戻り値が呼び出し側で捨てられるため、理由が
+      `stagingWindowErr` に記録されることまで主張する。
 
 **完了の目安（4-a・4-b）**: 上記テストが緑。隙の縮小後も既存テストが変わらず通る。
 `make test`／`make lint` が緑。
@@ -1338,6 +1360,11 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       （`os/exec` の copy goroutine は `Start()` の中で起きるので、`fn` の前の標本には現れない）。
       確認: `*os.File` を包む writer へ戻すと `MockWindowPhaseAfterFn` の標本にだけ
       `os/exec` の goroutine が2つ現れて落ちる（`fn` の前の標本は差分なし）。
+- [x] 後始末区間（PR-5 で追加）: `cleanupDirect` の分岐を昇格側へ倒すと
+      `TestRemoveStagedCopy_NormalExecutionDoesNotElevate` が落ちる。`Start()` 失敗時の
+      隙の中の削除を消すと `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が
+      落ちる。`stagingWindowErr` への記録を消すと
+      `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` が落ちる。いずれも確認済み。
 - [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
       戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
 - [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
@@ -1559,7 +1586,8 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 検証: `L::TestExecute_SingleElevationPairPerRun`（正常終了する実行で組む）
 - 期待: fd-bound 実行で特権管理器の呼び出しが起動区間の1件のみ。staging フォールバックで
   `user_group_execution` と `staging_cleanup` の2件、後者が `pc.privilegeWindows` に記録される。
-  昇格と復帰の対は `WithPrivileges` の呼び出しと1対1で、`ElevationCount` はその回数そのもの。
+  この成功経路では昇格と復帰の対は `WithPrivileges` の呼び出しと1対1で、`ElevationCount` は
+  その回数と一致する。
   監査メトリクスの `ElevationCount`／`ByOperation` を直接主張しないのは、特権の無いテストでは
   run-as 実行を最後まで走らせられないためである（Phase 4-b の該当ステップ参照）
 - 種別: `test`（復帰直後の識別子検査が変わらないこと）

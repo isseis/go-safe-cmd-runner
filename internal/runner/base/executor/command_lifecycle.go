@@ -159,6 +159,14 @@ type preparedCommand struct {
 	// set, so it is not returned as an error.
 	stagingWarn error
 
+	// stagingWindowErr records a failure to remove the staged copy that
+	// happened before the removal itself was reached -- an elevation the
+	// privilege manager refused, or a strategy that was never declared. It is
+	// distinct from stagingCleanupErr, which is os.RemoveAll's own failure:
+	// the caller that sees only the latter reads a permission error and never
+	// learns that the elevation meant to prevent it never happened.
+	stagingWindowErr error
+
 	devNull *os.File
 
 	// release()'s failures, recorded for the caller to log; see release().
@@ -211,9 +219,11 @@ func (pc *preparedCommand) release() error {
 	// supervision phase's own removal -- a start failure that could not remove
 	// the copy inside the window, or a caller that gave up before starting.
 	// It removes without a privilege window, which is all an unprivileged
-	// staging directory needs; a root-owned one has already been removed by
-	// then, or is reported as ErrStagingCleanupStrategyUnset's leftover.
-	errs = append(errs, pc.removeStagedCopy())
+	// staging directory needs. A root-owned one has either been removed
+	// already, or the cleanup window failed to open -- in which case this
+	// retry fails with EACCES, and both that failure and the reason the
+	// window did not open are recorded for logDeferredWarnings.
+	errs = append(errs, pc.runStagingCleanup())
 	if pc.pump != nil {
 		pc.pumpReleaseErr = pc.pump.release()
 		errs = append(errs, pc.pumpReleaseErr)
@@ -235,10 +245,11 @@ func (pc *preparedCommand) releaseVerifiedFD() error {
 	return pc.verifiedFDCloseErr
 }
 
-// removeStagedCopy runs the staging cleanup function and clears it, so a
-// second call is a no-op. It opens no privilege window of its own: callers
-// that need one (see superviseCommand) wrap this call in it.
-func (pc *preparedCommand) removeStagedCopy() error {
+// runStagingCleanup runs the staging cleanup function and clears it, so a
+// second call is a no-op. It opens no privilege window of its own -- the name
+// says so, because the executor method one letter of receiver away does, and
+// picking the wrong one on a run-as run would silently skip the elevation.
+func (pc *preparedCommand) runStagingCleanup() error {
 	if pc.stagingCleanup == nil {
 		return nil
 	}
@@ -444,7 +455,7 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 
 	if err := pc.execCmd.Start(); err != nil {
 		// Removed from inside the window; see the doc comment above.
-		return false, errors.Join(err, pc.removeStagedCopy())
+		return false, errors.Join(err, pc.runStagingCleanup())
 	}
 	return true, nil
 }
@@ -514,7 +525,7 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand, s
 	// The window has closed. Everything below runs at the invoking user's
 	// effective uid.
 	closeErr := errors.Join(pc.pump.releaseChildEnds(), pc.releaseVerifiedFD())
-	e.logStartWindowRecords(pc)
+	e.logStartWindowRecords(pc, started)
 
 	switch {
 	case !opened:
@@ -530,8 +541,14 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand, s
 // location, so a restore failure that ends the process through
 // emergencyShutdown still leaves a trail to the copy left in $TMPDIR, and the
 // non-fatal failures pc carried out of the window.
-func (e *DefaultExecutor) logStartWindowRecords(pc *preparedCommand) {
-	if pc.stagedPath != "" {
+//
+// The location is recorded only for a child that started. A start that failed
+// removed the copy from inside the window, so naming a path that is already
+// gone would send an operator looking for a directory that never outlived the
+// call; if that removal itself failed, the error carrying the path is logged
+// just below.
+func (e *DefaultExecutor) logStartWindowRecords(pc *preparedCommand, started bool) {
+	if started && pc.stagedPath != "" {
 		e.Logger.Debug("Staged verified command copy",
 			"command", pc.cmdLine,
 			"staged_path", pc.stagedPath)
@@ -723,12 +740,18 @@ func (e *DefaultExecutor) removeStagedCopy(pc *preparedCommand) error {
 	if pc.stagingCleanup == nil {
 		return nil
 	}
+	// Each failure that stops the removal from being attempted at all is
+	// recorded on pc as well as returned, because the caller discards this
+	// return value -- the removal may run inside the window it opens here.
+	// The removal's own failure needs no recording: runStagingCleanup keeps
+	// it in stagingCleanupErr.
 	switch pc.cleanup {
 	case cleanupDirect:
-		return pc.removeStagedCopy()
+		return pc.runStagingCleanup()
 	case cleanupElevated:
 		if e.PrivMgr == nil {
-			return ErrNoPrivilegeManager
+			pc.stagingWindowErr = ErrNoPrivilegeManager
+			return pc.stagingWindowErr
 		}
 		elevationCtx := pc.runAsElevation
 		elevationCtx.Operation = runnertypes.OperationStagingCleanup
@@ -740,17 +763,24 @@ func (e *DefaultExecutor) removeStagedCopy(pc *preparedCommand) error {
 		start := time.Now()
 		err := e.PrivMgr.WithPrivileges(elevationCtx, func() error {
 			opened = true
-			return pc.removeStagedCopy()
+			return pc.runStagingCleanup()
 		})
 		if opened {
 			pc.privilegeWindows = append(pc.privilegeWindows, privilegeWindow{
 				op:       runnertypes.OperationStagingCleanup,
 				duration: time.Since(start),
 			})
+		} else if err != nil {
+			// The window never ran the removal, so this is the window's own
+			// failure and not os.RemoveAll's. Recording it is what keeps an
+			// operator from reading only the EACCES the unprivileged retry in
+			// release then reports, and concluding the elevation happened.
+			pc.stagingWindowErr = err
 		}
 		return err
 	default:
-		return ErrStagingCleanupStrategyUnset
+		pc.stagingWindowErr = ErrStagingCleanupStrategyUnset
+		return pc.stagingWindowErr
 	}
 }
 

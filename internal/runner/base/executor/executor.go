@@ -253,9 +253,20 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	result, err := e.runCommand(ctx, pc, func(fn func() error) error {
+		// opened is set from inside the window, for the same reason as at the
+		// kill and staging-cleanup sites: an elevation the manager refused
+		// must not reach the audit log as an escalation that happened, and
+		// which of WithPrivileges' failures came first cannot be told from
+		// the error alone.
+		opened := false
 		privilegeStart := time.Now()
-		elevErr := e.PrivMgr.WithPrivileges(executionCtx, fn)
-		addPrivilegeWindow(&metrics, runnertypes.OperationUserGroupExecution, time.Since(privilegeStart))
+		elevErr := e.PrivMgr.WithPrivileges(executionCtx, func() error {
+			opened = true
+			return fn()
+		})
+		if opened {
+			addPrivilegeWindow(&metrics, runnertypes.OperationUserGroupExecution, time.Since(privilegeStart))
+		}
 		return elevErr
 	})
 	// Windows the supervision phase opened -- the kill window and the staging
@@ -371,6 +382,7 @@ func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
 		err     *error
 	}{
 		{"Failed to close staging source descriptor", &pc.stagingWarn},
+		{"Failed to open the staging cleanup window", &pc.stagingWindowErr},
 		{"Failed to remove staging directory", &pc.stagingCleanupErr},
 		{"Failed to close null device", &pc.devNullCloseErr},
 		{"Failed to close duplicated verified fd", &pc.verifiedFDCloseErr},

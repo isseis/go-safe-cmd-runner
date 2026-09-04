@@ -110,13 +110,25 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 		return err
 	}
 
+	// Both records sit outside the window on purpose. Callers of this package
+	// go to some length to keep everything but the operation itself out of the
+	// window -- a slog handler is free to open a file, and it would do so at
+	// euid 0 -- and logging from here would defeat that from the other side.
+	// The first record therefore precedes the escalation, so it names an
+	// operation that was attempted rather than one that ran; the second
+	// follows the restore, which the immediately-invoked function's defer
+	// performs before it returns.
+	m.logger.Debug("Entering privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
+
 	if err := m.performElevation(execCtx); err != nil {
 		return err
 	}
 
-	defer m.handleCleanup(execCtx)
-	m.logger.Debug("Executing privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
-	fnErr := fn()
+	fnErr := func() error {
+		defer m.handleCleanup(execCtx)
+		return fn()
+	}()
+
 	m.logger.Debug("Privileged operation callback completed", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName, "error", fnErr)
 	return fnErr
 }
