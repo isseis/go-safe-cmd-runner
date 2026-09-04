@@ -162,6 +162,10 @@ const (
 	OperationFileAccess          Operation = "file_access"
 	OperationFileValidation      Operation = "file_validation" // For file integrity validation
 	OperationHealthCheck         Operation = "health_check"
+	// OperationKillAfterCancel is used for the re-elevation that kills a
+	// run-as child after cancellation or timeout, when the parent's real UID
+	// cannot signal the child directly.
+	OperationKillAfterCancel Operation = "kill_after_cancel"
 )
 
 // ElevationContext contains context information for privilege elevation

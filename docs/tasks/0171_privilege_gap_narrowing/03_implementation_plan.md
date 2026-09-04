@@ -428,15 +428,15 @@
 
 #### 3-a. 型と定数
 
-- [ ] `runnertypes.Operation` に `OperationKillAfterCancel Operation = "kill_after_cancel"` を追加する。
-- [ ] `privilege/unix.go` の `prepareExecution` の `switch` の
+- [x] `runnertypes.Operation` に `OperationKillAfterCancel Operation = "kill_after_cancel"` を追加する。
+- [x] `privilege/unix.go` の `prepareExecution` の `switch` の
       `case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation:` へ
       `runnertypes.OperationKillAfterCancel` を足す。
-- [ ] `command_lifecycle.go` にエラー変数 `ErrKillStrategyUnset`／`ErrKillAfterCancel`／
+- [x] `command_lifecycle.go` にエラー変数 `ErrKillStrategyUnset`／`ErrKillAfterCancel`／
       `ErrChildNotReaped` を設計文書 §4.1 の文言で定義する。設計文書 §4.1 の残り2つは
       先に入っている（`ErrOutputPipe` は Phase 1、`ErrExecBindingUnset` は Phase 2）。
       いずれも本 Phase のキャンセル・kill 経路が最初の利用者である。
-- [ ] `killGraceDelay` を `DefaultExecutor` の非公開フィールドにし、`NewDefaultExecutor` の
+- [x] `killGraceDelay` を `DefaultExecutor` の非公開フィールドにし、`NewDefaultExecutor` の
       既定値を `5 * time.Second` とする。この上限は**別々の2つの待機**に同じ値を使うので、
       その2つを混同しないよう doc コメントへ書き分ける。
       (1) `Wait()` が返るまでの上限。超過は「子を回収できなかった」であり `ErrChildNotReaped`
@@ -444,10 +444,10 @@
       （Phase 1）、`Wait()` は copy goroutine を待たないので、**パイプの書き込み側を握ったまま
       残る孫プロセスが延ばすのは (2) であって (1) ではない**。(2) の超過は「出力を読み切れなかった」
       であり、終了コードは `Wait()` から分かるのでエラーにはしない。
-- [ ] `test_helpers.go`（`//go:build test`）へ `WithKillGraceDelay(d time.Duration) Option` を足す。
+- [x] `test_helpers.go`（`//go:build test`）へ `WithKillGraceDelay(d time.Duration) Option` を足す。
       既存の `WithFdExecDisabled`／`WithExitFunc` と同じ形にする。これが無いと
       待機を打ち切る経路を通すテストが1本あたり5秒かかる。
-- [ ] `test_helpers.go` へ `WithWaitFn(fn func(*exec.Cmd) error) Option` を足す。待機 goroutine は
+- [x] `test_helpers.go` へ `WithWaitFn(fn func(*exec.Cmd) error) Option` を足す。待機 goroutine は
       この関数が非 `nil` ならこれを、既定では `execCmd.Wait()` を呼ぶ。`ErrChildNotReaped` は
       「`Wait()` が返らない」ことでしか起きず、`SIGKILL` を受けた子は実機では必ず回収されるため、
       この注入口が無いとこの経路を決定的に通せない（孫プロセスにパイプを握らせても
@@ -455,14 +455,14 @@
 
 #### 3-b. 監査メトリクス
 
-- [ ] `audit.PrivilegeMetrics` に隙ごとの内訳を追加する:
+- [x] `audit.PrivilegeMetrics` に隙ごとの内訳を追加する:
       `ByOperation map[runnertypes.Operation]time.Duration`。`ElevationCount` と
       `TotalDuration` は残し、意味も変えない。
-- [ ] `audit.Logger.LogUserGroupExecution` が `ByOperation` の各要素を、operation 名を含む
+- [x] `audit.Logger.LogUserGroupExecution` が `ByOperation` の各要素を、operation 名を含む
       一意なキーで出すようにする（キー: `"privilege_duration_" + string(op) + "_us"`、
       値: `slog.Int64` のマイクロ秒）。ミリ秒では起動区間（数十マイクロ秒）が 0 に潰れて
       AC-05 を検証できないため、マイクロ秒で出す。キーは operation 名でソートした順に足す。
-- [ ] `executeWithUserGroup` の計測を隙ごとに分け、隙を1つ閉じるたびに `ElevationCount` を
+- [x] `executeWithUserGroup` の計測を隙ごとに分け、隙を1つ閉じるたびに `ElevationCount` を
       1増やし、`ByOperation` へ経過時間を加算する。この時点で実際に開く隙は
       `user_group_execution`（まだ `prepareCommand` から `superviseCommand` までを包む）1つだけで、
       `ByOperation` にもこのキーしか現れない。`kill_after_cancel` は 3-d が kill 経路を配線した
@@ -472,7 +472,7 @@
 
 #### 3-c. モックの拡張
 
-- [ ] `privilege/testutil/mocks.go` の `MockPrivilegeManager` へ次の3つを足す。
+- [x] `privilege/testutil/mocks.go` の `MockPrivilegeManager` へ次の3つを足す。
       既存の `Supported`／`ElevationCalls`／`ShouldFail`／`ExecFn` の意味は変えない。
       - `InWindow func(phase MockWindowPhase)`: 隙の内側で**2回**呼ばれる。
         `MockWindowPhaseBeforeFn` は `fn` を呼ぶ直前、`MockWindowPhaseAfterFn` は
@@ -496,7 +496,7 @@
         `privilege` パッケージ側は `privilege/testutil` を import していない
         （`unix_privilege_test.go` などの同パッケージ内テストも含めて）。
         ガードが無いと AC-11 の「再入ガードが発火しない」という主張が無条件に通ってしまう。
-- [ ] `unix_privilege_test.go` の `ErrUnsupportedOperationType` を主張している表へ、
+- [x] `unix_privilege_test.go` の `ErrUnsupportedOperationType` を主張している表へ、
       `OperationKillAfterCancel` が**弾かれない**ことを示す行を足す。
 
 **完了の目安（3-a〜3-c）**: 新しい operation・エラー変数・監査属性・モックの注入口が入り、

@@ -153,7 +153,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 	}
 
 	switch elevationCtx.Operation {
-	case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation:
+	case runnertypes.OperationUserGroupExecution, runnertypes.OperationFileValidation, runnertypes.OperationKillAfterCancel:
 		execCtx.needsPrivilegeEscalation = true
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperationType, elevationCtx.Operation)

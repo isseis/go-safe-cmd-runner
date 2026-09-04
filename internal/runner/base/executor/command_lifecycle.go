@@ -26,6 +26,21 @@ var ErrExecBindingUnset = errors.New("execution binding not declared")
 // started".
 var ErrPreparedCommandSpent = errors.New("prepared command already released")
 
+// ErrKillStrategyUnset is returned when a preparedCommand reaches the kill
+// path without having declared what a cancellation-triggered kill requires.
+// Like ErrExecBindingUnset it is unreachable while prepareCommand is the only
+// constructor; the guard sits on a privilege boundary, so it fails closed.
+var ErrKillStrategyUnset = errors.New("kill strategy not declared")
+
+// ErrKillAfterCancel is returned when the child could not be killed after the
+// context was cancelled, so the run may leave a process behind.
+var ErrKillAfterCancel = errors.New("failed to kill command after cancellation")
+
+// ErrChildNotReaped is returned when the child did not exit within
+// killGraceDelay after the kill, which usually means a grandchild inherited
+// the pipe. The run returns rather than blocking; the pid is logged.
+var ErrChildNotReaped = errors.New("command did not exit after kill")
+
 // execBinding declares how the executed inode is bound. The zero value is
 // bindingUnset, which startPrepared rejects, so a preparedCommand whose
 // binding was never declared cannot be started.

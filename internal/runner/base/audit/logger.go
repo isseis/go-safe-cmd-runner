@@ -50,6 +50,12 @@ func NewAuditLogger(redactionConfig *redaction.Config) *Logger {
 type PrivilegeMetrics struct {
 	ElevationCount int
 	TotalDuration  time.Duration
+	// ByOperation breaks TotalDuration down per privilege window opened during
+	// the run (e.g. "user_group_execution", "kill_after_cancel",
+	// "staging_cleanup"). Logged at microsecond precision: the start window
+	// this task narrows privilege to is tens of microseconds long, which a
+	// millisecond-precision attribute would round to zero.
+	ByOperation map[runnertypes.Operation]time.Duration
 }
 
 // ExecutionResult represents the result of command execution for audit logging
@@ -84,6 +90,7 @@ func (l *Logger) LogUserGroupExecution(
 		slog.Int("elevation_count", privilegeMetrics.ElevationCount),
 		slog.Int64("total_privilege_duration_ms", privilegeMetrics.TotalDuration.Milliseconds()),
 	}
+	baseAttrs = append(baseAttrs, privilegeDurationByOperationAttrs(privilegeMetrics.ByOperation)...)
 
 	// Add user/group information
 	if cmd.RunAsUser() != "" {
@@ -113,6 +120,28 @@ func (l *Logger) LogUserGroupExecution(
 		errorAttrs = append(errorAttrs, additionalAttrs...)
 		l.logger.LogAttrs(ctx, slog.LevelError, "User/group command failed", errorAttrs...)
 	}
+}
+
+// privilegeDurationByOperationAttrs renders byOperation as one slog.Int64
+// attribute per entry, keyed "privilege_duration_<operation>_us" so repeated
+// operations (e.g. multiple staging_cleanup windows) do not collide, and in
+// microseconds because the start window this task narrows privilege to is
+// tens of microseconds long -- millisecond precision would round it to zero.
+// Entries are emitted in key order so log output is deterministic.
+func privilegeDurationByOperationAttrs(byOperation map[runnertypes.Operation]time.Duration) []slog.Attr {
+	if len(byOperation) == 0 {
+		return nil
+	}
+	ops := make([]runnertypes.Operation, 0, len(byOperation))
+	for op := range byOperation {
+		ops = append(ops, op)
+	}
+	slices.Sort(ops)
+	attrs := make([]slog.Attr, 0, len(ops))
+	for _, op := range ops {
+		attrs = append(attrs, slog.Int64("privilege_duration_"+string(op)+"_us", byOperation[op].Microseconds()))
+	}
+	return attrs
 }
 
 // LogPrivilegeEscalation logs privilege escalation events

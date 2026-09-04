@@ -58,6 +58,14 @@ func TestPrepareExecution_Success(t *testing.T) {
 			},
 			expectedPrivEscalation: true,
 		},
+		{
+			name: "kill_after_cancel",
+			elevationCtx: runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationKillAfterCancel,
+				CommandName: "test-command",
+			},
+			expectedPrivEscalation: true,
+		},
 	}
 
 	for _, tt := range tests {

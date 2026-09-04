@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -21,16 +22,60 @@ var (
 	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
 )
 
+// MockWindowPhase identifies where inside an open privilege window InWindow
+// was called. The zero value, MockWindowPhaseUnset, marks a call site that
+// forgot to pass one; WithPrivileges never passes it.
+type MockWindowPhase int
+
+// MockWindowPhase values. See MockPrivilegeManager.InWindow for what
+// "before" and "after" observe.
+const (
+	MockWindowPhaseUnset MockWindowPhase = iota
+	MockWindowPhaseBeforeFn
+	MockWindowPhaseAfterFn
+)
+
 // MockPrivilegeManager provides a mock implementation of runnertypes.PrivilegeManager for testing
 type MockPrivilegeManager struct {
 	Supported      bool
 	ElevationCalls []string
 	ShouldFail     bool
 	ExecFn         func() error // Custom execution function (for testing)
+
+	// InWindow, if set, is called twice while the window is open: once
+	// immediately before fn runs (MockWindowPhaseBeforeFn) and once
+	// immediately after fn returns (MockWindowPhaseAfterFn). It exists to let
+	// a test sample process-wide state (the goroutine set, a child's
+	// liveness) at the instant the window is open; it cannot observe what fn
+	// itself called (that is the static guard's job). The "after" call
+	// matters on its own: something started inside fn (e.g. a regression that
+	// reintroduces an os/exec copy goroutine, which Start creates during
+	// fn's own call) would be invisible to a "before"-only sample.
+	InWindow func(phase MockWindowPhase)
+
+	// FailFor injects a failure for one specific operation, leaving every
+	// other operation to succeed even when this call also sets ShouldFail.
+	// ShouldFail fails every operation indiscriminately, which cannot express
+	// "the start window succeeds but the kill window fails".
+	FailFor map[runnertypes.Operation]error
+
+	// inWindow mirrors UnixPrivilegeManager's unsynchronized reentrancy
+	// guard: a nested WithPrivileges call on this same mock, made from within
+	// fn, returns privilege.ErrReentrantPrivilegeCall instead of running fn a
+	// second time. It is the same sentinel the real implementation returns
+	// (not a mock-only one), so a test asserting on it is asserting something
+	// production code can actually produce.
+	inWindow bool
 }
 
 // WithPrivileges executes the given function with privilege elevation
 func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+	if m.inWindow {
+		return privilege.ErrReentrantPrivilegeCall
+	}
+	m.inWindow = true
+	defer func() { m.inWindow = false }()
+
 	// Record different types of operations differently for test verification
 	switch elevationCtx.Operation {
 	case runnertypes.OperationUserGroupExecution:
@@ -42,11 +87,21 @@ func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
 	}
+	if err, ok := m.FailFor[elevationCtx.Operation]; ok {
+		return err
+	}
 	// If a custom execution function exists, prioritize and execute it
 	if m.ExecFn != nil {
 		return m.ExecFn()
 	}
-	return fn()
+	if m.InWindow != nil {
+		m.InWindow(MockWindowPhaseBeforeFn)
+	}
+	err := fn()
+	if m.InWindow != nil {
+		m.InWindow(MockWindowPhaseAfterFn)
+	}
+	return err
 }
 
 // IsPrivilegedExecutionSupported returns whether privileged execution is supported

@@ -4,6 +4,8 @@ package executor
 
 import (
 	"log/slog"
+	"os/exec"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 )
@@ -42,6 +44,26 @@ func WithIdentityChecker(fn func() error) Option {
 func WithFdExecDisabled() Option {
 	return func(e *DefaultExecutor) {
 		e.fdExecDisabled = true
+	}
+}
+
+// WithKillGraceDelay replaces the default 5-second killGraceDelay for testing,
+// so tests exercising the timeout paths (ErrChildNotReaped, the output pump's
+// grandchild-holding-the-pipe wait) do not each cost 5 real seconds.
+func WithKillGraceDelay(d time.Duration) Option {
+	return func(e *DefaultExecutor) {
+		e.killGraceDelay = d
+	}
+}
+
+// WithWaitFn replaces (*exec.Cmd).Wait for testing. ErrChildNotReaped can only
+// occur when Wait does not return, and a SIGKILL'd child is always reaped
+// promptly by the real kernel/runtime, so this injection point is the only
+// way to exercise that path deterministically (a grandchild holding the pipe
+// open does not block Wait -- see killGraceDelay's doc comment).
+func WithWaitFn(fn func(*exec.Cmd) error) Option {
+	return func(e *DefaultExecutor) {
+		e.waitFn = fn
 	}
 }
 

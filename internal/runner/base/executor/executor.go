@@ -29,6 +29,9 @@ import (
 // staging parent directory (e.g. /tmp).
 const stagedExecMode = 0o550
 
+// defaultKillGraceDelay is the default value of DefaultExecutor.killGraceDelay.
+const defaultKillGraceDelay = 5 * time.Second
+
 // nilWriterStderrLimit bounds how many bytes of stderr are retained for runs
 // without an OutputWriter, matching the 32 KiB prefix/suffix limit os/exec
 // applies to Cmd.Output's stderr.
@@ -60,6 +63,25 @@ type DefaultExecutor struct {
 	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
 	runAsResolver   risktypes.RunAsResolver      // injectable for testing; defaults to risktypes.ResolveRunAsIdent
 	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
+
+	// killGraceDelay bounds two unrelated waits after a cancellation-triggered
+	// kill; conflating them would blur which failure a caller is looking at.
+	//  (1) How long superviseCommand waits for Wait() to return once the kill
+	//      has been sent. Exceeding this means the child could not be reaped
+	//      (ErrChildNotReaped): the process may still be alive.
+	//  (2) How long the output pump's wait() waits for the read goroutines to
+	//      finish once Stdout/Stderr are *os.File (so Wait() itself does not
+	//      wait for them, unlike os/exec's copy-goroutine case). Exceeding
+	//      this means a grandchild is still holding the pipe's write end open;
+	//      the child itself was already reaped, so this is logged, not
+	//      returned as an error.
+	// Defaults to 5 seconds, unlike os/exec's own Cmd.WaitDelay (unset by
+	// this package, meaning no bound) -- superviseCommand always waits on its
+	// own goroutine rather than relying on os/exec's internal WaitDelay
+	// mechanism, so this bound is unrelated to Cmd.WaitDelay.
+	killGraceDelay time.Duration
+	// waitFn is injectable for testing; defaults to (*exec.Cmd).Wait.
+	waitFn func(*exec.Cmd) error
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -89,6 +111,8 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 		osExit:          os.Exit,
 		identityChecker: defaultIdentityChecker,
 		runAsResolver:   risktypes.ResolveRunAsIdent,
+		killGraceDelay:  defaultKillGraceDelay,
+		waitFn:          (*exec.Cmd).Wait,
 	}
 
 	for _, opt := range opts {
@@ -231,6 +255,10 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
+	if metrics.ByOperation == nil {
+		metrics.ByOperation = make(map[runnertypes.Operation]time.Duration)
+	}
+	metrics.ByOperation[runnertypes.OperationUserGroupExecution] += privilegeDuration
 
 	e.logDeferredWarnings(pc)
 
