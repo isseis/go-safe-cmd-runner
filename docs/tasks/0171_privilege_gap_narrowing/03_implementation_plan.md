@@ -409,8 +409,8 @@
 - [x] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: `exec.CommandContext` の置き換えとキャンセル・kill（F-003）
 
