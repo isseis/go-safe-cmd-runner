@@ -788,6 +788,10 @@
       隙の外へ出す。1件目は昇格の前、2件目は復帰の後に置く。本タスクの carry-out の仕組みは
       すべて「隙の中では何もログしない」を前提にしており、呼び出される側がその前提を
       内側から崩していた。あわせて AC-05 が測る隙の長さからハンドラ2回分が外れる。
+- [x] `escalatePrivileges` が `seteuid(0)` の直後に出す `Info`（「Privileges elevated」）は
+      移さず、残存リスクとして設計文書 §5.3 に記す。この記録の意味は「いつ昇格したか」であり、
+      復帰の後へ動かすと監査の時系列が実際と食い違う。あわせて、静的検査（Phase 4-c）が
+      固定するのは executor の隙の本体だけであることを同節に明記する。
 - [x] `preparedCommand.stagingWindowErr` を足す。後始末が**試みられる前に**止まった理由
       （昇格の拒否、`stagingCleanupStrategy` 未宣言）を記録する。`stagingCleanupErr`
       （`os.RemoveAll` 自身の失敗）とは別にするのは、`release()` の隙なしの再試行が返す
