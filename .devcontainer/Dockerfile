@@ -129,6 +129,14 @@ RUN EXISTING_USER=$(getent passwd "$USER_UID" | cut -d: -f1) \
 
 COPY .devcontainer/bashrc_git_ps1.sh /etc/bash_completion.d/git_ps1_settings.sh
 
+# The workspace is a bind mount, and the mount root's owner uid is not stable:
+# it reports as USER_UID from an interactive shell but as 0 from inside a git
+# hook, so git rejects the repository there with "detected dubious ownership"
+# and every pre-commit hook fails. Declared system-wide so it holds before any
+# user-level gitconfig exists -- postCreateCommand's pre-commit install needs
+# it too.
+RUN git config --system --add safe.directory /workspaces/ubuntu
+
 RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
     && mkdir -p /home/$USERNAME/.ssh \
     && mkdir -p /home/$USERNAME/.config/gh \
