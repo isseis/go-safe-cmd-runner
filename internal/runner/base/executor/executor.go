@@ -34,6 +34,9 @@ const stagedExecMode = 0o550
 // applies to Cmd.Output's stderr.
 const nilWriterStderrLimit = 32 << 10
 
+// defaultKillGraceDelay is the production default for DefaultExecutor.killGraceDelay.
+const defaultKillGraceDelay = 5 * time.Second
+
 // ErrPrivilegeLeak is returned when effective UID/GID do not match real UID/GID after execution.
 var ErrPrivilegeLeak = errors.New("privilege leak detected")
 
@@ -60,6 +63,28 @@ type DefaultExecutor struct {
 	identityChecker func() error                 // injectable for testing; defaults to defaultIdentityChecker
 	runAsResolver   risktypes.RunAsResolver      // injectable for testing; defaults to risktypes.ResolveRunAsIdent
 	fdExecDisabled  bool                         // injectable for testing; forces the staging fallback even on Linux
+
+	// killGraceDelay bounds two distinct waits that share the same value but
+	// must not be confused:
+	//  1. How long superviseCommand waits for execCmd.Wait() to return after a
+	//     kill. Exceeding it means the child could not be reaped and yields
+	//     ErrChildNotReaped.
+	//  2. How long superviseCommand waits for the output pump to drain after a
+	//     kill. Once Stdout/Stderr are *os.File (see output_pump.go), Wait()
+	//     does not wait for copy goroutines, so it is a grandchild holding the
+	//     pipe's write end -- not a stuck child -- that can stretch (2)
+	//     without stretching (1). Exceeding (2) is "could not finish reading
+	//     the output", which is not an error: the exit code already came from
+	//     Wait().
+	killGraceDelay time.Duration
+
+	// waitFn replaces execCmd.Wait() in the wait goroutine when non-nil;
+	// injectable for testing. ErrChildNotReaped can only be exercised by a
+	// Wait() that never returns, and a real child killed with SIGKILL is
+	// always reaped, so this is the only way to hit that path deterministically
+	// (giving a grandchild the pipe's write end does not: Wait() does not wait
+	// on it -- see killGraceDelay above).
+	waitFn func(*exec.Cmd) error
 }
 
 // Option is a functional option for configuring DefaultExecutor
@@ -89,6 +114,7 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 		osExit:          os.Exit,
 		identityChecker: defaultIdentityChecker,
 		runAsResolver:   risktypes.ResolveRunAsIdent,
+		killGraceDelay:  defaultKillGraceDelay,
 	}
 
 	for _, opt := range opts {
@@ -231,6 +257,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
+	metrics.ByOperation = map[runnertypes.Operation]time.Duration{
+		runnertypes.OperationUserGroupExecution: privilegeDuration,
+	}
 
 	e.logDeferredWarnings(pc)
 
