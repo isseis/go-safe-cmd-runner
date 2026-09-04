@@ -126,7 +126,9 @@
 | `executor_test.go::TestExecute_ContextCancellation` | キャンセル済み context での起動は、現在 `exec.CommandContext` が `Start` で `ctx.Err()` を返し、`executeCommandWithPath` は `result` を非 `nil` のまま返す。テストは `assert.NotNil(t, result)` を主張している。新設計では準備フェーズで `ctx.Err()` を検査して早期に戻るため、素直に書くと `result` が `nil` になる | `superviseCommand` を通らない早期リターンでも `&Result{ExitCode: ExitCodeUnknown}` を返し、既存テストを変更せずに緑を保つ。この不変条件を Phase 3 の作業項目に明記する。同じ主張の新規テストは作らない |
 | `executor_privilege_check_test.go::TestPrepareExecCommand_CredentialWiring` | `prepareExecCommand` が無くなる | `prepareCommand` と `applyCredential` の組で同じ配線を主張する形へ書き替える |
 | `output_wrapper_test.go` の3箇所の構造体リテラル | 構築関数が `newOutputWrapper` に変わる | リテラルを `newOutputWrapper(recorder, StdoutStream, 0)` などへ書き替える。主張の内容は変えない |
-| `stagefromfd_test.go::TestStageFromFD_*` | `stageFromFD` のシグネチャと失敗時の後始末は変わらない | テスト本体は変更しない。`stageFromFD` の doc コメントだけ更新する |
+| `stagefromfd_test.go::TestStageFromFD_*` | `stageFromFD` のシグネチャが `(stagedPath, cleanupFn func() error, warn error, err error)` へ変わる（複製元記述子の close 失敗を、隙の外へ運ぶために戻り値で返すため）。失敗時の後始末の中身は変わらない | 呼び出し2箇所を新シグネチャへ合わせる（戻り値を1つ読み飛ばす）。ディレクトリを残さないという既存の主張は変えない |
+| `Start()` 失敗パスの返るエラー | 旧コードは複製検証記述子／`os.DevNull`／staging ディレクトリの close 失敗を `Logger.Warn` するだけでエラーに含めなかった。新コードは `pc.release()` がそれらを `errors.Join` で返るエラーへ入れる（設計文書 §3.1 の骨格の形） | 二重失敗（`Start()` 失敗と close 失敗の同時）のとき、返るエラーに以前より1つ多い join された cause が含まれうる（新しい失敗は起きず、元の cause は `errors.Is` でたどれる）。§3.1 骨格の帰結であり、§5.6 の1点には含めない |
+| 準備フェーズの失敗時の戻り値 | 旧コードは失敗時に close 失敗をその場で `Logger.Warn` していた。新コードでは `release()` が隙の中で走りうるためログできず、失敗を `preparedCommand` へ記録して隙の外で出す | `prepareCommand` は失敗時も非 `nil` の `preparedCommand` をエラーと共に返し、呼び出し元が `logDeferredWarnings` へ渡す。返る `pc` は使用済みで、起動してはならない旨を doc コメントに明記する |
 | `test/security/output_security_test.go:181,252` | コメントが `prepareExecCommand` を名指ししている | Phase 2 でコメントを直す |
 | `internal/testutil/synccensus/census_guard_test.go` | `capture.go` の `mutex`、`log_line_tracker.go` の `lineCounter`、`error_collector.go` の `mu` の理由文字列が実態と合わなくなる | 3行の `reason` を出力中継の読み取り goroutine を指す文言へ書き替える。出力中継は同期プリミティブを宣言しない（設計文書 §3.2、チャネルで join する）ので行の追加は起きない |
 | 0170 実装計画書の検証コマンド3行と完了条件2箇所 | Phase 6 の doc コメント更新で、`unix.go` の `This is an unresolved design issue`（0170 AC-11、`:1471`）、`capture.go` の2つのリテラル（0170 AC-14、`:1475` と本文 `:278`）、`log_line_tracker.go`／`error_collector.go` の `output copy goroutine`（0170 AC-15、`:1478` と本文 `:297`）がいずれも消える | 5箇所すべてに、本タスク（0171）で文言が置き換わった旨の注記と置換後の検証コマンドを併記する（Phase 6）。0170 の他の行は触らない |
@@ -255,8 +257,8 @@
 - [x] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: 準備・起動・監督の3フェーズへの分解
 
@@ -270,20 +272,20 @@
 `internal/runner/base/executor/stagefromfd_test.go`、
 `test/security/output_security_test.go`
 
-- [ ] `command_lifecycle.go` に `execBinding`（`bindingUnset`／`bindingVerifiedFD`／
+- [x] `command_lifecycle.go` に `execBinding`（`bindingUnset`／`bindingVerifiedFD`／
       `bindingStagedCopy`／`bindingResolvedPath`）と `killStrategy`（`killUnset`／
       `killDirect`／`killReelevated`）を定義する。零値は宣言し忘れを表し、
       `switch` の `default` は失敗側へ倒す。
-- [ ] `preparedCommand` を設計文書 §3.1 のフィールド構成で定義する。`stagingRequest` は
+- [x] `preparedCommand` を設計文書 §3.1 のフィールド構成で定義する。`stagingRequest` は
       staged path の確定を起動フェーズへ移す Phase 3-d で定義する（この Phase では
       staging は準備フェーズに残るので、使い手がいない）。
-- [ ] `command_lifecycle.go` に `commandOutcome`（設計文書 §3.3）と、エラー変数
+- [x] `command_lifecycle.go` に `commandOutcome`（設計文書 §3.3）と、エラー変数
       `ErrExecBindingUnset` を設計文書 §4.1 の文言で定義する。どちらも本 Phase の
       `prepareCommand`（`binding` の `switch` の `default`）と `superviseCommand`
       （待機結果の受け渡し）が使うため、ここで入れる。
-- [ ] `preparedCommand.release() error` を実装し、準備フェーズが確保した記述子
+- [x] `preparedCommand.release() error` を実装し、準備フェーズが確保した記述子
       （出力中継、複製した検証済み記述子、`os.DevNull`）と staged copy をすべて解放する。
-- [ ] `prepareCommand` を実装する。`prepareExecCommand` の3経路の選択、`applyCredential`、
+- [x] `prepareCommand` を実装する。`prepareExecCommand` の3経路の選択、`applyCredential`、
       `os.DevNull` の open、作業ディレクトリと環境変数の設定、出力中継の生成、
       `binding`／`kill` の宣言をここへ集める。**この Phase では `exec.CommandContext` を
       使い続ける**。`bindingStagedCopy` の経路も現行どおり `prepareCommand` の中で
@@ -294,22 +296,22 @@
       `executor_test.go` の既存2件（`sleep 2` を 100ms のタイムアウトで殺す表の行と
       `TestExecute_ContextCancellation`）が落ち、PR-2 は単独でグリーンゲートを通らない。
       本 Phase の「挙動不変」はこの一点で決まる。
-- [ ] `startPrepared(pc *preparedCommand) (started bool, err error)` を実装する。
+- [x] `startPrepared(pc *preparedCommand) (started bool, err error)` を実装する。
       この Phase の中身は `execCmd.Start()` の呼び出しだけである（staging は
       `prepareCommand` に残る）。`Start()` に成功したら `started` を真にする。
       `stageFromFD` の呼び出しをここへ移すのは Phase 3-d で、`exec.Command` への
       切り替えと同じ PR で行う。
-- [ ] `superviseCommand(ctx, pc, startupErr) (*Result, error)` を実装する。この Phase では
+- [x] `superviseCommand(ctx, pc, startupErr) (*Result, error)` を実装する。この Phase では
       まだキャンセル経路を持たず、待機 goroutine の起動・出力中継の `wait`・`Result` の
       組み立てまでを行う。
-- [ ] `executeCommandWithPath` を削除し、`executeWithUserGroup`／`executeNormal` を
+- [x] `executeCommandWithPath` を削除し、`executeWithUserGroup`／`executeNormal` を
       設計文書 §3.1 の骨格（`started` の判定を含む3分岐）へ組み替える。
       この Phase では `WithPrivileges` が `prepareCommand`＋`startPrepared`＋
       `superviseCommand` の全体を包んだままにする。
-- [ ] `prepareExecCommand` を削除する。
-- [ ] `test/security/output_security_test.go:181` と `:252` のコメント中の
+- [x] `prepareExecCommand` を削除する。
+- [x] `test/security/output_security_test.go:181` と `:252` のコメント中の
       `prepareExecCommand/stageFromFD` を `prepareCommand/stageFromFD` へ直す。
-- [ ] `stageFromFD` から `Logger.Warn` を2箇所とも取り除く（設計文書 §7.2）。隙の中では
+- [x] `stageFromFD` から `Logger.Warn` を2箇所とも取り除く（設計文書 §7.2）。隙の中では
       ログを出さない。記録したい内容は値として隙の外へ運ぶ。
       - `executor.go:488`（staging ディレクトリの削除失敗）: 後始末の関数の型を
         `cleanupFn func()` から `func() error` へ変え、`os.RemoveAll` のエラーを返す。
@@ -325,10 +327,10 @@
       - `executor.go:531`（staging 元の複製記述子の close 失敗）: `stageFromFD` も
         `startPrepared` も隙の内側にいるため戻り値では外へ出せない。
         `preparedCommand` へ `stagingWarn error` フィールドを足してそこへ載せる。
-- [ ] `preparedCommand` に `stagingWarn error` を足し、その doc コメントへ
+- [x] `preparedCommand` に `stagingWarn error` を足し、その doc コメントへ
       「staging は成功しているのでエラーとしては返さない。隙の中でログを出さないために
       値として運ぶだけである」ことを英語で書く。
-- [ ] `stagingWarn` と `cleanupFn()` の戻り値を記録する位置は、この Phase では
+- [x] `stagingWarn` と `cleanupFn()` の戻り値を記録する位置は、この Phase では
       **`WithPrivileges` から戻った後**（`executeWithUserGroup`／`executeNormal` の中）に置く。
       この Phase の `WithPrivileges` は準備から監督までを包むので、隙の外で記録できる
       最初の地点がここである。**`startPrepared` の呼び出し元は隙の内側なので、そこへ
@@ -336,32 +338,38 @@
       開くことが許されており、隙の中で呼べばその `open` が実効 UID 0 で行われる）。
       Phase 4-a では隙が `startPrepared` だけへ縮むので、記録は「隙の直後」という位置づけの
       まま、より早い地点へ移る。
-- [ ] `stagefromfd_test.go` の `stageFromFD` 呼び出し2箇所（`:66`、`:91`）を、
+- [x] `stagefromfd_test.go` の `stageFromFD` 呼び出し2箇所（`:66`、`:91`）を、
       `cleanupFn func() error` に合わせて受け方だけ直す。ディレクトリを残さないという
       既存の主張は変えない。
-- [ ] `stageFromFD` の doc コメントに、この関数が特権の隙の内側で呼ばれることと、
+- [x] `stageFromFD` の doc コメントに、この関数が特権の隙の内側で呼ばれることと、
       その結果として staged copy が root 所有になること、および隙の中でログを出さないため
       警告を戻り値で返すことを書き足す（設計文書 §3.4 差分1、§7.2）。
       「起動区間の内側」と限定できるのは呼び出しが `startPrepared` へ移る Phase 3-d 以降なので、
       その1語はそこで足す。
-- [ ] `executor_logging_test.go` の `createTestCommand` へ可変長オプション引数を足し、
-      run-as ユーザー／グループと出力サイズ上限を指定できるようにする（同パッケージの
-      新規テストが使う）。既存の2引数呼び出しは変えずに済む形にする。
-- [ ] `TestPrepareExecCommand_CredentialWiring` を `TestPrepareCommand_CredentialWiring` へ
+- [x] `executor_logging_test.go` の `createTestCommand` へ可変長オプション引数を足し、
+      出力サイズ上限を指定できるようにする（同パッケージの新規テストが使う）。既存の
+      2引数呼び出しは変えずに済む形にする。**当初案にあった run-as ユーザー／グループの
+      オプション（`withRunAs`）は実装後のレビューで指摘され削除した**: `prepareCommand`
+      は run-as の資格情報を `cred` 引数で直接受け取り、`cmd.RunAsUser()`／`RunAsGroup()`
+      を読まないため、`TestPrepareCommand_CredentialWiring` に `withRunAs` を足しても
+      `prepareCommand` の実際の依存関係を検証したことにならない（cred は別途手で組み立てて
+      渡している）。run-as 経由の資格情報解決を検証する必要が生じたら、そのときのテストが
+      要る形でオプションを足し直す。
+- [x] `TestPrepareExecCommand_CredentialWiring` を `TestPrepareCommand_CredentialWiring` へ
       書き替え、`prepareCommand` が返す `preparedCommand.execCmd` に対して
       `SysProcAttr.Credential` の Uid／Gid／Groups を主張する形にする。
       検査後は `preparedCommand.release()` を `t.Cleanup` で呼ぶ。
 
 **テスト**（`executor_lifecycle_test.go`、`//go:build test`、`package executor`）
 
-- [ ] `TestPrepareCommand_ChildStreamsAreOSFiles`: `prepareCommand` が返す `execCmd` の
+- [x] `TestPrepareCommand_ChildStreamsAreOSFiles`: `prepareCommand` が返す `execCmd` の
       `Stdout` と `Stderr` が、`outputWriter` が非 `nil` の場合と `nil` の場合の両方で
       `*os.File` である（型アサーションで確認）。`t.Cleanup` で `release()` を呼ぶ。
       **設計文書 §8 は AC-01 の検証を Phase 1 に置いているが、型アサーションの対象となる
       `prepareCommand` が入るのは本 Phase なので、ここで行う。** Phase 1 の時点では
       `executeCommandWithPath` の内側にしか `exec.Cmd` が無く、外から観測できない。
 
-- [ ] `TestStageFromFD_ReportsFailuresWithoutLogging` を足す。`tu.NewRecordingLogger` を
+- [x] `TestStageFromFD_ReportsFailuresWithoutLogging` を足す。`tu.NewRecordingLogger` を
       `DefaultExecutor.Logger` に差し、`stageFromFD` の後始末が失敗する状況
       （既存 `TestStageFromFD_ChownFailure_CleansUpStagingDir` と同じ作り方で
       ディレクトリを先に読み取り専用にする）で、次の3つを主張する。
@@ -391,13 +399,16 @@
 
 **判定理由**: 挙動を変えない構造の組み替えであり、未踏の設計判断・パネルモードの引き金（重い統合テスト／CI／外部資源の面、security-gate／移行）・approach 未確定・隔離された高リスク step のいずれにも当たらないため。隙の中のログ出力の全廃とredaction を通らない stderr 書き込みは設計文書 §7.2 で判断済みで、実装は1箇所に限られる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
-- [ ] §8 の `executeCommandWithPath`／`prepareExecCommand` の横断検索が 0 件を返す
-      （`exec.CommandContext` はこの PR ではまだ残る。その検索は PR-4 で行う）
-- [ ] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `make deadcode` が新たな未使用シンボルを報告しない（後続 PR が使うまで未使用のままの記号があるため）
+- [x] §8 の `executeCommandWithPath`／`prepareExecCommand` の横断検索が 0 件を返す
+      （`exec.CommandContext` はこの PR ではまだ残る。その検索は PR-4 で行う）。
+      検索中に見つかった2箇所の古いコメント（`executor_privilege_check_test.go` は
+      `prepareCommand` を、`output_pump.go` は `prepareCommand`＋`startPrepared`＋
+      `superviseCommand` を指すよう修正した）
+- [x] §8 の新規型名（`boundedBuffer`／`outputPump`／`preparedCommand`／`killStrategy`／`execBinding`）が executor パッケージの外へ漏れていない（マッチ 0 件）
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

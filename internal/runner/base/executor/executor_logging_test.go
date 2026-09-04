@@ -15,12 +15,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// createTestCommandOption configures optional fields on the CommandSpec that
+// createTestCommand builds, for tests that need more than a bare cmd/args pair.
+type createTestCommandOption func(*runnertypes.CommandSpec)
+
+// withOutputSizeLimit sets the command-specific output size limit in bytes.
+func withOutputSizeLimit(limit int64) createTestCommandOption {
+	return func(spec *runnertypes.CommandSpec) {
+		spec.OutputSizeLimit = &limit
+	}
+}
+
 // createTestCommand creates a RuntimeCommand for testing purposes
-func createTestCommand(cmd string, args []string) *runnertypes.RuntimeCommand {
+func createTestCommand(cmd string, args []string, opts ...createTestCommandOption) *runnertypes.RuntimeCommand {
 	spec := &runnertypes.CommandSpec{
 		Name: "test_cmd",
 		Cmd:  cmd,
 		Args: args,
+	}
+	for _, opt := range opts {
+		opt(spec)
 	}
 
 	rtCmd, err := runnertypes.NewRuntimeCommand(spec, common.NewUnsetTimeout(), commontestutil.NewUnsetOutputSizeLimit(), "test_group")

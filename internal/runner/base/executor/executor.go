@@ -208,17 +208,31 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		RunAsGroup:  cmd.RunAsGroup(),
 	}
 
+	// pc is populated inside the WithPrivileges closure below. This phase
+	// still has WithPrivileges wrap prepareCommand, startPrepared and
+	// superviseCommand together (narrowing the window to startPrepared alone
+	// is deferred to the cancellation work), so it is the only place the
+	// non-fatal warnings collected on pc can be logged: logging from inside
+	// the closure would run at euid 0.
+	var pc *preparedCommand
 	var result *Result
 	privilegeStart := time.Now()
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	err = e.PrivMgr.WithPrivileges(executionCtx, func() error {
-		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
-		return execErr
+		var prepErr error
+		pc, prepErr = e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
+		if prepErr != nil {
+			return prepErr
+		}
+		var runErr error
+		result, runErr = e.runCommand(ctx, pc)
+		return runErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
+
+	e.logDeferredWarnings(pc)
 
 	if err != nil {
 		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
@@ -260,163 +274,48 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
 	}
 
-	return e.executeCommandWithPath(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
+	pc, err := e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
+	if err != nil {
+		// prepareCommand returns a non-nil pc on failure too, carrying
+		// whatever its own release could not do cleanly.
+		e.logDeferredWarnings(pc)
+		return nil, err
+	}
+	result, err := e.runCommand(ctx, pc)
+	e.logDeferredWarnings(pc)
+	return result, err
 }
 
-// executeCommandWithPath executes a command with the given resolved path.
-//
-// When plan carries a verified file descriptor, execution is bound to that
-// descriptor (fd-bound exec on Linux, or read-only staging copied from the
-// descriptor as a fallback) so the executed inode is exactly the one the
-// evaluator verified. Without a verified descriptor the already-resolved path is
-// executed directly (no re-resolution); the evaluator's identity gate denies
-// unverified binaries before they reach an allowed plan, so this branch does not
-// weaken the production guarantee.
-//
-// The child's stdout and stderr are pipe write ends handed to exec.Cmd as
-// *os.File, so os/exec starts no copy goroutine of its own; the output pump
-// reads the other ends into the wrappers.
-//
-// cred is the kernel-level credential to pass to the child process via
-// SysProcAttr.Credential (used for run-as execution). When nil, no credential
-// override is applied (normal execution).
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter, cred *syscall.Credential) (*Result, error) {
-	// Log the command being executed at DEBUG level
-	cmdLine := FormatCommandForLog(path, cmd.ExpandedArgs)
-	e.Logger.Debug("Executing command",
-		"command", cmdLine,
-		"path", path,
-		"work_dir", cmd.EffectiveWorkDir,
-		"work_dir_len", len(cmd.EffectiveWorkDir))
-
-	// Bind execution to the verified descriptor when one is available.
-	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	execCmd, cleanup, err := e.prepareExecCommand(ctx, plan, path, cmd.ExpandedArgs, cred)
-	if err != nil {
-		return nil, err
+// logDeferredWarnings logs pc's non-fatal resource-release failures, if any:
+// the staging warnings and release()'s failures on devNull, verifiedFD and
+// the output pump. Pre-refactor, each of these was logged individually at its
+// own close site; decomposing execution into prepare/start/supervise moved
+// all of them behind preparedCommand.release(), which may run inside the
+// privilege window, so they are recorded as values there instead and logged
+// here. Callers must invoke logDeferredWarnings only once the privilege
+// window (if any) that produced pc has closed: nothing inside a window may
+// log, since a slog handler is free to open a file and would do so at euid 0.
+// pc may be nil when the caller never reached prepareCommand, in which case
+// there is nothing to log.
+func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
+	if pc == nil {
+		return
 	}
-	defer cleanup()
-
-	// Set SysProcAttr.Credential for run-as execution. When cred is non-nil,
-	// the kernel sets uid/gid/supplementary groups atomically at execve time.
-	// For normal execution (cred == nil), no credential is set.
-	applyCredential(execCmd, cred)
-
-	// Set up stdin to null device for security and stability:
-	// 1. Security: Prevents child processes from reading unexpected input from stdin
-	// 2. Stability: Prevents errors in commands that try to allocate a pseudo-TTY when stdin is nil
-	//    (e.g., docker-compose exec can fail with "exit status 255" if stdin is not configured)
-	// 3. Best practice: Batch processing tools should explicitly control stdin rather than inheriting it
-	devNull, err := os.Open(os.DevNull)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open null device for stdin: %w", err)
+	if pc.stagingWarn != nil {
+		e.Logger.Warn("Failed to close staging source descriptor", "error", pc.stagingWarn)
 	}
-	defer func() {
-		if closeErr := devNull.Close(); closeErr != nil {
-			e.Logger.Warn("Failed to close null device", "error", closeErr)
-		}
-	}()
-	execCmd.Stdin = devNull
-
-	// Set up working directory
-	if cmd.EffectiveWorkDir != "" {
-		execCmd.Dir = cmd.EffectiveWorkDir
+	if pc.stagingCleanupErr != nil {
+		e.Logger.Warn("Failed to remove staging directory", "error", pc.stagingCleanupErr)
 	}
-
-	// Set up environment variables
-	// Only use the filtered environment variables provided in envVars
-	// This ensures allowlist filtering is properly enforced
-	execCmd.Env = make([]string, 0, len(envVars))
-	for k, v := range envVars {
-		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
+	if pc.devNullCloseErr != nil {
+		e.Logger.Warn("Failed to close null device", "error", pc.devNullCloseErr)
 	}
-
-	// Set up output capture. The child writes into *os.File pipe ends, so
-	// os/exec starts no copy goroutine of its own; the pump reads the other
-	// ends into the wrappers. Without an OutputWriter, stderr is bounded to
-	// the same prefix/suffix limit os/exec applies to Cmd.Output's stderr.
-	stderrLimit := 0
-	if outputWriter == nil {
-		stderrLimit = nilWriterStderrLimit
+	if pc.verifiedFDCloseErr != nil {
+		e.Logger.Warn("Failed to close duplicated verified fd", "error", pc.verifiedFDCloseErr)
 	}
-	pump, err := newOutputPump(outputWriter, stderrLimit)
-	if err != nil {
-		return nil, err
+	if pc.pumpReleaseErr != nil {
+		e.Logger.Warn("Failed to release output pump", "error", pc.pumpReleaseErr)
 	}
-	stdoutFile, stderrFile := pump.childFiles()
-	execCmd.Stdout = stdoutFile
-	execCmd.Stderr = stderrFile
-
-	// Start the child, then release the pipe write ends on every path
-	// (success or failure): the read ends never reach EOF otherwise, and
-	// the pump's wait blocks on them.
-	startErr := execCmd.Start()
-	closeErr := pump.releaseChildEnds()
-
-	if startErr != nil {
-		// The child never ran: release the read ends as well.
-		releaseErr := pump.release()
-		result := &Result{ExitCode: ExitCodeUnknown}
-		e.Logger.Error("Command execution failed",
-			"error", startErr,
-			"command", cmdLine,
-			"exit_code", result.ExitCode)
-		return result, fmt.Errorf("command execution failed: %w", errors.Join(startErr, closeErr, releaseErr))
-	}
-
-	// Reap the child in its own goroutine. exec.CommandContext still kills
-	// it on context cancellation.
-	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- execCmd.Wait()
-	}()
-
-	// Read the child's output into the wrappers.
-	pump.start()
-
-	waitErr := <-waitCh
-	stdout, stderr, writeErr, _ := pump.wait(0)
-
-	// Prepare the result
-	result := &Result{
-		Stdout: string(stdout),
-	}
-	if outputWriter != nil {
-		result.Stderr = string(stderr)
-	} else if _, isExitError := errors.AsType[*exec.ExitError](waitErr); isExitError {
-		// Match Cmd.Output: without an OutputWriter, stderr is reported
-		// only when the command exited abnormally.
-		result.Stderr = string(stderr)
-	}
-	if execCmd.ProcessState != nil {
-		result.ExitCode = execCmd.ProcessState.ExitCode()
-	} else {
-		result.ExitCode = ExitCodeUnknown // Use constant for unknown exit code
-	}
-
-	cmdErr := waitErr
-	// A write error (e.g. output size limit exceeded) outranks the broken
-	// pipe error the child exits with once the reader closed the pipe: it
-	// is the real cause of the failure.
-	if writeErr != nil {
-		cmdErr = writeErr
-	}
-	// A write end that could not be released leaks a descriptor, so it is
-	// reported alongside the run's own outcome.
-	if closeErr != nil {
-		cmdErr = errors.Join(cmdErr, closeErr)
-	}
-
-	if cmdErr != nil {
-		e.Logger.Error("Command execution failed",
-			"error", cmdErr,
-			"command", cmdLine,
-			"exit_code", result.ExitCode,
-			"stderr", string(stderr))
-		return result, fmt.Errorf("command execution failed: %w", cmdErr)
-	}
-
-	return result, nil
 }
 
 // applyCredential sets execCmd.SysProcAttr.Credential to cred when cred is
@@ -433,65 +332,6 @@ func applyCredential(execCmd *exec.Cmd, cred *syscall.Credential) {
 	execCmd.SysProcAttr.Credential = cred
 }
 
-// prepareExecCommand builds the *exec.Cmd to run, binding it to the verified
-// file descriptor when the plan supplies one. It returns a cleanup function the
-// caller must defer; cleanup closes any duplicated descriptor and removes any
-// staged copy, so descriptors are not leaked even when exec.Cmd.Start fails.
-//
-// Selection order when a verified descriptor is present:
-//  1. fd-bound exec via /proc/self/fd (Linux) — the kernel resolves the
-//     descriptor to the verified inode regardless of later path swaps.
-//  2. read-only staging — copy the verified inode out of the held descriptor to
-//     a private file and exec that copy (non-Linux, or when fd exec is disabled
-//     for tests).
-//
-// cred is the run-as credential resolved by the caller (nil for normal
-// execution). When non-nil, the staging path chgrp's (owner stays root/parent)
-// the staged directory and file to cred's gid so the target user can access
-// them without exposing the copy to other users sharing the staging parent
-// directory (e.g. /tmp).
-//
-// Without a verified descriptor it execs the already-resolved path directly (no
-// re-resolution).
-func (e *DefaultExecutor) prepareExecCommand(ctx context.Context, plan *risktypes.VerifiedCommandPlan, path string, args []string, cred *syscall.Credential) (*exec.Cmd, func(), error) {
-	noop := func() {}
-
-	var identity *risktypes.VerifiedIdentity
-	if plan != nil {
-		identity = plan.Identity
-	}
-
-	if identity != nil && identity.FD != nil {
-		if !e.fdExecDisabled && fdExecSupported() {
-			childPath, extraFile, err := fdExecExtraFile(identity)
-			if err != nil {
-				return nil, nil, err
-			}
-			// #nosec G204 - childPath is /proc/self/fd/<n> bound to the verified inode.
-			execCmd := exec.CommandContext(ctx, childPath, args...)
-			execCmd.Args[0] = path // present the resolved path as argv[0] to the child
-			execCmd.ExtraFiles = []*os.File{extraFile}
-			return execCmd, func() {
-				if closeErr := extraFile.Close(); closeErr != nil {
-					e.Logger.Warn("Failed to close duplicated verified fd", "error", closeErr)
-				}
-			}, nil
-		}
-
-		stagedPath, stagingCleanup, err := e.stageFromFD(identity, cred)
-		if err != nil {
-			return nil, nil, err
-		}
-		// #nosec G204 - stagedPath is a private copy of the verified inode.
-		execCmd := exec.CommandContext(ctx, stagedPath, args...)
-		execCmd.Args[0] = path
-		return execCmd, stagingCleanup, nil
-	}
-
-	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	return exec.CommandContext(ctx, path, args...), noop, nil
-}
-
 // stagingDirMode is the permission of the staging directory: owner
 // read+write+execute, group execute only (to traverse into it), others none.
 // The directory stays owned by root/parent; only the group is chgrp'd to the
@@ -505,6 +345,20 @@ const stagingDirMode = 0o710
 // from the verified descriptor (not re-opened from the path), so a swapped path
 // cannot substitute different content.
 //
+// stageFromFD is called from inside the privilege window (prepareCommand
+// still runs there in this phase; see command_lifecycle.go), so it must not
+// log: a slog handler is free to open a file, and it would do so at euid 0.
+// Its two failure modes that are not returned as err are carried out instead:
+//   - the cleanup function returns the os.RemoveAll error rather than logging
+//     it, so the caller can log once the window has closed. It also writes a
+//     single WARNING line directly to os.Stderr (bypassing the redaction
+//     handler, so it must never carry secret-bearing values) because a
+//     restore failure elsewhere can end the process via emergencyShutdown
+//     before the caller's window-closed logging point is reached.
+//   - a failure to close the duplicated source descriptor is returned as
+//     warn, which the caller carries out of the window on preparedCommand
+//     (see stagingWarn) rather than logging here.
+//
 // When cred is non-nil (run-as execution), both the staging directory and the
 // staged file are chgrp'd (not chowned) to cred's gid, leaving the owner as
 // root/parent. This lets the target user -- running as a different,
@@ -514,15 +368,27 @@ const stagingDirMode = 0o710
 // the staging parent directory (e.g. /tmp). When cred is nil (normal
 // execution), no chgrp occurs and the staging directory and staged file are
 // owned by the current, typically non-root, invoking user.
-func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (stagedPath string, cleanupFn func(), err error) {
+func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred *syscall.Credential) (stagedPath string, cleanupFn func() error, warn error, err error) {
 	dir, err := os.MkdirTemp("", "scr-stage-")
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create staging directory: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to create staging directory: %w", err)
 	}
-	cleanup := func() {
-		if rmErr := os.RemoveAll(dir); rmErr != nil {
-			e.Logger.Warn("Failed to remove staging directory", "error", rmErr, "dir", dir)
+	cleanup := func() error {
+		rmErr := os.RemoveAll(dir)
+		if rmErr != nil {
+			// The write goes to the already-open stderr descriptor and
+			// bypasses the redaction handler, so it carries only the
+			// staging directory path and the error -- never secret
+			// values. The WriteString form is deliberate: the static
+			// window guard added in a later phase allows
+			// (*os.File).WriteString by name (02_architecture.md §7.2),
+			// and a fmt.Fprintf call would force that allowlist to admit
+			// writes to arbitrary writers instead.
+			//
+			//nolint:errcheck,gosec,staticcheck // there is no further fallback if the write itself fails
+			os.Stderr.WriteString(fmt.Sprintf("WARNING: failed to remove staging directory %s: %v\n", dir, rmErr))
 		}
+		return rmErr
 	}
 	// On any error return below, the staging directory (and whatever was
 	// written into it so far) must not leak: this defer runs cleanup
@@ -530,7 +396,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// only needs to `return ..., err` without repeating cleanup() itself.
 	defer func() {
 		if err != nil {
-			cleanup()
+			_ = cleanup()
 		}
 	}()
 
@@ -541,10 +407,10 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	if cred != nil {
 		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
 		if err := os.Chown(dir, -1, int(cred.Gid)); err != nil {
-			return "", nil, fmt.Errorf("failed to chgrp staging directory to gid=%d: %w", cred.Gid, err)
+			return "", nil, nil, fmt.Errorf("failed to chgrp staging directory to gid=%d: %w", cred.Gid, err)
 		}
 		if err := os.Chmod(dir, stagingDirMode); err != nil {
-			return "", nil, fmt.Errorf("failed to chmod staging directory: %w", err)
+			return "", nil, nil, fmt.Errorf("failed to chmod staging directory: %w", err)
 		}
 	}
 
@@ -555,21 +421,21 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// which never moves that shared offset.
 	dup, err := syscall.Dup(identity.FD.Fd())
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to duplicate verified fd for staging: %w", err)
 	}
 	src := os.NewFile(uintptr(dup), identity.ResolvedPath) // #nosec G115 -- dup is a valid non-negative fd from syscall.Dup; int->uintptr cannot overflow
 	if src == nil {
 		_ = syscall.Close(dup)
-		return "", nil, ErrNoVerifiedFD
+		return "", nil, nil, ErrNoVerifiedFD
 	}
 	defer func() {
 		if closeErr := src.Close(); closeErr != nil {
-			e.Logger.Warn("Failed to close staging source fd", "error", closeErr)
+			warn = closeErr
 		}
 	}()
 	info, err := src.Stat()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to stat verified fd for staging: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to stat verified fd for staging: %w", err)
 	}
 
 	// Preserve the original basename: multi-call binaries (e.g. busybox/coreutils)
@@ -586,14 +452,14 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// exec the staged copy and write is intentionally withheld.
 	dst, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, stagedExecMode)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create staged command file: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to create staged command file: %w", err)
 	}
 	if _, err := io.Copy(dst, io.NewSectionReader(src, 0, info.Size())); err != nil {
 		_ = dst.Close()
-		return "", nil, fmt.Errorf("failed to stage verified command: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to stage verified command: %w", err)
 	}
 	if err := dst.Close(); err != nil {
-		return "", nil, fmt.Errorf("failed to close staged command file: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to close staged command file: %w", err)
 	}
 
 	// os.OpenFile's mode is subject to the process umask, so in hardened
@@ -602,7 +468,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	// file so its permissions are deterministic regardless of umask, mirroring
 	// how the staging directory is already explicitly chmod'd above.
 	if err := os.Chmod(path, stagedExecMode); err != nil {
-		return "", nil, fmt.Errorf("failed to chmod staged command file: %w", err)
+		return "", nil, nil, fmt.Errorf("failed to chmod staged command file: %w", err)
 	}
 
 	// Chgrp (uid -1 leaves owner as root/parent) the staged file to the run-as
@@ -611,11 +477,11 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 	if cred != nil {
 		// #nosec G115 -- cred.Gid is uint32 parsed via strconv.ParseUint(s, 10, 32), so it fits in int (64-bit on all supported platforms).
 		if err := os.Chown(path, -1, int(cred.Gid)); err != nil {
-			return "", nil, fmt.Errorf("failed to chgrp staged command file to gid=%d: %w", cred.Gid, err)
+			return "", nil, nil, fmt.Errorf("failed to chgrp staged command file to gid=%d: %w", cred.Gid, err)
 		}
 	}
 
-	return path, cleanup, nil
+	return path, cleanup, warn, nil
 }
 
 // Validate implements the CommandExecutor interface
