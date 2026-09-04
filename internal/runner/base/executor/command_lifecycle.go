@@ -95,17 +95,21 @@ func (pc *preparedCommand) release() error {
 	if pc.devNull != nil {
 		pc.devNullCloseErr = closeUnlessClosed(pc.devNull)
 		errs = append(errs, pc.devNullCloseErr)
+		pc.devNull = nil
 	}
 	if pc.verifiedFD != nil {
 		pc.verifiedFDCloseErr = closeUnlessClosed(pc.verifiedFD)
 		errs = append(errs, pc.verifiedFDCloseErr)
+		pc.verifiedFD = nil
 	}
 	if pc.stagingCleanup != nil {
 		pc.stagingCleanupErr = pc.stagingCleanup()
 		errs = append(errs, pc.stagingCleanupErr)
+		pc.stagingCleanup = nil
 	}
 	if pc.pump != nil {
 		errs = append(errs, pc.pump.release())
+		pc.pump = nil
 	}
 	return errors.Join(errs...)
 }
