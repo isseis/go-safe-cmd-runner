@@ -3,6 +3,7 @@
 package executor
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -13,6 +14,7 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,18 +29,27 @@ import (
 // drifts from the code. The check below turns that list into something the
 // build enforces.
 //
-// Three premises fix its scope. They are stated here rather than left to be
+// Four premises fix its scope. They are stated here rather than left to be
 // inferred from the code, because each of them is a place where the check
 // deliberately sees less than everything.
 //
-// 1. What is tracked. Only calls that can have an effect outside the process
-// are tracked: functions of the os, syscall, io, os/exec and log/slog
-// packages, and methods on *os.File, *os.Process, *exec.Cmd and *slog.Logger.
-// Calls to fmt, path/filepath, errors, strconv and the like are not tracked at
-// all. The allowlist is therefore a declaration of what the window touches --
-// files, descriptors, processes -- and not a transcript of the implementation;
-// pure computation may be added inside a window without editing it, while
-// nothing that touches the world outside the process can be.
+// 1. What is tracked. Everything under this module's path, every interface
+// method whatever its package, and the standard-library packages that can act
+// outside the process (os, os/exec, os/user, syscall, io, net, path/filepath,
+// log/slog) plus methods on *os.File, *os.Process, *exec.Cmd and *slog.Logger.
+// The rest of the standard library -- fmt, errors, strconv, strings -- is not
+// tracked. First-party code is tracked wholesale on purpose: a helper of this
+// repository is exactly as able to open a file at euid 0 as os.OpenFile is,
+// and internal/safefileio exists precisely so that people reach for it instead
+// of the os package, so exempting it would leave the most natural way to add a
+// file operation invisible here. Interface methods are tracked for the
+// opposite reason -- there is no single implementation to look at -- which
+// makes allowlisting one a stronger statement than usual: that every
+// implementation reachable at that point is acceptable at euid 0. The
+// allowlist is therefore a declaration of what the window touches, not a
+// transcript of the implementation; pure computation may be added inside a
+// window without editing it, while nothing that touches the world outside the
+// process can be.
 //
 // 2. How far reachability is followed. Starting from the function literal
 // handed to WithPrivileges, calls are followed through functions and methods
@@ -55,15 +66,28 @@ import (
 // privilegeWindowIndirections below, together with the literal it carries;
 // an unnamed one fails the check.
 //
-// 3. How receiver types are resolved. (*os.File).Stat and (*os.Process).Kill
+// 3. How that indirection table is kept honest. Naming the literal a function
+// value carries is a claim, and a wrong claim would send the analysis walking
+// one function while the window runs another -- failing open, unlike every
+// other error path here. So the claim is checked: for a struct field, every
+// assignment to it in the package must put the named literal there (directly,
+// or through a local whose only assignment is a call to the function that
+// declares the literal) or clear it with nil; for a local, its assignment must
+// be the literal itself; for a parameter, whose value only arrives at runtime,
+// the weaker structural check is that the function holding the call does reach
+// the function that declares the literal.
+//
+// 4. How receiver types are resolved. (*os.File).Stat and (*os.Process).Kill
 // cannot be told apart from any other Stat or Kill by name, so the package is
 // type-checked with go/types, using go/importer's source importer to resolve
 // its dependencies. golang.org/x/tools would offer a shorter route but is not
 // a dependency of this module, and this check does not justify adding one.
 //
 // Logging is prohibited in all three windows, and the prohibition is expressed
-// by the allowlist naming no Logger method at all. A slog handler is free to
-// open a file, and inside a window that open happens at euid 0 -- the same
+// by the allowlist naming no logging method at all -- neither *slog.Logger's
+// nor the audit logger's, which is first-party and therefore tracked by
+// premise 1. A slog handler is free to open a file, and inside a window that
+// open happens at euid 0 -- the same
 // hazard this task removed from the output copy goroutine, with no reason to
 // keep for log records. (*os.File).WriteString is nonetheless allowed, because
 // the danger being avoided is opening a path, not writing as such: writing to
@@ -85,26 +109,41 @@ const (
 	windowCleanup = "cleanup_window"
 )
 
-// trackedPackagePaths are the packages whose functions can act on something
-// outside this process, and whose calls are therefore matched against the
-// allowlist. See premise 1 above for why the set is this narrow.
-var trackedPackagePaths = map[string]struct{}{
-	"os":       {},
-	"os/exec":  {},
-	"syscall":  {},
-	"io":       {},
-	"log/slog": {},
+// firstPartyModulePrefix is this module's path. Everything under it is tracked
+// wholesale: a helper of this repository is exactly as able to open a file at
+// euid 0 as os.OpenFile is, and internal/safefileio exists precisely so that
+// people reach for it instead of the os package. Listing the standard-library
+// packages while letting first-party ones through by default would leave the
+// most natural way to add a file operation invisible to this check.
+const firstPartyModulePrefix = "github.com/isseis/go-safe-cmd-runner/"
+
+// trackedStdlibPackagePaths are the standard-library packages whose functions
+// can act on something outside this process. path/filepath is on the list even
+// though most of what the executor uses from it is pure string work -- Walk,
+// Glob and EvalSymlinks are not -- so its pure members are allowlisted per
+// window instead of the whole package being waved through.
+var trackedStdlibPackagePaths = map[string]struct{}{
+	"os":            {},
+	"os/exec":       {},
+	"os/user":       {},
+	"syscall":       {},
+	"io":            {},
+	"net":           {},
+	"path/filepath": {},
+	"log/slog":      {},
 }
 
 // trackedReceiverTypes are the types whose methods are tracked for the same
-// reason as trackedPackagePaths. They are written as go/types renders them, so
-// a method is matched by its receiver's type rather than by the name of the
-// variable it is called on.
+// reason as trackedStdlibPackagePaths. They are keyed by the receiver's
+// package PATH and type name rather than by how go/types renders the type, so
+// that a package named "os" from some other import path cannot pass itself off
+// as the standard one. First-party receivers need no entry here: their package
+// path carries firstPartyModulePrefix and is tracked by that alone.
 var trackedReceiverTypes = map[string]struct{}{
-	"*os.File":     {},
-	"*os.Process":  {},
-	"*exec.Cmd":    {},
-	"*slog.Logger": {},
+	"os.File":         {},
+	"os.Process":      {},
+	"os/exec.Cmd":     {},
+	"log/slog.Logger": {},
 }
 
 // allowedWindowCalls is the allowlist: for each window, every tracked call
@@ -117,20 +156,24 @@ var trackedReceiverTypes = map[string]struct{}{
 // opens nothing -- it wraps a descriptor that is already open.
 var allowedWindowCalls = map[string]map[string]struct{}{
 	windowStart: {
-		"(*exec.Cmd).Start":      {},
-		"os.MkdirTemp":           {},
-		"syscall.Dup":            {},
-		"os.NewFile":             {},
-		"os.OpenFile":            {},
-		"io.Copy":                {},
-		"io.NewSectionReader":    {},
-		"os.Chmod":               {},
-		"os.Chown":               {},
-		"os.RemoveAll":           {},
-		"(*os.File).Stat":        {},
-		"(*os.File).Close":       {},
-		"syscall.Close":          {},
-		"(*os.File).WriteString": {},
+		"(*exec.Cmd).Start":          {},
+		"os.MkdirTemp":               {},
+		"syscall.Dup":                {},
+		"os.NewFile":                 {},
+		"os.OpenFile":                {},
+		"io.Copy":                    {},
+		"io.NewSectionReader":        {},
+		"filepath.Base":              {},
+		"filepath.Join":              {},
+		"(fs.FileInfo).Size":         {},
+		"(*risktypes.VerifiedFD).Fd": {},
+		"os.Chmod":                   {},
+		"os.Chown":                   {},
+		"os.RemoveAll":               {},
+		"(*os.File).Stat":            {},
+		"(*os.File).Close":           {},
+		"syscall.Close":              {},
+		"(*os.File).WriteString":     {},
 	},
 	windowKill: {
 		"(*os.Process).Kill": {},
@@ -228,7 +271,8 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 		t.Error(problem)
 	}
 
-	for window, allowed := range allowedWindowCalls {
+	for _, window := range slices.Sorted(maps.Keys(allowedWindowCalls)) {
+		allowed := allowedWindowCalls[window]
 		t.Run(window, func(t *testing.T) {
 			seen := make(map[string]struct{})
 			for _, call := range calls {
@@ -252,13 +296,27 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 	// prohibition on logging in particular is expressed as an absence from the
 	// allowlist, and an absence stays green when the analysis breaks.
 	t.Run("rejects_unlisted_call", func(t *testing.T) {
-		unlisted := unlistedCalls(t, "bad_unlisted_call", "badunlistedcall")
+		unlisted := unlistedCalls(t, windowGuardConfig{
+			dir:     filepath.Join("testdata", "bad_unlisted_call"),
+			pkgPath: "badunlistedcall",
+			roots:   map[string]string{"(*runner).startWindowHolder": windowStart},
+		})
 		require.Len(t, unlisted, 1)
 		assert.Equal(t, "os.Remove", unlisted[0].name)
 	})
 
 	t.Run("rejects_logging_in_window", func(t *testing.T) {
-		unlisted := unlistedCalls(t, "bad_logging_in_window", "badlogginginwindow")
+		unlisted := unlistedCalls(t, windowGuardConfig{
+			dir:     filepath.Join("testdata", "bad_logging_in_window"),
+			pkgPath: "badlogginginwindow",
+			roots:   map[string]string{"(*runner).startWindowHolder": windowStart},
+			indirections: map[indirectCallSite]funcLiteralSite{
+				{enclosing: "(*runner).report", callee: "warn"}: {
+					enclosing:  "(*runner).report",
+					assignedTo: "warn",
+				},
+			},
+		})
 		require.Len(t, unlisted, 1)
 		assert.Equal(t, "(*slog.Logger).Warn", unlisted[0].name)
 	})
@@ -266,18 +324,15 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 
 // unlistedCalls runs the guard over one of the negative-test packages in
 // testdata and returns the calls it rejects. Those packages declare a
-// WithPrivileges of their own, so what is exercised is the whole analysis --
-// root discovery, reachability and the allowlist match -- and not just the
-// allowlist.
-func unlistedCalls(t *testing.T, dirName, pkgPath string) []trackedCall {
+// WithPrivileges of their own and put the offending call a hop away from the
+// window literal, so what is exercised is the whole analysis -- root
+// discovery, reachability, the indirection table and the allowlist match --
+// and not just the allowlist.
+func unlistedCalls(t *testing.T, cfg windowGuardConfig) []trackedCall {
 	t.Helper()
 
-	calls, problems := analyzePrivilegeWindows(t, windowGuardConfig{
-		dir:     filepath.Join("testdata", dirName),
-		pkgPath: pkgPath,
-		roots:   map[string]string{"(*runner).startWindowHolder": windowStart},
-	})
-	require.Emptyf(t, problems, "%s: the negative test data must be analyzable", dirName)
+	calls, problems := analyzePrivilegeWindows(t, cfg)
+	require.Emptyf(t, problems, "%s: the negative test data must be analyzable", cfg.dir)
 
 	var unlisted []trackedCall
 	for _, call := range calls {
@@ -295,7 +350,8 @@ type windowGuard struct {
 	info         *types.Info
 	decls        map[string]*ast.FuncDecl // by receiver-qualified name
 	funcBodies   map[*types.Func]*ast.FuncDecl
-	indirections map[indirectCallSite]*ast.FuncLit
+	indirections map[indirectCallSite]resolvedIndirection
+	verified     map[indirectCallSite]struct{}
 	problems     []string
 }
 
@@ -329,7 +385,23 @@ func analyzePrivilegeWindows(t *testing.T, cfg windowGuardConfig) ([]trackedCall
 		visited := make(map[ast.Node]struct{})
 		g.walk(window, root.body, root.enclosing, visited, &calls)
 	}
-	return calls, g.problems
+	// A literal can be reached twice -- once as part of the body it is written
+	// in, once through the indirection table that names it -- and the same call
+	// site reported twice says nothing the first report did not.
+	return slices.CompactFunc(slices.SortedFunc(slices.Values(calls), compareTrackedCalls), func(a, b trackedCall) bool {
+		return compareTrackedCalls(a, b) == 0
+	}), g.problems
+}
+
+// compareTrackedCalls orders calls by window, then name, then source position,
+// so that duplicates land next to each other and reports are stable.
+func compareTrackedCalls(a, b trackedCall) int {
+	return cmp.Or(
+		cmp.Compare(a.window, b.window),
+		cmp.Compare(a.name, b.name),
+		cmp.Compare(a.pos, b.pos),
+		cmp.Compare(a.enclosing, b.enclosing),
+	)
 }
 
 // windowRoot is one WithPrivileges call site: the function literal it is
@@ -404,7 +476,19 @@ func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visit
 			return true
 		}
 
-		if fn.Pkg() == g.pkg {
+		// An interface method has no single body to follow and no one
+		// implementation to attribute, so it is never descended into and is
+		// always tracked, whichever package it comes from. Putting one on an
+		// allowlist therefore says something stronger than usual: that every
+		// implementation reachable at that point is acceptable at euid 0.
+		// Dropping such calls instead would hide the mechanism by which most
+		// side effects enter this codebase.
+		isInterfaceMethod := false
+		if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
+			_, isInterfaceMethod = sig.Recv().Type().Underlying().(*types.Interface)
+		}
+
+		if !isInterfaceMethod && fn.Pkg() == g.pkg {
 			decl, ok := g.funcBodies[fn]
 			if !ok || decl.Body == nil {
 				g.problems = append(g.problems,
@@ -416,7 +500,7 @@ func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visit
 			return true
 		}
 
-		if name, tracked := trackedCallName(fn); tracked {
+		if name, tracked := trackedCallName(fn); tracked || isInterfaceMethod {
 			*calls = append(*calls, trackedCall{
 				window:    window,
 				name:      name,
@@ -434,34 +518,50 @@ func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visit
 // into a window without this check noticing.
 func (g *windowGuard) followIndirect(window string, call *ast.CallExpr, fun ast.Expr, enclosing string, visited map[ast.Node]struct{}, calls *[]trackedCall) {
 	site := indirectCallSite{enclosing: enclosing, callee: types.ExprString(fun)}
-	lit, ok := g.indirections[site]
+	resolved, ok := g.indirections[site]
 	if !ok {
 		g.problems = append(g.problems,
 			fmt.Sprintf("%s: the %s reaches a call through the function value %q in %s, which privilegeWindowIndirections does not resolve; the window cannot be analyzed until that table names the literal the value carries",
 				g.position(call), window, site.callee, enclosing))
 		return
 	}
-	g.walk(window, lit.Body, g.enclosingDeclOf(lit), visited, calls)
+	lit := resolved.lit
+	// The table is a claim about which literal the value carries, and a wrong
+	// claim would send this analysis walking one function while the window runs
+	// another. Checked once per entry, however many windows reach it.
+	if _, done := g.verified[site]; !done {
+		g.verified[site] = struct{}{}
+		g.verifyIndirection(site, resolved, g.calleeObject(fun))
+	}
+	litEnclosing, ok := g.enclosingDeclOf(lit)
+	if !ok {
+		g.problems = append(g.problems,
+			fmt.Sprintf("%s: the literal privilegeWindowIndirections gives for %q is not inside any declared function of this package",
+				g.position(call), site.callee))
+		return
+	}
+	g.walk(window, lit.Body, litEnclosing, visited, calls)
 }
 
 // enclosingDeclOf returns the receiver-qualified name of the declared function
 // whose body contains lit, so that calls found inside the literal are reported
 // against the function they are written in.
-func (g *windowGuard) enclosingDeclOf(lit *ast.FuncLit) string {
-	found := ""
-	g.forEachDecl(func(name string, decl *ast.FuncDecl) {
+func (g *windowGuard) enclosingDeclOf(lit *ast.FuncLit) (string, bool) {
+	for _, name := range slices.Sorted(maps.Keys(g.decls)) {
+		decl := g.decls[name]
 		if lit.Pos() >= decl.Pos() && lit.End() <= decl.End() {
-			found = name
+			return name, true
 		}
-	})
-	return found
+	}
+	return "", false
 }
 
 // resolveIndirections turns each entry of the indirection table into the
 // function literal it names, failing loudly when the literal cannot be found
 // or is ambiguous rather than leaving the call unresolved.
 func (g *windowGuard) resolveIndirections(table map[indirectCallSite]funcLiteralSite) {
-	g.indirections = make(map[indirectCallSite]*ast.FuncLit, len(table))
+	g.indirections = make(map[indirectCallSite]resolvedIndirection, len(table))
+	g.verified = make(map[indirectCallSite]struct{}, len(table))
 	for site, target := range table {
 		decl, ok := g.decls[target.enclosing]
 		if !ok {
@@ -475,7 +575,7 @@ func (g *windowGuard) resolveIndirections(table map[indirectCallSite]funcLiteral
 				fmt.Sprintf("privilegeWindowIndirections: %d function literals in %s match %+v, want exactly 1", len(lits), target.enclosing, target))
 			continue
 		}
-		g.indirections[site] = lits[0]
+		g.indirections[site] = resolvedIndirection{lit: lits[0], target: target}
 	}
 }
 
@@ -528,6 +628,204 @@ func soleFuncLitArg(call *ast.CallExpr) (*ast.FuncLit, bool) {
 	return found, found != nil
 }
 
+// resolvedIndirection is one entry of the indirection table after the literal
+// it names has been located.
+type resolvedIndirection struct {
+	lit    *ast.FuncLit
+	target funcLiteralSite
+}
+
+// verifyIndirection checks the claim an indirection-table entry makes, so that
+// the one place this analysis cannot follow control flow is not also a place it
+// takes a maintainer's word for it. Without this, rebinding the field to some
+// other function would leave the guard walking the literal the table still
+// names -- failing open, unlike every other error path here.
+//
+// A field: every assignment to it in the package must put the named literal
+// there, directly or through a local whose only assignment is a call to the
+// function that declares the literal, or clear it with nil.
+//
+// Anything else (a parameter, as with the start phase's startWindowFn): the
+// function holding the call must at least reach the function that declares the
+// literal, so that the value plausibly travels between them.
+func (g *windowGuard) verifyIndirection(site indirectCallSite, resolved resolvedIndirection, callee types.Object) {
+	if v, ok := callee.(*types.Var); ok {
+		if v.IsField() {
+			g.verifyFieldCarries(site, v, resolved)
+			return
+		}
+		// A local: whatever it was assigned is what the window runs, so the
+		// claim can be checked outright. A parameter has no assignment here and
+		// falls through to the structural check below.
+		if decl, ok := g.decls[site.enclosing]; ok {
+			if assignments, carries := g.localBinding(decl, v, resolved); assignments > 0 {
+				if !carries {
+					g.problems = append(g.problems,
+						fmt.Sprintf("privilegeWindowIndirections says %q in %s carries the literal declared in %s, but that local is assigned something else there",
+							site.callee, site.enclosing, resolved.target.enclosing))
+				}
+				return
+			}
+		}
+	}
+	if _, ok := g.decls[resolved.target.enclosing]; !ok {
+		return // already reported by resolveIndirections
+	}
+	if !g.calls(site.enclosing, resolved.target.enclosing) {
+		g.problems = append(g.problems,
+			fmt.Sprintf("privilegeWindowIndirections says %s's %q carries a literal declared in %s, but %s never calls %s, so the value cannot travel between them",
+				site.enclosing, site.callee, resolved.target.enclosing, site.enclosing, resolved.target.enclosing))
+	}
+}
+
+// localBinding returns how many times obj is assigned in decl and whether
+// every one of those assignments is the literal the table names.
+func (g *windowGuard) localBinding(decl *ast.FuncDecl, obj types.Object, resolved resolvedIndirection) (int, bool) {
+	assignments := 0
+	carries := true
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, lhs := range assign.Lhs {
+			ident, ok := lhs.(*ast.Ident)
+			if !ok || (g.info.Defs[ident] != obj && g.info.Uses[ident] != obj) {
+				continue
+			}
+			assignments++
+			if i >= len(assign.Rhs) || assign.Rhs[i] != ast.Expr(resolved.lit) {
+				carries = false
+			}
+		}
+		return true
+	})
+	return assignments, carries
+}
+
+// verifyFieldCarries reports every assignment to field that does not put the
+// literal the table names into it.
+func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var, resolved resolvedIndirection) {
+	assignments := 0
+	g.forEachDecl(func(name string, decl *ast.FuncDecl) {
+		ast.Inspect(decl.Body, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for i, lhs := range assign.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok || g.info.Uses[sel.Sel] != field {
+					continue
+				}
+				assignments++
+				if len(assign.Rhs) != len(assign.Lhs) {
+					g.problems = append(g.problems,
+						fmt.Sprintf("%s: %s is assigned from a multi-value expression in %s, which this check cannot trace to the literal privilegeWindowIndirections names for %q",
+							g.position(assign), types.ExprString(sel), name, site.callee))
+					continue
+				}
+				if g.carriesLiteral(decl, assign.Rhs[i], resolved) {
+					continue
+				}
+				g.problems = append(g.problems,
+					fmt.Sprintf("%s: %s is assigned %s in %s, but privilegeWindowIndirections says it carries the literal declared in %s; the window would run something this analysis never looked at",
+						g.position(assign), types.ExprString(sel), types.ExprString(assign.Rhs[i]), name, resolved.target.enclosing))
+			}
+			return true
+		})
+	})
+	if assignments == 0 {
+		g.problems = append(g.problems,
+			fmt.Sprintf("privilegeWindowIndirections resolves %q in %s, but nothing in this package assigns that field; the entry is stale",
+				site.callee, site.enclosing))
+	}
+}
+
+// carriesLiteral reports whether expr, written in decl, puts the named literal
+// into the field: nil (clearing it), the literal itself, or a local variable
+// assigned exactly once, from a call to the function that declares the literal.
+func (g *windowGuard) carriesLiteral(decl *ast.FuncDecl, expr ast.Expr, resolved resolvedIndirection) bool {
+	if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
+		return true
+	}
+	if lit, ok := expr.(*ast.FuncLit); ok {
+		return lit == resolved.lit
+	}
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	obj := g.info.Uses[ident]
+	if obj == nil {
+		return false
+	}
+	sources := 0
+	fromDeclaringFunc := false
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, lhs := range assign.Lhs {
+			target, ok := lhs.(*ast.Ident)
+			if !ok || (g.info.Defs[target] != obj && g.info.Uses[target] != obj) {
+				continue
+			}
+			sources++
+			call, ok := singleCall(assign, i)
+			if !ok {
+				continue
+			}
+			if fn, ok := g.calleeFunc(call); ok {
+				if body, ok := g.funcBodies[fn]; ok && declaredFuncName(body) == resolved.target.enclosing {
+					fromDeclaringFunc = true
+				}
+			}
+		}
+		return true
+	})
+	return sources == 1 && fromDeclaringFunc
+}
+
+// singleCall returns the call an assignment's right-hand side consists of,
+// whether the assignment binds one name or spreads the call's results over
+// several.
+func singleCall(assign *ast.AssignStmt, i int) (*ast.CallExpr, bool) {
+	if len(assign.Rhs) == 1 {
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		return call, ok
+	}
+	if i >= len(assign.Rhs) {
+		return nil, false
+	}
+	call, ok := assign.Rhs[i].(*ast.CallExpr)
+	return call, ok
+}
+
+// calls reports whether the function named caller contains a call to the
+// function named callee.
+func (g *windowGuard) calls(caller, callee string) bool {
+	decl, ok := g.decls[caller]
+	if !ok {
+		return false
+	}
+	found := false
+	ast.Inspect(decl.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if fn, ok := g.calleeFunc(call); ok {
+			if body, ok := g.funcBodies[fn]; ok && declaredFuncName(body) == callee {
+				found = true
+			}
+		}
+		return true
+	})
+	return found
+}
+
 // trackedCallName renders fn as the allowlist writes it -- "os.MkdirTemp" for
 // a package function, "(*os.File).Close" for a method -- and reports whether
 // it is tracked at all.
@@ -539,15 +837,42 @@ func trackedCallName(fn *types.Func) (string, bool) {
 	}
 	if recv := sig.Recv(); recv != nil {
 		name := "(" + types.TypeString(recv.Type(), qualifier) + ")." + fn.Name()
-		recvType := types.TypeString(recv.Type(), qualifier)
-		_, tracked := trackedReceiverTypes[recvType]
-		return name, tracked
+		return name, isTrackedReceiver(recv.Type())
 	}
 	if fn.Pkg() == nil {
 		return "", false
 	}
-	_, tracked := trackedPackagePaths[fn.Pkg().Path()]
-	return fn.Pkg().Name() + "." + fn.Name(), tracked
+	return fn.Pkg().Name() + "." + fn.Name(), isTrackedPackagePath(fn.Pkg().Path())
+}
+
+// isTrackedPackagePath reports whether calls into the package at path are
+// matched against the allowlist: every package of this module, and the
+// standard-library packages that can act outside the process.
+func isTrackedPackagePath(path string) bool {
+	if strings.HasPrefix(path, firstPartyModulePrefix) {
+		return true
+	}
+	_, tracked := trackedStdlibPackagePaths[path]
+	return tracked
+}
+
+// isTrackedReceiver reports whether methods on typ are matched against the
+// allowlist, resolving the receiver to its named type so that a pointer
+// receiver and a value receiver answer alike.
+func isTrackedReceiver(typ types.Type) bool {
+	if ptr, ok := types.Unalias(typ).(*types.Pointer); ok {
+		typ = ptr.Elem()
+	}
+	named, ok := types.Unalias(typ).(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return false
+	}
+	path := named.Obj().Pkg().Path()
+	if strings.HasPrefix(path, firstPartyModulePrefix) {
+		return true
+	}
+	_, tracked := trackedReceiverTypes[path+"."+named.Obj().Name()]
+	return tracked
 }
 
 // calleeFunc resolves call's callee to a declared function or method.
@@ -655,4 +980,56 @@ func unparen(expr ast.Expr) ast.Expr {
 		}
 		expr = paren.X
 	}
+}
+
+// TestPrivilegeWindowGuardLiteralResolution covers what makes the two "the
+// analysis cannot go on" branches fire: a call carrying more than one function
+// literal, and a binding that matches no literal or several. Those branches
+// are what stops the guard from silently resolving the wrong literal, and the
+// package's own shape happens to exercise neither.
+func TestPrivilegeWindowGuardLiteralResolution(t *testing.T) {
+	src := "package p\n" +
+		"func twice() {\n" +
+		"\trun(func() {})\n" +
+		"\trun(func() {})\n" +
+		"}\n" +
+		"func pair() {\n" +
+		"\trun(func() {}, func() {})\n" +
+		"}\n" +
+		"func rebound() {\n" +
+		"\tcleanup := func() {}\n" +
+		"\tcleanup = func() {}\n" +
+		"\t_ = cleanup\n" +
+		"}\n"
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "snippet.go", src, parser.SkipObjectResolution)
+	require.NoError(t, err)
+
+	decls := make(map[string]*ast.FuncDecl)
+	for _, decl := range file.Decls {
+		if funcDecl, ok := decl.(*ast.FuncDecl); ok {
+			decls[funcDecl.Name.Name] = funcDecl
+		}
+	}
+
+	assert.Len(t, findFuncLits(decls["twice"], funcLiteralSite{passedTo: "run"}), 2,
+		"two calls to the same callee are ambiguous and must not resolve to one literal")
+	assert.Empty(t, findFuncLits(decls["twice"], funcLiteralSite{passedTo: "absent"}),
+		"a callee that is never called must resolve to no literal")
+	assert.Len(t, findFuncLits(decls["rebound"], funcLiteralSite{assignedTo: "cleanup"}), 2,
+		"a local assigned a literal twice is ambiguous")
+	assert.Empty(t, findFuncLits(decls["rebound"], funcLiteralSite{assignedTo: "other"}),
+		"a name nothing is assigned to must resolve to no literal")
+
+	var pairCall *ast.CallExpr
+	ast.Inspect(decls["pair"].Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && pairCall == nil {
+			pairCall = call
+		}
+		return true
+	})
+	require.NotNil(t, pairCall)
+	_, ok := soleFuncLitArg(pairCall)
+	assert.False(t, ok, "a call carrying two function literals has no sole one, so the window body is ambiguous")
 }

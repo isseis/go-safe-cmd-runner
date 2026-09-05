@@ -2,6 +2,9 @@
 // guard: it opens a privilege window whose body reaches a file operation that
 // the guard's allowlist does not name. The guard must reject it.
 //
+// The offending call sits one same-package hop away from the window literal,
+// so a guard that had stopped following calls would no longer see it.
+//
 // This directory is under testdata/, so the Go toolchain never builds it as
 // part of the executor package; the guard parses and type-checks it on its
 // own.
@@ -23,8 +26,12 @@ type runner struct {
 // opens the start window here.
 func (r *runner) startWindowHolder(dir string) error {
 	return r.mgr.WithPrivileges(func() error {
-		// os.Remove is not os.RemoveAll: it is tracked (package os) and absent
-		// from the start window's allowlist, so the guard must report it.
-		return os.Remove(dir)
+		return r.discard(dir)
 	})
+}
+
+func (r *runner) discard(dir string) error {
+	// os.Remove is not os.RemoveAll: it is tracked (package os) and absent
+	// from the start window's allowlist, so the guard must report it.
+	return os.Remove(dir)
 }

@@ -918,10 +918,18 @@
       具体的には `os`／`syscall`／`io`／`os/exec` パッケージの関数呼び出しと、
       `*os.File`／`*os.Process`／`*exec.Cmd` のメソッド呼び出し、および `Logger` のメソッド呼び出しに限る。
       `fmt`／`filepath`／`errors`／`strconv` など副作用の無いパッケージの呼び出しは追跡しない。
+      **実装時に、この線引きを次のとおり広げた**（設計文書 §7.2 に反映済み）。標準ライブラリだけを
+      追跡対象にすると、`internal/safefileio` のような自前のヘルパーで隙の中からファイルを開いても
+      検査が何も言わない。またインターフェース越しの呼び出しは実装が見えないまま素通りする。
+      そこで追跡対象を「本リポジトリのパッケージすべて」「インターフェースのメソッドすべて」
+      「`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／`log/slog`」とし、
+      `path/filepath` の純粋な2つ（`Base`／`Join`）は区間ごとの許可リストで許す。
+      `filepath` を「副作用が無い」と括れないのは、`EvalSymlinks`／`Walk`／`Glob` が
+      実際にファイルシステムを触るためである。
       この線引きの理由（許可リストが実装の写しではなく「隙の中で何に触れるか」の宣言であること）を
       テストファイルの doc コメントへ英語で書く。
 - [x] **到達解析の範囲を決める。** `WithPrivileges` へ渡す関数リテラルを起点に、
-      **同一パッケージ内の関数・メソッドだけ**を辿る（`startPrepared` → `stageFromFD` の2段が実際の深さ）。
+      **同一パッケージ内の関数・メソッドだけ**を辿る（`startPrepared` → `stagePrepared` → `stageFromFD` の3段が実際の深さ）。
       パッケージ外へ出る呼び出し（`os.MkdirTemp` など）はそこで葉として扱い、
       許可リストと突き合わせる。この境界をテストファイルの doc コメントへ書く。
 - [x] **レシーバ型の同定手段を決める。** `(*os.File).Stat` と `(*os.Process).Kill` は
@@ -934,9 +942,11 @@
       - 起動区間: `(*exec.Cmd).Start`、`stageFromFD`（辿る）、`os.MkdirTemp`、`syscall.Dup`、
         `os.NewFile`、`os.OpenFile`、`io.Copy`、`io.NewSectionReader`、`os.Chmod`、`os.Chown`、
         `os.RemoveAll`、`(*os.File).Stat`、`(*os.File).Close`、`syscall.Close`、`(*os.File).WriteString`
-      - `io.NewSectionReader` は設計文書 §7.2 の当初の表に無かったが、追跡対象をパッケージ単位で
-        決めた以上は葉として現れるため、実装時に表へ足した（同じ内容を設計文書へ反映済み）。
-        何も開かず既に開いている記述子を包むだけで、表が既に許している `os.NewFile` と同じ種類である。
+      - `io.NewSectionReader`／`filepath.Base`／`filepath.Join`／`(fs.FileInfo).Size`／
+        `(*risktypes.VerifiedFD).Fd` は設計文書 §7.2 の当初の表に無かったが、上で広げた追跡対象の
+        下では葉として現れるため、実装時に表へ足した（同じ内容を設計文書へ反映済み）。
+        いずれも何も開かない呼び出しか純粋な文字列操作で、表が既に許している `os.NewFile` と
+        同じ種類である。
       - kill 区間: `(*os.Process).Kill` のみ
       - 後始末区間: `os.RemoveAll` と `(*os.File).WriteString`
 - [x] **`Logger` の呼び出しは3つの隙すべてで禁じる。** `Logger` のメソッドは追跡対象に
@@ -953,6 +963,12 @@
       黙って読み飛ばすと、その先にある呼び出しが検査から丸ごと消えるので、
       「どの関数の中のどの関数値が、どの関数リテラルを運ぶか」を表（`privilegeWindowIndirections`）
       に書き、表に無い関数値の呼び出しは失敗として報告する。
+      表の記述は主張であり、間違っていれば検査は「表が指すリテラル」を歩き、隙は別の関数を走らせる。
+      ここだけが fail open になるので、主張そのものを検査する。フィールドなら、そのフィールドへの
+      パッケージ内のすべての代入が、表の指すリテラル（直接、またはそのリテラルを宣言する関数の
+      呼び出しから一度だけ代入されたローカル経由）か `nil` であることを要求する。ローカルなら
+      代入がそのリテラルであること、引数なら「呼び出し元の関数がリテラルを宣言する関数へ到達する」
+      という構造だけを確かめる。
 - [x] **フィールドへの代入は対象外とする。** `bindingStagedCopy` で起動区間が行う
       `execCmd.Path` への代入は呼び出しではないため検査しない（設計文書 §7.2）。
 - [x] **negative self-test を置く。** `testdata/` に、隙の中で許可リスト外の呼び出しを行う
