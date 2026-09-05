@@ -374,7 +374,26 @@ type preparedCommand struct {
     // so at euid 0. Staging succeeded when this is set, so it is not returned
     // as an error.
     stagingWarn error
+    // cleanup declares whether removing the staged copy needs a privilege
+    // window. Declaring it at prepare time rather than deriving it from the
+    // credential at removal time keeps the decision where the credential is
+    // still in hand; the removal runs long after the child has exited.
+    cleanup stagingCleanupStrategy
+    // stagedPath lets the caller log where the copy lives once the start
+    // window has closed (see section 6.1).
+    stagedPath string
 }
+
+// stagingCleanupStrategy declares what removing the staged copy requires.
+// Like execBinding and killStrategy its zero value is an explicit unset,
+// which the removal path rejects.
+type stagingCleanupStrategy int
+
+const (
+    cleanupUnset stagingCleanupStrategy = iota
+    cleanupDirect                       // the invoking user owns the staging directory
+    cleanupElevated                     // run-as: the directory is root-owned
+)
 
 // stagingRequest carries what the start phase needs to build the staged copy
 // inside the privilege window: the verified identity to copy from and the
@@ -432,26 +451,39 @@ const (
 （英語で書く実装のコメントは通常のレビューで判断する）。
 
 ```go
-var started bool
-elevErr := e.PrivMgr.WithPrivileges(execCtx, func() error {
+var opened, started bool
+elevErr := startWindow(func() error {
+    opened = true
     var err error
     started, err = e.startPrepared(pc)
     return err
 })
 // 隙の外。Start() の成否によらず必ず通る（§3.2 要点3）。
-closeErr := pc.pump.releaseChildEnds()
+closeErr := errors.Join(pc.pump.releaseChildEnds(), pc.releaseVerifiedFD())
 
 switch {
+case !opened:
+    // 隙が開かず、起動フェーズが動いていない。資源を解放して返す。
+    return nil, errors.Join(elevErr, closeErr, pc.release())
 case !started:
     // 子は走っていない。資源を解放して起動の失敗として返す。
-    return nil, errors.Join(elevErr, closeErr, pc.release())
-case elevErr != nil || closeErr != nil:
-    // 起動済み。止めてから報告する（放置すると wait が deadline まで戻らない）。
-    return e.superviseCommand(ctx, pc, startupErr(elevErr, closeErr))
+    return e.reportStartFailure(pc, errors.Join(elevErr, closeErr))
 default:
-    return e.superviseCommand(ctx, pc, nil)
+    // 起動済み。elevErr／closeErr が非 nil なら止めてから報告する
+    // （放置すると wait が deadline まで戻らない）。
+    return e.superviseCommand(ctx, pc, errors.Join(elevErr, closeErr))
 }
 ```
+
+`startWindow` は起動フェーズの包み方を表す引数である。`executeWithUserGroup` は
+`PrivMgr.WithPrivileges` を呼ぶ関数を渡し、`executeNormal` は `fn` をそのまま呼ぶ関数を渡す。
+どちらを使うかを `preparedCommand` の旗ではなく引数にするのは、昇格文脈と監査メトリクスを
+持つのが呼び出し側だからである。
+
+3つの分岐の戻り値は次のとおり意味が違う。特権管理ロジックが昇格を断って起動フェーズが動かなかった
+とき（`!opened`）は `Result` を返さない。コマンドについては何も試みていないので、終了コードの
+代わりを置く理由が無いためである。`Start()` が失敗したとき（`!started`）は
+`ExitCodeUnknown` の `Result` を返す。これは `Start()` の失敗が従来から報告してきた形である。
 
 `superviseCommand` の第3引数が非 `nil` のときは、`ctx.Done()` を待たずに直ちにキャンセル経路
 （kill → `killGraceDelay` 付きの回収 → 後始末）へ入り、最後にこのエラーを結果へ添える。
@@ -675,7 +707,10 @@ inode をそのまま exec するのは、起動者がバイナリをすり替�
 起動者の実効 UID で走るため、このディレクトリからエントリを削除できず、`os.RemoveAll` は EACCES で
 失敗する。そこで **run-as 実行では、子プロセスの終了後に後始末区間を開いて staged copy を削除する**。
 
-後始末区間を開く条件は **staging フォールバック かつ run-as 実行**（`cred != nil`）である。通常実行では
+後始末区間を開く条件は **staging フォールバック かつ run-as 実行**（`cred != nil`）である。
+この条件は準備フェーズが `stagingCleanupStrategy` として宣言し、削除の時点では宣言を読むだけに
+する（§3.1）。削除は子プロセスの終了後に走るため、そこで資格から導き直そうとすると、判断の材料が
+既に手元に無い。通常実行では
 `executeCommandWithPath` が `cred == nil` で呼ばれ、`stageFromFD` は `chgrp`／`chmod` を行わない
 （[`executor.go:505`](../../../internal/runner/base/executor/executor.go#L505)）。ディレクトリは
 起動者所有・`0700` のままなので、`os.RemoveAll` は隙なしで成功する。ここで条件を「staging のとき」と
@@ -1043,6 +1078,30 @@ kill 区間と後始末区間が開くとき、出力中継の読み取り gorou
 読み取りを止めている間の出力の扱い（捨てるか、後から吸い出すか）を決める必要があり、
 本タスクの範囲を超える。§9 に将来の課題として記す。
 
+**特権管理ロジック自身が隙の中で出していた記録。** 本タスクは executor 側の隙の中から
+ログを取り除いたが、`privilege` パッケージ自身が隙の中で記録を出していた。slog ハンドラは
+呼び出し側が差し替えるもので（本プロジェクトは redaction ハンドラ、ファイルハンドラ、
+Slack 送信ワーカーを差している）、隙の中で呼ばれたハンドラは何をするにせよ euid 0 で行う。
+「昇格した」と書く記録のために昇格した権限で書き込みが起きるのでは、記録そのものが
+本タスクの塞ぐ穴になる。したがって次の4件すべてを隙の外へ出した。
+
+| 記録 | 元の位置 | 現在の位置 |
+|---|---|---|
+| `Debug`（callback に入る） | `fn` の直前（隙の中） | 昇格の前 |
+| `Debug`（callback が完了した） | `fn` の直後（隙の中） | 復帰の後 |
+| `Info`（「Privileges elevated」） | `seteuid(0)` の直後（隙の中） | 復帰の後。昇格の時刻は `elevated_at` 属性で保つ |
+| `Error`（panic が起きた） | 復帰の前（隙の中） | 復帰の後 |
+
+昇格の記録は `escalatePrivileges` が `executionContext` へ `elevationOutcome` として記録し、
+`WithPrivileges` が隙を閉じてから出す。記録自体の時刻は復帰の時刻になるため、昇格の時刻は
+属性で持つ。`defer` で出すので、`fn` が panic した経路でも記録は残る。
+
+例外は原生 root 実行（実 UID が 0）である。この場合プロセスは生涯 euid 0 なので「隙の外」
+という位置が存在しない。同じ記録経路を通しているのは、2つの結末を1箇所で扱うためである。
+
+復帰に失敗した経路だけは記録が残らない。`emergencyShutdown` がプロセスを即座に終えるためで、
+同じ昇格文脈は `emergencyShutdown` 自身の CRITICAL 記録が持つ。
+
 ### 5.4 staging を伴う起動区間の長さと `$TMPDIR`（残存リスク）
 
 `stageFromFD` は `os.MkdirTemp("", ...)` を使う。行き先は `os.TempDir()`、すなわち起動者が渡す
@@ -1234,7 +1293,7 @@ flowchart LR
 
 | 失敗経路 | 解放されるもの |
 |---|---|
-| 準備フェーズの失敗 | それまでに作った記述子すべて。呼び出し元へは `preparedCommand` を返さない |
+| 準備フェーズの失敗 | それまでに作った記述子すべて。呼び出し元へは、記録した警告だけを載せた使用済みの `preparedCommand` を返す（起動はできない） |
 | すでにキャンセルされた context | 準備フェーズで作ったすべて（起動区間を開く前に `release()`） |
 | `Start()` の失敗 | パイプの書き込み側と読み取り側、複製した記述子、staged copy |
 | `Start()` は成功したが書き込み側の解放が失敗 | kill・回収・後始末を通した後、上表のとおり |

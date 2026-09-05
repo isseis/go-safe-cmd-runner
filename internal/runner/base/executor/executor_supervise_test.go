@@ -248,8 +248,9 @@ func TestSupervise_NormalExecutionDoesNotReelevate(t *testing.T) {
 // window's restore or be refused as re-entrant.
 //
 // The start window is opened by the test rather than by executeWithUserGroup,
-// which still wraps the whole run in this phase; that is the shape the window
-// takes once it is narrowed to startPrepared.
+// because an unprivileged test cannot start a child under a run-as credential
+// (see the note at the top of this file); the shape of the window is the same
+// either way.
 func TestSupervise_KillRunsOnExecutingGoroutine(t *testing.T) {
 	type sample struct {
 		phase privilegetestutil.MockWindowPhase
@@ -600,36 +601,6 @@ func killTestProcessFromFile(path string) {
 	if pid, convErr := strconv.Atoi(strings.TrimSpace(string(data))); convErr == nil {
 		killTestProcess(pid)
 	}
-}
-
-// TestKillChild_InsideStartWindowSignalsDirectly verifies that a re-elevated
-// kill signals the child directly when the start window is still open around
-// the supervision phase, which is how executeWithUserGroup calls it until that
-// window is narrowed to startPrepared.
-//
-// Asking for a second window there is refused by the privilege manager's
-// re-entrancy guard before it runs the closure, so the child would never be
-// signalled at all -- a run-as command that outran its timeout would leave a
-// process behind. exec.CommandContext's watchdog did not have this problem:
-// it killed the child from inside the still-open window.
-func TestKillChild_InsideStartWindowSignalsDirectly(t *testing.T) {
-	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
-	e := NewDefaultExecutor(WithPrivilegeManager(mockPriv)).(*DefaultExecutor)
-
-	pc := prepareForSupervise(t, e, nil, sleepPath, "30")
-	pc.kill = killReelevated
-	pc.supervisedInsideStartWindow = true
-	pid := startForSupervise(t, e, pc)
-
-	require.NoError(t, e.killChild(pc, pc.execCmd.Process, pid))
-
-	// Wait blocks until the signal lands, so the liveness check below is not
-	// racing SIGKILL's asynchronous delivery. Its error is the signal itself.
-	require.Error(t, pc.execCmd.Wait(), "the child must have been terminated by a signal")
-	assert.False(t, processIsRunning(pid), "the child must be signalled, not left running")
-	assert.Empty(t, mockPriv.ElevationCalls,
-		"a kill already inside an open window must not ask for a second one")
-	assert.Empty(t, pc.privilegeWindows, "no window opened, so none may be recorded")
 }
 
 // TestKillChild_RejectsUndeclaredAndUnavailableStrategies verifies the two

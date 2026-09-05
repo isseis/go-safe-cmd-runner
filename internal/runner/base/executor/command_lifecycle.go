@@ -38,6 +38,19 @@ var ErrKillStrategyUnset = errors.New("kill strategy not declared")
 // context was cancelled, so the run may leave a process behind.
 var ErrKillAfterCancel = errors.New("failed to kill command after cancellation")
 
+// ErrStagingCleanupStrategyUnset is returned when a staged copy reaches the
+// removal path without having declared whether removing it needs privilege.
+// It is unreachable while prepareCommand is the only constructor; the guard
+// sits on a privilege boundary, so it fails closed rather than relying on
+// that staying true.
+var ErrStagingCleanupStrategyUnset = errors.New("staging cleanup strategy not declared")
+
+// ErrStartPhaseNotRun is returned when the start window returned without
+// running the start phase and without reporting why. No PrivilegeManager in
+// this repository does that, but the alternative to rejecting it is returning
+// a nil Result with a nil error, which the audit path then dereferences.
+var ErrStartPhaseNotRun = errors.New("start window returned without running the start phase")
+
 // ErrChildNotReaped is returned when the child did not exit within
 // killGraceDelay after the kill, which usually means a grandchild inherited
 // the pipe. The run returns rather than blocking; the pid is logged.
@@ -80,6 +93,20 @@ func (k killStrategy) String() string {
 	}
 }
 
+// stagingCleanupStrategy declares what removing the staged copy requires.
+// Like execBinding and killStrategy its zero value is an explicit unset: the
+// removal runs after the child has exited, long after the value could still
+// be derived from the run-as credential, so guessing there would either leak
+// a root-owned copy into $TMPDIR or open a privilege window a normal run has
+// no reason to open.
+type stagingCleanupStrategy int
+
+const (
+	cleanupUnset stagingCleanupStrategy = iota
+	cleanupDirect
+	cleanupElevated
+)
+
 // stagingRequest carries what the start phase needs to build the staged copy
 // inside the privilege window: the verified identity to copy from and the
 // run-as credential whose gid the copy is chgrp'd to. The resolved path the
@@ -120,13 +147,31 @@ type preparedCommand struct {
 	stage *stagingRequest
 
 	// stagingCleanup removes the staged copy's directory; nil until the start
-	// phase has built the staged copy.
+	// phase has built the staged copy, and cleared once it has been run.
 	stagingCleanup func() error
+
+	// cleanup declares whether removing the staged copy needs a privilege
+	// window; cleanupUnset unless binding == bindingStagedCopy.
+	cleanup stagingCleanupStrategy
+
+	// stagedPath is the staged copy's path, recorded so the caller can log
+	// where the copy lives once the start window has closed. A restore failure
+	// inside a window ends the process through emergencyShutdown, which leaves
+	// the copy behind with nothing else naming it.
+	stagedPath string
 
 	// stagingWarn carries a non-fatal staging failure (closing the fd staging
 	// read from) out of the privilege window. Staging succeeded when this is
 	// set, so it is not returned as an error.
 	stagingWarn error
+
+	// stagingWindowErr records a failure to remove the staged copy that
+	// happened before the removal itself was reached -- an elevation the
+	// privilege manager refused, or a strategy that was never declared. It is
+	// distinct from stagingCleanupErr, which is os.RemoveAll's own failure:
+	// the caller that sees only the latter reads a permission error and never
+	// learns that the elevation meant to prevent it never happened.
+	stagingWindowErr error
 
 	devNull *os.File
 
@@ -136,20 +181,12 @@ type preparedCommand struct {
 	verifiedFDCloseErr error
 	pumpReleaseErr     error
 
-	// killElevation identifies the command in the elevation context the kill
-	// window opens with; the zero value unless kill == killReelevated. Its
-	// Operation is stamped at the kill site rather than here, since that is
-	// where a window's purpose is decided.
-	killElevation runnertypes.ElevationContext
-
-	// supervisedInsideStartWindow declares that the supervision phase runs
-	// while the start window is still open, which is how executeWithUserGroup
-	// calls it until that window is narrowed to startPrepared. The process
-	// euid is already 0 there, so a killReelevated kill signals the child
-	// directly: asking for a second window would be refused as re-entrant and
-	// the child would never be signalled at all. Narrowing the window deletes
-	// this field along with the case it describes.
-	supervisedInsideStartWindow bool
+	// runAsElevation identifies the command in the elevation context the
+	// supervision phase's windows -- the kill window and the staging cleanup
+	// window -- open with; the zero value unless a run-as credential was
+	// applied. Its Operation is stamped at each site rather than here, since
+	// that is where a window's purpose is decided.
+	runAsElevation runnertypes.ElevationContext
 
 	// privilegeWindows records the windows the supervision phase opened, for
 	// the caller to fold into its audit metrics once they have closed.
@@ -183,22 +220,48 @@ func (pc *preparedCommand) release() error {
 		errs = append(errs, pc.devNullCloseErr)
 		pc.devNull = nil
 	}
-	if pc.verifiedFD != nil {
-		pc.verifiedFDCloseErr = closeUnlessClosed(pc.verifiedFD)
-		errs = append(errs, pc.verifiedFDCloseErr)
-		pc.verifiedFD = nil
-	}
-	if pc.stagingCleanup != nil {
-		pc.stagingCleanupErr = pc.stagingCleanup()
-		errs = append(errs, pc.stagingCleanupErr)
-		pc.stagingCleanup = nil
-	}
+	errs = append(errs, pc.releaseVerifiedFD())
+	// The removal here is the fallback for paths that never reached the
+	// supervision phase's own removal -- a start failure that could not remove
+	// the copy inside the window, or a caller that gave up before starting.
+	// It removes without a privilege window, which is all an unprivileged
+	// staging directory needs. A root-owned one has either been removed
+	// already, or the cleanup window failed to open -- in which case this
+	// retry fails with EACCES, and both that failure and the reason the
+	// window did not open are recorded for logDeferredWarnings.
+	errs = append(errs, pc.runStagingCleanup())
 	if pc.pump != nil {
 		pc.pumpReleaseErr = pc.pump.release()
 		errs = append(errs, pc.pumpReleaseErr)
 		pc.pump = nil
 	}
 	return errors.Join(errs...)
+}
+
+// releaseVerifiedFD closes the duplicated verified descriptor, which the start
+// window's caller frees as soon as that window has closed: Start has copied it
+// into the child by then, so holding it until the child exits would keep a
+// descriptor open for the whole run. Idempotent, so release may follow it.
+func (pc *preparedCommand) releaseVerifiedFD() error {
+	if pc.verifiedFD == nil {
+		return nil
+	}
+	pc.verifiedFDCloseErr = closeUnlessClosed(pc.verifiedFD)
+	pc.verifiedFD = nil
+	return pc.verifiedFDCloseErr
+}
+
+// runStagingCleanup runs the staging cleanup function and clears it, so a
+// second call is a no-op. It opens no privilege window of its own -- the name
+// says so, because the executor method one letter of receiver away does, and
+// picking the wrong one on a run-as run would silently skip the elevation.
+func (pc *preparedCommand) runStagingCleanup() error {
+	if pc.stagingCleanup == nil {
+		return nil
+	}
+	pc.stagingCleanupErr = pc.stagingCleanup()
+	pc.stagingCleanup = nil
+	return pc.stagingCleanupErr
 }
 
 // commandOutcome collects everything superviseCommand learns about the child.
@@ -278,6 +341,16 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		// phase to fill in; Args[0] is the resolved path either way.
 		pc.execCmd = &exec.Cmd{Args: append([]string{path}, cmd.ExpandedArgs...)}
 		pc.stage = &stagingRequest{identity: identity, cred: cred}
+		// The staged copy is created inside the start window, so for run-as
+		// execution its directory ends up owned by root with mode
+		// stagingDirMode; the invoking user the parent is back to once the
+		// window has closed cannot delete from it. Normal execution creates
+		// nothing the invoking user does not already own.
+		if cred != nil {
+			pc.cleanup = cleanupElevated
+		} else {
+			pc.cleanup = cleanupDirect
+		}
 	default:
 		pc.binding = bindingResolvedPath
 		// #nosec G204 - The command and arguments are validated before execution with e.Validate()
@@ -287,7 +360,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 	applyCredential(pc.execCmd, cred)
 	if cred != nil {
 		pc.kill = killReelevated
-		pc.killElevation = runnertypes.ElevationContext{
+		pc.runAsElevation = runnertypes.ElevationContext{
 			CommandName: cmd.Name(),
 			FilePath:    cmd.ExpandedCmd,
 			RunAsUser:   cmd.RunAsUser(),
@@ -337,12 +410,10 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 	// Last thing before the start phase: an already-cancelled context must not
 	// start a process. exec.CommandContext used to refuse this; the check is
 	// here now, as the last step of the prepare phase, so a cancelled run
-	// starts nothing and leaves no descriptor behind. It opens no privilege
-	// window of its own; for run-as execution the start window still wraps
-	// this whole phase, so the check moves outside it only once the window is
-	// narrowed to startPrepared. A cancellation between this check and Start
-	// still starts the child, exactly as before -- the supervision phase's
-	// select picks it up and kills it.
+	// starts nothing, leaves no descriptor behind, and never opens the start
+	// window. A cancellation between this check and Start still starts the
+	// child, exactly as before -- the supervision phase's select picks it up
+	// and kills it.
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
@@ -359,7 +430,21 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 // The staged copy is created here rather than in the prepare phase because
 // this is the function the privilege window wraps: a copy made outside the
 // window is owned by the invoking user, who is the attacker in this project's
-// threat model and could swap its contents between creation and exec.
+// threat model and could swap its contents between creation and exec. When
+// Start fails the copy is removed here too, inside the same window -- the
+// caller is back at the invoking user's euid by the time it sees the failure
+// and could not delete from a root-owned staging directory.
+//
+// startPrepared logs nothing: a slog handler is free to open a file, and
+// inside the window it would do so at euid 0. Everything worth reporting is
+// recorded on pc for the caller to log once the window has closed.
+//
+// If restoring privilege fails as the window closes, the privilege manager's
+// emergencyShutdown ends the process at once. A child started here keeps
+// running with nobody to reap it, the staged copy stays in $TMPDIR, and the
+// records this function left on pc -- stagingWarn and any cleanup failure --
+// are lost unlogged, since logging them is the caller's job and the caller is
+// never reached. emergencyShutdown's own CRITICAL record is what remains.
 func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err error) {
 	if pc.spent {
 		return false, ErrPreparedCommandSpent
@@ -375,7 +460,8 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 	}
 
 	if err := pc.execCmd.Start(); err != nil {
-		return false, err
+		// Removed from inside the window; see the doc comment above.
+		return false, errors.Join(err, pc.runStagingCleanup())
 	}
 	return true, nil
 }
@@ -391,31 +477,41 @@ func (e *DefaultExecutor) stagePrepared(pc *preparedCommand) error {
 		return err
 	}
 	pc.stagingCleanup = cleanupFn
+	pc.stagedPath = stagedPath
 	// #nosec G204 - stagedPath is a private copy of the verified inode.
 	pc.execCmd.Path = stagedPath
 	return nil
 }
 
-// runCommand starts pc's child and, once started, supervises it to
-// completion. On failure to start it releases every resource prepareCommand
-// acquired and returns a placeholder Result with ExitCodeUnknown, matching
-// what execCmd.Start failing has always reported.
+// startWindowFn wraps the start phase in whatever privilege window the run
+// needs: executeWithUserGroup passes one that opens PrivMgr.WithPrivileges
+// around it, executeNormal passes runUnprivileged. Which one applies is the
+// caller's to decide -- it owns the elevation context and the audit metrics --
+// so it is a parameter rather than a flag read off preparedCommand.
+type startWindowFn func(fn func() error) error
+
+// runUnprivileged is the start window of a normal run: there is none, so the
+// start phase runs directly.
+func runUnprivileged(fn func() error) error { return fn() }
+
+// runCommand starts pc's child inside startWindow and, once started,
+// supervises it to completion. On failure to start it releases every resource
+// prepareCommand acquired and returns a placeholder Result with
+// ExitCodeUnknown, matching what execCmd.Start failing has always reported.
 //
-// The pipe write ends are released here -- immediately after Start returns,
-// regardless of its outcome -- because the read ends never reach EOF
-// otherwise, which would block the pump's wait until its deadline.
+// Only the start phase runs inside the window. Everything after it is
+// deliberately outside:
+//   - The pipe write ends are released immediately after the window closes,
+//     regardless of whether Start succeeded, because the read ends never reach
+//     EOF otherwise, which would block the pump's wait until its deadline.
+//   - The duplicated verified descriptor goes with them: Start has already
+//     copied it into the child.
+//   - Every log record, including the ones pc carried out of the window.
 //
-// Several log records still run inside the privilege window for run-as
-// execution: prepareCommand's "Executing command" debug record, the
-// "Command execution failed" records here and in superviseCommand, and
-// superviseCommand's kill and drain records. They leave the window when it is
-// narrowed to startPrepared.
-//
-// For the same reason a run-as child is killed directly rather than through
-// the kill window in this phase: the start window is still open around this
-// call, so the process is already at euid 0 and a second window would be
-// refused as re-entrant. See preparedCommand.supervisedInsideStartWindow.
-func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (*Result, error) {
+// A start window that never ran the start phase -- a privilege manager that
+// refused the elevation -- reports no Result at all: nothing about the command
+// was attempted, so there is no exit code for a placeholder to stand in for.
+func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand, startWindow startWindowFn) (*Result, error) {
 	// Checked before the pump is touched, not left to startPrepared's own
 	// guard: a spent preparedCommand has already released its pump, so the
 	// releaseChildEnds below would nil-deref before that guard's error could
@@ -424,14 +520,60 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand) (
 		return e.reportStartFailure(pc, ErrPreparedCommandSpent)
 	}
 
-	started, startErr := e.startPrepared(pc)
+	var opened, started bool
+	elevErr := startWindow(func() error {
+		opened = true
+		var startErr error
+		started, startErr = e.startPrepared(pc)
+		return startErr
+	})
+
+	// The window has closed. Everything below runs at the invoking user's
+	// effective uid.
 	closeErr := pc.pump.releaseChildEnds()
+	// Kept out of the error handed to superviseCommand, unlike closeErr. A
+	// write end that would not close leaves the read ends short of EOF, so the
+	// run has to be stopped; a descriptor Start has already copied into the
+	// child has no such consequence, and forcing the kill path over it would
+	// SIGKILL a command that is running perfectly well and report it as
+	// failed. release() used to close this one and fold its failure into the
+	// error only on the paths where nothing is running -- which is exactly
+	// where the two failure arms below still report it.
+	fdErr := pc.releaseVerifiedFD()
+	e.logStartWindowRecords(pc, started)
 
-	if !started {
-		return e.reportStartFailure(pc, errors.Join(startErr, closeErr))
+	switch {
+	case !opened:
+		// A start window that reported no reason of its own is one: the caller
+		// would otherwise receive a nil Result alongside a nil error.
+		if elevErr == nil {
+			elevErr = ErrStartPhaseNotRun
+		}
+		return nil, errors.Join(elevErr, closeErr, fdErr, pc.release())
+	case !started:
+		return e.reportStartFailure(pc, errors.Join(elevErr, closeErr, fdErr))
+	default:
+		return e.superviseCommand(ctx, pc, errors.Join(elevErr, closeErr))
 	}
+}
 
-	return e.superviseCommand(ctx, pc, closeErr)
+// logStartWindowRecords logs what the start phase could not: the staged copy's
+// location, so a restore failure that ends the process through
+// emergencyShutdown still leaves a trail to the copy left in $TMPDIR, and the
+// non-fatal failures pc carried out of the window.
+//
+// The location is recorded only for a child that started. A start that failed
+// removed the copy from inside the window, so naming a path that is already
+// gone would send an operator looking for a directory that never outlived the
+// call; if that removal itself failed, the error carrying the path is logged
+// just below.
+func (e *DefaultExecutor) logStartWindowRecords(pc *preparedCommand, started bool) {
+	if started && pc.stagedPath != "" {
+		e.Logger.Debug("Staged verified command copy",
+			"command", pc.cmdLine,
+			"staged_path", pc.stagedPath)
+	}
+	e.logDeferredWarnings(pc)
 }
 
 // reportStartFailure releases everything the prepare phase acquired and builds
@@ -454,9 +596,7 @@ func (e *DefaultExecutor) reportStartFailure(pc *preparedCommand, startErr error
 // that os/exec no longer handles cancellation:
 //   - An already-cancelled context starts no process at all. prepareCommand
 //     checks for that as its last step, so such a run reaches neither Start
-//     nor the kill path. (It still runs inside the start window for run-as
-//     execution in this phase; the check leaves the window when the window is
-//     narrowed to startPrepared.)
+//     nor the kill path.
 //   - Process.Kill returning os.ErrProcessDone is not a failure: the child
 //     exited between the cancellation being observed and the signal being
 //     sent.
@@ -466,20 +606,15 @@ func (e *DefaultExecutor) reportStartFailure(pc *preparedCommand, startErr error
 //     past its timeout indefinitely -- the timeout guarantee would be lost
 //     silently.
 //
-// startupErr carries a failure from the start phase -- today only a failure to
-// release the pipe write ends, since runCommand still runs inside the privilege
-// window and never sees the elevation's own error; an elevation failure after
-// Start succeeded reaches here too once the window is narrowed to
-// startPrepared. It forces the kill path -- a started child must not be
-// abandoned -- and is joined into the returned error.
-//
-// Its two log records, like runCommand's, still run inside the privilege
-// window for run-as execution; they leave it when the window is narrowed to
-// startPrepared.
+// startupErr carries a failure the start window reported after the child was
+// already running: a failure to release the pipe write ends or the duplicated
+// verified descriptor, or the elevation's own failure to close cleanly. It
+// forces the kill path -- a started child must not be abandoned -- and is
+// joined into the returned error.
 func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedCommand, startupErr error) (*Result, error) {
-	// Discarded rather than logged: superviseCommand still runs inside the
-	// privilege window for run-as execution. release records each failure on
-	// pc for logDeferredWarnings.
+	// Discarded rather than logged here: release records each failure on pc,
+	// and runCommand's caller logs them once the whole run has finished, in
+	// the same place as the rest of pc's carried failures.
 	defer func() { _ = pc.release() }()
 
 	// Recorded while the child is known to be live. Once the reap gives up,
@@ -500,10 +635,9 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 		waitCh <- pc.execCmd.Wait()
 	}()
 
-	// Must not start before the privilege window has closed; not yet
-	// guaranteed in this phase, since WithPrivileges still wraps
-	// prepareCommand, startPrepared and superviseCommand together for run-as
-	// execution (see executor.go).
+	// The start window closed before superviseCommand was called, so the
+	// reader goroutines -- and every OutputWriter.Write they perform -- run at
+	// the invoking user's effective uid.
 	pc.pump.start()
 
 	var outcome commandOutcome
@@ -573,6 +707,17 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 			"pid", pid)
 	}
 
+	// Removed only now, not right after Start: a #! script's interpreter opens
+	// the script by path after execve has returned, so a copy deleted at Start
+	// would make the run fail at an undefined moment. Reached on the
+	// not-reaped path too -- unlink does not disturb a process already holding
+	// the inode, and leaving a root-owned copy of a verified binary in $TMPDIR
+	// with its last reference gone is worse than the child outliving it.
+	// Discarded rather than logged here, like release's failures: the removal
+	// may run inside the cleanup window, and removeStagedCopy records the
+	// failure on pc for the caller to log once every window has closed.
+	_ = e.removeStagedCopy(pc)
+
 	result := &Result{Stdout: string(outcome.stdout)}
 	if pc.hasOutputWriter {
 		result.Stderr = string(outcome.stderr)
@@ -598,6 +743,65 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	}
 
 	return result, nil
+}
+
+// removeStagedCopy deletes the staged copy once the child no longer needs it,
+// opening the cleanup window when the strategy calls for it.
+//
+// A run-as staged copy sits in a root-owned directory with mode
+// stagingDirMode, created that way inside the start window; the parent is back
+// at the invoking user's effective uid here and os.RemoveAll would fail with
+// EACCES. A normal run's staging directory is owned by the invoking user, so
+// widening the window to "whenever a copy was staged" would make every such
+// run ask for an elevation it does not need -- and fail on a binary that was
+// never setuid. Which one applies was declared by prepareCommand, not inferred
+// from the credential here.
+func (e *DefaultExecutor) removeStagedCopy(pc *preparedCommand) error {
+	if pc.stagingCleanup == nil {
+		return nil
+	}
+	// Each failure that stops the removal from being attempted at all is
+	// recorded on pc as well as returned, because the caller discards this
+	// return value -- the removal may run inside the window it opens here.
+	// The removal's own failure needs no recording: runStagingCleanup keeps
+	// it in stagingCleanupErr.
+	switch pc.cleanup {
+	case cleanupDirect:
+		return pc.runStagingCleanup()
+	case cleanupElevated:
+		if e.PrivMgr == nil {
+			pc.stagingWindowErr = ErrNoPrivilegeManager
+			return pc.stagingWindowErr
+		}
+		elevationCtx := pc.runAsElevation
+		elevationCtx.Operation = runnertypes.OperationStagingCleanup
+
+		// opened is set from inside the window for the same reason as in
+		// killChild: a refused elevation must not reach the audit log as an
+		// escalation that happened.
+		opened := false
+		start := time.Now()
+		err := e.PrivMgr.WithPrivileges(elevationCtx, func() error {
+			opened = true
+			return pc.runStagingCleanup()
+		})
+		if opened {
+			pc.privilegeWindows = append(pc.privilegeWindows, privilegeWindow{
+				op:       runnertypes.OperationStagingCleanup,
+				duration: time.Since(start),
+			})
+		} else if err != nil {
+			// The window never ran the removal, so this is the window's own
+			// failure and not os.RemoveAll's. Recording it is what keeps an
+			// operator from reading only the EACCES the unprivileged retry in
+			// release then reports, and concluding the elevation happened.
+			pc.stagingWindowErr = err
+		}
+		return err
+	default:
+		pc.stagingWindowErr = ErrStagingCleanupStrategyUnset
+		return pc.stagingWindowErr
+	}
 }
 
 // killedMessage names why the child was killed, so the record distinguishes a
@@ -651,14 +855,10 @@ func (e *DefaultExecutor) killChild(pc *preparedCommand, proc *os.Process, pid i
 	case killDirect:
 		return killOutcome(proc.Kill(), pid)
 	case killReelevated:
-		if pc.supervisedInsideStartWindow {
-			// Already at euid 0; see supervisedInsideStartWindow.
-			return killOutcome(proc.Kill(), pid)
-		}
 		if e.PrivMgr == nil {
 			return fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, ErrNoPrivilegeManager)
 		}
-		elevationCtx := pc.killElevation
+		elevationCtx := pc.runAsElevation
 		elevationCtx.Operation = runnertypes.OperationKillAfterCancel
 
 		// opened is set from inside the window, so it says a window opened

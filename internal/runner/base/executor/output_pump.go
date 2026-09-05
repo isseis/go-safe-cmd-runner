@@ -93,14 +93,18 @@ func (p *outputPump) releaseChildEnds() error {
 
 // start launches one reader goroutine per stream.
 //
-// It must not be called before the privilege window has closed: the readers
-// run at the process's current effective UID, and every OutputWriter.Write
-// they perform runs there too. That is not yet true of this package:
-// executeWithUserGroup still wraps prepareCommand, startPrepared and
-// superviseCommand together in PrivMgr.WithPrivileges, so for a run-as
-// command the readers do run at euid 0. Narrowing the window to the start
-// phase is what makes the sentence above a fact rather than a requirement on
-// the caller.
+// It must not be called before the start window has closed: the readers run
+// at the process's current effective UID, and every OutputWriter.Write they
+// perform runs there too. Its one caller, superviseCommand, runs after that
+// window has closed, which is what makes it a fact rather than only a
+// requirement on the caller.
+//
+// That covers the start window only. The two windows superviseCommand may
+// open afterwards -- the kill window and the staging cleanup window -- do
+// open with these readers live, so a Write that lands in one of them runs at
+// euid 0. That overlap is a residual risk the design accepts and bounds
+// (02_architecture.md section 5.3): both windows are exceptional, and neither
+// exists on the path a command that runs to completion takes.
 //
 // Calling start twice would leave a reader per stream blocked forever on
 // the send to done, which has room for one value: a silent goroutine leak,

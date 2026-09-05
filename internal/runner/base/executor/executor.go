@@ -234,41 +234,46 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		RunAsGroup:  cmd.RunAsGroup(),
 	}
 
-	// pc is populated inside the WithPrivileges closure below. This phase
-	// still has WithPrivileges wrap prepareCommand, startPrepared and
-	// superviseCommand together (narrowing the window to startPrepared alone
-	// is deferred to the cancellation work), so it is the only place the
-	// non-fatal warnings collected on pc can be logged: logging from inside
-	// the closure would run at euid 0.
-	var pc *preparedCommand
-	var result *Result
-	privilegeStart := time.Now()
+	// The privilege window wraps the start phase alone. prepareCommand runs
+	// before it and superviseCommand after it, both at the invoking user's
+	// effective uid, so the window's length no longer depends on how long the
+	// command runs -- and everything either phase needs to log can be logged
+	// where it happens.
+	pc, err := e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
+	if err != nil {
+		// prepareCommand returns a non-nil pc on failure too, carrying
+		// whatever its own release could not do cleanly.
+		e.logDeferredWarnings(pc)
+		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
+		// The command never ran, so there is no exit code to report; the
+		// placeholder keeps Execute's promise that a failed run still yields
+		// a Result for the caller to read an exit code from.
+		return &Result{ExitCode: ExitCodeUnknown}, fmt.Errorf("user/group privilege execution failed: %w", err)
+	}
+
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
-	err = e.PrivMgr.WithPrivileges(executionCtx, func() error {
-		var prepErr error
-		pc, prepErr = e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, cred)
-		if prepErr != nil {
-			// The command never ran, so there is no exit code to report; the
-			// placeholder keeps Execute's promise that a failed run still
-			// yields a Result for the caller to read an exit code from.
-			result = &Result{ExitCode: ExitCodeUnknown}
-			return prepErr
+	result, err := e.runCommand(ctx, pc, func(fn func() error) error {
+		// opened is set from inside the window, for the same reason as at the
+		// kill and staging-cleanup sites: an elevation the manager refused
+		// must not reach the audit log as an escalation that happened, and
+		// which of WithPrivileges' failures came first cannot be told from
+		// the error alone.
+		opened := false
+		privilegeStart := time.Now()
+		elevErr := e.PrivMgr.WithPrivileges(executionCtx, func() error {
+			opened = true
+			return fn()
+		})
+		if opened {
+			addPrivilegeWindow(&metrics, runnertypes.OperationUserGroupExecution, time.Since(privilegeStart))
 		}
-		// This closure is the start window, and it still spans the whole run.
-		// Until it is narrowed to startPrepared, the supervision phase inside
-		// it must not ask for a kill window of its own.
-		pc.supervisedInsideStartWindow = true
-		var runErr error
-		result, runErr = e.runCommand(ctx, pc)
-		return runErr
+		return elevErr
 	})
-	addPrivilegeWindow(&metrics, runnertypes.OperationUserGroupExecution, time.Since(privilegeStart))
-	// Windows the supervision phase opened (the kill window) are measured
-	// there and folded in here, where the audit logger that reports them is.
-	if pc != nil {
-		for _, w := range pc.privilegeWindows {
-			addPrivilegeWindow(&metrics, w.op, w.duration)
-		}
+	// Windows the supervision phase opened -- the kill window and the staging
+	// cleanup window -- are measured there and folded in here, where the audit
+	// logger that reports them is.
+	for _, w := range pc.privilegeWindows {
+		addPrivilegeWindow(&metrics, w.op, w.duration)
 	}
 
 	e.logDeferredWarnings(pc)
@@ -323,7 +328,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 		// a Result for the caller to read an exit code from.
 		return &Result{ExitCode: ExitCodeUnknown}, err
 	}
-	result, err := e.runCommand(ctx, pc)
+	result, err := e.runCommand(ctx, pc, runUnprivileged)
 	e.logDeferredWarnings(pc)
 	return result, err
 }
@@ -354,35 +359,41 @@ func (e *DefaultExecutor) effectiveKillGraceDelay() time.Duration {
 	return e.killGraceDelay
 }
 
-// logDeferredWarnings logs pc's non-fatal resource-release failures, if any:
-// the staging warnings and release()'s failures on devNull, verifiedFD and
-// the output pump. Pre-refactor, each of these was logged individually at its
-// own close site; decomposing execution into prepare/start/supervise moved
-// all of them behind preparedCommand.release(), which may run inside the
-// privilege window, so they are recorded as values there instead and logged
-// here. Callers must invoke logDeferredWarnings only once the privilege
-// window (if any) that produced pc has closed: nothing inside a window may
-// log, since a slog handler is free to open a file and would do so at euid 0.
-// pc may be nil when the caller never reached prepareCommand, in which case
-// there is nothing to log.
+// logDeferredWarnings logs pc's non-fatal failures -- the staging warning,
+// the staged-copy removal failure, and release()'s failures on devNull, the
+// duplicated verified fd and the output pump -- and clears each one as it is
+// logged. Pre-refactor, each of these was logged individually at its own close
+// site; decomposing execution into prepare/start/supervise moved them behind
+// operations that may run inside a privilege window, where nothing may log
+// (a slog handler is free to open a file and would do so at euid 0), so they
+// are recorded as values there and logged here instead.
+//
+// Clearing is what lets this be called at every point a window closes rather
+// than only once at the end of the run: a failure the start window carried out
+// is logged as soon as that window closes, and the same call at the end of the
+// run does not repeat it. pc may be nil when the caller never reached
+// prepareCommand, in which case there is nothing to log.
 func (e *DefaultExecutor) logDeferredWarnings(pc *preparedCommand) {
 	if pc == nil {
 		return
 	}
-	if pc.stagingWarn != nil {
-		e.Logger.Warn("Failed to close staging source descriptor", "error", pc.stagingWarn)
+	warnings := []struct {
+		message string
+		err     *error
+	}{
+		{"Failed to close staging source descriptor", &pc.stagingWarn},
+		{"Failed to open the staging cleanup window", &pc.stagingWindowErr},
+		{"Failed to remove staging directory", &pc.stagingCleanupErr},
+		{"Failed to close null device", &pc.devNullCloseErr},
+		{"Failed to close duplicated verified fd", &pc.verifiedFDCloseErr},
+		{"Failed to release output pump", &pc.pumpReleaseErr},
 	}
-	if pc.stagingCleanupErr != nil {
-		e.Logger.Warn("Failed to remove staging directory", "error", pc.stagingCleanupErr)
-	}
-	if pc.devNullCloseErr != nil {
-		e.Logger.Warn("Failed to close null device", "error", pc.devNullCloseErr)
-	}
-	if pc.verifiedFDCloseErr != nil {
-		e.Logger.Warn("Failed to close duplicated verified fd", "error", pc.verifiedFDCloseErr)
-	}
-	if pc.pumpReleaseErr != nil {
-		e.Logger.Warn("Failed to release output pump", "error", pc.pumpReleaseErr)
+	for _, w := range warnings {
+		if *w.err == nil {
+			continue
+		}
+		e.Logger.Warn(w.message, "error", *w.err)
+		*w.err = nil
 	}
 }
 
@@ -413,9 +424,9 @@ const stagingDirMode = 0o710
 // from the verified descriptor (not re-opened from the path), so a swapped path
 // cannot substitute different content.
 //
-// stageFromFD is called from inside the privilege window (prepareCommand
-// still runs there in this phase; see command_lifecycle.go), so it must not
-// log: a slog handler is free to open a file, and it would do so at euid 0.
+// stageFromFD is called from inside the start privilege window (see
+// startPrepared), so it must not log: a slog handler is free to open a file,
+// and it would do so at euid 0.
 // Its two failure modes that are not returned as err are carried out instead:
 //   - the cleanup function returns the os.RemoveAll error rather than logging
 //     it, so the caller can log once the window has closed. It also writes a

@@ -743,8 +743,8 @@
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した（[#1100](https://github.com/isseis/go-safe-cmd-runner/pull/1100)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 特権の隙の縮小と staging の位置づけ変更（F-002）
 
@@ -756,41 +756,69 @@
 
 #### 4-a. 隙の縮小
 
-- [ ] `runnertypes.Operation` に `OperationStagingCleanup Operation = "staging_cleanup"` を追加し、
+- [x] `runnertypes.Operation` に `OperationStagingCleanup Operation = "staging_cleanup"` を追加し、
       `prepareExecution` の昇格が要る側の `case` へ足す。
-- [ ] `executeWithUserGroup` の `WithPrivileges` の `fn` を `startPrepared(pc)` の呼び出しだけにする。
+- [x] `executeWithUserGroup` の `WithPrivileges` の `fn` を `startPrepared(pc)` の呼び出しだけにする。
       あわせて `preparedCommand.supervisedInsideStartWindow` とその代入、
       `killChild` の直接 kill の分岐、`TestKillChild_InsideStartWindowSignalsDirectly` を削除する
       （3-d が入れた暫定措置であり、隙が縮んだ時点で kill 区間を開くのが正しくなる）。
       `prepareCommand` は隙の前、`superviseCommand` は隙の後に置く。
-- [ ] `executeNormal` は `startPrepared` を `WithPrivileges` で包まずにそのまま呼ぶ。
-- [ ] `releaseChildEnds()` と複製した検証済み記述子の解放を、`WithPrivileges` から戻った直後
+- [x] `executeNormal` は `startPrepared` を `WithPrivileges` で包まずにそのまま呼ぶ。
+- [x] `releaseChildEnds()` と複製した検証済み記述子の解放を、`WithPrivileges` から戻った直後
       （隙の外）に置く。`Start()` の成否によらず必ず通る1箇所にする（設計文書 §3.1 の骨格）。
-- [ ] staged copy の削除を子プロセスの終了後（および回収を諦めた後）へ移す。
+- [x] staged copy の削除を子プロセスの終了後（および回収を諦めた後）へ移す。
       `binding == bindingStagedCopy` かつ `cred != nil` のときだけ、
       `WithPrivileges`（`Operation: OperationStagingCleanup`）で包んで `os.RemoveAll` を呼ぶ。
       それ以外（通常実行）は隙を開かずに削除する（設計文書 §3.4 差分2）。
-- [ ] `ErrChildNotReaped` の経路でも staged copy を削除する（設計文書 §6.1）。
-- [ ] 後始末区間の計測を `ByOperation` へ足す（キー `staging_cleanup`）。3-b で入れた
+- [x] `ErrChildNotReaped` の経路でも staged copy を削除する（設計文書 §6.1）。
+- [x] 後始末区間の計測を `ByOperation` へ足す（キー `staging_cleanup`）。3-b で入れた
       計測の枠へ、この Phase で新しく開く隙の分を加える。
-- [ ] `Start()` が失敗した経路では、staged copy の削除は起動区間の中で行う（設計文書 §6.3）。
-- [ ] `preparedCommand.stagingWarn` の記録位置を確定する: `WithPrivileges` から戻った直後
+- [x] `Start()` が失敗した経路では、staged copy の削除は起動区間の中で行う（設計文書 §6.3）。
+- [x] `preparedCommand.stagingWarn` の記録位置を確定する: `WithPrivileges` から戻った直後
       （隙の外、`releaseChildEnds` と同じ位置）で、非 `nil` なら `Logger.Warn` で記録する。
-- [ ] `binding == bindingStagedCopy` のとき、staged copy のパスを起動区間が閉じた直後に
+- [x] `binding == bindingStagedCopy` のとき、staged copy のパスを起動区間が閉じた直後に
       `Logger.Debug` で記録する（設計文書 §6.1）。復帰失敗による `emergencyShutdown` は
       この記録より後に起きるため、その経路で `$TMPDIR` に残った複製の在処が追える。
       記録は隙の外で行うので、隙の中の操作は増えない。
-- [ ] `cleanupFn()` の戻り値の記録位置を確定する: 後始末区間を閉じた後、および隙を開かない
+- [x] `cleanupFn()` の戻り値の記録位置を確定する: 後始末区間を閉じた後、および隙を開かない
       通常実行の削除の後で、非 `nil` なら `Logger.Warn` で記録する。
       `Start()` 失敗時の削除（起動区間の内側）の戻り値も、隙を出てから記録する。
-- [ ] `WithPrivileges` の中で復帰に失敗したとき、`emergencyShutdown` によりプロセスが即座に
+- [x] `privilege/unix.go` の `WithPrivileges` が隙の内側で出している `Debug` 2件
+      （「Executing privileged operation callback」「Privileged operation callback completed」）を
+      隙の外へ出す。1件目は昇格の前、2件目は復帰の後に置く。本タスクの carry-out の仕組みは
+      すべて「隙の中では何もログしない」を前提にしており、呼び出される側がその前提を
+      内側から崩していた。あわせて AC-05 が測る隙の長さからハンドラ2回分が外れる。
+- [x] 複製した検証済み記述子の解放の失敗は、`superviseCommand` へ渡す `startupErr` に
+      混ぜない。書き込み側が閉じないと読み取り側が EOF に達しないので実行を止める必要があるが、
+      `Start()` が既に子へ複製し終えた記述子にはその帰結が無く、混ぜると正常に走っている
+      コマンドを SIGKILL して失敗として報告することになる。何も走っていない2経路
+      （隙が開かなかった／`Start()` 失敗）では従来どおり戻り値のエラーに含める。
+- [x] `ErrStartPhaseNotRun` を足す。起動フェーズを走らせずエラーも返さない `startWindow` は
+      拒否する。そうしないと `Result` が `nil`、エラーも `nil` で返り、`executeWithUserGroup`
+      の監査ブロックがそれを参照する。本リポジトリの `PrivilegeManager` はこの挙動を取らないが、
+      ガードは取りうる場所に置いて fail-secure にする。
+- [x] `outputPump.start` の doc コメントを直す。「隙が閉じた後に呼ばれるのは事実である」は
+      起動区間についてのみ成り立ち、kill 区間と後始末区間は読み取り goroutine が生きたまま
+      開く。設計文書 §5.3 が受け入れている残存リスクであることを明示して参照させる。
+- [x] `escalatePrivileges` の `Info`（「Privileges elevated」）と `handleCleanup` の
+      `Error`（panic の記録）も隙の外へ出す。slog ハンドラは呼び出し側が差し替えるものなので、
+      隙の中でハンドラを呼ぶことは「ログの設定次第で任意の処理が euid 0 で走る」ことを意味し、
+      本タスクが塞ぐ穴そのものになる。昇格は `executionContext` に `elevationOutcome` として
+      記録し、`WithPrivileges` が隙を閉じてから `defer` で出す（panic 経路でも残る）。
+      昇格の時刻は記録自体の時刻ではなくなるので `elevated_at` 属性で保つ。
+      設計文書 §5.3 の残存リスクの記述を、移動後の事実に置き換える。
+- [x] `preparedCommand.stagingWindowErr` を足す。後始末が**試みられる前に**止まった理由
+      （昇格の拒否、`stagingCleanupStrategy` 未宣言）を記録する。`stagingCleanupErr`
+      （`os.RemoveAll` 自身の失敗）とは別にするのは、`release()` の隙なしの再試行が返す
+      EACCES だけを読んだ運用者が「昇格は行われた」と誤読するのを防ぐためである。
+- [x] `WithPrivileges` の中で復帰に失敗したとき、`emergencyShutdown` によりプロセスが即座に
       終わるため子プロセスと staged copy が残る旨を、`startPrepared` の doc コメントへ書く。
       あわせて、この経路では `stagingWarn` と後始末の戻り値が記録されないまま失われることも書く
       （記録は隙を出てから行うため。`emergencyShutdown` 自身は CRITICAL を記録する）。
 
 #### 4-b. テスト（`executor_lifecycle_test.go`）
 
-- [ ] `TestStartPrepared_NoGoroutineInsideWindow` を足す（AC-02）。次の点を守る。
+- [x] `TestStartPrepared_NoGoroutineInsideWindow` を足す（AC-02）。次の点を守る。
       - 標本を**3つ**採る: 隙を開く直前（基準）、`InWindow` の `MockWindowPhaseBeforeFn`、
         `InWindow` の `MockWindowPhaseAfterFn`。いずれも `runtime.Stack(buf, true)` を使う。
         **`MockWindowPhaseAfterFn` の標本が本題である**: `Start()` の中で起きた goroutine は
@@ -811,24 +839,45 @@
         `-race` 有効時に現れる race detector の goroutine、およびログ機構の Slack 送信ワーカー。
       - `make test` は `-race` 付きと無し（CGO_ENABLED=0）の両方で走るので、除外一覧は
         両方の条件で成立させる。
-- [ ] `TestExecute_SingleElevationPairPerRun` を足す（AC-06）。**正常終了する**実行で組む
-      （`executeWithUserGroup` はエラー時に `LogUserGroupExecution` を呼ばないため、
-      監査ログに `ByOperation` が出るのは成功時だけである）。
-      - fd-bound 実行: `ElevationCount == 1`、`ByOperation` のキーが
-        `user_group_execution` だけ。
-      - staging フォールバック（`WithFdExecDisabled`）: `ElevationCount == 2`、
-        キーが `user_group_execution` と `staging_cleanup`。
-- [ ] `TestStartPrepared_WaitAndPumpRunOutsideWindow` を足す（AC-04 の挙動側）。
-      `outputPump` に「`start()` が呼ばれたか」を記録する非公開フラグを足し、
+- [x] `TestExecute_SingleElevationPairPerRun` を足す（AC-06）。**正常終了する**実行で組む。
+      当初は監査メトリクスの `ElevationCount`／`ByOperation` を主張する計画だったが、
+      特権の無いテストでは run-as 実行を最後まで走らせられない（`SysProcAttr.Credential` の
+      `setgroups` が CAP_SETGID を要求し、`Start()` が EPERM で失敗する）ため、
+      同じ事実を観測できる次の3点に置き換えた。このテストが通る成功経路では、昇格と復帰の対は
+      `WithPrivileges` の呼び出しと1対1であり、`ElevationCount` はその回数と一致する
+      （昇格を断られた呼び出しはどの区間でも `ElevationCount` に数えないが、モックの
+      呼び出し一覧には残るため、失敗経路では両者はずれる）。
+      - fd-bound 実行: 特権管理ロジックの呼び出しが起動区間の1件だけ、`pc.privilegeWindows` が空。
+      - staging フォールバック（`WithFdExecDisabled`）: 呼び出しが
+        `user_group_execution` と `staging_cleanup` の2件、`pc.privilegeWindows` に
+        後始末区間が1件記録され、staged copy が実行後に消えている。
+      - `prepareCommand` が資格の有無から `stagingCleanupStrategy` を宣言すること
+        （run-as なら `cleanupElevated`、通常実行なら `cleanupDirect`）。
+      監査メトリクスへの畳み込み自体は `pc.privilegeWindows` を走査するだけの処理であり、
+      特権のある環境での主張は Phase 5 の統合テスト（AC-05）が担う。
+- [x] `TestStartPrepared_WaitAndPumpRunOutsideWindow` を足す（AC-04 の挙動側）。
+      「`start()` が呼ばれたか」は `outputPump` に既にある非公開フラグ `started`
+      （二重呼び出しの拒否に使っている）がそのまま使えるので、新しい旗は足さない。それを使い、
       `InWindow` の**2つの phase のどちらの時点でも**そのフラグが偽であること、および
       待機 goroutine がまだ起動していないことを主張する。`MockWindowPhaseAfterFn` の側が
       要るのは、`fn`（＝`startPrepared`）の中で `pump.start()` を呼ぶ回帰が
       `MockWindowPhaseBeforeFn` の標本では見えないためである。静的検査（`G`）が
       「隙の中から何を呼べるか」を固定するのに対し、こちらは「隙が閉じるまで
       `Wait()` と出力の取り込みが始まらない」という時間順序を主張する。
-- [ ] `TestExecute_ShebangScriptRunsUnderStagingFallback` を足す（AC-17）。
+- [x] `TestExecute_ShebangScriptRunsUnderStagingFallback` を足す（AC-17）。
       `WithFdExecDisabled` の下でシェバンつきスクリプトが実行でき、標準出力が一致する
       （staged copy を `Start()` 直後に削除していないことの検査）。
+- [x] `TestRemoveStagedCopy_NormalExecutionDoesNotElevate` を足す。通常実行の staging では
+      後始末区間を開かないこと（設計文書 §3.4 差分2 の「条件を広く採ってはならない」側）。
+      kill 側の `TestSupervise_NormalExecutionDoesNotReelevate` に対応する。
+- [x] `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` を足す。`Start()` 失敗時の
+      削除が**隙が閉じる前に**済んでいることを `InWindow` の `MockWindowPhaseAfterFn` から
+      主張する。実行後に「消えている」ことを見るだけでは、特権の無いテストでは
+      `release()` の再試行が消してしまうため、削除を外しても緑のままになる。
+- [x] `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` を足す。
+      `stagingCleanupStrategy` 未宣言と、`cleanupElevated` かつ特権管理ロジックが無い場合の
+      2つの fail-secure 分岐。戻り値が呼び出し側で捨てられるため、理由が
+      `stagingWindowErr` に記録されることまで主張する。
 
 **完了の目安（4-a・4-b）**: 上記テストが緑。隙の縮小後も既存テストが変わらず通る。
 `make test`／`make lint` が緑。
@@ -845,9 +894,9 @@
 
 **判定理由**: ステップ 4-a は特権昇格の範囲そのものを定義し直し、後始末区間（`OperationStagingCleanup`）を新たに開く security-gate step であり、誤ると実効 UID 0 のまま処理が続くため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] PR を作成した（[#1101](https://github.com/isseis/go-safe-cmd-runner/pull/1101)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1324,10 +1373,24 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       閾値（5,000 µs）を超えてテストが落ちる。
 - [ ] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
       `TestSupervise_NormalExecutionDoesNotReelevate` が落ちる。
-- [ ] AC-02・AC-04（`fn` の後の標本）: `InWindow` の `MockWindowPhaseAfterFn` の呼び出しを
+- [x] AC-02・AC-04（`fn` の後の標本）: `InWindow` の `MockWindowPhaseAfterFn` の呼び出しを
       外すと、`Stdout`／`Stderr` を `*os.File` 以外の writer へ戻す revert を
       `TestStartPrepared_NoGoroutineInsideWindow` が捕まえられなくなることを確かめる
       （`os/exec` の copy goroutine は `Start()` の中で起きるので、`fn` の前の標本には現れない）。
+      確認: `*os.File` を包む writer へ戻すと `MockWindowPhaseAfterFn` の標本にだけ
+      `os/exec` の goroutine が2つ現れて落ちる（`fn` の前の標本は差分なし）。
+- [x] 特権管理ロジックの記録（PR-5 で追加）: `escalatePrivileges` に `Info` を1行戻すと
+      `TestWithPrivileges_WritesNoRecordWhileElevated` が落ちる。panic の記録を
+      復帰の前へ戻すと `TestHandleCleanup_ReportsPanicAfterRestore` が落ちる。いずれも確認済み。
+- [x] 検証済み記述子（PR-5 で追加）: 解放の失敗を `superviseCommand` の `startupErr` へ
+      混ぜると `TestRunCommand_VerifiedFDCloseFailureDoesNotKillChild` が落ちる。
+      `ErrStartPhaseNotRun` のガードを外すと
+      `TestRunCommand_StartWindowThatRunsNothingIsRejected` が落ちる。いずれも確認済み。
+- [x] 後始末区間（PR-5 で追加）: `cleanupDirect` の分岐を昇格側へ倒すと
+      `TestRemoveStagedCopy_NormalExecutionDoesNotElevate` が落ちる。`Start()` 失敗時の
+      隙の中の削除を消すと `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が
+      落ちる。`stagingWindowErr` への記録を消すと
+      `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` が落ちる。いずれも確認済み。
 - [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
       戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
 - [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
@@ -1547,8 +1610,12 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 
 - 種別: `test`
 - 検証: `L::TestExecute_SingleElevationPairPerRun`（正常終了する実行で組む）
-- 期待: fd-bound 実行で `ElevationCount == 1`、`ByOperation` のキーが `user_group_execution` のみ。
-  staging フォールバックで `ElevationCount == 2`、キーが `user_group_execution` と `staging_cleanup`
+- 期待: fd-bound 実行で特権管理ロジックの呼び出しが起動区間の1件のみ。staging フォールバックで
+  `user_group_execution` と `staging_cleanup` の2件、後者が `pc.privilegeWindows` に記録される。
+  この成功経路では昇格と復帰の対は `WithPrivileges` の呼び出しと1対1で、`ElevationCount` は
+  その回数と一致する。
+  監査メトリクスの `ElevationCount`／`ByOperation` を直接主張しないのは、特権の無いテストでは
+  run-as 実行を最後まで走らせられないためである（Phase 4-b の該当ステップ参照）
 - 種別: `test`（復帰直後の識別子検査が変わらないこと）
 - 検証: 既存 `internal/runner/base/executor/executor_privilege_check_test.go::TestExecute_PrivilegeLeakCausesExit`、
   同 `::TestExecute_NoPrivilegeLeakDoesNotCallExit`
