@@ -897,8 +897,8 @@
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した（[#1101](https://github.com/isseis/go-safe-cmd-runner/pull/1101)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4（続き）: 隙の中から到達する呼び出しの静的検査
 
@@ -914,29 +914,42 @@
 `stageFromFD` の `fmt.Errorf`／`filepath.Base`／`filepath.Join`／`io.NewSectionReader` が
 リスト外になって初日から赤くなる。そこで次のとおり範囲を先に固定する。
 
-- [ ] **追跡対象を決める。** 追跡するのは「副作用を持ちうる呼び出し」だけとし、
+- [x] **追跡対象を決める。** 追跡するのは「副作用を持ちうる呼び出し」だけとし、
       具体的には `os`／`syscall`／`io`／`os/exec` パッケージの関数呼び出しと、
       `*os.File`／`*os.Process`／`*exec.Cmd` のメソッド呼び出し、および `Logger` のメソッド呼び出しに限る。
       `fmt`／`filepath`／`errors`／`strconv` など副作用の無いパッケージの呼び出しは追跡しない。
+      **実装時に、この線引きを次のとおり広げた**（設計文書 §7.2 に反映済み）。標準ライブラリだけを
+      追跡対象にすると、`internal/safefileio` のような自前のヘルパーで隙の中からファイルを開いても
+      検査が何も言わない。またインターフェース越しの呼び出しは実装が見えないまま素通りする。
+      そこで追跡対象を「本リポジトリのパッケージすべて」「インターフェースのメソッドすべて」
+      「`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／`log/slog`」とし、
+      `path/filepath` の純粋な2つ（`Base`／`Join`）は区間ごとの許可リストで許す。
+      `filepath` を「副作用が無い」と括れないのは、`EvalSymlinks`／`Walk`／`Glob` が
+      実際にファイルシステムを触るためである。
       この線引きの理由（許可リストが実装の写しではなく「隙の中で何に触れるか」の宣言であること）を
       テストファイルの doc コメントへ英語で書く。
-- [ ] **到達解析の範囲を決める。** `WithPrivileges` へ渡す関数リテラルを起点に、
-      **同一パッケージ内の関数・メソッドだけ**を辿る（`startPrepared` → `stageFromFD` の2段が実際の深さ）。
+- [x] **到達解析の範囲を決める。** `WithPrivileges` へ渡す関数リテラルを起点に、
+      **同一パッケージ内の関数・メソッドだけ**を辿る（`startPrepared` → `stagePrepared` → `stageFromFD` の3段が実際の深さ）。
       パッケージ外へ出る呼び出し（`os.MkdirTemp` など）はそこで葉として扱い、
       許可リストと突き合わせる。この境界をテストファイルの doc コメントへ書く。
-- [ ] **レシーバ型の同定手段を決める。** `(*os.File).Stat` と `(*os.Process).Kill` は
+- [x] **レシーバ型の同定手段を決める。** `(*os.File).Stat` と `(*os.Process).Kill` は
       レシーバの型が分からないと同定できないため、`go/parser` に加えて標準ライブラリの
       `go/types`（`go/importer` 経由）で型情報を取る。`golang.org/x/tools` は `go.mod` に無く、
       本タスクで新しい依存は増やさない。
-- [ ] **許可リストを書く。** 設計文書 §7.2 の表をそのまま写す。例外は無い。
+- [x] **許可リストを書く。** 設計文書 §7.2 の表をそのまま写す。例外は無い。
       `stageFromFD` は同一パッケージの関数なので**葉ではなく辿る対象**である。設計文書 §7.2 の
       表との対応を保つために名前は残すが、許可リストと突き合わせるのはその先の葉である。
       - 起動区間: `(*exec.Cmd).Start`、`stageFromFD`（辿る）、`os.MkdirTemp`、`syscall.Dup`、
-        `os.NewFile`、`os.OpenFile`、`io.Copy`、`os.Chmod`、`os.Chown`、`os.RemoveAll`、
-        `(*os.File).Stat`、`(*os.File).Close`、`syscall.Close`、`(*os.File).WriteString`
+        `os.NewFile`、`os.OpenFile`、`io.Copy`、`io.NewSectionReader`、`os.Chmod`、`os.Chown`、
+        `os.RemoveAll`、`(*os.File).Stat`、`(*os.File).Close`、`syscall.Close`、`(*os.File).WriteString`
+      - `io.NewSectionReader`／`filepath.Base`／`filepath.Join`／`(fs.FileInfo).Size`／
+        `(*risktypes.VerifiedFD).Fd` は設計文書 §7.2 の当初の表に無かったが、上で広げた追跡対象の
+        下では葉として現れるため、実装時に表へ足した（同じ内容を設計文書へ反映済み）。
+        いずれも何も開かない呼び出しか純粋な文字列操作で、表が既に許している `os.NewFile` と
+        同じ種類である。
       - kill 区間: `(*os.Process).Kill` のみ
       - 後始末区間: `os.RemoveAll` と `(*os.File).WriteString`
-- [ ] **`Logger` の呼び出しは3つの隙すべてで禁じる。** `Logger` のメソッドは追跡対象に
+- [x] **`Logger` の呼び出しは3つの隙すべてで禁じる。** `Logger` のメソッドは追跡対象に
       含めたうえで、許可リストには1つも載せない（設計文書 §7.2）。Phase 2 で `stageFromFD` から
       `Logger.Warn` を取り除いてあるので、この規則は例外なしに成立する。
       `(*os.File).WriteString` を許すのは stderr への最後の手段の記録のためであり、
@@ -944,16 +957,28 @@
       テストファイルの doc コメントへ英語で書く。
       なお `io.Copy` が既に許可リストにあるため、「開いている記述子へ書ける」という能力の階級は
       `(*os.File).WriteString` の追加によって増えない。
-- [ ] **フィールドへの代入は対象外とする。** `bindingStagedCopy` で起動区間が行う
+- [x] **関数値ごしの呼び出しは表で解決する。** 起動区間の本体は `startWindowFn` の引数
+      `fn` ごしに呼ばれ、staging の後始末は `preparedCommand.stagingCleanup` という
+      フィールドに載って隙へ入る。どちらも関数値の呼び出しで、到達解析だけでは辿れない。
+      黙って読み飛ばすと、その先にある呼び出しが検査から丸ごと消えるので、
+      「どの関数の中のどの関数値が、どの関数リテラルを運ぶか」を表（`privilegeWindowIndirections`）
+      に書き、表に無い関数値の呼び出しは失敗として報告する。
+      表の記述は主張であり、間違っていれば検査は「表が指すリテラル」を歩き、隙は別の関数を走らせる。
+      ここだけが fail open になるので、主張そのものを検査する。フィールドなら、そのフィールドへの
+      パッケージ内のすべての代入が、表の指すリテラル（直接、またはそのリテラルを宣言する関数の
+      呼び出しから一度だけ代入されたローカル経由）か `nil` であることを要求する。ローカルなら
+      代入がそのリテラルであること、引数なら「呼び出し元の関数がリテラルを宣言する関数へ到達する」
+      という構造だけを確かめる。
+- [x] **フィールドへの代入は対象外とする。** `bindingStagedCopy` で起動区間が行う
       `execCmd.Path` への代入は呼び出しではないため検査しない（設計文書 §7.2）。
-- [ ] **negative self-test を置く。** `testdata/` に、隙の中で許可リスト外の呼び出しを行う
+- [x] **negative self-test を置く。** `testdata/` に、隙の中で許可リスト外の呼び出しを行う
       小さな Go ソースを2種類置き、検査関数がどちらも**拒否する**ことを主張するサブテストを書く。
       1つは許可リストに無いファイル操作（例: `os.Remove`）、もう1つは隙の中からの
       ログ出力（例: `Logger.Warn`）である。後者を入れるのは、ログ禁止が許可リストの
       「載せなかった」という不在によって表現されており、不在は壊れても目に見えないためである。
       これが無いと、到達解析が壊れて何も見つけなくなっても検査は緑のままになる
       （CLAUDE.md「テストは主張する理由で落ちられなければならない」）。
-- [ ] `TestPrivilegeWindowAllowedCalls` を、`start_window`／`kill_window`／`cleanup_window`／
+- [x] `TestPrivilegeWindowAllowedCalls` を、`start_window`／`kill_window`／`cleanup_window`／
       `rejects_unlisted_call`／`rejects_logging_in_window`（後の2つが negative self-test）の
       5サブテストで構成する。
 
@@ -971,9 +996,9 @@
 
 **判定理由**: ステップ 4-c は既存の `identity_mutation_guard_test.go`（denylist 方式・呼び出しグラフを辿らない）に前例が無い到達解析つきの検査であり、隔離された複雑な step にあたるため。追跡対象・解析範囲・型解決手段は 4-c 自身が先に固定しているので未踏の設計判断は残っておらず、テストだけを足す PR で挙動は変わらないため frontier-required には上げない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] PR を作成した（[#1102](https://github.com/isseis/go-safe-cmd-runner/pull/1102)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1366,9 +1391,11 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
 
 §7.6 に無いぶん:
 
-- [ ] AC-03・AC-04: `privileged_window_guard_test.go` の negative self-test（`testdata/` の
-      許可リスト外呼び出し）が実際に拒否されること。到達解析を1段に浅くすると
+- [x] AC-03・AC-04（PR-6 で確認）: `privileged_window_guard_test.go` の negative self-test
+      （`testdata/` の許可リスト外呼び出し）が実際に拒否されること。到達解析を1段に浅くすると
       `stageFromFD` の中の呼び出しが見えなくなり、この self-test が緑のまま通ってしまうことも確かめる。
+      浅くした場合、self-test は実際に緑のままで、代わりに `start_window`／`cleanup_window` の
+      「許可リストの項目が1つも到達しない」検査が落ちた。
 - [ ] AC-05: `Wait()` を起動区間の内側へ戻すと、`privilege_duration_user_group_execution_us` が
       閾値（5,000 µs）を超えてテストが落ちる。
 - [ ] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
@@ -1394,12 +1421,12 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
 - [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
       戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
 - [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
-- [ ] AC-03・AC-04（`Logger` 禁止）: `stageFromFD` に `Logger.Warn` を1行戻すと、
+- [x] AC-03・AC-04（`Logger` 禁止、PR-6 で確認）: `stageFromFD` に `Logger.Warn` を1行戻すと、
       `G::TestPrivilegeWindowAllowedCalls` と
       `TestStageFromFD_ReportsFailuresWithoutLogging` の両方が落ちる。
       `testdata/` の `rejects_logging_in_window` も、許可リストに `Logger` を1つ載せると
       通ってしまうことを確かめる（＝この self-test が不在を守れていること）。
-- [ ] AC-03・AC-04（stderr の最後の手段）: 後始末の `os.Stderr.WriteString` を消すと、
+- [x] AC-03・AC-04（stderr の最後の手段、PR-6 で確認）: 後始末の `os.Stderr.WriteString` を消すと、
       `TestStageFromFD_ReportsFailuresWithoutLogging` の3つ目の主張が落ちる。
       逆に `(*os.File).WriteString` を許可リストから外すと
       `G::TestPrivilegeWindowAllowedCalls` が落ちることも確かめ、

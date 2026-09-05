@@ -1343,12 +1343,29 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 
 | 区間 | 許可する呼び出し |
 |---|---|
-| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
+| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`io.NewSectionReader`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`／`filepath.Base`／`filepath.Join`／`(fs.FileInfo).Size`／`(*risktypes.VerifiedFD).Fd`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
 | kill 区間 | `(*os.Process).Kill` のみ |
 | 後始末区間 | `os.RemoveAll` と `(*os.File).WriteString` |
 
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
-ある。`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
+ある。
+
+表の後半4つは、検査が追跡する範囲を実装時に広げたことで葉として現れたものである。追跡対象は
+「本リポジトリのパッケージすべて」「インターフェースのメソッドすべて」「プロセスの外へ作用しうる
+標準ライブラリのパッケージ（`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／
+`log/slog`）」とする。本リポジトリのコードを丸ごと追跡するのは、`internal/safefileio` のような
+自前のヘルパーが `os.OpenFile` と同じだけファイルを開けるからであり、標準ライブラリだけを見ると
+「隙の中でファイルを触る」もっとも自然な書き方が検査から抜け落ちる。インターフェースのメソッドは
+逆に、実装が1つに定まらないから追跡する。したがって許可リストに載せることは「その地点で走りうる
+実装のどれもが euid 0 で許される」という、通常より強い宣言になる。
+
+- `io.NewSectionReader`／`(fs.FileInfo).Size`／`(*risktypes.VerifiedFD).Fd`: いずれも何も開かず、
+  既に開いている記述子を包む・読むだけで、表が既に許している `os.NewFile` と同じ種類である。
+- `filepath.Base`／`filepath.Join`: 文字列操作である。`path/filepath` を追跡対象に含めるのは、
+  同じパッケージの `EvalSymlinks`／`Walk`／`Glob` が実際にファイルシステムを触るためで、
+  パッケージ全体を無条件に見逃す代わりに、純粋な2つだけを区間ごとに許す。
+
+`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
 `os.NewFile` が `nil` を返して `*os.File` に包めなかったときに閉じるためだけである。許可リストに
 無い呼び出しが増えれば、実行せずにビルドが赤くなる。
 
