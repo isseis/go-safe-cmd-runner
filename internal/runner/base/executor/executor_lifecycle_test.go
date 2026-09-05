@@ -904,3 +904,64 @@ func TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies(t *testing.T
 		})
 	}
 }
+
+// TestRunCommand_VerifiedFDCloseFailureDoesNotKillChild verifies that a
+// failure to close the duplicated verified descriptor is reported as a warning
+// and nothing more. Start has already copied that descriptor into the child by
+// the time it is closed, so unlike the pipe write ends -- whose read ends would
+// never reach EOF -- it has no bearing on a child that is running. Folding it
+// into the error handed to the supervision phase would send a healthy command
+// straight to the kill path and report it as failed.
+//
+// The descriptor is closed behind the preparedCommand's back from inside the
+// window, after the start phase has returned, so the close that follows fails
+// with EBADF rather than the os.ErrClosed release treats as success.
+func TestRunCommand_VerifiedFDCloseFailureDoesNotKillChild(t *testing.T) {
+	if !fdExecSupported() {
+		t.Skip("fd-bound execution is not supported on this platform")
+	}
+
+	logger, rec := tu.NewRecordingLogger()
+	mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+	e := NewDefaultExecutor(WithPrivilegeManager(mockPriv), WithLogger(logger)).(*DefaultExecutor)
+
+	pc := prepareWithVerifiedIdentity(t, e, shPath, "-c", "echo fd-close-ok")
+	require.Equal(t, bindingVerifiedFD, pc.binding)
+
+	mockPriv.InWindow = func(phase privilegetestutil.MockWindowPhase) {
+		if phase == privilegetestutil.MockWindowPhaseAfterFn {
+			require.NoError(t, syscall.Close(int(pc.verifiedFD.Fd())))
+		}
+	}
+
+	result, err := runInsideStartWindow(t, e, mockPriv, pc)
+
+	require.NoError(t, err, "a verified-fd close failure must not fail the run")
+	require.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode, "the child must be reaped normally, not killed")
+	assert.Equal(t, "fd-close-ok\n", result.Stdout)
+
+	warns := rec.RecordsAtLevel(slog.LevelWarn)
+	require.Len(t, warns, 1, "the close failure must still be reported")
+	assert.Equal(t, "Failed to close duplicated verified fd", warns[0].Message)
+}
+
+// TestRunCommand_StartWindowThatRunsNothingIsRejected verifies that a start
+// window returning without having run the start phase, and without reporting
+// why, is refused rather than passed on. Such a window leaves nothing started
+// and nothing to report, so the alternative is a nil Result alongside a nil
+// error -- which executeWithUserGroup's audit block would dereference.
+//
+// No PrivilegeManager in this repository behaves this way; the guard sits
+// where a caller-supplied implementation could, and fails closed.
+func TestRunCommand_StartWindowThatRunsNothingIsRejected(t *testing.T) {
+	e := NewDefaultExecutor().(*DefaultExecutor)
+	pc := prepareForSupervise(t, e, nil, shPath, "-c", "echo never-runs")
+
+	result, err := e.runCommand(context.Background(), pc, func(func() error) error {
+		return nil // never calls fn, and reports no reason
+	})
+
+	assert.Nil(t, result, "no Result may be reported for a command that was never attempted")
+	require.ErrorIs(t, err, ErrStartPhaseNotRun)
+}

@@ -45,6 +45,12 @@ var ErrKillAfterCancel = errors.New("failed to kill command after cancellation")
 // that staying true.
 var ErrStagingCleanupStrategyUnset = errors.New("staging cleanup strategy not declared")
 
+// ErrStartPhaseNotRun is returned when the start window returned without
+// running the start phase and without reporting why. No PrivilegeManager in
+// this repository does that, but the alternative to rejecting it is returning
+// a nil Result with a nil error, which the audit path then dereferences.
+var ErrStartPhaseNotRun = errors.New("start window returned without running the start phase")
+
 // ErrChildNotReaped is returned when the child did not exit within
 // killGraceDelay after the kill, which usually means a grandchild inherited
 // the pipe. The run returns rather than blocking; the pid is logged.
@@ -524,14 +530,28 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand, s
 
 	// The window has closed. Everything below runs at the invoking user's
 	// effective uid.
-	closeErr := errors.Join(pc.pump.releaseChildEnds(), pc.releaseVerifiedFD())
+	closeErr := pc.pump.releaseChildEnds()
+	// Kept out of the error handed to superviseCommand, unlike closeErr. A
+	// write end that would not close leaves the read ends short of EOF, so the
+	// run has to be stopped; a descriptor Start has already copied into the
+	// child has no such consequence, and forcing the kill path over it would
+	// SIGKILL a command that is running perfectly well and report it as
+	// failed. release() used to close this one and fold its failure into the
+	// error only on the paths where nothing is running -- which is exactly
+	// where the two failure arms below still report it.
+	fdErr := pc.releaseVerifiedFD()
 	e.logStartWindowRecords(pc, started)
 
 	switch {
 	case !opened:
-		return nil, errors.Join(elevErr, closeErr, pc.release())
+		// A start window that reported no reason of its own is one: the caller
+		// would otherwise receive a nil Result alongside a nil error.
+		if elevErr == nil {
+			elevErr = ErrStartPhaseNotRun
+		}
+		return nil, errors.Join(elevErr, closeErr, fdErr, pc.release())
 	case !started:
-		return e.reportStartFailure(pc, errors.Join(elevErr, closeErr))
+		return e.reportStartFailure(pc, errors.Join(elevErr, closeErr, fdErr))
 	default:
 		return e.superviseCommand(ctx, pc, errors.Join(elevErr, closeErr))
 	}

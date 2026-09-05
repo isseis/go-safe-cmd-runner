@@ -788,6 +788,18 @@
       隙の外へ出す。1件目は昇格の前、2件目は復帰の後に置く。本タスクの carry-out の仕組みは
       すべて「隙の中では何もログしない」を前提にしており、呼び出される側がその前提を
       内側から崩していた。あわせて AC-05 が測る隙の長さからハンドラ2回分が外れる。
+- [x] 複製した検証済み記述子の解放の失敗は、`superviseCommand` へ渡す `startupErr` に
+      混ぜない。書き込み側が閉じないと読み取り側が EOF に達しないので実行を止める必要があるが、
+      `Start()` が既に子へ複製し終えた記述子にはその帰結が無く、混ぜると正常に走っている
+      コマンドを SIGKILL して失敗として報告することになる。何も走っていない2経路
+      （隙が開かなかった／`Start()` 失敗）では従来どおり戻り値のエラーに含める。
+- [x] `ErrStartPhaseNotRun` を足す。起動フェーズを走らせずエラーも返さない `startWindow` は
+      拒否する。そうしないと `Result` が `nil`、エラーも `nil` で返り、`executeWithUserGroup`
+      の監査ブロックがそれを参照する。本リポジトリの `PrivilegeManager` はこの挙動を取らないが、
+      ガードは取りうる場所に置いて fail-secure にする。
+- [x] `outputPump.start` の doc コメントを直す。「隙が閉じた後に呼ばれるのは事実である」は
+      起動区間についてのみ成り立ち、kill 区間と後始末区間は読み取り goroutine が生きたまま
+      開く。設計文書 §5.3 が受け入れている残存リスクであることを明示して参照させる。
 - [x] `escalatePrivileges` が `seteuid(0)` の直後に出す `Info`（「Privileges elevated」）は
       移さず、残存リスクとして設計文書 §5.3 に記す。この記録の意味は「いつ昇格したか」であり、
       復帰の後へ動かすと監査の時系列が実際と食い違う。あわせて、静的検査（Phase 4-c）が
@@ -1364,6 +1376,10 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       （`os/exec` の copy goroutine は `Start()` の中で起きるので、`fn` の前の標本には現れない）。
       確認: `*os.File` を包む writer へ戻すと `MockWindowPhaseAfterFn` の標本にだけ
       `os/exec` の goroutine が2つ現れて落ちる（`fn` の前の標本は差分なし）。
+- [x] 検証済み記述子（PR-5 で追加）: 解放の失敗を `superviseCommand` の `startupErr` へ
+      混ぜると `TestRunCommand_VerifiedFDCloseFailureDoesNotKillChild` が落ちる。
+      `ErrStartPhaseNotRun` のガードを外すと
+      `TestRunCommand_StartWindowThatRunsNothingIsRejected` が落ちる。いずれも確認済み。
 - [x] 後始末区間（PR-5 で追加）: `cleanupDirect` の分岐を昇格側へ倒すと
       `TestRemoveStagedCopy_NormalExecutionDoesNotElevate` が落ちる。`Start()` 失敗時の
       隙の中の削除を消すと `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が
