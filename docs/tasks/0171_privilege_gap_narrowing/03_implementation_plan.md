@@ -844,7 +844,7 @@
       `WithPrivileges` の呼び出しと1対1であり、`ElevationCount` はその回数と一致する
       （昇格を断られた呼び出しはどの区間でも `ElevationCount` に数えないが、モックの
       呼び出し一覧には残るため、失敗経路では両者はずれる）。
-      - fd-bound 実行: 特権管理器の呼び出しが起動区間の1件だけ、`pc.privilegeWindows` が空。
+      - fd-bound 実行: 特権管理ロジックの呼び出しが起動区間の1件だけ、`pc.privilegeWindows` が空。
       - staging フォールバック（`WithFdExecDisabled`）: 呼び出しが
         `user_group_execution` と `staging_cleanup` の2件、`pc.privilegeWindows` に
         後始末区間が1件記録され、staged copy が実行後に消えている。
@@ -872,7 +872,7 @@
       主張する。実行後に「消えている」ことを見るだけでは、特権の無いテストでは
       `release()` の再試行が消してしまうため、削除を外しても緑のままになる。
 - [x] `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` を足す。
-      `stagingCleanupStrategy` 未宣言と、`cleanupElevated` かつ特権管理器が無い場合の
+      `stagingCleanupStrategy` 未宣言と、`cleanupElevated` かつ特権管理ロジックが無い場合の
       2つの fail-secure 分岐。戻り値が呼び出し側で捨てられるため、理由が
       `stagingWindowErr` に記録されることまで主張する。
 
@@ -1604,7 +1604,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 
 - 種別: `test`
 - 検証: `L::TestExecute_SingleElevationPairPerRun`（正常終了する実行で組む）
-- 期待: fd-bound 実行で特権管理器の呼び出しが起動区間の1件のみ。staging フォールバックで
+- 期待: fd-bound 実行で特権管理ロジックの呼び出しが起動区間の1件のみ。staging フォールバックで
   `user_group_execution` と `staging_cleanup` の2件、後者が `pc.privilegeWindows` に記録される。
   この成功経路では昇格と復帰の対は `WithPrivileges` の呼び出しと1対1で、`ElevationCount` は
   その回数と一致する。
