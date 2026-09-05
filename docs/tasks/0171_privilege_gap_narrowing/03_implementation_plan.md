@@ -800,10 +800,13 @@
 - [x] `outputPump.start` の doc コメントを直す。「隙が閉じた後に呼ばれるのは事実である」は
       起動区間についてのみ成り立ち、kill 区間と後始末区間は読み取り goroutine が生きたまま
       開く。設計文書 §5.3 が受け入れている残存リスクであることを明示して参照させる。
-- [x] `escalatePrivileges` が `seteuid(0)` の直後に出す `Info`（「Privileges elevated」）は
-      移さず、残存リスクとして設計文書 §5.3 に記す。この記録の意味は「いつ昇格したか」であり、
-      復帰の後へ動かすと監査の時系列が実際と食い違う。あわせて、静的検査（Phase 4-c）が
-      固定するのは executor の隙の本体だけであることを同節に明記する。
+- [x] `escalatePrivileges` の `Info`（「Privileges elevated」）と `handleCleanup` の
+      `Error`（panic の記録）も隙の外へ出す。slog ハンドラは呼び出し側が差し替えるものなので、
+      隙の中でハンドラを呼ぶことは「ログの設定次第で任意の処理が euid 0 で走る」ことを意味し、
+      本タスクが塞ぐ穴そのものになる。昇格は `executionContext` に `elevationOutcome` として
+      記録し、`WithPrivileges` が隙を閉じてから `defer` で出す（panic 経路でも残る）。
+      昇格の時刻は記録自体の時刻ではなくなるので `elevated_at` 属性で保つ。
+      設計文書 §5.3 の残存リスクの記述を、移動後の事実に置き換える。
 - [x] `preparedCommand.stagingWindowErr` を足す。後始末が**試みられる前に**止まった理由
       （昇格の拒否、`stagingCleanupStrategy` 未宣言）を記録する。`stagingCleanupErr`
       （`os.RemoveAll` 自身の失敗）とは別にするのは、`release()` の隙なしの再試行が返す
@@ -1376,6 +1379,9 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       （`os/exec` の copy goroutine は `Start()` の中で起きるので、`fn` の前の標本には現れない）。
       確認: `*os.File` を包む writer へ戻すと `MockWindowPhaseAfterFn` の標本にだけ
       `os/exec` の goroutine が2つ現れて落ちる（`fn` の前の標本は差分なし）。
+- [x] 特権管理ロジックの記録（PR-5 で追加）: `escalatePrivileges` に `Info` を1行戻すと
+      `TestWithPrivileges_WritesNoRecordWhileElevated` が落ちる。panic の記録を
+      復帰の前へ戻すと `TestHandleCleanup_ReportsPanicAfterRestore` が落ちる。いずれも確認済み。
 - [x] 検証済み記述子（PR-5 で追加）: 解放の失敗を `superviseCommand` の `startupErr` へ
       混ぜると `TestRunCommand_VerifiedFDCloseFailureDoesNotKillChild` が落ちる。
       `ErrStartPhaseNotRun` のガードを外すと

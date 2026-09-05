@@ -110,15 +110,20 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 		return err
 	}
 
-	// Both records sit outside the window on purpose. Callers of this package
-	// go to some length to keep everything but the operation itself out of the
-	// window -- a slog handler is free to open a file, and it would do so at
-	// euid 0 -- and logging from here would defeat that from the other side.
-	// The first record therefore precedes the escalation, so it names an
-	// operation that was attempted rather than one that ran; the second
-	// follows the restore, which the immediately-invoked function's defer
-	// performs before it returns.
+	// Every record this function writes sits outside the window on purpose.
+	// Callers of this package go to some length to keep everything but the
+	// operation itself out of the window -- a slog handler is supplied by the
+	// caller and is free to open a file, and it would do so at euid 0 -- and
+	// logging from here would defeat that from the other side. The first
+	// record therefore precedes the escalation, so it names an operation that
+	// was attempted rather than one that ran.
 	m.logger.Debug("Entering privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
+
+	// Deferred rather than written inline after the window, so a panic in fn
+	// still reports the escalation. It runs after the restore either way: the
+	// immediately-invoked function below performs that before it returns, and
+	// this function's own defers run later still.
+	defer m.logElevationOutcome(execCtx)
 
 	if err := m.performElevation(execCtx); err != nil {
 		return err
@@ -133,9 +138,28 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	return fnErr
 }
 
+// elevationOutcome records what performElevation actually did, so
+// WithPrivileges can report it once the window has closed. The report cannot
+// be made where it happens: a slog handler is supplied by the caller and is
+// free to open a file or a socket, and inside the window it would do so at
+// euid 0 -- the exact hazard the window discipline exists to prevent. The zero
+// value means no escalation was performed, so an early return reports nothing.
+type elevationOutcome int
+
+const (
+	elevationNone elevationOutcome = iota
+	elevationNativeRoot
+	elevationSeteuid
+)
+
 // executionContext holds context for privilege execution
 type executionContext struct {
 	elevationCtx runnertypes.ElevationContext
+	// elevation and elevatedAt carry what happened out of the window for
+	// WithPrivileges to log after the restore. elevatedAt keeps the moment the
+	// escalation succeeded, which the record's own timestamp no longer is.
+	elevation  elevationOutcome
+	elevatedAt time.Time
 	// needsPrivilegeEscalation indicates whether system-level privilege escalation (setuid to root) is required.
 	// This is needed to gain administrative privileges for operations like file validation or user switching.
 	// When true, escalatePrivileges() will call syscall.Seteuid(0) to become root. The parent process never
@@ -185,7 +209,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 // removed post-escalation rollback block used to compensate for.
 func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error {
 	if execCtx.needsPrivilegeEscalation {
-		if err := m.escalatePrivileges(execCtx.elevationCtx); err != nil {
+		if err := m.escalatePrivileges(execCtx); err != nil {
 			return fmt.Errorf("privilege escalation failed: %w", err)
 		}
 	}
@@ -197,20 +221,23 @@ func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error
 // and then re-raises the panic, if any.
 func (m *UnixPrivilegeManager) handleCleanup(execCtx *executionContext) {
 	var panicValue any
-	var shutdownContext string
+	shutdownContext := "normal execution"
 
 	if r := recover(); r != nil {
 		panicValue = r
 		shutdownContext = fmt.Sprintf("after panic: %v", r)
-		m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
-			"panic", r, "original_uid", m.originalUID)
-	} else {
-		shutdownContext = "normal execution"
 	}
 
 	m.restorePrivilegesAndVerify(execCtx, shutdownContext)
 
 	if panicValue != nil {
+		// Reported only now: the record would otherwise be written while the
+		// panic still had the process at euid 0, and a caller-supplied slog
+		// handler may open a file. If the restore could not be made,
+		// emergencyShutdown has already ended the process, and its CRITICAL
+		// record carries this panic value in its shutdown context.
+		m.logger.Error("Panic occurred during privileged operation, privileges restored",
+			"panic", panicValue, "original_uid", m.originalUID)
 		panic(panicValue)
 	}
 }
@@ -262,20 +289,22 @@ func (m *UnixPrivilegeManager) restorePrivilegesAndVerify(execCtx *executionCont
 }
 
 // escalatePrivileges performs the actual privilege escalation (private method)
-func (m *UnixPrivilegeManager) escalatePrivileges(elevationCtx runnertypes.ElevationContext) error {
+// escalatePrivileges raises the effective UID to 0 and records what it did on
+// execCtx. It logs nothing: every line after the seteuid below runs at euid 0,
+// and a caller-supplied slog handler is free to open a file there. What
+// happened is reported by logElevationOutcome once the window has closed.
+func (m *UnixPrivilegeManager) escalatePrivileges(execCtx *executionContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
 		return fmt.Errorf("%w: privilege execution not supported", runnertypes.ErrPrivilegedExecutionNotAvailable)
 	}
 
+	elevationCtx := execCtx.elevationCtx
 	elevationCtx.OriginalUID = m.originalUID
 	elevationCtx.TargetUID = 0
 
 	// For native root execution, no seteuid call is needed
 	if m.originalUID == 0 {
-		m.logger.Info("Native root execution - no privilege escalation needed",
-			"operation", elevationCtx.Operation,
-			"command", elevationCtx.CommandName,
-			"original_uid", elevationCtx.OriginalUID)
+		execCtx.elevation = elevationNativeRoot
 		return nil
 	}
 
@@ -291,12 +320,37 @@ func (m *UnixPrivilegeManager) escalatePrivileges(elevationCtx runnertypes.Eleva
 		}
 	}
 
-	m.logger.Info("Privileges elevated",
-		"operation", elevationCtx.Operation,
-		"command", elevationCtx.CommandName,
-		"original_uid", elevationCtx.OriginalUID)
-
+	execCtx.elevation = elevationSeteuid
+	execCtx.elevatedAt = time.Now()
 	return nil
+}
+
+// logElevationOutcome reports what the escalation did, after the window has
+// closed. Nothing is reported when no escalation was performed, so an
+// elevation that failed before it changed anything stays silent here and is
+// reported as the error WithPrivileges returns.
+//
+// A restore failure ends the process through emergencyShutdown before this
+// runs, so on that path the record is lost -- emergencyShutdown's own CRITICAL
+// record carries the same elevation context.
+func (m *UnixPrivilegeManager) logElevationOutcome(execCtx *executionContext) {
+	switch execCtx.elevation {
+	case elevationNativeRoot:
+		// The process is root for its whole life here, so there is no window
+		// to be outside of; this is reported from the same place as the other
+		// outcome only so both follow one path.
+		m.logger.Info("Native root execution - no privilege escalation needed",
+			"operation", execCtx.elevationCtx.Operation,
+			"command", execCtx.elevationCtx.CommandName,
+			"original_uid", m.originalUID)
+	case elevationSeteuid:
+		m.logger.Info("Privileges elevated",
+			"operation", execCtx.elevationCtx.Operation,
+			"command", execCtx.elevationCtx.CommandName,
+			"original_uid", m.originalUID,
+			"elevated_at", execCtx.elevatedAt)
+	case elevationNone:
+	}
 }
 
 // restorePrivileges restores original privileges (private method)

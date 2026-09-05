@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -238,7 +239,7 @@ func TestEscalatePrivileges(t *testing.T) {
 			CommandName: "test-command",
 		}
 
-		err := manager.escalatePrivileges(elevationCtx)
+		err := manager.escalatePrivileges(&executionContext{elevationCtx: elevationCtx})
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, runnertypes.ErrPrivilegedExecutionNotAvailable)
 	})
@@ -255,9 +256,12 @@ func TestEscalatePrivileges(t *testing.T) {
 			CommandName: "test-command",
 		}
 
-		err := manager.escalatePrivileges(elevationCtx)
+		execCtx := &executionContext{elevationCtx: elevationCtx}
+		err := manager.escalatePrivileges(execCtx)
 		// Should succeed without actual seteuid call
 		assert.NoError(t, err)
+		assert.Equal(t, elevationNativeRoot, execCtx.elevation,
+			"what happened must be recorded for WithPrivileges to report after the window")
 	})
 
 	t.Run("seteuid_failure", func(t *testing.T) {
@@ -279,7 +283,11 @@ func TestEscalatePrivileges(t *testing.T) {
 			CommandName: "test-command",
 		}
 
-		err := manager.escalatePrivileges(elevationCtx)
+		execCtx := &executionContext{elevationCtx: elevationCtx}
+		err := manager.escalatePrivileges(execCtx)
+
+		assert.Equal(t, elevationNone, execCtx.elevation,
+			"an escalation that changed nothing must record nothing to report")
 
 		privErr, ok := errors.AsType[*Error](err)
 		require.True(t, ok, "expected a *Error, got %v", err)
@@ -668,4 +676,108 @@ func TestWithPrivileges_ReentrantCallIsRejected(t *testing.T) {
 		require.NoError(t, manager.WithPrivileges(elevationCtx, fn))
 		assert.Equal(t, 2, calls, "the guard must not fire on a call made after the previous one returned")
 	})
+}
+
+// newLoggingOrderTestManager builds a native-root manager whose restore and
+// identity checks are hermetic, so the tests below can observe which records
+// are written and in what order without touching process-wide identity.
+func newLoggingOrderTestManager(t *testing.T, logger *slog.Logger) *UnixPrivilegeManager {
+	t.Helper()
+	return &UnixPrivilegeManager{
+		logger:             logger,
+		privilegeSupported: true,
+		originalUID:        0,
+		identityVerifier:   func() error { return nil },
+		osExit:             func(_ int) { t.Fatal("emergencyShutdown called unexpectedly") },
+		readSavedIDs: func() (int, int, error) {
+			return -1, -1, ErrSavedSetNotSupported
+		},
+	}
+}
+
+// TestWithPrivileges_WritesNoRecordWhileElevated verifies that the escalation
+// is reported only once the window has closed.
+//
+// The reason is not tidiness: the slog handler is supplied by the caller --
+// this project installs a redaction handler, a file handler and a Slack
+// notification worker -- and a handler invoked while the window is open does
+// whatever it does at euid 0, which is exactly the exposure narrowing the
+// window is meant to remove. A record whose text says "Privileges elevated"
+// is worth nothing if writing it is itself the privileged side effect.
+//
+// Only the "Entering privileged operation callback" record may exist by the
+// time fn runs, and it is written before the escalation.
+func TestWithPrivileges_WritesNoRecordWhileElevated(t *testing.T) {
+	logger, rec := tu.NewRecordingLogger()
+	manager := newLoggingOrderTestManager(t, logger)
+
+	var duringWindow []tu.RecordSnapshot
+	err := manager.WithPrivileges(runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileValidation,
+		CommandName: "test-command",
+	}, func() error {
+		duringWindow = rec.Records()
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.Len(t, duringWindow, 1, "only the pre-escalation record may exist while the window is open")
+	assert.Equal(t, slog.LevelDebug, duringWindow[0].Level)
+	assert.Equal(t, "Entering privileged operation callback", duringWindow[0].Message)
+
+	assert.Len(t, rec.FindRecords(slog.LevelInfo, "Native root execution - no privilege escalation needed"), 1,
+		"the escalation must still be reported, after the window has closed")
+}
+
+// TestHandleCleanup_ReportsPanicAfterRestore verifies that a panic inside the
+// window is reported only after privileges have been restored. The record is
+// written by a caller-supplied handler, so writing it while the panic still
+// has the process at euid 0 would run that handler elevated -- and a panic is
+// precisely when the process is least able to bound what happens next.
+//
+// The order is asserted against the restore's own record, which
+// restorePrivilegesAndVerify writes on the way out.
+func TestHandleCleanup_ReportsPanicAfterRestore(t *testing.T) {
+	logger, rec := tu.NewRecordingLogger()
+	manager := newLoggingOrderTestManager(t, logger)
+	execCtx := &executionContext{
+		elevationCtx:             runnertypes.ElevationContext{Operation: runnertypes.OperationFileValidation},
+		needsPrivilegeEscalation: true,
+		originalSUID:             -1,
+		originalSGID:             -1,
+	}
+
+	panicValue := "boom"
+	func() {
+		defer func() {
+			assert.Equal(t, panicValue, recover(), "handleCleanup must re-raise the panic it recovered")
+		}()
+		defer manager.handleCleanup(execCtx)
+		panic(panicValue)
+	}()
+
+	// First occurrence of each, and the panic must be reported exactly once:
+	// taking the last index would let a record written both before and after
+	// the restore satisfy the ordering assertion below.
+	records := rec.Records()
+	restoreIdx := -1
+	panicIdx := -1
+	panicCount := 0
+	for i, r := range records {
+		switch r.Message {
+		case "Native root execution - no privilege restoration needed":
+			if restoreIdx == -1 {
+				restoreIdx = i
+			}
+		case "Panic occurred during privileged operation, privileges restored":
+			if panicIdx == -1 {
+				panicIdx = i
+			}
+			panicCount++
+		}
+	}
+	assert.Equal(t, 1, panicCount, "the panic must be reported exactly once")
+	require.NotEqual(t, -1, restoreIdx, "the restore must have been attempted")
+	require.NotEqual(t, -1, panicIdx, "the panic must still be reported")
+	assert.Greater(t, panicIdx, restoreIdx, "the panic must be reported after privileges are restored, not before")
 }
