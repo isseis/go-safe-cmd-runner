@@ -745,6 +745,12 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 // carriesLiteral reports whether expr, written in decl, puts the named literal
 // into the field: nil (clearing it), the literal itself, or a local variable
 // assigned exactly once, from a call to the function that declares the literal.
+//
+// The last form checks which function the value came from, not which of its
+// results it is, so a function returning two different closures could hand
+// over the other one unnoticed. Telling them apart needs dataflow this
+// analysis does not do (premise 3); no such function exists here today, and
+// the allowlist still bounds what either closure could call.
 func (g *windowGuard) carriesLiteral(decl *ast.FuncDecl, expr ast.Expr, resolved resolvedIndirection) bool {
 	if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
 		return true
