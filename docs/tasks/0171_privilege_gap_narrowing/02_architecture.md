@@ -1343,12 +1343,17 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 
 | 区間 | 許可する呼び出し |
 |---|---|
-| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
+| 起動区間 | `execCmd.Start`、`stageFromFD`、および `stageFromFD` の内側で必要な `os.MkdirTemp`／`syscall.Dup`／`os.NewFile`／`os.OpenFile`／`io.Copy`／`io.NewSectionReader`／`os.Chmod`／`os.Chown`／`os.RemoveAll`／`(*os.File).Stat`／`(*os.File).Close`／`syscall.Close`、および `(*os.File).WriteString`（stderr への最後の手段の記録。下記） |
 | kill 区間 | `(*os.Process).Kill` のみ |
 | 後始末区間 | `os.RemoveAll` と `(*os.File).WriteString` |
 
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
-ある。`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
+ある。`io.NewSectionReader` を載せるのは、検査が追跡する対象をパッケージ単位（`os`／`syscall`／
+`io`／`os/exec`／`log/slog`）で決めており、`stageFromFD` が検証済み記述子をセクションリーダー
+経由で読むためである。この呼び出しは何も開かず、既に開いている記述子を包むだけなので、
+表が既に許している `os.NewFile` と同じ種類である。
+
+`syscall.Close` を許すのは、`stageFromFD` が `syscall.Dup` で複製した生の記述子を、
 `os.NewFile` が `nil` を返して `*os.File` に包めなかったときに閉じるためだけである。許可リストに
 無い呼び出しが増えれば、実行せずにビルドが赤くなる。
 
