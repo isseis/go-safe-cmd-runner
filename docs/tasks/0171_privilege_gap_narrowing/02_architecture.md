@@ -1350,11 +1350,14 @@ go/ast による guard test（[`identity_mutation_guard_test.go`](../../../inter
 `stageFromFD` の内側にファイルを開く呼び出しが並ぶのは、§3.4 の差分1をそのまま反映したもので
 ある。
 
-表の後半4つは、検査が追跡する範囲を実装時に広げたことで葉として現れたものである。追跡対象は
-「本リポジトリのパッケージすべて」「インターフェースのメソッドすべて」「プロセスの外へ作用しうる
-標準ライブラリのパッケージ（`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／
-`log/slog`）」とする。本リポジトリのコードを丸ごと追跡するのは、`internal/safefileio` のような
-自前のヘルパーが `os.OpenFile` と同じだけファイルを開けるからであり、標準ライブラリだけを見ると
+表へ新しく加えた5つ（`io.NewSectionReader`／`filepath.Base`／`filepath.Join`／
+`(fs.FileInfo).Size`／`(*risktypes.VerifiedFD).Fd`）は、検査が追跡する範囲を実装時に広げたことで
+葉として現れたものである。追跡対象は「本リポジトリのパッケージすべて」
+「インターフェースのメソッドすべて」「プロセスの外へ作用しうるパッケージ（`os`／`os/exec`／
+`os/user`／`syscall`／`io`／`net`／`path/filepath`／`log/slog`／`golang.org/x/sys/unix`）」とする。
+`golang.org/x/sys/unix` を含めるのは `syscall` と同じ理由で、本モジュールの直接の依存であり、
+`internal/runner/base/privilege` が実際にこれで識別子を書き換えているためである。
+本リポジトリのコードを丸ごと追跡するのは、`internal/safefileio` のような自前のヘルパーが `os.OpenFile` と同じだけファイルを開けるからであり、標準ライブラリだけを見ると
 「隙の中でファイルを触る」もっとも自然な書き方が検査から抜け落ちる。インターフェースのメソッドは
 逆に、実装が1つに定まらないから追跡する。したがって許可リストに載せることは「その地点で走りうる
 実装のどれもが euid 0 で許される」という、通常より強い宣言になる。

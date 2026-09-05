@@ -922,7 +922,8 @@
       追跡対象にすると、`internal/safefileio` のような自前のヘルパーで隙の中からファイルを開いても
       検査が何も言わない。またインターフェース越しの呼び出しは実装が見えないまま素通りする。
       そこで追跡対象を「本リポジトリのパッケージすべて」「インターフェースのメソッドすべて」
-      「`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／`log/slog`」とし、
+      「`os`／`os/exec`／`os/user`／`syscall`／`io`／`net`／`path/filepath`／`log/slog`／
+      `golang.org/x/sys/unix`」とし、
       `path/filepath` の純粋な2つ（`Base`／`Join`）は区間ごとの許可リストで許す。
       `filepath` を「副作用が無い」と括れないのは、`EvalSymlinks`／`Walk`／`Glob` が
       実際にファイルシステムを触るためである。
@@ -981,6 +982,9 @@
 - [x] `TestPrivilegeWindowAllowedCalls` を、`start_window`／`kill_window`／`cleanup_window`／
       `rejects_unlisted_call`／`rejects_logging_in_window`（後の2つが negative self-test）の
       5サブテストで構成する。
+      実装時に negative self-test を1つ足して6サブテストとした: `rejects_rebound_field` は、
+      関数値を運ぶフィールドが表の指すリテラル以外に束縛されたときに検査が拒否することを主張する。
+      表の主張を検査する仕組み（上の項）を外すと緑に戻るため、この主張には専用の self-test が要る。
 
 **完了の目安（4-c）**: 静的検査と negative self-test が緑。`make test`／`make lint` が緑。
 

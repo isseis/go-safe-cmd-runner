@@ -117,12 +117,16 @@ const (
 // most natural way to add a file operation invisible to this check.
 const firstPartyModulePrefix = "github.com/isseis/go-safe-cmd-runner/"
 
-// trackedStdlibPackagePaths are the standard-library packages whose functions
-// can act on something outside this process. path/filepath is on the list even
-// though most of what the executor uses from it is pure string work -- Walk,
-// Glob and EvalSymlinks are not -- so its pure members are allowlisted per
-// window instead of the whole package being waved through.
-var trackedStdlibPackagePaths = map[string]struct{}{
+// trackedExternalPackagePaths are the packages outside this module whose
+// functions can act on something outside this process. path/filepath is on the
+// list even though most of what the executor uses from it is pure string work
+// -- Walk, Glob and EvalSymlinks are not -- so its pure members are
+// allowlisted per window instead of the whole package being waved through.
+// golang.org/x/sys/unix is here for the same reason as syscall: it is a direct
+// dependency of this module and internal/runner/base/privilege already reaches
+// for it to change the process identity, so leaving it untracked would let the
+// most idiomatic raw syscall in this repository into a window unseen.
+var trackedExternalPackagePaths = map[string]struct{}{
 	"os":            {},
 	"os/exec":       {},
 	"os/user":       {},
@@ -131,10 +135,12 @@ var trackedStdlibPackagePaths = map[string]struct{}{
 	"net":           {},
 	"path/filepath": {},
 	"log/slog":      {},
+
+	"golang.org/x/sys/unix": {},
 }
 
 // trackedReceiverTypes are the types whose methods are tracked for the same
-// reason as trackedStdlibPackagePaths. They are keyed by the receiver's
+// reason as trackedExternalPackagePaths. They are keyed by the receiver's
 // package PATH and type name rather than by how go/types renders the type, so
 // that a package named "os" from some other import path cannot pass itself off
 // as the standard one. First-party receivers need no entry here: their package
@@ -320,6 +326,26 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 		require.Len(t, unlisted, 1)
 		assert.Equal(t, "(*slog.Logger).Warn", unlisted[0].name)
 	})
+
+	// The indirection table is a claim about which literal a function value
+	// carries, and a claim nothing checks is where this analysis would fail
+	// open rather than closed. This fixture binds the field through a
+	// composite literal -- the form the check originally missed.
+	t.Run("rejects_rebound_field", func(t *testing.T) {
+		_, problems := analyzePrivilegeWindows(t, windowGuardConfig{
+			dir:     filepath.Join("testdata", "bad_rebound_field"),
+			pkgPath: "badreboundfield",
+			roots:   map[string]string{"(*runner).startWindowHolder": windowStart},
+			indirections: map[indirectCallSite]funcLiteralSite{
+				{enclosing: "(*prepared).runCleanup", callee: "p.cleanup"}: {
+					enclosing:  "(*runner).stage",
+					assignedTo: "cleanup",
+				},
+			},
+		})
+		require.Len(t, problems, 1)
+		assert.Contains(t, problems[0], "cleanup is bound to")
+	})
 }
 
 // unlistedCalls runs the guard over one of the negative-test packages in
@@ -346,6 +372,7 @@ func unlistedCalls(t *testing.T, cfg windowGuardConfig) []trackedCall {
 // windowGuard holds the parsed and type-checked package being analyzed.
 type windowGuard struct {
 	fset         *token.FileSet
+	files        []*ast.File
 	pkg          *types.Package
 	info         *types.Info
 	decls        map[string]*ast.FuncDecl // by receiver-qualified name
@@ -533,7 +560,7 @@ func (g *windowGuard) followIndirect(window string, call *ast.CallExpr, fun ast.
 		g.verified[site] = struct{}{}
 		g.verifyIndirection(site, resolved, g.calleeObject(fun))
 	}
-	litEnclosing, ok := g.enclosingDeclOf(lit)
+	litEnclosing, _, ok := g.enclosingDeclOf(lit)
 	if !ok {
 		g.problems = append(g.problems,
 			fmt.Sprintf("%s: the literal privilegeWindowIndirections gives for %q is not inside any declared function of this package",
@@ -544,16 +571,18 @@ func (g *windowGuard) followIndirect(window string, call *ast.CallExpr, fun ast.
 }
 
 // enclosingDeclOf returns the receiver-qualified name of the declared function
-// whose body contains lit, so that calls found inside the literal are reported
-// against the function they are written in.
-func (g *windowGuard) enclosingDeclOf(lit *ast.FuncLit) (string, bool) {
+// whose body contains n, together with that declaration, so that what is found
+// inside a literal is reported against the function it is written in. A node
+// written at package level -- a var initializer -- belongs to no declaration
+// and reports false.
+func (g *windowGuard) enclosingDeclOf(n ast.Node) (string, *ast.FuncDecl, bool) {
 	for _, name := range slices.Sorted(maps.Keys(g.decls)) {
 		decl := g.decls[name]
-		if lit.Pos() >= decl.Pos() && lit.End() <= decl.End() {
-			return name, true
+		if n.Pos() >= decl.Pos() && n.End() <= decl.End() {
+			return name, decl, true
 		}
 	}
-	return "", false
+	return "", nil, false
 }
 
 // resolveIndirections turns each entry of the indirection table into the
@@ -703,41 +732,67 @@ func (g *windowGuard) localBinding(decl *ast.FuncDecl, obj types.Object, resolve
 	return assignments, carries
 }
 
-// verifyFieldCarries reports every assignment to field that does not put the
+// verifyFieldCarries reports every binding of field that does not put the
 // literal the table names into it.
+//
+// Both ways of binding a struct field are checked, and whole files are walked
+// rather than function bodies, because a binding this pass does not see is a
+// binding taken on faith: a composite literal (`&preparedCommand{stagingCleanup:
+// fn}`) sets the field just as an assignment statement does, and a package-level
+// var initializer can hold one outside any declaration.
 func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var, resolved resolvedIndirection) {
-	assignments := 0
-	g.forEachDecl(func(name string, decl *ast.FuncDecl) {
-		ast.Inspect(decl.Body, func(n ast.Node) bool {
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok {
-				return true
-			}
-			for i, lhs := range assign.Lhs {
-				sel, ok := lhs.(*ast.SelectorExpr)
-				if !ok || g.info.Uses[sel.Sel] != field {
-					continue
+	bindings := 0
+	check := func(where ast.Node, written string, value ast.Expr) {
+		bindings++
+		name, decl, _ := g.enclosingDeclOf(where)
+		if name == "" {
+			name = "the package's declarations"
+		}
+		if g.carriesLiteral(decl, value, resolved) {
+			return
+		}
+		g.problems = append(g.problems,
+			fmt.Sprintf("%s: %s is bound to %s in %s, but privilegeWindowIndirections says it carries the literal declared in %s; the window would run something this analysis never looked at",
+				g.position(where), written, types.ExprString(value), name, resolved.target.enclosing))
+	}
+	for _, file := range g.files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.AssignStmt:
+				for i, lhs := range n.Lhs {
+					sel, ok := lhs.(*ast.SelectorExpr)
+					if !ok || g.info.Uses[sel.Sel] != field {
+						continue
+					}
+					if len(n.Rhs) != len(n.Lhs) {
+						bindings++
+						name, _, _ := g.enclosingDeclOf(n)
+						g.problems = append(g.problems,
+							fmt.Sprintf("%s: %s is assigned from a multi-value expression in %s, which this check cannot trace to the literal privilegeWindowIndirections names for %q",
+								g.position(n), types.ExprString(sel), name, site.callee))
+						continue
+					}
+					check(n, types.ExprString(sel), n.Rhs[i])
 				}
-				assignments++
-				if len(assign.Rhs) != len(assign.Lhs) {
-					g.problems = append(g.problems,
-						fmt.Sprintf("%s: %s is assigned from a multi-value expression in %s, which this check cannot trace to the literal privilegeWindowIndirections names for %q",
-							g.position(assign), types.ExprString(sel), name, site.callee))
-					continue
+			case *ast.CompositeLit:
+				for _, elt := range n.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := kv.Key.(*ast.Ident)
+					if !ok || g.info.Uses[key] != field {
+						continue
+					}
+					check(kv, key.Name, kv.Value)
 				}
-				if g.carriesLiteral(decl, assign.Rhs[i], resolved) {
-					continue
-				}
-				g.problems = append(g.problems,
-					fmt.Sprintf("%s: %s is assigned %s in %s, but privilegeWindowIndirections says it carries the literal declared in %s; the window would run something this analysis never looked at",
-						g.position(assign), types.ExprString(sel), types.ExprString(assign.Rhs[i]), name, resolved.target.enclosing))
 			}
 			return true
 		})
-	})
-	if assignments == 0 {
+	}
+	if bindings == 0 {
 		g.problems = append(g.problems,
-			fmt.Sprintf("privilegeWindowIndirections resolves %q in %s, but nothing in this package assigns that field; the entry is stale",
+			fmt.Sprintf("privilegeWindowIndirections resolves %q in %s, but nothing in this package binds that field; the entry is stale",
 				site.callee, site.enclosing))
 	}
 }
@@ -760,6 +815,11 @@ func (g *windowGuard) carriesLiteral(decl *ast.FuncDecl, expr ast.Expr, resolved
 	}
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
+		return false
+	}
+	// A binding written at package level has no body to trace the name back
+	// through, so only the two forms above can be accepted there.
+	if decl == nil || decl.Body == nil {
 		return false
 	}
 	obj := g.info.Uses[ident]
@@ -858,7 +918,7 @@ func isTrackedPackagePath(path string) bool {
 	if strings.HasPrefix(path, firstPartyModulePrefix) {
 		return true
 	}
-	_, tracked := trackedStdlibPackagePaths[path]
+	_, tracked := trackedExternalPackagePaths[path]
 	return tracked
 }
 
@@ -945,6 +1005,7 @@ func loadWindowGuard(t *testing.T, cfg windowGuardConfig) *windowGuard {
 
 	g := &windowGuard{
 		fset:       fset,
+		files:      files,
 		pkg:        pkg,
 		info:       info,
 		decls:      make(map[string]*ast.FuncDecl),
