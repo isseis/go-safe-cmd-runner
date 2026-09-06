@@ -1394,7 +1394,7 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
 
 設計文書 §7.6 の各行:
 
-- [ ] AC-01 / AC-02 / AC-06・AC-09 / AC-07 / AC-12 / AC-13・AC-14 / AC-16（`errors.Join`） /
+- [x] AC-01 / AC-02 / AC-06・AC-09 / AC-07 / AC-12 / AC-13・AC-14 / AC-16（`errors.Join`） /
       AC-16（stderr の上限） / AC-17 / §3.1 の起動後解放 / §3.2 要点7
 
 §7.6 に無いぶん:
@@ -1404,9 +1404,9 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       `stageFromFD` の中の呼び出しが見えなくなり、この self-test が緑のまま通ってしまうことも確かめる。
       浅くした場合、self-test は実際に緑のままで、代わりに `start_window`／`cleanup_window` の
       「許可リストの項目が1つも到達しない」検査が落ちた。
-- [ ] AC-05: `Wait()` を起動区間の内側へ戻すと、`privilege_duration_user_group_execution_us` が
+- [x] AC-05: `Wait()` を起動区間の内側へ戻すと、`privilege_duration_user_group_execution_us` が
       閾値（5,000 µs）を超えてテストが落ちる。
-- [ ] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
+- [x] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
       `TestSupervise_NormalExecutionDoesNotReelevate` が落ちる。
 - [x] AC-02・AC-04（`fn` の後の標本）: `InWindow` の `MockWindowPhaseAfterFn` の呼び出しを
       外すと、`Stdout`／`Stderr` を `*os.File` 以外の writer へ戻す revert を
@@ -1426,9 +1426,10 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       隙の中の削除を消すと `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が
       落ちる。`stagingWindowErr` への記録を消すと
       `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` が落ちる。いずれも確認済み。
-- [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
-      戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
-- [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
+- [x] AC-11: kill を別 goroutine から呼ぶ実装に戻すと、モックの再入ガード（Phase 3-c）を
+      外した状態でも `TestSupervise_KillRunsOnExecutingGoroutine` が goroutine ID の不一致で落ちる。
+      現行テストは実行 goroutine を直接比較するため、再入エラーの有無だけに依存しない。
+- [x] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
 - [x] AC-03・AC-04（`Logger` 禁止、PR-6 で確認）: `stageFromFD` に `Logger.Warn` を1行戻すと、
       `G::TestPrivilegeWindowAllowedCalls` と
       `TestStageFromFD_ReportsFailuresWithoutLogging` の両方が落ちる。
@@ -1439,13 +1440,13 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       逆に `(*os.File).WriteString` を許可リストから外すと
       `G::TestPrivilegeWindowAllowedCalls` が落ちることも確かめ、
       許可リストのこの1行が実装に効いていることを固定する。
-- [ ] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
+- [x] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
       AC-18 の `static` 検査が 1 件を返して落ちる。
 - [ ] AC-19 / AC-20 の各 `static` 検査: 置換前のファイルに対して実行し、期待と異なる結果
       （旧文言の検査は 1 件以上、新文言の検査は 0 件）になることを確かめてから、置換後に再実行する。
-- [ ] AC-21: `requireSetuidModel` が読む環境変数名を1文字変えると
+- [x] AC-21: `requireSetuidModel` が読む環境変数名を1文字変えると
       `TestRequireSetuidModel_ReadsDocumentedEnvVar` が落ちる。
-- [ ] AC-22: `.pre-commit-config.yaml` から `name` を外すと pre-commit の設定検証が失敗する
+- [x] AC-22: `.pre-commit-config.yaml` から `name` を外すと pre-commit の設定検証が失敗する
       ことを確かめる（`pre-commit validate-config`）。
 
 ### 4.3 統合テストの実行手順（AC-21、AC-22）
