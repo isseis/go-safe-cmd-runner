@@ -1507,10 +1507,10 @@ done
 echo "OK: all four privileged criteria verified"
 ```
 
-- [ ] 上記手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
+- [x] 上記手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
       なることを確認する。確認した環境（OS、カーネル、Go のバージョン、置き場のマウントオプション）を
       本節へ追記する。
-- [ ] `make executor-privileged-integration-test` が、上の条件が揃わない環境では
+- [x] `make executor-privileged-integration-test` が、上の条件が揃わない環境では
       理由つきでスキップし、終了コード 0 で終わることを確認する。
 
 `make executor-privileged-integration-test` は `go test` を直接呼ぶため、setuid バイナリの
