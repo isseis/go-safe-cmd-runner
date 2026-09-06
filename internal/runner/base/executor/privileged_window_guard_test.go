@@ -346,6 +346,26 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 		require.Len(t, problems, 1)
 		assert.Contains(t, problems[0], "cleanup is bound to")
 	})
+
+	// A positional composite literal binds the same field while naming no
+	// field to match, and the keyed nil binding in the fixture keeps the
+	// stale-entry fallback from masking the miss: the guard must report the
+	// untraceable binding itself.
+	t.Run("rejects_positional_field", func(t *testing.T) {
+		_, problems := analyzePrivilegeWindows(t, windowGuardConfig{
+			dir:     filepath.Join("testdata", "bad_positional_field"),
+			pkgPath: "badpositionalfield",
+			roots:   map[string]string{"(*runner).startWindowHolder": windowStart},
+			indirections: map[indirectCallSite]funcLiteralSite{
+				{enclosing: "(*prepared).runCleanup", callee: "p.cleanup"}: {
+					enclosing:  "(*runner).stage",
+					assignedTo: "cleanup",
+				},
+			},
+		})
+		require.Len(t, problems, 1)
+		assert.Contains(t, problems[0], "positional")
+	})
 }
 
 // unlistedCalls runs the guard over one of the negative-test packages in
@@ -738,8 +758,9 @@ func (g *windowGuard) localBinding(decl *ast.FuncDecl, obj types.Object, resolve
 // Both ways of binding a struct field are checked, and whole files are walked
 // rather than function bodies, because a binding this pass does not see is a
 // binding taken on faith: a composite literal (`&preparedCommand{stagingCleanup:
-// fn}`) sets the field just as an assignment statement does, and a package-level
-// var initializer can hold one outside any declaration.
+// fn}`) sets the field just as an assignment statement does, a positional
+// literal (`&preparedCommand{fn}`) sets it while naming nothing to match, and
+// a package-level var initializer can hold one outside any declaration.
 func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var, resolved resolvedIndirection) {
 	bindings := 0
 	check := func(where ast.Node, written string, value ast.Expr) {
@@ -775,9 +796,11 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 					check(n, types.ExprString(sel), n.Rhs[i])
 				}
 			case *ast.CompositeLit:
+				unkeyed := false
 				for _, elt := range n.Elts {
 					kv, ok := elt.(*ast.KeyValueExpr)
 					if !ok {
+						unkeyed = true
 						continue
 					}
 					key, ok := kv.Key.(*ast.Ident)
@@ -785,6 +808,18 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 						continue
 					}
 					check(kv, key.Name, kv.Value)
+				}
+				// A positional literal names no field, so there is no key to
+				// match field against -- but it binds the field just as a keyed
+				// one does. Fail closed, as the multi-value-assignment branch
+				// above does, rather than walk the literal the table names while
+				// the window runs whatever was bound here.
+				if unkeyed && g.literalBindsField(n, field) {
+					bindings++
+					name, _, _ := g.enclosingDeclOf(n)
+					g.problems = append(g.problems,
+						fmt.Sprintf("%s: a positional %s literal in %s binds %s, a binding this check cannot trace to the literal privilegeWindowIndirections names for %q",
+							g.position(n), types.ExprString(n.Type), name, field.Name(), site.callee))
 				}
 			}
 			return true
@@ -795,6 +830,27 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 			fmt.Sprintf("privilegeWindowIndirections resolves %q in %s, but nothing in this package binds that field; the entry is stale",
 				site.callee, site.enclosing))
 	}
+}
+
+// literalBindsField reports whether lit constructs the struct field belongs
+// to, so that a positional composite literal -- which names no field for the
+// element loop above to match -- is not mistaken for a literal that never
+// binds the field.
+func (g *windowGuard) literalBindsField(lit *ast.CompositeLit, field *types.Var) bool {
+	typ := g.info.TypeOf(lit.Type)
+	if typ == nil {
+		return false
+	}
+	strct, ok := types.Unalias(typ).Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for f := range strct.Fields() {
+		if f == field {
+			return true
+		}
+	}
+	return false
 }
 
 // carriesLiteral reports whether expr, written in decl, puts the named literal
