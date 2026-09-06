@@ -1122,11 +1122,11 @@
 
 **判定理由**: ステップ 5-b／5-c は setuid テストバイナリという外部資源の面と、`Makefile` の CI 合成ターゲットおよび pre-commit フックを触る面を持ち、パネルモードの引き金「重い統合テスト／CI／外部資源の面」に当たるため。スキップ判定を誤ると全テストがサイレントにスキップし、無検証のまま緑になる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` が終了コード 0（`make lint`／`make test` は `integration` タグ付きファイルをコンパイルしないため、グリーンゲートだけでは足りない）
-- [ ] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
-- [ ] §4.3 の実行手順を特権のある環境で走らせ、`--- SKIP` が無いことを確認して結果を §4.3 へ追記した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` が終了コード 0（`make lint`／`make test` は `integration` タグ付きファイルをコンパイルしないため、グリーンゲートだけでは足りない）
+- [x] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
+- [x] §4.3 の実行手順を特権のある環境で走らせ、`--- SKIP` が無いことを確認して結果を §4.3 へ追記した
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
