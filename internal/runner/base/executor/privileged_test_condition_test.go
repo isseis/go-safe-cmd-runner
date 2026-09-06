@@ -1,6 +1,8 @@
 package executor_test
 
 import (
+	"fmt"
+	"os"
 	"os/user"
 	"testing"
 
@@ -54,4 +56,69 @@ func TestCanRunPrivilegedIntegrationTest(t *testing.T) {
 		assert.True(t, ok)
 		assert.Empty(t, reason)
 	})
+}
+
+// canRunSetuidModelIntegrationTest requires a non-root invoker and root euid.
+func canRunSetuidModelIntegrationTest(uid, euid int, targetUser string) (bool, string) {
+	if ok, reason := canRunPrivilegedIntegrationTest(euid, targetUser); !ok {
+		return false, reason
+	}
+	if uid == 0 {
+		return false, "setuid integration test requires a non-root real UID"
+	}
+	return true, ""
+}
+
+type skipper interface {
+	Helper()
+	Skipf(format string, args ...any)
+}
+
+// requireSetuidModel skips with the configured target even when identity fails first.
+func requireSetuidModel(t skipper) {
+	t.Helper()
+	target := os.Getenv("TEST_RUNAS_TARGET_USER")
+	if ok, reason := canRunSetuidModelIntegrationTest(os.Getuid(), os.Geteuid(), target); !ok {
+		t.Skipf("%s (TEST_RUNAS_TARGET_USER=%q)", reason, target)
+	}
+}
+
+type setuidSkipRecorder struct{ reason string }
+
+func (*setuidSkipRecorder) Helper() {}
+func (s *setuidSkipRecorder) Skipf(format string, args ...any) {
+	s.reason = fmt.Sprintf(format, args...)
+}
+
+func TestCanRunSetuidModelIntegrationTest(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		uid, euid int
+		target    string
+		ok        bool
+	}{
+		{"real_uid_is_root", 0, 0, "root", false},
+		{"not_root_euid", 1000, 1000, "root", false},
+		{"no_target_user_configured", 1000, 0, "", false},
+		{"target_user_does_not_exist", 1000, 0, "no_such_user_setuid_it", false},
+		{"conditions_satisfied", 1000, 0, "root", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, reason := canRunSetuidModelIntegrationTest(tc.uid, tc.euid, tc.target)
+			assert.Equal(t, tc.ok, ok)
+			if tc.ok {
+				assert.Empty(t, reason)
+			} else {
+				assert.NotEmpty(t, reason)
+			}
+		})
+	}
+}
+
+func TestRequireSetuidModel_ReadsDocumentedEnvVar(t *testing.T) {
+	const target = "no_such_user_setuid_wrapper_it"
+	t.Setenv("TEST_RUNAS_TARGET_USER", target)
+	recorder := &setuidSkipRecorder{}
+	requireSetuidModel(recorder)
+	assert.Contains(t, recorder.reason, target)
 }

@@ -135,7 +135,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 executor-privileged-integration-test test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -456,6 +456,7 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 #   unit-test-cgo1         - CGO=1 race tests with coverage profile (for CI matrix)
 #   unit-test-cgo0         - CGO=0 tests only (for CI matrix)
 #   integration-test       - Integration tests with runner binary
+#   executor-privileged-integration-test - Run-as tests (skip without privileges)
 #   e2e-test               - End-to-end tests (dry-run validation + security checks)
 #   security-test          - Security-focused tests
 #   performance-test       - Performance and benchmark tests
@@ -556,9 +557,17 @@ elfanalyzer-integration-test:
 libccache-integration-test:
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags integration -v ./internal/libccache/
 
+# Run with TEST_RUNAS_TARGET_USER=<user> make executor-privileged-integration-test.
+# An unset target is forwarded as empty; without a target or sufficient privileges,
+# tests skip with a reason. This target then proves compilation and skip handling only.
+# Integration files are outside make lint (and pre-commit lint), which use only test.
+# No -race here: output_pump_test.go covers reader races in the ordinary test suite.
+executor-privileged-integration-test:
+	$(ENVSET) TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" CGO_ENABLED=1 $(GOTEST) -tags "test integration" -v ./internal/runner/base/executor/
+
 # CI matrix leg: CGO=1 — full test suite with race detection and coverage
 # Runs alongside test-ci-cgo0 in parallel via GitHub Actions matrix
-test-ci-cgo1: unit-test-cgo1 e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci-cgo1: unit-test-cgo1 e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test executor-privileged-integration-test
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@$(GOCMD) tool cover -func=coverage.out | tail -1
@@ -569,7 +578,7 @@ test-ci-cgo0: unit-test-cgo0
 # CI test target - tests that can run without sudo or external services
 # Suitable for GitHub Actions and other CI environments
 # Note: in CI use test-ci-cgo1 and test-ci-cgo0 matrix targets for parallel execution
-test-ci: unit-test e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test
+test-ci: unit-test e2e-test slack-e2e-test security-test performance-test elfanalyzer-integration-test libccache-integration-test executor-privileged-integration-test
 
 # All tests - comprehensive test suite (requires sudo for integration-test)
 # Excludes Slack notification tests (require external webhook configuration)

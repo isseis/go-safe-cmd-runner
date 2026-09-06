@@ -1464,6 +1464,15 @@ AC-13 はスキップされ、§7.4 の pre-commit フックはビルドが通�
 | AC-08 | 同じ条件で context のキャンセル（SIGINT／SIGTERM 相当）により停止すること |
 | AC-13 | 上限を超え続ける出力を出すコマンドが、終了を待たずに打ち切られること |
 
+**テスト内の特権状態。** setuid 起動時の実効 UID = 0 はスキップ判定とマネージャ構築時の
+前提であり、`Execute` の開始時の状態ではない。共通セットアップは対象ユーザーが起動者と異なる
+非 root ユーザーであることを検査し、`syscall.Seteuid(os.Getuid())` で実効 UID を起動者へ落とす。
+`UnixPrivilegeManager.restorePrivileges` と executor の識別子検査は実効 UID = 実 UID を要求するため、
+キャンセルテストが前後で比較するのはこの降格後の実効 UID である。`t.Cleanup` で起動時の実効 UID を
+復元し、後続テストも独立に setuid 前提を検査できるようにする。特権状態はプロセス全体に及ぶため
+これらのテストを並列実行しない。対象を起動者と別 UID に限定するのは、再昇格がなくても kill が
+成功してしまう無意味な検証を防ぐためである。
+
 **昇格時間の観測方法。** `PrivilegeMetrics` は `executeWithUserGroup` のローカル変数であり、
 `AuditLogger.LogUserGroupExecution` からしか外へ出ない。統合テストは監査ログを捕まえて
 `elevation_count` と経過時間を読む。

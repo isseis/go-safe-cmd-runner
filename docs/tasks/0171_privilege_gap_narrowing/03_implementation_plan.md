@@ -1014,13 +1014,13 @@
 
 #### 5-a. スキップ判定
 
-- [ ] `privileged_test_condition_test.go` へ純関数
+- [x] `privileged_test_condition_test.go` へ純関数
       `canRunSetuidModelIntegrationTest(uid, euid int, targetUser string) (ok bool, reason string)`
       を追加する。`canRunPrivilegedIntegrationTest` は変更しない（既存の補助グループ統合テストが
       `sudo`（実 UID = 0）前提で使っているため。設計文書 §7.3）。
       新しい述語は `canRunPrivilegedIntegrationTest(euid, targetUser)` の判定に加えて
       `uid != 0` を要求する。
-- [ ] 同ファイルへ薄いラッパー `requireSetuidModel(t skipper)` を追加する。`skipper` は
+- [x] 同ファイルへ薄いラッパー `requireSetuidModel(t skipper)` を追加する。`skipper` は
       同ファイルに置く narrow interface
       `type skipper interface { Helper(); Skipf(format string, args ...any) }` であり、
       `*testing.T` はそのまま満たす。**引数を `*testing.T` にすると、下の
@@ -1029,11 +1029,11 @@
       純関数へ渡し、偽なら理由つきで `t.Skip` するだけ。
       **判定を4つのテストへ書き写さない。** 書き写すと、後でヘルパーへ括り出したときに
       AC-21 の件数チェックが赤くなり、環境変数名を1箇所間違えても全テストがサイレントにスキップする。
-- [ ] `TestCanRunSetuidModelIntegrationTest` を同ファイルへ足す。既存の
+- [x] `TestCanRunSetuidModelIntegrationTest` を同ファイルへ足す。既存の
       `TestCanRunPrivilegedIntegrationTest` と同じ表形式で、
       `real_uid_is_root`／`not_root_euid`／`no_target_user_configured`／
       `target_user_does_not_exist`／`conditions_satisfied` を網羅する。
-- [ ] `TestRequireSetuidModel_ReadsDocumentedEnvVar` を足す。`t.Setenv` で
+- [x] `TestRequireSetuidModel_ReadsDocumentedEnvVar` を足す。`t.Setenv` で
       `TEST_RUNAS_TARGET_USER` に存在しないユーザー名を設定し、`requireSetuidModel` が
       その名前を含む理由でスキップすることを（`skipper` を満たす小さなスタブを渡し、
       `Skipf` に渡された書式と引数を記録して）確かめる。環境変数名の取り違えは、
@@ -1041,55 +1041,59 @@
 
 #### 5-b. 統合テスト
 
-- [ ] `executor_privilege_gap_integration_test.go` を新規に作る
+- [x] `executor_privilege_gap_integration_test.go` を新規に作る
       （`//go:build integration`、`package executor_test`）。冒頭コメントに
       `-tags "test integration"` が要る理由（`executor/testutil` が `test` タグを持つ）を書く。
-- [ ] 各テストの冒頭で `requireSetuidModel(t)` を呼ぶ（4本すべて）。
-- [ ] 監査ログの受け口を共通のヘルパーへ括る: `tu.NewRecordingLogger()` で
+- [x] 各テストの冒頭で `requireSetuidModel(t)` を呼ぶ（4本すべて）。
+- [x] 監査ログの受け口を共通のヘルパーへ括る: `tu.NewRecordingLogger()` で
       `*slog.Logger` と `*tu.LogRecorder` を作り、`audit.NewAuditLoggerWithCustom(logger)` を
       `executor.WithAuditLogger` へ渡す。`audit.NewAuditLogger` は構築時に `slog.Default()` を
       掴んでしまい差し替えられないので、この経路を使う。
-- [ ] `TestPrivilegeGap_StartWindowIndependentOfCommandDuration`（AC-05）: 1秒休止と5秒休止の
+- [x] `TestPrivilegeGap_StartWindowIndependentOfCommandDuration`（AC-05）: 1秒休止と5秒休止の
       2コマンドを実行し、監査ログの `privilege_duration_user_group_execution_us` を比べる。
       判定は絶対値で行う: **両者とも 5,000 マイクロ秒（5ms）未満**であり、かつ
       **両者の差が 2,000 マイクロ秒未満**であること。
       設計文書 §1.4／§5.2 は起動区間を `fork`／`execve` の時間（数十マイクロ秒）と見積もっており、
       5ms はその 100 倍以上の余裕を見た上限である。ここを 100ms のように緩めると、
       出力中継の起動や `Wait()` が隙の中へ戻る回帰を見逃す。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild`（AC-07）: `run_as_user` 付きの長時間コマンドが
+- [x] `TestPrivilegeGap_TimeoutKillsChild`（AC-07）: `run_as_user` 付きの長時間コマンドが
       タイムアウトで停止し、戻り値から `context.DeadlineExceeded` をたどれる。
-- [ ] `TestPrivilegeGap_CancelKillsChild`（AC-08）: 同じ条件で `context.CancelFunc` による
+- [x] `TestPrivilegeGap_CancelKillsChild`（AC-08）: 同じ条件で `context.CancelFunc` による
       キャンセル（SIGINT／SIGTERM 相当）により子が停止する。停止の確認は、
       `/proc/<pid>` が消えることではなく `Execute` が制限時間内に戻ることで行う。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の両方で、
+- [x] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の両方で、
       `Execute` の前後に `os.Geteuid()` を採り、値が一致することを併せて主張する
-      （AC-12 の特権側）。setuid モデルでは実効 UID は 0、実 UID は起動者なので、
-      非特権環境で成り立つ `os.Geteuid() == os.Getuid()` とは逆の関係になる。ここで見るのは
-      「実効 UID が `Execute` の呼び出しをまたいで変わらないこと」、すなわち起動区間・
-      kill 区間・後始末区間のいずれからも復帰していることである。
-- [ ] `TestPrivilegeGap_OutputLimitAbortsRunningChild`（AC-13、run-as 版）: `MaxSize` を
+      （AC-12 の特権側）。共通セットアップは setuid 起動時の実効 UID = 0 を検査してから
+      実効 UID を起動者へ落とす。比較するのは降格後の実効 UID であり、実装の
+      `restorePrivileges` と識別子検査に合わせて `os.Geteuid() == os.Getuid()` を保つ。
+      対象ユーザーは起動者と異なる非 root UID に限定し、kill の再昇格が不要になる環境を拒否する。
+      `t.Cleanup` で起動時の実効 UID を復元する。プロセス全体の状態なので並列実行しない。
+      キャンセルの2本は `*exec.ExitError` の存在と kill・回収エラーの不在も検査し、
+      起動前キャンセルや子を残した早期リターンによる偽の成功を防ぐ。
+- [x] `TestPrivilegeGap_OutputLimitAbortsRunningChild`（AC-13、run-as 版）: `MaxSize` を
       小さくした `output.Capture` を渡し、上限を超え続ける出力を出す `run_as` コマンドが、
       コマンドの終了を待たずに打ち切られる。非特権版は Phase 1 の
       `TestExecute_OutputLimitAbortsRunningChild` が常時実行される形で覆っている。
 
 #### 5-c. 実行経路
 
-- [ ] `Makefile` に `executor-privileged-integration-test` ターゲットを追加する。内容は
+- [x] `Makefile` に `executor-privileged-integration-test` ターゲットを追加する。内容は
       既存 `integration-test`（598-603行）と同じシェル展開形で環境変数を転送する:
       `$(ENVSET) TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" CGO_ENABLED=1 $(GOTEST) -tags "test integration" -v ./internal/runner/base/executor/`。
       `ENVSET` が `env -i` で環境を空にするため、この明示的な転送が要る。
       `.PHONY` 行へターゲット名を足す。
-- [ ] 同ターゲットを `test-ci`、`test-ci-cgo1` の依存へ足す。
-- [ ] `Makefile` のターゲット一覧コメント（458-470行付近）へ新ターゲットの説明を**英語で**足す。
+- [x] 同ターゲットを `test-ci`、`test-ci-cgo1` の依存へ足す。
+- [x] `Makefile` のターゲット一覧コメント（458-470行付近）へ新ターゲットの説明を**英語で**足す。
       次の3点を書く: (1) `TEST_RUNAS_TARGET_USER` が未設定なら空文字が渡り、テストは
-      `no target user configured` の理由でスキップする（呼び出し方は
+      理由付きでスキップする（既存述語は実効 UID の検査を先に行うため、非 root では
+      root 権限不足、root では対象ユーザー未設定の理由になる。呼び出し方は
       `TEST_RUNAS_TARGET_USER=<user> make executor-privileged-integration-test`）。
       (2) 特権と対象ユーザーが揃わない環境ではスキップし、このターゲットが主張するのは
       `integration` タグ付きファイルがコンパイルでき、スキップ判定が働くことまでである。
       (3) `//go:build integration` のファイルは `make lint` の対象外である
       （`GOLINT` も pre-commit の `golangci-lint` も `--build-tags test` だけを渡す）。
       型・シグネチャの誤りはこのターゲットのコンパイルで捕まえる。
-- [ ] `.pre-commit-config.yaml` に、このターゲットを呼ぶフックを足す。
+- [x] `.pre-commit-config.yaml` に、このターゲットを呼ぶフックを足す。
       必須フィールドを欠かさない: `id: executor-privileged-integration-test`、
       `name: executor privileged integration test`、
       `entry: make executor-privileged-integration-test`、`language: system`、
@@ -1098,7 +1102,7 @@
       pre-commit の設定検証に失敗し、リポジトリ全体のフックが動かなくなる。
       既存の `go-test` フックは `make` を経由せず `-tags test` だけで走るため、
       このフックが無いと `integration` タグ付きファイルは pre-commit でコンパイルすらされない。
-- [ ] 新ターゲットは `-race` を付けない（既存の `elfanalyzer-integration-test` と同じ）。
+- [x] 新ターゲットは `-race` を付けない（既存の `elfanalyzer-integration-test` と同じ）。
       設計文書 §3.2 要点7 の競合検出は `-race` 付きで走る `output_pump_test.go` が担い、
       統合テストは検出しないことを `Makefile` のコメントへ書く。
 
@@ -1514,6 +1518,26 @@ echo "OK: all four privileged criteria verified"
 主張するのは「`integration` タグ付きファイルがコンパイルでき、スキップ判定が働くこと」までである。
 この限界を `Makefile` のコメントへ書く（Phase 5-c）。
 
+#### Phase 5 実測記録（2026-09-06）
+
+- Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
+- 起動者 `issei`（UID 1000）、既存フィクスチャ `nobody`（UID 65534）。ユーザー作成は不要だった。
+- `/tmp` の overlay マウントは `rw,relatime` で `nosuid` なし。
+  `mktemp -d /tmp/0171-setuid.XXXXXX` 内でビルドし、root 所有・mode 4755 にして非 root から実行。
+  `-test.run '^TestPrivilegeGap_' -test.timeout=30s` の4本すべて PASS、SKIP なし。
+- 1秒・5秒コマンドの起動区間は 240µs・446µs、差 206µs。
+  タイムアウト 0.21秒、キャンセル 0.22秒、出力上限 0.01秒で PASS。
+- 通常の `make executor-privileged-integration-test` は4本を理由付きでスキップして成功。
+  `make -n` は両ビルドタグと `TEST_RUNAS_TARGET_USER` の明示転送を表示し、
+  `pre-commit validate-config` も成功した。
+- Go overlay で実 UID 判定の除去、環境変数名の誤記、起動区間メトリクスへのコマンド実行時間の混入、
+  context エラー合成の除去、出力中継の読み取り側 close の除去を個別に行い、
+  対応する追加テストが意図した主張で失敗することを確認した。
+  pre-commit フックの `name` 削除も設定検証で失敗した。
+- `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の setuid バイナリでも4本すべて PASS、SKIP なし。
+  起動区間は race 版 397µs・615µs（差218µs）、CGO無効版408µs・438µs（差30µs）。
+- 実行・変異検証の setuid バイナリは trap/finally で削除した。
+
 ### 4.4 性能の確認（非機能要件）
 
 - [ ] `/bin/true` 相当の短いコマンドを 200 回繰り返し、変更前（`main`）と変更後で実時間の
@@ -1707,7 +1731,8 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
   既存 `E::TestExecute_ContextCancellation`（キャンセル済み context で `Result` が非 `nil`）
 - 期待: 3経路とも反復で記述子が増えない（`numOpenFDs` の差が 1 以下）
 - 検証（特権）: `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`
-- 期待: `Execute` の前後で `os.Geteuid()` が変わらない。**非特権で走るテストへは置かない**:
+- 期待: setuid 起動の検査後に共通セットアップで実効 UID を起動者へ落とし、
+  `Execute` の前後でその実効 UID が変わらない。**非特権で走るテストへは置かない**:
   そこでは実効 UID と実 UID が executor の挙動によらず等しく、主張が理由をもって落ちられない
 - 実装: Phase 2（`release()`）、Phase 3-d（キャンセル済み context の早期リターン）
 
