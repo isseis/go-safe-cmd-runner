@@ -21,86 +21,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file statically checks what the three privilege windows -- the start
-// window, the kill window and the staging cleanup window -- can reach. A
-// window is a region where the process's effective uid is 0, so every call
-// made inside one runs as root; the list of calls that may appear there is a
-// security decision (02_architecture.md) and loses its meaning as soon as it
-// drifts from the code. The check below turns that list into something the
-// build enforces.
+// This file statically checks which calls are reachable from the three
+// privilege windows -- regions where the process runs with effective uid 0,
+// so every call inside one runs as root. The per-window allowlist is a
+// security decision (02_architecture.md section 7.2) that loses its meaning
+// if it drifts from the code; this check makes the build enforce it.
 //
-// Four premises fix its scope. They are stated here rather than left to be
-// inferred from the code, because each of them is a place where the check
-// deliberately sees less than everything.
+// Four premises fix the scope. They are stated here because each is a place
+// where the check deliberately sees less than everything:
 //
-// 1. What is tracked. Everything under this module's path, every interface
-// method whatever its package, and the standard-library packages that can act
-// outside the process (os, os/exec, os/user, syscall, io, net, path/filepath,
-// log/slog) plus methods on *os.File, *os.Process, *exec.Cmd and *slog.Logger.
-// The rest of the standard library -- fmt, errors, strconv, strings -- is not
-// tracked. First-party code is tracked wholesale on purpose: a helper of this
-// repository is exactly as able to open a file at euid 0 as os.OpenFile is,
-// and internal/safefileio exists precisely so that people reach for it instead
-// of the os package, so exempting it would leave the most natural way to add a
-// file operation invisible here. Interface methods are tracked for the
-// opposite reason -- there is no single implementation to look at -- which
-// makes allowlisting one a stronger statement than usual: that every
-// implementation reachable at that point is acceptable at euid 0. The
-// allowlist is therefore a declaration of what the window touches, not a
-// transcript of the implementation; pure computation may be added inside a
-// window without editing it, while nothing that touches the world outside the
-// process can be.
+//  1. What is tracked: everything under this module's path, every interface
+//     method whatever its package, and the stdlib packages that can act
+//     outside the process (trackedExternalPackagePaths /
+//     trackedReceiverTypes). The rest of the stdlib is not tracked.
+//     First-party code is tracked wholesale because a helper of this
+//     repository can open a file at euid 0 just as os.OpenFile can, and
+//     internal/safefileio exists so people reach for it instead of os --
+//     exempting it would hide the most natural way to add a file operation.
+//     An interface method has no single implementation to inspect, so
+//     allowlisting one asserts that every implementation reachable at that
+//     point is acceptable at euid 0. The allowlist is thus a declaration of
+//     what the window touches, not a transcript of the implementation: pure
+//     computation may be added inside a window without editing it.
+//  2. How far reachability is followed: from the literal handed to
+//     WithPrivileges, through functions declared in THIS package only. A
+//     call leaving the package is a leaf matched against the allowlist by
+//     name: "the window may call os.MkdirTemp", not "the window may do
+//     whatever os.MkdirTemp does". A literal written inside a reachable
+//     function counts as running in the window even if it is merely stored
+//     for later (stageFromFD's cleanup closure), erring towards reporting
+//     more. A call through a function value cannot be resolved here at all
+//     and must be named in privilegeWindowIndirections; an unnamed one fails
+//     the check.
+//  3. How the indirection table is kept honest: naming the literal a
+//     function value carries is a claim, and a wrong claim would walk one
+//     function while the window runs another -- failing open. The claim is
+//     therefore checked (verifyIndirection).
+//  4. How receiver types are resolved: (*os.File).Stat and
+//     (*os.Process).Kill cannot be told apart from any other Stat or Kill by
+//     name, so the package is type-checked with go/types. golang.org/x/tools
+//     would be a shorter route but is not a dependency of this module, and
+//     this check does not justify adding one.
 //
-// 2. How far reachability is followed. Starting from the function literal
-// handed to WithPrivileges, calls are followed through functions and methods
-// declared in THIS package only (startPrepared -> stagePrepared -> stageFromFD
-// is the real depth). A call that leaves the package is a leaf: it is matched
-// against the allowlist by name and not descended into. So the allowlist says
-// "the window may call os.MkdirTemp", not "the window may do whatever
-// os.MkdirTemp does". Two consequences are deliberate. A function literal
-// written inside a reachable function is treated as running in the window even
-// if it is merely stored for later (stageFromFD's cleanup closure is exactly
-// that), which errs towards reporting more. And a call made through a function
-// value -- a parameter or a struct field -- cannot be resolved by this
-// analysis at all, so rather than being skipped it must be named in
-// privilegeWindowIndirections below, together with the literal it carries;
-// an unnamed one fails the check.
+// Logging is prohibited in all three windows by the allowlist naming no
+// logging method at all: a slog handler may open a file, and inside a window
+// that open happens at euid 0. (*os.File).WriteString is nonetheless allowed
+// -- the hazard is opening a path, not writing: writing to os.Stderr is a
+// write(2) on a descriptor the invoking user opened before any privilege was
+// gained, and io.Copy is already on the list.
 //
-// 3. How that indirection table is kept honest. Naming the literal a function
-// value carries is a claim, and a wrong claim would send the analysis walking
-// one function while the window runs another -- failing open, unlike every
-// other error path here. So the claim is checked: for a struct field, every
-// assignment to it in the package must put the named literal there (directly,
-// or through a local whose only assignment is a call to the function that
-// declares the literal) or clear it with nil; for a local, its assignment must
-// be the literal itself; for a parameter, whose value only arrives at runtime,
-// the weaker structural check is that the function holding the call does reach
-// the function that declares the literal.
-//
-// 4. How receiver types are resolved. (*os.File).Stat and (*os.Process).Kill
-// cannot be told apart from any other Stat or Kill by name, so the package is
-// type-checked with go/types, using go/importer's source importer to resolve
-// its dependencies. golang.org/x/tools would offer a shorter route but is not
-// a dependency of this module, and this check does not justify adding one.
-//
-// Logging is prohibited in all three windows, and the prohibition is expressed
-// by the allowlist naming no logging method at all -- neither *slog.Logger's
-// nor the audit logger's, which is first-party and therefore tracked by
-// premise 1. A slog handler is free to open a file, and inside a window that
-// open happens at euid 0 -- the same
-// hazard this task removed from the output copy goroutine, with no reason to
-// keep for log records. (*os.File).WriteString is nonetheless allowed, because
-// the danger being avoided is opening a path, not writing as such: writing to
-// os.Stderr is a write(2) on a descriptor the invoking user opened before any
-// privilege was gained. io.Copy is already on the list, so admitting
-// WriteString adds no new class of capability.
-//
-// Assignments are not calls and are not checked: the start window's
-// `pc.execCmd.Path = stagedPath` is out of scope by construction.
-//
-// Only the files that go/build selects for a production build on the current
-// GOOS are analyzed -- the same set the compiler would use, minus _test.go and
-// the //go:build test helpers.
+// Assignments are not calls and are not checked: `pc.execCmd.Path =
+// stagedPath` is out of scope by construction.
 
 // Window names. Each names one region where the effective uid is 0.
 const (
@@ -109,23 +80,17 @@ const (
 	windowCleanup = "cleanup_window"
 )
 
-// firstPartyModulePrefix is this module's path. Everything under it is tracked
-// wholesale: a helper of this repository is exactly as able to open a file at
-// euid 0 as os.OpenFile is, and internal/safefileio exists precisely so that
-// people reach for it instead of the os package. Listing the standard-library
-// packages while letting first-party ones through by default would leave the
-// most natural way to add a file operation invisible to this check.
+// firstPartyModulePrefix is this module's path; everything under it is
+// tracked wholesale (premise 1).
 const firstPartyModulePrefix = "github.com/isseis/go-safe-cmd-runner/"
 
 // trackedExternalPackagePaths are the packages outside this module whose
-// functions can act on something outside this process. path/filepath is on the
-// list even though most of what the executor uses from it is pure string work
-// -- Walk, Glob and EvalSymlinks are not -- so its pure members are
-// allowlisted per window instead of the whole package being waved through.
-// golang.org/x/sys/unix is here for the same reason as syscall: it is a direct
-// dependency of this module and internal/runner/base/privilege already reaches
-// for it to change the process identity, so leaving it untracked would let the
-// most idiomatic raw syscall in this repository into a window unseen.
+// functions can act on something outside this process. path/filepath is
+// tracked although most of its use here is pure string work -- Walk, Glob
+// and EvalSymlinks are not -- so its pure members are allowlisted per window
+// instead. golang.org/x/sys/unix is tracked for the same reason as syscall:
+// internal/runner/base/privilege already reaches for it to change the
+// process identity.
 var trackedExternalPackagePaths = map[string]struct{}{
 	"os":            {},
 	"os/exec":       {},
@@ -140,11 +105,10 @@ var trackedExternalPackagePaths = map[string]struct{}{
 }
 
 // trackedReceiverTypes are the types whose methods are tracked for the same
-// reason as trackedExternalPackagePaths. They are keyed by the receiver's
-// package PATH and type name rather than by how go/types renders the type, so
-// that a package named "os" from some other import path cannot pass itself off
-// as the standard one. First-party receivers need no entry here: their package
-// path carries firstPartyModulePrefix and is tracked by that alone.
+// reason as trackedExternalPackagePaths, keyed by the receiver's package PATH
+// and type name so a package named "os" from another import path cannot pass
+// itself off as the standard one. First-party receivers need no entry: their
+// package path carries firstPartyModulePrefix.
 var trackedReceiverTypes = map[string]struct{}{
 	"os.File":         {},
 	"os.Process":      {},
@@ -152,9 +116,8 @@ var trackedReceiverTypes = map[string]struct{}{
 	"log/slog.Logger": {},
 }
 
-// allowedWindowCalls is the allowlist: for each window, every tracked call
-// that may be reached from inside it. It transcribes the table in
-// 02_architecture.md section 7.2, and no Logger method appears in it.
+// allowedWindowCalls is the allowlist, transcribing the table in
+// 02_architecture.md section 7.2; no Logger method appears (see the header).
 //
 // io.NewSectionReader is on the list although the design table does not name
 // it: tracking is by package, and stageFromFD reads the verified descriptor
@@ -190,11 +153,10 @@ var allowedWindowCalls = map[string]map[string]struct{}{
 	},
 }
 
-// privilegeWindowRoots maps the function that opens a window -- the one whose
-// body contains the WithPrivileges call -- to the window it opens. The check
-// requires this map to match the package's WithPrivileges call sites exactly,
-// so a fourth window added anywhere in the package fails until it is declared
-// here with an allowlist of its own.
+// privilegeWindowRoots maps the function whose body contains a WithPrivileges
+// call to the window it opens. The check requires this map to match the
+// package's call sites exactly, so a fourth window added anywhere in the
+// package fails until it is declared here with an allowlist of its own.
 var privilegeWindowRoots = map[string]string{
 	"(*DefaultExecutor).executeWithUserGroup": windowStart,
 	"(*DefaultExecutor).killChild":            windowKill,
@@ -211,20 +173,18 @@ type indirectCallSite struct {
 // funcLiteralSite names one function literal by where it is written and what
 // it is bound to, rather than by an ordinal, so that inserting an unrelated
 // literal nearby cannot silently change which one is meant. Exactly one of
-// assignedTo (the literal is assigned to that local variable) and passedTo
-// (the literal is the sole function-literal argument of a call to that callee)
-// is set.
+// assignedTo and passedTo is set.
 type funcLiteralSite struct {
 	enclosing  string
 	assignedTo string
 	passedTo   string
 }
 
-// privilegeWindowIndirections resolves the calls the analysis cannot follow on
-// its own, because the callee is a function value rather than a declared
-// function. Every such call reached from a window must appear here; one that
-// does not fails the check rather than being quietly ignored, since skipping
-// it would hide everything the value points at.
+// privilegeWindowIndirections resolves the calls the analysis cannot follow
+// on its own, because the callee is a function value rather than a declared
+// function. Every such call reached from a window must appear here; an
+// unnamed one fails the check, since skipping it would hide everything the
+// value points at.
 var privilegeWindowIndirections = map[indirectCallSite]funcLiteralSite{
 	// executeWithUserGroup's window body calls the start phase through the
 	// startWindowFn parameter that runCommand fills in.
@@ -246,8 +206,8 @@ var privilegeWindowIndirections = map[indirectCallSite]funcLiteralSite{
 }
 
 // windowGuardConfig describes one package to check: where it is, the name to
-// type-check it under, which of its functions open which window, and how to
-// resolve its calls through function values.
+// type-check it under, and how to resolve its windows and calls through
+// function values.
 type windowGuardConfig struct {
 	dir          string
 	pkgPath      string
@@ -265,7 +225,7 @@ type trackedCall struct {
 
 // TestPrivilegeWindowAllowedCalls checks that nothing outside the allowlist is
 // reachable from inside a privilege window, per window, and that the check
-// itself still rejects the two things it exists to reject.
+// itself still rejects what it exists to reject.
 func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 	calls, problems := analyzePrivilegeWindows(t, windowGuardConfig{
 		dir:          ".",
@@ -290,17 +250,17 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 					"%s: %s is reachable from the %s but is not on its allowlist (called in %s); either the call belongs outside the window or 02_architecture.md section 7.2 and this list have to change together",
 					call.pos, call.name, window, call.enclosing)
 			}
-			// The reverse direction: an allowlist entry that is no longer
-			// reached means the reachability analysis has stopped seeing the
-			// window, and the check above would pass while looking at nothing.
+			// The reverse direction: an entry that is no longer reached
+			// means the analysis has stopped seeing the window, and the
+			// check above would pass while looking at nothing.
 			assert.ElementsMatch(t, slices.Sorted(maps.Keys(allowed)), slices.Sorted(maps.Keys(seen)),
 				"the %s's allowlist and what is actually reachable from it have diverged; an entry that is never reached means this check may be passing vacuously", window)
 		})
 	}
 
-	// The two negative self-tests below are what keeps the rest honest. The
-	// prohibition on logging in particular is expressed as an absence from the
-	// allowlist, and an absence stays green when the analysis breaks.
+	// The negative self-tests below are what keeps the rest honest. The
+	// prohibition on logging in particular is expressed as an absence from
+	// the allowlist, and an absence stays green when the analysis breaks.
 	t.Run("rejects_unlisted_call", func(t *testing.T) {
 		unlisted := unlistedCalls(t, windowGuardConfig{
 			dir:     filepath.Join("testdata", "bad_unlisted_call"),
@@ -328,9 +288,9 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 	})
 
 	// The indirection table is a claim about which literal a function value
-	// carries, and a claim nothing checks is where this analysis would fail
-	// open rather than closed. This fixture binds the field through a
-	// composite literal -- the form the check originally missed.
+	// carries; a claim nothing checks is where the analysis would fail open.
+	// This fixture binds the field through a composite literal -- the form
+	// the check originally missed.
 	t.Run("rejects_rebound_field", func(t *testing.T) {
 		_, problems := analyzePrivilegeWindows(t, windowGuardConfig{
 			dir:     filepath.Join("testdata", "bad_rebound_field"),
@@ -347,10 +307,9 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 		assert.Contains(t, problems[0], "cleanup is bound to")
 	})
 
-	// A positional composite literal binds the same field while naming no
-	// field to match, and the keyed nil binding in the fixture keeps the
-	// stale-entry fallback from masking the miss: the guard must report the
-	// untraceable binding itself.
+	// A positional composite literal binds the field while naming no field to
+	// match; the fixture's keyed nil binding keeps the stale-entry fallback
+	// from masking the miss, so what is exercised is the positional branch.
 	t.Run("rejects_positional_field", func(t *testing.T) {
 		_, problems := analyzePrivilegeWindows(t, windowGuardConfig{
 			dir:     filepath.Join("testdata", "bad_positional_field"),
@@ -369,11 +328,10 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 }
 
 // unlistedCalls runs the guard over one of the negative-test packages in
-// testdata and returns the calls it rejects. Those packages declare a
-// WithPrivileges of their own and put the offending call a hop away from the
-// window literal, so what is exercised is the whole analysis -- root
-// discovery, reachability, the indirection table and the allowlist match --
-// and not just the allowlist.
+// testdata and returns the calls it rejects. The fixtures put the offending
+// call a hop away from the window literal, so the whole analysis -- root
+// discovery, reachability, the indirection table, the allowlist match -- is
+// exercised, not just the allowlist.
 func unlistedCalls(t *testing.T, cfg windowGuardConfig) []trackedCall {
 	t.Helper()
 
@@ -418,8 +376,8 @@ func analyzePrivilegeWindows(t *testing.T, cfg windowGuardConfig) ([]trackedCall
 	}
 	// Declared roots and actual WithPrivileges call sites must agree: an
 	// undeclared one would open a window nothing checks, and a declared one
-	// that has disappeared means this check is looking for a window that is no
-	// longer there.
+	// that has disappeared means this check is looking for a window that is
+	// no longer there.
 	assert.ElementsMatch(t, slices.Sorted(maps.Keys(cfg.roots)), foundIn,
 		"the declared privilege windows and the package's WithPrivileges call sites have diverged")
 
@@ -432,9 +390,8 @@ func analyzePrivilegeWindows(t *testing.T, cfg windowGuardConfig) ([]trackedCall
 		visited := make(map[ast.Node]struct{})
 		g.walk(window, root.body, root.enclosing, visited, &calls)
 	}
-	// A literal can be reached twice -- once as part of the body it is written
-	// in, once through the indirection table that names it -- and the same call
-	// site reported twice says nothing the first report did not.
+	// A literal can be reached twice -- once as part of the body it is
+	// written in, once through the indirection table that names it.
 	return slices.CompactFunc(slices.SortedFunc(slices.Values(calls), compareTrackedCalls), func(a, b trackedCall) bool {
 		return compareTrackedCalls(a, b) == 0
 	}), g.problems
@@ -488,8 +445,8 @@ func (g *windowGuard) findWindowRoots() []windowRoot {
 
 // walk records every tracked call reachable from node, descending into
 // functions and methods declared in this package and into the literals named
-// in the indirection table. visited keeps a cycle from becoming a hang and is
-// per window, so a function reached from two windows is analyzed for each.
+// in the indirection table. visited breaks cycles and is per window, so a
+// function reached from two windows is analyzed for each.
 func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visited map[ast.Node]struct{}, calls *[]trackedCall) {
 	if _, seen := visited[node]; seen {
 		return
@@ -523,12 +480,9 @@ func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visit
 			return true
 		}
 
-		// An interface method has no single body to follow and no one
-		// implementation to attribute, so it is never descended into and is
-		// always tracked, whichever package it comes from. Putting one on an
-		// allowlist therefore says something stronger than usual: that every
-		// implementation reachable at that point is acceptable at euid 0.
-		// Dropping such calls instead would hide the mechanism by which most
+		// An interface method has no single body to follow, so it is never
+		// descended into and is always tracked, whichever package it comes
+		// from; dropping such calls would hide the mechanism by which most
 		// side effects enter this codebase.
 		isInterfaceMethod := false
 		if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
@@ -560,9 +514,8 @@ func (g *windowGuard) walk(window string, node ast.Node, enclosing string, visit
 }
 
 // followIndirect handles a call whose callee is a function value. The value
-// has to have been named in the indirection table: silently ignoring it would
-// leave everything it points at unexamined, which is how a call could be moved
-// into a window without this check noticing.
+// must have been named in the indirection table: silently ignoring it would
+// leave everything it points at unexamined.
 func (g *windowGuard) followIndirect(window string, call *ast.CallExpr, fun ast.Expr, enclosing string, visited map[ast.Node]struct{}, calls *[]trackedCall) {
 	site := indirectCallSite{enclosing: enclosing, callee: types.ExprString(fun)}
 	resolved, ok := g.indirections[site]
@@ -573,9 +526,7 @@ func (g *windowGuard) followIndirect(window string, call *ast.CallExpr, fun ast.
 		return
 	}
 	lit := resolved.lit
-	// The table is a claim about which literal the value carries, and a wrong
-	// claim would send this analysis walking one function while the window runs
-	// another. Checked once per entry, however many windows reach it.
+	// The claim is checked once per entry, however many windows reach it.
 	if _, done := g.verified[site]; !done {
 		g.verified[site] = struct{}{}
 		g.verifyIndirection(site, resolved, g.calleeObject(fun))
@@ -684,28 +635,21 @@ type resolvedIndirection struct {
 	target funcLiteralSite
 }
 
-// verifyIndirection checks the claim an indirection-table entry makes, so that
-// the one place this analysis cannot follow control flow is not also a place it
-// takes a maintainer's word for it. Without this, rebinding the field to some
-// other function would leave the guard walking the literal the table still
-// names -- failing open, unlike every other error path here.
-//
-// A field: every assignment to it in the package must put the named literal
-// there, directly or through a local whose only assignment is a call to the
-// function that declares the literal, or clear it with nil.
-//
-// Anything else (a parameter, as with the start phase's startWindowFn): the
-// function holding the call must at least reach the function that declares the
-// literal, so that the value plausibly travels between them.
+// verifyIndirection checks the claim an indirection-table entry makes
+// (premise 3). A field: every assignment to it in the package must put the
+// named literal there, directly or through a local whose only assignment is
+// a call to the function that declares the literal, or clear it with nil.
+// Anything else (a parameter, as with startWindowFn): the function holding
+// the call must at least reach the function that declares the literal, so
+// that the value plausibly travels between them.
 func (g *windowGuard) verifyIndirection(site indirectCallSite, resolved resolvedIndirection, callee types.Object) {
 	if v, ok := callee.(*types.Var); ok {
 		if v.IsField() {
 			g.verifyFieldCarries(site, v, resolved)
 			return
 		}
-		// A local: whatever it was assigned is what the window runs, so the
-		// claim can be checked outright. A parameter has no assignment here and
-		// falls through to the structural check below.
+		// A local's claim can be checked outright from its assignments; a
+		// parameter has none here and falls through to the structural check.
 		if decl, ok := g.decls[site.enclosing]; ok {
 			if assignments, carries := g.localBinding(decl, v, resolved); assignments > 0 {
 				if !carries {
@@ -753,14 +697,12 @@ func (g *windowGuard) localBinding(decl *ast.FuncDecl, obj types.Object, resolve
 }
 
 // verifyFieldCarries reports every binding of field that does not put the
-// literal the table names into it.
-//
-// Both ways of binding a struct field are checked, and whole files are walked
-// rather than function bodies, because a binding this pass does not see is a
-// binding taken on faith: a composite literal (`&preparedCommand{stagingCleanup:
-// fn}`) sets the field just as an assignment statement does, a positional
-// literal (`&preparedCommand{fn}`) sets it while naming nothing to match, and
-// a package-level var initializer can hold one outside any declaration.
+// literal the table names into it. Whole files are walked, not function
+// bodies, because a binding this pass does not see is a binding taken on
+// faith: a composite literal (`&preparedCommand{stagingCleanup: fn}` or the
+// positional `&preparedCommand{fn}`) binds the field just as an assignment
+// does, and a package-level var initializer can hold one outside any
+// declaration.
 func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var, resolved resolvedIndirection) {
 	bindings := 0
 	check := func(where ast.Node, written string, value ast.Expr) {
@@ -809,11 +751,9 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 					}
 					check(kv, key.Name, kv.Value)
 				}
-				// A positional literal names no field, so there is no key to
-				// match field against -- but it binds the field just as a keyed
-				// one does. Fail closed, as the multi-value-assignment branch
-				// above does, rather than walk the literal the table names while
-				// the window runs whatever was bound here.
+				// A positional literal names no field to match, but binds the
+				// field just as a keyed one does; fail closed, as the
+				// multi-value-assignment branch above does.
 				if unkeyed && g.literalBindsField(n, field) {
 					bindings++
 					name, _, _ := g.enclosingDeclOf(n)
@@ -833,9 +773,7 @@ func (g *windowGuard) verifyFieldCarries(site indirectCallSite, field *types.Var
 }
 
 // literalBindsField reports whether lit constructs the struct field belongs
-// to, so that a positional composite literal -- which names no field for the
-// element loop above to match -- is not mistaken for a literal that never
-// binds the field.
+// to.
 func (g *windowGuard) literalBindsField(lit *ast.CompositeLit, field *types.Var) bool {
 	typ := g.info.TypeOf(lit.Type)
 	if typ == nil {
@@ -853,15 +791,15 @@ func (g *windowGuard) literalBindsField(lit *ast.CompositeLit, field *types.Var)
 	return false
 }
 
-// carriesLiteral reports whether expr, written in decl, puts the named literal
-// into the field: nil (clearing it), the literal itself, or a local variable
-// assigned exactly once, from a call to the function that declares the literal.
+// carriesLiteral reports whether expr, written in decl, puts the named
+// literal into the field: nil, the literal itself, or a local assigned
+// exactly once from a call to the function that declares the literal.
 //
 // The last form checks which function the value came from, not which of its
-// results it is, so a function returning two different closures could hand
-// over the other one unnoticed. Telling them apart needs dataflow this
-// analysis does not do (premise 3); no such function exists here today, and
-// the allowlist still bounds what either closure could call.
+// results it is, so a function returning two closures could hand over the
+// other one unnoticed. Telling them apart needs dataflow this analysis does
+// not do (premise 3); no such function exists here today, and the allowlist
+// still bounds what either closure could call.
 func (g *windowGuard) carriesLiteral(decl *ast.FuncDecl, expr ast.Expr, resolved resolvedIndirection) bool {
 	if ident, ok := expr.(*ast.Ident); ok && ident.Name == "nil" {
 		return true
@@ -1105,11 +1043,10 @@ func unparen(expr ast.Expr) ast.Expr {
 	}
 }
 
-// TestPrivilegeWindowGuardLiteralResolution covers what makes the two "the
-// analysis cannot go on" branches fire: a call carrying more than one function
-// literal, and a binding that matches no literal or several. Those branches
-// are what stops the guard from silently resolving the wrong literal, and the
-// package's own shape happens to exercise neither.
+// TestPrivilegeWindowGuardLiteralResolution covers the two "the analysis
+// cannot go on" branches -- a call carrying more than one function literal,
+// and a binding that matches no literal or several -- which the package's
+// own shape happens not to exercise.
 func TestPrivilegeWindowGuardLiteralResolution(t *testing.T) {
 	src := "package p\n" +
 		"func twice() {\n" +
