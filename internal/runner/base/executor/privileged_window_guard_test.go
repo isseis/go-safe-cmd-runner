@@ -23,9 +23,10 @@ import (
 
 // This file statically checks which calls are reachable from the three
 // privilege windows -- regions where the process runs with effective uid 0,
-// so every call inside one runs as root. The per-window allowlist is a
-// security decision (02_architecture.md section 7.2) that loses its meaning
-// if it drifts from the code; this check makes the build enforce it.
+// so every call inside one runs as root. Every tracked call reachable from a
+// window must appear on that window's allowlist (allowedWindowCalls) below;
+// a call that is not on it fails the build. The check makes the decision
+// drift-proof, and this file is where that decision lives.
 //
 // Four premises fix the scope. They are stated here because each is a place
 // where the check deliberately sees less than everything:
@@ -116,13 +117,14 @@ var trackedReceiverTypes = map[string]struct{}{
 	"log/slog.Logger": {},
 }
 
-// allowedWindowCalls is the allowlist, transcribing the table in
-// 02_architecture.md section 7.2; no Logger method appears (see the header).
+// allowedWindowCalls is the allowlist: for each window, every tracked call
+// that may be reached from inside it. No Logger method appears (see the
+// header for why).
 //
-// io.NewSectionReader is on the list although the design table does not name
-// it: tracking is by package, and stageFromFD reads the verified descriptor
-// through a section reader. Like os.NewFile, which the table does name, it
-// opens nothing -- it wraps a descriptor that is already open.
+// io.NewSectionReader is on the list although it keeps no company in spirit:
+// tracking is by package, and stageFromFD reads the verified descriptor
+// through a section reader. Like os.NewFile, it opens nothing -- it wraps a
+// descriptor that is already open.
 var allowedWindowCalls = map[string]map[string]struct{}{
 	windowStart: {
 		"(*exec.Cmd).Start":          {},
@@ -247,7 +249,7 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 				}
 				seen[call.name] = struct{}{}
 				assert.Containsf(t, allowed, call.name,
-					"%s: %s is reachable from the %s but is not on its allowlist (called in %s); either the call belongs outside the window or 02_architecture.md section 7.2 and this list have to change together",
+					"%s: %s is reachable from the %s but is not on its allowlist (called in %s); either the call belongs outside the window or the window's allowlist deliberately drops it, and these must change together",
 					call.pos, call.name, window, call.enclosing)
 			}
 			// The reverse direction: an entry that is no longer reached
