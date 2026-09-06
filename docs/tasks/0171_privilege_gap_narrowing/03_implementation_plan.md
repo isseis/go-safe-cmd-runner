@@ -1127,7 +1127,7 @@
 - [x] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
 - [x] §4.3 の実行手順を特権のある環境で走らせ、`--- SKIP` が無いことを確認して結果を §4.3 へ追記した
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] PR を作成した（[#1103](https://github.com/isseis/go-safe-cmd-runner/pull/1103)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
