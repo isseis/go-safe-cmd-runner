@@ -98,7 +98,8 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 
 #### 残存リスク
 - 特権の隙が開いている間は、プロセス全体の実効 UID が上がる。ただし隙は
-  起動区間（子プロセスを起こす `fork`／`execve` の一瞬）まで縮まっており、
+  起動区間（子プロセスを起こす `fork`／`execve` の一瞬。staging フォールバックでは
+  検証済みバイナリの複製も含む）まで縮まっており、
   コマンドの実行時間には比例しない
 - 起動区間の中で走る、隙に参加しない goroutine はログ通知（Slack 送信）の処理だけである。
   キャンセル時のプロセス停止と、一時複製の後始末のときにだけ開く短い隙では、
