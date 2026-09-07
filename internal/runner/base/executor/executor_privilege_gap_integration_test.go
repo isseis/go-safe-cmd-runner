@@ -35,10 +35,41 @@ import (
 )
 
 const (
-	setuidReadyLine = "READY"
-	stagedFileMode  = 0o550
-	stagedDirMode   = 0o710
+	setuidReadyLine     = "READY"
+	setuidEntryReadyEnv = "TEST_SETUID_ENTRY_READY_FILE"
+	stagedFileMode      = 0o550
+	stagedDirMode       = 0o710
 )
+
+var (
+	setuidEntryManager  privilege.Manager
+	setuidObserverEntry privilege.Manager
+)
+
+func TestMain(m *testing.M) {
+	readyPath := os.Getenv(setuidEntryReadyEnv)
+	if readyPath != "" {
+		managerLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		setuidEntryManager = privilege.NewManager(managerLogger)
+		setuidObserverEntry = privilege.NewManager(managerLogger)
+		if !setuidEntryManager.IsPrivilegedExecutionSupported() || !setuidObserverEntry.IsPrivilegedExecutionSupported() {
+			fmt.Fprintln(os.Stderr, "FATAL: privilege managers rejected setuid entry before readiness")
+			os.Exit(2)
+		}
+		readyFile, err := os.OpenFile(readyPath, os.O_WRONLY|os.O_TRUNC, 0)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: failed to open setuid entry marker: %v\n", err)
+			os.Exit(2)
+		}
+		_, writeErr := readyFile.WriteString("ready\n")
+		closeErr := readyFile.Close()
+		if err := errors.Join(writeErr, closeErr); err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: failed to write setuid entry marker: %v\n", err)
+			os.Exit(2)
+		}
+	}
+	os.Exit(m.Run())
+}
 
 type setuidFixture struct {
 	executor     executor.CommandExecutor
@@ -84,8 +115,14 @@ func newSetuidFixture(t *testing.T, opts ...executor.Option) *setuidFixture {
 	targetGroups := parseNumericIDs(t, groupIDs)
 
 	logger, recorder := tu.NewRecordingLogger()
-	manager := privilege.NewManager(logger)
-	observer := privilege.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	manager := setuidEntryManager
+	observer := setuidObserverEntry
+	if manager == nil {
+		manager = privilege.NewManager(logger)
+	}
+	if observer == nil {
+		observer = privilege.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}
 	if !manager.IsPrivilegedExecutionSupported() {
 		t.Skipf("privilege manager rejected setuid entry ruid=%d euid=%d target_uid=%d target_gid=%d", invokerUID, entryEUID, targetUID, targetGID)
 	}
@@ -274,10 +311,23 @@ func executeAsync(
 ) <-chan asyncOutcome {
 	done := make(chan asyncOutcome, 1)
 	go func() {
+		defer close(done)
 		result, err := e.Execute(ctx, plan, cmd, nil, writer)
 		done <- asyncOutcome{result: result, err: err}
 	}()
 	return done
+}
+
+func registerAsyncCleanup(t *testing.T, cancel context.CancelFunc, done <-chan asyncOutcome) {
+	t.Helper()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Errorf("command execution did not stop during cleanup")
+		}
+	})
 }
 
 func waitForOutcome(t *testing.T, done <-chan asyncOutcome, timeout time.Duration) asyncOutcome {
@@ -291,9 +341,8 @@ func waitForOutcome(t *testing.T, done <-chan asyncOutcome, timeout time.Duratio
 	}
 }
 
-func assertAuditWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
+func assertWindowAttrs(t *testing.T, record tu.RecordSnapshot, want ...runnertypes.Operation) {
 	t.Helper()
-	record := recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
 	require.EqualValues(t, len(want), record.Attrs["elevation_count"])
 	got := make([]string, 0, len(want))
 	for key, value := range record.Attrs {
@@ -302,8 +351,8 @@ func assertAuditWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnerty
 		}
 		op := strings.TrimSuffix(strings.TrimPrefix(key, "privilege_duration_"), "_us")
 		duration, ok := value.(int64)
-		require.Truef(t, ok, "audit duration %s has type %T", key, value)
-		assert.GreaterOrEqual(t, duration, int64(0), "audit duration %s", key)
+		require.Truef(t, ok, "window duration %s has type %T", key, value)
+		assert.GreaterOrEqual(t, duration, int64(0), "window duration %s", key)
 		got = append(got, op)
 	}
 	wantStrings := make([]string, 0, len(want))
@@ -313,20 +362,16 @@ func assertAuditWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnerty
 	assert.ElementsMatch(t, wantStrings, got)
 }
 
-func assertElevationOperations(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
+func assertAuditWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
 	t.Helper()
-	records := recorder.FindRecords(slog.LevelInfo, "Privileges elevated")
-	got := make([]string, 0, len(records))
-	for _, record := range records {
-		op, ok := record.Attrs["operation"]
-		require.True(t, ok, "privilege elevation record must name its operation")
-		got = append(got, fmt.Sprint(op))
-	}
-	wantStrings := make([]string, 0, len(want))
-	for _, op := range want {
-		wantStrings = append(wantStrings, string(op))
-	}
-	assert.ElementsMatch(t, wantStrings, got)
+	record := recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	assertWindowAttrs(t, record, want...)
+}
+
+func assertFailureWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
+	t.Helper()
+	record := recorder.RequireRecord(t, slog.LevelError, "User/group privilege execution failed")
+	assertWindowAttrs(t, record, want...)
 }
 
 type privilegedStatResult struct {
@@ -360,12 +405,52 @@ func statWithPrivileges(t *testing.T, fixture *setuidFixture, paths ...string) [
 	return result.infos
 }
 
+func matchingOpenFDs(t *testing.T, path string) []string {
+	t.Helper()
+	wantInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	entries, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+	var matching []string
+	for _, entry := range entries {
+		fdPath := filepath.Join("/proc/self/fd", entry.Name())
+		info, statErr := os.Stat(fdPath)
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		require.NoErrorf(t, statErr, "stat parent fd %s", fdPath)
+		if os.SameFile(wantInfo, info) {
+			matching = append(matching, entry.Name())
+		}
+	}
+	return matching
+}
+
 func stagedPathFromRecorder(t *testing.T, recorder *tu.LogRecorder) string {
 	t.Helper()
 	record := recorder.RequireRecord(t, slog.LevelDebug, "Staged verified command copy")
 	path, ok := record.Attrs["staged_path"].(string)
 	require.Truef(t, ok, "staged_path has type %T", record.Attrs["staged_path"])
 	return path
+}
+
+func registerStagedCleanupSafetyNet(t *testing.T, fixture *setuidFixture) func(string) {
+	t.Helper()
+	var stagedPath string
+	t.Cleanup(func() {
+		if stagedPath == "" {
+			return
+		}
+		elevationCtx := runnertypes.ElevationContext{
+			Operation: runnertypes.OperationStagingCleanup,
+			FilePath:  stagedPath,
+		}
+		err := fixture.observer.WithPrivileges(elevationCtx, func() error {
+			return os.RemoveAll(filepath.Dir(stagedPath))
+		})
+		require.NoError(t, err)
+	})
+	return func(path string) { stagedPath = path }
 }
 
 func uniqueMarkerPath(t *testing.T) string {
@@ -431,6 +516,7 @@ func TestPrivilegeGap_TimeoutKillsChild(t *testing.T) {
 	before := os.Geteuid()
 	start := time.Now()
 	done := executeAsync(ctx, fixture.executor, nil, cmd, writer)
+	registerAsyncCleanup(t, cancel, done)
 	waitForReady(t, writer, time.Second)
 	outcome := waitForOutcome(t, done, 3*time.Second)
 
@@ -443,7 +529,7 @@ func TestPrivilegeGap_TimeoutKillsChild(t *testing.T) {
 	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
 	assert.Less(t, time.Since(start), 3*time.Second)
 	assertChildCredentials(t, fixture, parseChildCredentials(t, outcome.result.Stdout))
-	assertElevationOperations(t, fixture.recorder,
+	assertFailureWindows(t, fixture.recorder,
 		runnertypes.OperationUserGroupExecution,
 		runnertypes.OperationKillAfterCancel,
 	)
@@ -462,6 +548,7 @@ func TestPrivilegeGap_CancelKillsChild(t *testing.T) {
 	before := os.Geteuid()
 	start := time.Now()
 	done := executeAsync(ctx, fixture.executor, nil, cmd, writer)
+	registerAsyncCleanup(t, cancel, done)
 	waitForReady(t, writer, time.Second)
 	cancel()
 	outcome := waitForOutcome(t, done, 2*time.Second)
@@ -475,7 +562,7 @@ func TestPrivilegeGap_CancelKillsChild(t *testing.T) {
 	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
 	assert.Less(t, time.Since(start), 2*time.Second)
 	assertChildCredentials(t, fixture, parseChildCredentials(t, outcome.result.Stdout))
-	assertElevationOperations(t, fixture.recorder,
+	assertFailureWindows(t, fixture.recorder,
 		runnertypes.OperationUserGroupExecution,
 		runnertypes.OperationKillAfterCancel,
 	)
@@ -514,13 +601,19 @@ func TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials(t *testing.T) {
 	path, args := credentialShellCommand(t, fixture, tail, fdIdentity)
 	cmd := runtimeCommand(path, args, fixture)
 	plan := openVerifiedPlan(t, path, args)
+	t.Cleanup(func() { require.NoError(t, plan.Close()) })
+	parentFDsBefore := matchingOpenFDs(t, path)
+	require.NotEmpty(t, parentFDsBefore, "verified plan must keep its source descriptor open")
 	writer := newReadyOutputWriter()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	before := os.Geteuid()
 	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	registerAsyncCleanup(t, cancel, done)
 	waitForReady(t, writer, time.Second)
+	assert.ElementsMatch(t, parentFDsBefore, matchingOpenFDs(t, path),
+		"executor-owned duplicate of the verified fd must close immediately after start")
 	credentials := parseChildCredentials(t, writer.output())
 	assertChildCredentials(t, fixture, credentials)
 
@@ -536,12 +629,12 @@ func TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials(t *testing.T) {
 	require.Equal(t, 0, outcome.result.ExitCode)
 	assert.Equal(t, before, os.Geteuid())
 	assertAuditWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
-	require.NoError(t, plan.Close())
 }
 
 func TestPrivilegeGap_StagingCleanupUsesRealPrivileges(t *testing.T) {
 	requireSetuidModel(t)
 	fixture := newSetuidFixture(t, executor.WithFdExecDisabled())
+	rememberStagedPath := registerStagedCleanupSafetyNet(t, fixture)
 	marker := uniqueMarkerPath(t)
 	sleepPath := executortestutil.ResolveCommand("sleep")
 	tail := fmt.Sprintf("while [ ! -e %q ]; do %q 0.05; done", marker, sleepPath)
@@ -555,10 +648,12 @@ func TestPrivilegeGap_StagingCleanupUsesRealPrivileges(t *testing.T) {
 
 	before := os.Geteuid()
 	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	registerAsyncCleanup(t, cancel, done)
 	waitForReady(t, writer, time.Second)
 	assertChildCredentials(t, fixture, parseChildCredentials(t, writer.output()))
 
 	stagedPath := stagedPathFromRecorder(t, fixture.recorder)
+	rememberStagedPath(stagedPath)
 	infos := statWithPrivileges(t, fixture, stagedPath, filepath.Dir(stagedPath))
 	fileInfo, dirInfo := infos[0], infos[1]
 	assert.Equal(t, os.FileMode(stagedFileMode), fileInfo.Mode().Perm())
@@ -587,6 +682,7 @@ func TestPrivilegeGap_StagingCleanupUsesRealPrivileges(t *testing.T) {
 func TestPrivilegeGap_StagingCancellationCleansUp(t *testing.T) {
 	requireSetuidModel(t)
 	fixture := newSetuidFixture(t, executor.WithFdExecDisabled())
+	rememberStagedPath := registerStagedCleanupSafetyNet(t, fixture)
 	sleepPath := executortestutil.ResolveCommand("sleep")
 	path, args := credentialShellCommand(t, fixture, fmt.Sprintf("exec %q 30", sleepPath))
 	cmd := runtimeCommand(path, args, fixture)
@@ -598,9 +694,11 @@ func TestPrivilegeGap_StagingCancellationCleansUp(t *testing.T) {
 
 	before := os.Geteuid()
 	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	registerAsyncCleanup(t, cancel, done)
 	waitForReady(t, writer, time.Second)
 	assertChildCredentials(t, fixture, parseChildCredentials(t, writer.output()))
 	stagedPath := stagedPathFromRecorder(t, fixture.recorder)
+	rememberStagedPath(stagedPath)
 	_ = statWithPrivileges(t, fixture, stagedPath)
 
 	cancel()
@@ -613,7 +711,7 @@ func TestPrivilegeGap_StagingCancellationCleansUp(t *testing.T) {
 	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
 	assert.NoDirExists(t, filepath.Dir(stagedPath))
 	assert.Equal(t, before, os.Geteuid())
-	assertElevationOperations(t, fixture.recorder,
+	assertFailureWindows(t, fixture.recorder,
 		runnertypes.OperationUserGroupExecution,
 		runnertypes.OperationKillAfterCancel,
 		runnertypes.OperationStagingCleanup,
@@ -645,5 +743,6 @@ func TestPrivilegeGap_RefusedElevationDoesNotRecordWindow(t *testing.T) {
 	require.ErrorIs(t, err, errElevationRefusedBeforeWindow)
 	require.Nil(t, result)
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "Privileges elevated"))
+	assertFailureWindows(t, fixture.recorder)
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"))
 }

@@ -1136,7 +1136,9 @@ PR-7 の初回実装は setuid バイナリから `Execute` を呼べること�
 - [x] `TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials` を追加する。`nil` plan ではなく
       `openVerifiedPlan` で実ファイルを開いた `CommandPlan` を `Execute` に渡し、実
       `UnixPrivilegeManager` と OS credentials のまま fd-bound 実行を通す。子 credentials、
-      成功、開始後の FD 解放、親 EUID の復帰を観測する。
+      成功、開始後の FD 解放、親 EUID の復帰を観測する。起動待機中に、親が保持する同一 inode の
+      FD 集合が実行前から増えていないことも比較する。起動直後の `releaseVerifiedFD` を外す変異では
+      余分な FD が1本残り、この専用 assertion が失敗することを確認した。
 - [x] `TestPrivilegeGap_StagingCleanupUsesRealPrivileges` を追加する。`openVerifiedPlan` と
       `WithFdExecDisabled` で staging を強制し、開始区間の終了直後に `OutputWriter` から通知を受けて、
       recorder に記録された staged path が実在し root 所有・期待 mode／group であることを
@@ -1145,26 +1147,39 @@ PR-7 の初回実装は setuid バイナリから `Execute` を呼べること�
 - [x] staging と cancellation を組み合わせたテストを追加する。staged file の存在と子の ready を
       観測してから cancel し、kill・reap の完了後に cleanup 区間が実行されて file が消えること、
       cleanup／復帰エラーが無いことを確認する。`t.Cleanup` は失敗時の最後の安全網に限定し、
-      本体の削除 assertion より前に証拠を消さない。
+      本体の削除 assertion より前に証拠を消さない。cleanup 昇格を外す変異で両 staging テストを
+      失敗させた後にも、安全網が root 所有ディレクトリを回収し、残存が0件になることを確認した。
 - [x] 実監査出力を、duration キー1個の存在だけでなく window の集合として検証する。正常 fd-bound は
       `elevation_count == 1` かつ `user_group_execution` のみ、正常 staging は count 2 かつ
       `user_group_execution`／`staging_cleanup` のみとする。cancel／timeout は
-      `Privileges elevated` の operation 名を収集し、`kill_after_cancel` が実際に1回開いたこと、
-      存在しない window のキーが無いこと、各 duration がマイクロ秒単位で記録されたことを主張する。
-      昇格前に失敗した試行を開いた window と数えない負例も追加する。
+      `User/group privilege execution failed` の `elevation_count` と duration key 集合を検査し、
+      `kill_after_cancel` が実際に1回開いたこと、存在しない window のキーが無いこと、各 duration が
+      マイクロ秒単位で記録されたことを主張する。
+      昇格前に失敗した試行を開いた window と数えない負例も追加する。失敗時の監査ログにも同じ
+      window 集合を載せ、拒否時は count 0 になることを検査する。`opened || elevErr != nil` として
+      拒否を1件に数える変異で、専用テストが expected 0 / actual 1 と失敗することを再確認した。
 - [x] `requireSetuidModel` の supported 側を決定的にテストできるよう、UID／EUID／環境／user lookup の
       読み取りを小さな注入口へ分離する。`TestRequireSetuidModel_SupportedDoesNotSkip` を追加し、
       supported では `Skipf` 0回、各 unsupported 条件では正確に1回かつ欠けた prerequisite を含む
       message になることを検査する。ラッパー末尾の無条件 `Skipf` という変異で必ず失敗させる。
 - [x] `scripts/verification/run_executor_setuid_integration.sh` と、それを呼ぶ
       `executor-setuid-integration-test` Make ターゲットを追加する。`env -i` の下で固定 `PATH`、
-      `LANG=C`、`TEST_RUNAS_TARGET_USER` だけを明示してテストバイナリを起動する。実行前に owner UID 0、
-      mode 4755、起動者が非 root であることを検査し、終了コード、`--- SKIP` 0件、必須テスト名の
-      PASS 集合を検査する。通常の非特権 compile／skip ターゲットとは名前と責務を分ける。
+      `LANG=C`、`TEST_RUNAS_TARGET_USER`、入口同期 marker だけを明示してテストバイナリを起動する。
+      root 所有 mode 0711 の使い捨てディレクトリ内で owner UID 0／mode 4755 を検査し、入口の
+      setuid 確認直後に mode 0755 へ戻す。Linux 以外は拒否し、全体 timeout、終了コード、
+      `--- SKIP` 0件、必須テスト名の PASS 集合を検査する。通常の非特権 compile／skip
+      ターゲットとは名前と責務を分ける。
 - [x] `test-ci`、`test-ci-cgo1`、pre-commit は非特権環境で「compile 成功・理由付き skip」を確認する
       経路として残す一方、ログに PASS と SKIP の件数を表示する。setuid 専用ターゲットが実行される
       self-hosted／手動の必須ゲートを PR チェックリストへ追加する。自動環境がすべて skip の場合は、
       それを privileged behavior の成功証拠として扱わない。
+- [x] 非同期 `Execute` を使う全テストに cancel＋完了 channel drain の `t.Cleanup` を登録し、
+      テストの fatal 終了後にも goroutine を止めてから process-wide EUID を復元する。
+- [x] staging 2本に実 privilege manager で root 所有ディレクトリを削除する `t.Cleanup` 安全網を置き、
+      assertion 前には走らず、失敗後には残存を回収することを cleanup mutation で確認する。
+- [x] setuid ハーネスに Linux guard と `-test.timeout=60s` を置き、root 所有 directory と入口同期を
+      検査した直後に setuid bit を落とす。親 trap は実行中の子を停止してから artifact を削除する。
+- [x] supplementary group テストの重複 numeric ID parser を共通 helper へ統合する。
 - [x] 次の負の変異を §4.2 の手順で個別に確認する: `Start` 直前に `SysProcAttr.Credential = nil`、
       verified plan を `nil` にする、cleanup の `WithPrivileges` を外す、`elevation_count` または
       operation 名を偽造する、supported 条件でも `Skipf` する、target 環境変数の転送を止める、
@@ -1518,14 +1533,24 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       ことを確かめる（`pre-commit validate-config`）。
 - [x] PR-7 credentials: `Start` 直前に `SysProcAttr.Credential = nil` とする変異で
       `TestPrivilegeGap_ChildCredentialsMatchTarget`、fd-bound、cancel／timeout の各テストが
-      子の UID／GID／補助グループ不一致により失敗する。
-- [x] PR-7 実経路: verified plan を `nil` にする変異で fd-bound テストが、
-      cleanup の `WithPrivileges` を外す変異で staging cleanup テストが失敗する。
+      子の UID／GID／補助グループ不一致により失敗する。入口同期後は setuid bit を落とすため、
+      変異時の子 UID は root ではなく起動者 1000 となり、期待値 65534 との不一致を確認した。
+- [x] PR-7 実経路: verified plan を `nil` にする変異では、fd-bound テストが期待 inode の
+      `FD_ID` 欠落で失敗し、強制 staging 2本も staged-path 記録 0 件で失敗する。
+      cleanup の `WithPrivileges` を外す変異では、両 staging テストが directory exists と
+      count 不足で失敗し、その後の安全網により `/tmp/scr-stage-*` が0件になる。
+      加えて起動直後の verified FD 解放を外す変異では、親の同一 inode FD 集合が1本増え、
+      fd-bound テストの即時解放 assertion が失敗する。
 - [x] PR-7 audit: `elevation_count` を固定値にする、実行していない operation を追加する、または
       `kill_after_cancel` の記録を消す各変異で、実 setuid テストの window 集合検査が失敗する。
-- [x] PR-7 skip／環境: supported 条件でも `Skipf` する変異は supported-side unit test が失敗し、
-      `TEST_RUNAS_TARGET_USER` の転送または setuid bit を外す変異は setuid 専用ハーネスが
-      SKIP 0件／入口 credentials の検査で失敗する。
+      count を 1 に固定する変異では期待 2／3 の各ケースが実数 1 で失敗し、operation を
+      `kill_after_cancel` に固定する変異では期待 `user_group_execution` との集合差で失敗した。
+      kill 記録を消す変異では timeout／cancel が count 2→1、staging+cancel が count 3→2 となり、
+      失敗時ログを読む各専用テストが落ちることを再確認した。
+- [x] PR-7 skip／環境: supported 条件でも `Skipf` する変異は、記録された無条件 skip 理由により
+      `TestRequireSetuidModel_SupportedDoesNotSkip` が失敗する。
+      `TEST_RUNAS_TARGET_USER` の転送を外す変異は必須10本が PASS 0／SKIP 10 となってハーネスが
+      失敗し、setuid bit を外す変異は実行前 metadata 検査が owner UID 0／mode 755 を検出して失敗する。
 
 ### 4.3 統合テストの実行手順（AC-21、AC-22）
 
@@ -1639,10 +1664,12 @@ echo "OK: all required privileged criteria verified under env -i"
 - Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
 - 起動者 `issei`（UID 1000）、target `nobody`（UID/GID/補助グループ 65534）。
 - `/var/tmp` は `/` の overlay mount（`rw,relatime`、`nosuid` なし）。
-  ハーネスが使い捨てバイナリの owner UID 0・mode 4755 を実行前に検査し、終了時に削除した。
+  ハーネスが root 所有 mode 0711 の使い捨てディレクトリと、バイナリの owner UID 0・mode 4755 を
+  実行前に検査した。入口同期直後に mode 0755 へ戻し、終了時に全 artifact を削除した。
 - `env -i` の専用ハーネスで資格情報、fd-bound、staging、cleanup、cancel/timeout、
   監査 window、昇格拒否の負例、補助グループを含む必須10テストが PASS、SKIP 0件。
-  1秒・5秒コマンドの起動区間は 268µs・430µs、差 162µs。
+  レビュー修正後の最終実行では、1秒・5秒コマンドの起動区間は 311µs・501µs、差 190µs。
+  実行後は `/var/tmp/scr-setuid.*` と `/tmp/scr-stage-*` の残存がともに0件。
 - 非特権 `make executor-privileged-integration-test` は PASS 116・SKIP 10を表示して成功し、
   `pre-commit run executor-privileged-integration-test --all-files` も成功した。
 

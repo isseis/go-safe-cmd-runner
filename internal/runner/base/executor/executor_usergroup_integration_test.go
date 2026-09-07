@@ -20,7 +20,6 @@ import (
 	"context"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -28,20 +27,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// parseGroupIDs parses the space-separated numeric GID list printed by
-// `id -G` into a slice of ints.
-func parseGroupIDs(t *testing.T, out string) []int {
-	t.Helper()
-	fields := strings.Fields(out)
-	ids := make([]int, 0, len(fields))
-	for _, f := range fields {
-		n, err := strconv.Atoi(f)
-		require.NoErrorf(t, err, "unexpected non-numeric field %q in `id -G` output %q", f, out)
-		ids = append(ids, n)
-	}
-	return ids
-}
 
 // TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot exercises the same
 // setuid entry model as the privilege-gap tests. The shared fixture rejects
@@ -59,7 +44,7 @@ func TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, result.ExitCode)
 
-	gotGroups := parseGroupIDs(t, result.Stdout)
+	gotGroups := parseNumericIDs(t, strings.Fields(result.Stdout))
 	assert.ElementsMatch(t, fixture.targetGroups, gotGroups,
 		"run-as child's supplementary groups must match the target user's own group list exactly")
 

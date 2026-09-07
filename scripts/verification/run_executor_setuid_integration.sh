@@ -6,6 +6,10 @@ if [ "$#" -ne 0 ]; then
 	echo "usage: TEST_RUNAS_TARGET_USER=<user> $0" >&2
 	exit 2
 fi
+if [ "$(uname -s)" != Linux ]; then
+	echo "FATAL: executor setuid integration is supported only on Linux" >&2
+	exit 1
+fi
 
 target_user=${TEST_RUNAS_TARGET_USER:-}
 if [ -z "$target_user" ]; then
@@ -37,13 +41,25 @@ run_parent=${TMPDIR:-/var/tmp}
 run_dir=$(mktemp -d "$run_parent/scr-setuid.XXXXXX")
 binary="$run_dir/executor.test"
 output="$run_dir/output.txt"
+entry_ready="$run_dir/entry-ready"
+test_pid=
+: >"$output"
+: >"$entry_ready"
 
 cleanup() {
+	if [ -n "${test_pid:-}" ] && kill -0 "$test_pid" 2>/dev/null; then
+		kill "$test_pid" 2>/dev/null || true
+		wait "$test_pid" 2>/dev/null || true
+	fi
+	if [ -n "${binary:-}" ] && [ -e "$binary" ]; then
+		sudo chmod 0755 "$binary" 2>/dev/null || true
+	fi
 	if [ -n "${run_dir:-}" ] && [ -d "$run_dir" ]; then
 		sudo rm -rf -- "$run_dir"
 	fi
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap "exit 130" HUP INT TERM
 
 if ! command -v findmnt >/dev/null 2>&1; then
 	echo "FATAL: findmnt is required to verify that $run_dir is not on a nosuid mount" >&2
@@ -56,18 +72,66 @@ fi
 
 cd "$project_root"
 go test -tags "test integration" -c -o "$binary" ./internal/runner/base/executor/
+sudo chown root:root "$run_dir"
+sudo chmod 0711 "$run_dir"
 sudo chown root:root "$binary"
 sudo chmod 4755 "$binary"
 
+dir_owner_uid=$(stat -c %u "$run_dir")
+dir_mode=$(stat -c %a "$run_dir")
 owner_uid=$(stat -c %u "$binary")
 mode=$(stat -c %a "$binary")
+if [ "$dir_owner_uid" -ne 0 ] || [ "$dir_mode" != 711 ]; then
+	echo "FATAL: invalid artifact directory metadata; owner_uid=$dir_owner_uid mode=$dir_mode path=$run_dir" >&2
+	exit 1
+fi
 if [ "$owner_uid" -ne 0 ] || [ "$mode" != 4755 ]; then
 	echo "FATAL: invalid setuid binary metadata; owner_uid=$owner_uid mode=$mode path=$binary" >&2
 	exit 1
 fi
 
 test_filter='^(TestPrivilegeGap_.*|TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot)$'
-if ! env -i 	PATH=/usr/bin:/bin 	LANG=C 	TEST_RUNAS_TARGET_USER="$target_user" 	"$binary" -test.v -test.run "$test_filter" >"$output" 2>&1; then
+env -i \
+	PATH=/usr/bin:/bin \
+	LANG=C \
+	TEST_RUNAS_TARGET_USER="$target_user" \
+	TEST_SETUID_ENTRY_READY_FILE="$entry_ready" \
+	"$binary" -test.v -test.timeout=60s -test.run "$test_filter" >"$output" 2>&1 &
+test_pid=$!
+
+wait_count=0
+while [ ! -s "$entry_ready" ]; do
+	if ! kill -0 "$test_pid" 2>/dev/null; then
+		break
+	fi
+	wait_count=$((wait_count + 1))
+	if [ "$wait_count" -ge 500 ]; then
+		break
+	fi
+	sleep 0.01
+done
+if [ ! -s "$entry_ready" ]; then
+	kill "$test_pid" 2>/dev/null || true
+	wait "$test_pid" 2>/dev/null || true
+	cat "$output"
+	echo "FATAL: setuid executor test binary did not confirm privileged entry" >&2
+	exit 1
+fi
+
+sudo chmod 0755 "$binary"
+mode=$(stat -c %a "$binary")
+if [ "$mode" != 755 ]; then
+	echo "FATAL: failed to clear setuid bit after entry; mode=$mode path=$binary" >&2
+	exit 1
+fi
+
+if wait "$test_pid"; then
+	test_status=0
+else
+	test_status=$?
+fi
+test_pid=
+if [ "$test_status" -ne 0 ]; then
 	cat "$output"
 	echo "FATAL: setuid executor test binary exited non-zero" >&2
 	exit 1
@@ -83,7 +147,17 @@ if [ "$skip_count" -ne 0 ]; then
 	exit 1
 fi
 
-for test_name in 	TestPrivilegeGap_ChildCredentialsMatchTarget 	TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials 	TestPrivilegeGap_StagingCleanupUsesRealPrivileges 	TestPrivilegeGap_StagingCancellationCleansUp 	TestPrivilegeGap_StartWindowIndependentOfCommandDuration 	TestPrivilegeGap_TimeoutKillsChild 	TestPrivilegeGap_CancelKillsChild 	TestPrivilegeGap_OutputLimitAbortsRunningChild 	TestPrivilegeGap_RefusedElevationDoesNotRecordWindow 	TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot
+for test_name in \
+	TestPrivilegeGap_ChildCredentialsMatchTarget \
+	TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials \
+	TestPrivilegeGap_StagingCleanupUsesRealPrivileges \
+	TestPrivilegeGap_StagingCancellationCleansUp \
+	TestPrivilegeGap_StartWindowIndependentOfCommandDuration \
+	TestPrivilegeGap_TimeoutKillsChild \
+	TestPrivilegeGap_CancelKillsChild \
+	TestPrivilegeGap_OutputLimitAbortsRunningChild \
+	TestPrivilegeGap_RefusedElevationDoesNotRecordWindow \
+	TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot
 do
 	if ! grep -q -- "^--- PASS: $test_name " "$output"; then
 		echo "FATAL: required test did not pass: $test_name" >&2

@@ -457,6 +457,7 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 #   unit-test-cgo0         - CGO=0 tests only (for CI matrix)
 #   integration-test       - Integration tests with runner binary
 #   executor-privileged-integration-test - Run-as tests (skip without privileges)
+#   executor-setuid-integration-test - Linux-only real setuid gate (requires sudo)
 #   e2e-test               - End-to-end tests (dry-run validation + security checks)
 #   security-test          - Security-focused tests
 #   performance-test       - Performance and benchmark tests
@@ -576,9 +577,9 @@ executor-privileged-integration-test:
 	SKIP_COUNT=$$(grep -c -- '^--- SKIP:' "$$OUTPUT" || true); \
 	echo "executor privileged integration summary: PASS=$$PASS_COUNT SKIP=$$SKIP_COUNT"
 
-# This is the required privileged-behavior gate. The harness builds a disposable
-# root-owned mode-4755 test binary, runs it as the non-root invoker under env -i,
-# rejects every skip or missing required PASS, and removes the binary afterward.
+# This Linux-only target is the required privileged-behavior gate. The harness
+# creates a root-owned mode-0711 directory and mode-4755 binary, clears the
+# setuid bit after privileged entry, rejects skips/missing PASS, and cleans up.
 executor-setuid-integration-test:
 	TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" scripts/verification/run_executor_setuid_integration.sh
 
