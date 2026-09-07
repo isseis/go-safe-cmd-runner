@@ -1213,8 +1213,8 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 - [x] `executor-setuid-integration-test` を実行し、入口 credentials、必須 PASS 集合、SKIP 0件を確認して §4.3 へ追記した
 - [x] 5-d の全負の変異を確認し、変異ごとに失敗したテストまたはハーネス検査をコミットメッセージに記した
 - [x] PR を作成した（[#1103](https://github.com/isseis/go-safe-cmd-runner/pull/1103)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 文書と doc コメントの更新（F-006）
 
