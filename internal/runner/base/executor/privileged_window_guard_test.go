@@ -249,7 +249,7 @@ func TestPrivilegeWindowAllowedCalls(t *testing.T) {
 				}
 				seen[call.name] = struct{}{}
 				assert.Containsf(t, allowed, call.name,
-					"%s: %s is reachable from the %s but is not on its allowlist (called in %s); either the call belongs outside the window or the window's allowlist deliberately drops it, and these must change together",
+					"%s: %s is reachable from the %s but is not on its allowlist (called in %s); either move the call outside the window or deliberately include it in the window's allowlist",
 					call.pos, call.name, window, call.enclosing)
 			}
 			// The reverse direction: an entry that is no longer reached
