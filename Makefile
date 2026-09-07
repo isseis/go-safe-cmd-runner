@@ -135,7 +135,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 executor-privileged-integration-test test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
+.PHONY: all lint build run clean test test-ci test-ci-cgo1 test-ci-cgo0 executor-privileged-integration-test executor-setuid-integration-test test-all benchmark hash hash-integration-test hash-e2e-test integration-test slack-notify-test slack-group-notification-test slack-e2e-test fmt fmt-all security-check build-security-check performance-test unit-test unit-test-cgo1 unit-test-cgo0 e2e-test security-test deadcode generate-perf-configs verify-docs verify-docs-full elfanalyzer-testdata elfanalyzer-testdata-verify elfanalyzer-testdata-clean elfanalyzer-integration-test libccache-integration-test machoanalyzer-testdata machoanalyzer-testdata-verify machoanalyzer-testdata-clean generate-syscall-tables fetch-dyld-headers
 
 all: security-check
 
@@ -560,10 +560,27 @@ libccache-integration-test:
 # Run with TEST_RUNAS_TARGET_USER=<user> make executor-privileged-integration-test.
 # An unset target is forwarded as empty; without a target or sufficient privileges,
 # tests skip with a reason. This target then proves compilation and skip handling only.
+# Its explicit PASS/SKIP totals keep a fully skipped run visible in CI and pre-commit;
+# only executor-setuid-integration-test treats any skip as a failure.
 # Integration files are outside make lint (and pre-commit lint), which use only test.
 # No -race here: output_pump_test.go covers reader races in the ordinary test suite.
 executor-privileged-integration-test:
-	$(ENVSET) TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" CGO_ENABLED=1 $(GOTEST) -tags "test integration" -v ./internal/runner/base/executor/
+	@OUTPUT=$$(mktemp); \
+	trap 'rm -f "$$OUTPUT"' EXIT; \
+	if ! $(ENVSET) TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" CGO_ENABLED=1 $(GOTEST) -tags "test integration" -v ./internal/runner/base/executor/ >"$$OUTPUT" 2>&1; then \
+		cat "$$OUTPUT"; \
+		exit 1; \
+	fi; \
+	cat "$$OUTPUT"; \
+	PASS_COUNT=$$(grep -c -- '^--- PASS:' "$$OUTPUT" || true); \
+	SKIP_COUNT=$$(grep -c -- '^--- SKIP:' "$$OUTPUT" || true); \
+	echo "executor privileged integration summary: PASS=$$PASS_COUNT SKIP=$$SKIP_COUNT"
+
+# This is the required privileged-behavior gate. The harness builds a disposable
+# root-owned mode-4755 test binary, runs it as the non-root invoker under env -i,
+# rejects every skip or missing required PASS, and removes the binary afterward.
+executor-setuid-integration-test:
+	TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" scripts/verification/run_executor_setuid_integration.sh
 
 # CI matrix leg: CGO=1 — full test suite with race detection and coverage
 # Runs alongside test-ci-cgo0 in parallel via GitHub Actions matrix

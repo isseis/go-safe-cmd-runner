@@ -1115,57 +1115,57 @@ PR-7 の初回実装は setuid バイナリから `Execute` を呼べること�
 スキップ禁止を直接観測していない。次の作業を PR-7 に追加し、既存4本が PASS したという
 実測記録だけを修正完了の証拠にしない。
 
-- [ ] 共通セットアップが次の実行モデルを検査し、1つでも満たさなければ**具体的な値を含む理由**で
+- [x] 共通セットアップが次の実行モデルを検査し、1つでも満たさなければ**具体的な値を含む理由**で
       スキップするようにする: テストバイナリの実 UID は非 root、入口の実効 UID は 0、
       降格後は `euid == ruid != 0`、対象ユーザーは存在し UID 0 でも起動者 UID でもない。
       対象ユーザーの primary GID と `GroupIds()` も解決し、比較用の期待値として保持する。
-- [ ] `TestPrivilegeGap_ChildCredentialsMatchTarget` を追加する。子に絶対パスの `id` 相当を実行させ、
+- [x] `TestPrivilegeGap_ChildCredentialsMatchTarget` を追加する。子に絶対パスの `id` 相当を実行させ、
       子自身が報告した実 UID、実効 UID、実効 GID、補助グループを `os/user.User` の
       `Uid`、`Gid`、`GroupIds()` と比較する（グループだけ集合比較）。親の
       `os.Geteuid() == os.Getuid()` は復帰確認にだけ使い、子 credentials の
       代用にしない。子が root または起動者の credentials で走っても必ず失敗することを明示する。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の子にも、待機へ入る前に
+- [x] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の子にも、待機へ入る前に
       credentials と ready 通知を出力させる。cancel は `OutputWriter` が ready を観測した後に行い、
       timeout は ready が deadline より前に観測されたことを必須 assertion にする。子は
       deadline より十分長く自然終了しないコマンドへ `exec` する。
       `Execute` の終了、`*exec.ExitError`、context エラー、kill／reap エラーの不在に加え、
       ready 前に終了していないことと報告 credentials が対象ユーザーと一致することを主張する。
-- [ ] 既存の `TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot` を setuid の必須実行集合へ含める。
+- [x] 既存の `TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot` を setuid の必須実行集合へ含める。
       §4.3 のフィルターと PASS 件数検査も更新し、補助グループ検査だけが通常の `sudo` モデルに
       取り残されないようにする。
-- [ ] `TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials` を追加する。`nil` plan ではなく
+- [x] `TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials` を追加する。`nil` plan ではなく
       `openVerifiedPlan` で実ファイルを開いた `CommandPlan` を `Execute` に渡し、実
       `UnixPrivilegeManager` と OS credentials のまま fd-bound 実行を通す。子 credentials、
       成功、開始後の FD 解放、親 EUID の復帰を観測する。
-- [ ] `TestPrivilegeGap_StagingCleanupUsesRealPrivileges` を追加する。`openVerifiedPlan` と
+- [x] `TestPrivilegeGap_StagingCleanupUsesRealPrivileges` を追加する。`openVerifiedPlan` と
       `WithFdExecDisabled` で staging を強制し、開始区間の終了直後に `OutputWriter` から通知を受けて、
       recorder に記録された staged path が実在し root 所有・期待 mode／group であることを
       テスト goroutine 側で確認する。コールバック内では `testing.T` を呼ばず、観測値を channel で
       渡す。`Execute` 後は同じ path が消えていること、親 EUID が復帰したことを主張する。
-- [ ] staging と cancellation を組み合わせたテストを追加する。staged file の存在と子の ready を
+- [x] staging と cancellation を組み合わせたテストを追加する。staged file の存在と子の ready を
       観測してから cancel し、kill・reap の完了後に cleanup 区間が実行されて file が消えること、
       cleanup／復帰エラーが無いことを確認する。`t.Cleanup` は失敗時の最後の安全網に限定し、
       本体の削除 assertion より前に証拠を消さない。
-- [ ] 実監査出力を、duration キー1個の存在だけでなく window の集合として検証する。正常 fd-bound は
+- [x] 実監査出力を、duration キー1個の存在だけでなく window の集合として検証する。正常 fd-bound は
       `elevation_count == 1` かつ `user_group_execution` のみ、正常 staging は count 2 かつ
       `user_group_execution`／`staging_cleanup` のみとする。cancel／timeout は
       `Privileges elevated` の operation 名を収集し、`kill_after_cancel` が実際に1回開いたこと、
       存在しない window のキーが無いこと、各 duration がマイクロ秒単位で記録されたことを主張する。
       昇格前に失敗した試行を開いた window と数えない負例も追加する。
-- [ ] `requireSetuidModel` の supported 側を決定的にテストできるよう、UID／EUID／環境／user lookup の
+- [x] `requireSetuidModel` の supported 側を決定的にテストできるよう、UID／EUID／環境／user lookup の
       読み取りを小さな注入口へ分離する。`TestRequireSetuidModel_SupportedDoesNotSkip` を追加し、
       supported では `Skipf` 0回、各 unsupported 条件では正確に1回かつ欠けた prerequisite を含む
       message になることを検査する。ラッパー末尾の無条件 `Skipf` という変異で必ず失敗させる。
-- [ ] `scripts/verification/run_executor_setuid_integration.sh` と、それを呼ぶ
+- [x] `scripts/verification/run_executor_setuid_integration.sh` と、それを呼ぶ
       `executor-setuid-integration-test` Make ターゲットを追加する。`env -i` の下で固定 `PATH`、
       `LANG=C`、`TEST_RUNAS_TARGET_USER` だけを明示してテストバイナリを起動する。実行前に owner UID 0、
       mode 4755、起動者が非 root であることを検査し、終了コード、`--- SKIP` 0件、必須テスト名の
       PASS 集合を検査する。通常の非特権 compile／skip ターゲットとは名前と責務を分ける。
-- [ ] `test-ci`、`test-ci-cgo1`、pre-commit は非特権環境で「compile 成功・理由付き skip」を確認する
+- [x] `test-ci`、`test-ci-cgo1`、pre-commit は非特権環境で「compile 成功・理由付き skip」を確認する
       経路として残す一方、ログに PASS と SKIP の件数を表示する。setuid 専用ターゲットが実行される
       self-hosted／手動の必須ゲートを PR チェックリストへ追加する。自動環境がすべて skip の場合は、
       それを privileged behavior の成功証拠として扱わない。
-- [ ] 次の負の変異を §4.2 の手順で個別に確認する: `Start` 直前に `SysProcAttr.Credential = nil`、
+- [x] 次の負の変異を §4.2 の手順で個別に確認する: `Start` 直前に `SysProcAttr.Credential = nil`、
       verified plan を `nil` にする、cleanup の `WithPrivileges` を外す、`elevation_count` または
       operation 名を偽造する、supported 条件でも `Skipf` する、target 環境変数の転送を止める、
       setuid bit を外す。各変異について落ちるテストまたはハーネス検査をコミットメッセージに記す。
@@ -1192,9 +1192,9 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 - [x] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
 - [x] 初回の §4.3 実行手順を特権のある環境で走らせ、初回4テストに `--- SKIP` が無いことを確認して結果を §4.3 へ追記した
 - [x] 初回4テストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] 5-d の実装後に compile、非特権 compile／skip ターゲット、pre-commit を再実行した
-- [ ] `executor-setuid-integration-test` を実行し、入口 credentials、必須 PASS 集合、SKIP 0件を確認して §4.3 へ追記した
-- [ ] 5-d の全負の変異を確認し、変異ごとに失敗したテストまたはハーネス検査をコミットメッセージに記した
+- [x] 5-d の実装後に compile、非特権 compile／skip ターゲット、pre-commit を再実行した
+- [x] `executor-setuid-integration-test` を実行し、入口 credentials、必須 PASS 集合、SKIP 0件を確認して §4.3 へ追記した
+- [x] 5-d の全負の変異を確認し、変異ごとに失敗したテストまたはハーネス検査をコミットメッセージに記した
 - [x] PR を作成した（[#1103](https://github.com/isseis/go-safe-cmd-runner/pull/1103)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
@@ -1516,14 +1516,14 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       `TestRequireSetuidModel_ReadsDocumentedEnvVar` が落ちる。
 - [x] AC-22: `.pre-commit-config.yaml` から `name` を外すと pre-commit の設定検証が失敗する
       ことを確かめる（`pre-commit validate-config`）。
-- [ ] PR-7 credentials: `Start` 直前に `SysProcAttr.Credential = nil` とする変異で
+- [x] PR-7 credentials: `Start` 直前に `SysProcAttr.Credential = nil` とする変異で
       `TestPrivilegeGap_ChildCredentialsMatchTarget`、fd-bound、cancel／timeout の各テストが
       子の UID／GID／補助グループ不一致により失敗する。
-- [ ] PR-7 実経路: verified plan を `nil` にする変異で fd-bound テストが、
+- [x] PR-7 実経路: verified plan を `nil` にする変異で fd-bound テストが、
       cleanup の `WithPrivileges` を外す変異で staging cleanup テストが失敗する。
-- [ ] PR-7 audit: `elevation_count` を固定値にする、実行していない operation を追加する、または
+- [x] PR-7 audit: `elevation_count` を固定値にする、実行していない operation を追加する、または
       `kill_after_cancel` の記録を消す各変異で、実 setuid テストの window 集合検査が失敗する。
-- [ ] PR-7 skip／環境: supported 条件でも `Skipf` する変異は supported-side unit test が失敗し、
+- [x] PR-7 skip／環境: supported 条件でも `Skipf` する変異は supported-side unit test が失敗し、
       `TEST_RUNAS_TARGET_USER` の転送または setuid bit を外す変異は setuid 専用ハーネスが
       SKIP 0件／入口 credentials の検査で失敗する。
 
@@ -1602,7 +1602,7 @@ echo "OK: all required privileged criteria verified under env -i"
 
 - [x] 初回手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
       なることを確認した。これは下の「Phase 5 初回実測記録」に対応し、5-d の修正完了証拠にはしない。
-- [ ] 5-d 後の上記手順を `env -i` で実際に走らせ、子 credentials、fd-bound、staging、
+- [x] 5-d 後の上記手順を `env -i` で実際に走らせ、子 credentials、fd-bound、staging、
       cleanup、kill、監査 window、補助グループを含む必須集合が全て PASS、SKIP 0件になることを
       確認する。OS、カーネル、Go、起動者／target UID、binary owner／mode、mount options と
       PASS／SKIP 件数を本節へ新しい実測記録として追記する。
@@ -1633,6 +1633,18 @@ echo "OK: all required privileged criteria verified under env -i"
 - `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の setuid バイナリでも4本すべて PASS、SKIP なし。
   起動区間は race 版 397µs・615µs（差218µs）、CGO無効版408µs・438µs（差30µs）。
 - 実行・変異検証の setuid バイナリは trap/finally で削除した。
+
+#### Phase 5-d 実測記録（2026-09-07）
+
+- Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
+- 起動者 `issei`（UID 1000）、target `nobody`（UID/GID/補助グループ 65534）。
+- `/var/tmp` は `/` の overlay mount（`rw,relatime`、`nosuid` なし）。
+  ハーネスが使い捨てバイナリの owner UID 0・mode 4755 を実行前に検査し、終了時に削除した。
+- `env -i` の専用ハーネスで資格情報、fd-bound、staging、cleanup、cancel/timeout、
+  監査 window、昇格拒否の負例、補助グループを含む必須10テストが PASS、SKIP 0件。
+  1秒・5秒コマンドの起動区間は 268µs・430µs、差 162µs。
+- 非特権 `make executor-privileged-integration-test` は PASS 116・SKIP 10を表示して成功し、
+  `pre-commit run executor-privileged-integration-test --all-files` も成功した。
 
 ### 4.4 性能の確認（非機能要件）
 

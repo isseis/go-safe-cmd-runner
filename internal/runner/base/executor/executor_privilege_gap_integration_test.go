@@ -4,13 +4,20 @@
 package executor_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -20,46 +27,366 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// newSetuidExecutor drops to the invoker before execution and restores entry euid
-// at cleanup, including test failure; these process-wide changes must stay serial.
-func newSetuidExecutor(t *testing.T) (executor.CommandExecutor, *tu.LogRecorder) {
+const (
+	setuidReadyLine = "READY"
+	stagedFileMode  = 0o550
+	stagedDirMode   = 0o710
+)
+
+type setuidFixture struct {
+	executor     executor.CommandExecutor
+	observer     privilege.Manager
+	logger       *slog.Logger
+	recorder     *tu.LogRecorder
+	target       *user.User
+	targetUID    int
+	targetGID    int
+	targetGroups []int
+	invokerUID   int
+}
+
+func newSetuidFixture(t *testing.T, opts ...executor.Option) *setuidFixture {
 	t.Helper()
-	ok, reason := canRunSetuidModelIntegrationTest(os.Getuid(), os.Geteuid(), os.Getenv("TEST_RUNAS_TARGET_USER"))
-	require.True(t, ok, reason)
-	target, err := user.Lookup(os.Getenv("TEST_RUNAS_TARGET_USER"))
-	require.NoError(t, err)
-	require.NotEqual(t, strconv.Itoa(os.Getuid()), target.Uid, "target must differ from invoker to exercise kill re-elevation")
-	require.NotEqual(t, "0", target.Uid, "use a non-root fixture")
+
+	invokerUID := os.Getuid()
+	entryEUID := os.Geteuid()
+	targetName := os.Getenv("TEST_RUNAS_TARGET_USER")
+	if invokerUID == 0 || entryEUID != 0 {
+		t.Skipf("setuid entry requires ruid != 0 and euid == 0; got ruid=%d euid=%d", invokerUID, entryEUID)
+	}
+
+	target, err := user.Lookup(targetName)
+	if err != nil {
+		t.Skipf("target lookup failed for %q: %v", targetName, err)
+	}
+	targetUID, err := strconv.Atoi(target.Uid)
+	if err != nil {
+		t.Skipf("target %q has non-numeric uid %q: %v", targetName, target.Uid, err)
+	}
+	targetGID, err := strconv.Atoi(target.Gid)
+	if err != nil {
+		t.Skipf("target %q has non-numeric primary gid %q: %v", targetName, target.Gid, err)
+	}
+	if targetUID == 0 || targetUID == invokerUID {
+		t.Skipf("target uid must differ from root and the invoker; target_uid=%d invoker_uid=%d", targetUID, invokerUID)
+	}
+	groupIDs, err := target.GroupIds()
+	if err != nil {
+		t.Skipf("target group lookup failed for %q (uid=%d gid=%d): %v", targetName, targetUID, targetGID, err)
+	}
+	targetGroups := parseNumericIDs(t, groupIDs)
+
 	logger, recorder := tu.NewRecordingLogger()
 	manager := privilege.NewManager(logger)
-	require.True(t, manager.IsPrivilegedExecutionSupported())
-	entryEUID := os.Geteuid()
-	t.Cleanup(func() { require.NoError(t, syscall.Seteuid(entryEUID)) })
-	require.NoError(t, syscall.Seteuid(os.Getuid()))
-	return executor.NewDefaultExecutor(
+	observer := privilege.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if !manager.IsPrivilegedExecutionSupported() {
+		t.Skipf("privilege manager rejected setuid entry ruid=%d euid=%d target_uid=%d target_gid=%d", invokerUID, entryEUID, targetUID, targetGID)
+	}
+
+	// Every test starts execution de-escalated and restores its entry euid even
+	// after a failed assertion; process-wide credential changes stay serial.
+	t.Cleanup(func() {
+		require.NoError(t, syscall.Seteuid(entryEUID))
+	})
+	if err := syscall.Seteuid(invokerUID); err != nil {
+		t.Skipf("failed to de-escalate setuid test from euid=%d to ruid=%d: %v", entryEUID, invokerUID, err)
+	}
+	if got := os.Geteuid(); got != invokerUID {
+		t.Skipf("setuid test did not remain de-escalated: ruid=%d euid=%d", invokerUID, got)
+	}
+
+	baseOpts := []executor.Option{
 		executor.WithPrivilegeManager(manager),
 		executor.WithLogger(logger),
 		executor.WithAuditLogger(audit.NewAuditLoggerWithCustom(logger)),
-	), recorder
+	}
+	baseOpts = append(baseOpts, opts...)
+
+	return &setuidFixture{
+		executor:     executor.NewDefaultExecutor(baseOpts...),
+		observer:     observer,
+		logger:       logger,
+		recorder:     recorder,
+		target:       target,
+		targetUID:    targetUID,
+		targetGID:    targetGID,
+		targetGroups: targetGroups,
+		invokerUID:   invokerUID,
+	}
+}
+
+func parseNumericIDs(t *testing.T, values []string) []int {
+	t.Helper()
+	ids := make([]int, 0, len(values))
+	for _, value := range values {
+		id, err := strconv.Atoi(value)
+		require.NoErrorf(t, err, "non-numeric identity %q", value)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+type childCredentials struct {
+	ruid   int
+	euid   int
+	egid   int
+	groups []int
+	pid    int
+	ready  bool
+}
+
+func parseChildCredentials(t *testing.T, outputText string) childCredentials {
+	t.Helper()
+	values := make(map[string]string)
+	ready := false
+	for line := range strings.SplitSeq(strings.TrimSpace(outputText), "\n") {
+		if line == setuidReadyLine {
+			ready = true
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+
+	parseOne := func(key string) int {
+		t.Helper()
+		value, ok := values[key]
+		require.Truef(t, ok, "child output has no %s field: %q", key, outputText)
+		n, err := strconv.Atoi(value)
+		require.NoErrorf(t, err, "child %s is not numeric: %q", key, value)
+		return n
+	}
+	groupText, ok := values["GROUPS"]
+	require.Truef(t, ok, "child output has no GROUPS field: %q", outputText)
+	groups := parseNumericIDs(t, strings.Fields(groupText))
+
+	return childCredentials{
+		ruid:   parseOne("RUID"),
+		euid:   parseOne("EUID"),
+		egid:   parseOne("EGID"),
+		groups: groups,
+		pid:    parseOne("PID"),
+		ready:  ready,
+	}
+}
+
+func assertChildCredentials(t *testing.T, fixture *setuidFixture, got childCredentials) {
+	t.Helper()
+	require.True(t, got.ready, "child must report readiness after its credentials")
+	assert.Equal(t, fixture.targetUID, got.ruid)
+	assert.Equal(t, fixture.targetUID, got.euid)
+	assert.Equal(t, fixture.targetGID, got.egid)
+	assert.ElementsMatch(t, fixture.targetGroups, got.groups)
+	assert.NotEqual(t, 0, got.ruid, "run-as child must not retain root credentials")
+	assert.NotEqual(t, fixture.invokerUID, got.ruid, "run-as child must not retain invoker credentials")
+}
+
+func credentialShellCommand(t *testing.T, fixture *setuidFixture, tail string, preReady ...string) (string, []string) {
+	t.Helper()
+	idPath := executortestutil.ResolveCommand("id")
+	lines := []string{
+		fmt.Sprintf(`printf 'RUID=%%s\n' "$(%q -ru)"`, idPath),
+		fmt.Sprintf(`printf 'EUID=%%s\n' "$(%q -u)"`, idPath),
+		fmt.Sprintf(`printf 'EGID=%%s\n' "$(%q -g)"`, idPath),
+		fmt.Sprintf(`printf 'GROUPS=%%s\n' "$(%q -G)"`, idPath),
+		`printf 'PID=%s\n' "$$"`,
+	}
+	if len(preReady) > 0 && preReady[0] != "" {
+		lines = append(lines, preReady[0])
+	}
+	lines = append(lines, "echo READY")
+	if tail != "" {
+		lines = append(lines, tail)
+	}
+	return executortestutil.ResolveCommand("sh"), []string{"-c", strings.Join(lines, "; ")}
+}
+
+func runtimeCommand(path string, args []string, fixture *setuidFixture) *runnertypes.RuntimeCommand {
+	return executortestutil.CreateRuntimeCommand(
+		path,
+		args,
+		executortestutil.WithWorkDir(""),
+		executortestutil.WithRunAsUser(fixture.target.Username),
+	)
+}
+
+type readyOutputWriter struct {
+	mu     sync.Mutex
+	stdout bytes.Buffer
+	ready  chan struct{}
+	once   sync.Once
+}
+
+func newReadyOutputWriter() *readyOutputWriter {
+	return &readyOutputWriter{ready: make(chan struct{})}
+}
+
+func (w *readyOutputWriter) Write(stream executor.OutputStream, data []byte) error {
+	if stream != executor.StdoutStream {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, _ = w.stdout.Write(data)
+	if bytes.Contains(w.stdout.Bytes(), []byte(setuidReadyLine+"\n")) {
+		w.once.Do(func() { close(w.ready) })
+	}
+	return nil
+}
+
+func (*readyOutputWriter) Close() error { return nil }
+
+func (w *readyOutputWriter) output() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.stdout.String()
+}
+
+func waitForReady(t *testing.T, writer *readyOutputWriter, timeout time.Duration) {
+	t.Helper()
+	select {
+	case <-writer.ready:
+	case <-time.After(timeout):
+		t.Fatalf("child did not report readiness within %s; output=%q", timeout, writer.output())
+	}
+}
+
+type asyncOutcome struct {
+	result *executor.Result
+	err    error
+}
+
+func executeAsync(
+	ctx context.Context,
+	e executor.CommandExecutor,
+	plan *risktypes.VerifiedCommandPlan,
+	cmd *runnertypes.RuntimeCommand,
+	writer executor.OutputWriter,
+) <-chan asyncOutcome {
+	done := make(chan asyncOutcome, 1)
+	go func() {
+		result, err := e.Execute(ctx, plan, cmd, nil, writer)
+		done <- asyncOutcome{result: result, err: err}
+	}()
+	return done
+}
+
+func waitForOutcome(t *testing.T, done <-chan asyncOutcome, timeout time.Duration) asyncOutcome {
+	t.Helper()
+	select {
+	case outcome := <-done:
+		return outcome
+	case <-time.After(timeout):
+		t.Fatalf("command execution did not return within %s", timeout)
+		return asyncOutcome{}
+	}
+}
+
+func assertAuditWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
+	t.Helper()
+	record := recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	require.EqualValues(t, len(want), record.Attrs["elevation_count"])
+	got := make([]string, 0, len(want))
+	for key, value := range record.Attrs {
+		if !strings.HasPrefix(key, "privilege_duration_") || !strings.HasSuffix(key, "_us") {
+			continue
+		}
+		op := strings.TrimSuffix(strings.TrimPrefix(key, "privilege_duration_"), "_us")
+		duration, ok := value.(int64)
+		require.Truef(t, ok, "audit duration %s has type %T", key, value)
+		assert.GreaterOrEqual(t, duration, int64(0), "audit duration %s", key)
+		got = append(got, op)
+	}
+	wantStrings := make([]string, 0, len(want))
+	for _, op := range want {
+		wantStrings = append(wantStrings, string(op))
+	}
+	assert.ElementsMatch(t, wantStrings, got)
+}
+
+func assertElevationOperations(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) {
+	t.Helper()
+	records := recorder.FindRecords(slog.LevelInfo, "Privileges elevated")
+	got := make([]string, 0, len(records))
+	for _, record := range records {
+		op, ok := record.Attrs["operation"]
+		require.True(t, ok, "privilege elevation record must name its operation")
+		got = append(got, fmt.Sprint(op))
+	}
+	wantStrings := make([]string, 0, len(want))
+	for _, op := range want {
+		wantStrings = append(wantStrings, string(op))
+	}
+	assert.ElementsMatch(t, wantStrings, got)
+}
+
+type privilegedStatResult struct {
+	infos []os.FileInfo
+	err   error
+}
+
+func statWithPrivileges(t *testing.T, fixture *setuidFixture, paths ...string) []os.FileInfo {
+	t.Helper()
+	observed := make(chan privilegedStatResult, 1)
+	elevationCtx := runnertypes.ElevationContext{
+		Operation: runnertypes.OperationStagingCleanup,
+		FilePath:  strings.Join(paths, ","),
+	}
+	err := fixture.observer.WithPrivileges(elevationCtx, func() error {
+		infos := make([]os.FileInfo, 0, len(paths))
+		for _, path := range paths {
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				observed <- privilegedStatResult{err: statErr}
+				return statErr
+			}
+			infos = append(infos, info)
+		}
+		observed <- privilegedStatResult{infos: infos}
+		return nil
+	})
+	require.NoError(t, err)
+	result := <-observed
+	require.NoError(t, result.err)
+	return result.infos
+}
+
+func stagedPathFromRecorder(t *testing.T, recorder *tu.LogRecorder) string {
+	t.Helper()
+	record := recorder.RequireRecord(t, slog.LevelDebug, "Staged verified command copy")
+	path, ok := record.Attrs["staged_path"].(string)
+	require.Truef(t, ok, "staged_path has type %T", record.Attrs["staged_path"])
+	return path
+}
+
+func uniqueMarkerPath(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("scr-setuid-marker-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	require.NoFileExists(t, path)
+	t.Cleanup(func() { _ = os.Remove(path) })
+	return path
 }
 
 func TestPrivilegeGap_StartWindowIndependentOfCommandDuration(t *testing.T) {
 	requireSetuidModel(t)
-	e, recorder := newSetuidExecutor(t)
+	fixture := newSetuidFixture(t)
 	var durations []int64
 	for _, seconds := range []string{"1", "5"} {
-		cmd := executortestutil.CreateRuntimeCommand(executortestutil.ResolveCommand("sleep"), []string{seconds},
-			executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser(os.Getenv("TEST_RUNAS_TARGET_USER")))
-		result, err := e.Execute(context.Background(), nil, cmd, nil, nil)
+		cmd := runtimeCommand(executortestutil.ResolveCommand("sleep"), []string{seconds}, fixture)
+		result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, 0, result.ExitCode)
 	}
-	records := recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully")
+	records := fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully")
 	require.Len(t, records, 2)
 	for _, record := range records {
 		duration, ok := record.Attrs["privilege_duration_user_group_execution_us"].(int64)
@@ -76,64 +403,247 @@ func TestPrivilegeGap_StartWindowIndependentOfCommandDuration(t *testing.T) {
 	t.Logf("start windows: %v us; difference: %d us", durations, difference)
 }
 
+func TestPrivilegeGap_ChildCredentialsMatchTarget(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
+	path, args := credentialShellCommand(t, fixture, "")
+	cmd := runtimeCommand(path, args, fixture)
+
+	before := os.Geteuid()
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, before, os.Geteuid())
+	require.Equal(t, 0, result.ExitCode)
+	assertChildCredentials(t, fixture, parseChildCredentials(t, result.Stdout))
+	assertAuditWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+}
+
 func TestPrivilegeGap_TimeoutKillsChild(t *testing.T) {
 	requireSetuidModel(t)
-	e, _ := newSetuidExecutor(t)
-	cmd := executortestutil.CreateRuntimeCommand(executortestutil.ResolveCommand("sleep"), []string{"10"},
-		executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser(os.Getenv("TEST_RUNAS_TARGET_USER")))
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	fixture := newSetuidFixture(t)
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	path, args := credentialShellCommand(t, fixture, fmt.Sprintf("exec %q 30", sleepPath))
+	cmd := runtimeCommand(path, args, fixture)
+	writer := newReadyOutputWriter()
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
+
 	before := os.Geteuid()
 	start := time.Now()
-	result, err := e.Execute(ctx, nil, cmd, nil, nil)
+	done := executeAsync(ctx, fixture.executor, nil, cmd, writer)
+	waitForReady(t, writer, time.Second)
+	outcome := waitForOutcome(t, done, 3*time.Second)
+
 	assert.Equal(t, before, os.Geteuid())
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.NotNil(t, result)
-	_, exited := errors.AsType[*exec.ExitError](err)
+	require.ErrorIs(t, outcome.err, context.DeadlineExceeded)
+	require.NotNil(t, outcome.result)
+	_, exited := errors.AsType[*exec.ExitError](outcome.err)
 	require.True(t, exited, "child must have started and exited")
-	assert.NotErrorIs(t, err, executor.ErrChildNotReaped)
-	assert.NotErrorIs(t, err, executor.ErrKillAfterCancel)
-	assert.Less(t, time.Since(start), 2*time.Second)
+	assert.NotErrorIs(t, outcome.err, executor.ErrChildNotReaped)
+	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
+	assert.Less(t, time.Since(start), 3*time.Second)
+	assertChildCredentials(t, fixture, parseChildCredentials(t, outcome.result.Stdout))
+	assertElevationOperations(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+	)
 }
 
 func TestPrivilegeGap_CancelKillsChild(t *testing.T) {
 	requireSetuidModel(t)
-	e, _ := newSetuidExecutor(t)
-	cmd := executortestutil.CreateRuntimeCommand(executortestutil.ResolveCommand("sleep"), []string{"10"},
-		executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser(os.Getenv("TEST_RUNAS_TARGET_USER")))
+	fixture := newSetuidFixture(t)
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	path, args := credentialShellCommand(t, fixture, fmt.Sprintf("exec %q 30", sleepPath))
+	cmd := runtimeCommand(path, args, fixture)
+	writer := newReadyOutputWriter()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	timer := time.AfterFunc(200*time.Millisecond, cancel)
-	defer timer.Stop()
+
 	before := os.Geteuid()
 	start := time.Now()
-	result, err := e.Execute(ctx, nil, cmd, nil, nil)
+	done := executeAsync(ctx, fixture.executor, nil, cmd, writer)
+	waitForReady(t, writer, time.Second)
+	cancel()
+	outcome := waitForOutcome(t, done, 2*time.Second)
+
 	assert.Equal(t, before, os.Geteuid())
-	require.ErrorIs(t, err, context.Canceled)
-	require.NotNil(t, result)
-	_, exited := errors.AsType[*exec.ExitError](err)
+	require.ErrorIs(t, outcome.err, context.Canceled)
+	require.NotNil(t, outcome.result)
+	_, exited := errors.AsType[*exec.ExitError](outcome.err)
 	require.True(t, exited, "child must have started and exited")
-	assert.NotErrorIs(t, err, executor.ErrChildNotReaped)
-	assert.NotErrorIs(t, err, executor.ErrKillAfterCancel)
+	assert.NotErrorIs(t, outcome.err, executor.ErrChildNotReaped)
+	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
 	assert.Less(t, time.Since(start), 2*time.Second)
+	assertChildCredentials(t, fixture, parseChildCredentials(t, outcome.result.Stdout))
+	assertElevationOperations(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+	)
 }
 
 func TestPrivilegeGap_OutputLimitAbortsRunningChild(t *testing.T) {
 	requireSetuidModel(t)
-	e, _ := newSetuidExecutor(t)
+	fixture := newSetuidFixture(t)
 	file, err := os.CreateTemp(t.TempDir(), "capture-")
 	require.NoError(t, err)
 	capture := &output.Capture{FileHandle: file, MaxSize: 1024}
 	t.Cleanup(func() { require.NoError(t, capture.Close()) })
 	// A direct yes child writes indefinitely; closing its pipe must stop it.
-	cmd := executortestutil.CreateRuntimeCommand(executortestutil.ResolveCommand("yes"), []string{"x"},
-		executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser(os.Getenv("TEST_RUNAS_TARGET_USER")))
+	cmd := runtimeCommand(executortestutil.ResolveCommand("yes"), []string{"x"}, fixture)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	start := time.Now()
-	result, err := e.Execute(ctx, nil, cmd, nil, capture)
+	result, err := fixture.executor.Execute(ctx, nil, cmd, nil, capture)
 	require.ErrorIs(t, err, output.ErrOutputSizeExceeded)
 	require.NotNil(t, result)
 	assert.NotErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials(t *testing.T) {
+	requireSetuidModel(t)
+	if runtime.GOOS != "linux" {
+		t.Skip("verified fd execution inspection requires /proc")
+	}
+	fixture := newSetuidFixture(t)
+	marker := uniqueMarkerPath(t)
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	statPath := executortestutil.ResolveCommand("stat")
+	fdIdentity := fmt.Sprintf(`%q -Lc 'FD_ID=%%d:%%i' /proc/self/fd/3`, statPath)
+	tail := fmt.Sprintf("while [ ! -e %q ]; do %q 0.05; done", marker, sleepPath)
+	path, args := credentialShellCommand(t, fixture, tail, fdIdentity)
+	cmd := runtimeCommand(path, args, fixture)
+	plan := openVerifiedPlan(t, path, args)
+	writer := newReadyOutputWriter()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	before := os.Geteuid()
+	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	waitForReady(t, writer, time.Second)
+	credentials := parseChildCredentials(t, writer.output())
+	assertChildCredentials(t, fixture, credentials)
+
+	verifiedInfo, err := os.Stat(path)
+	require.NoError(t, err)
+	verifiedStat, ok := verifiedInfo.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+	require.Contains(t, writer.output(), fmt.Sprintf("FD_ID=%d:%d\n", verifiedStat.Dev, verifiedStat.Ino))
+
+	require.NoError(t, os.WriteFile(marker, []byte("done"), 0o600))
+	outcome := waitForOutcome(t, done, 2*time.Second)
+	require.NoError(t, outcome.err)
+	require.Equal(t, 0, outcome.result.ExitCode)
+	assert.Equal(t, before, os.Geteuid())
+	assertAuditWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	require.NoError(t, plan.Close())
+}
+
+func TestPrivilegeGap_StagingCleanupUsesRealPrivileges(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t, executor.WithFdExecDisabled())
+	marker := uniqueMarkerPath(t)
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	tail := fmt.Sprintf("while [ ! -e %q ]; do %q 0.05; done", marker, sleepPath)
+	path, args := credentialShellCommand(t, fixture, tail)
+	cmd := runtimeCommand(path, args, fixture)
+	plan := openVerifiedPlan(t, path, args)
+	t.Cleanup(func() { _ = plan.Close() })
+	writer := newReadyOutputWriter()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	before := os.Geteuid()
+	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	waitForReady(t, writer, time.Second)
+	assertChildCredentials(t, fixture, parseChildCredentials(t, writer.output()))
+
+	stagedPath := stagedPathFromRecorder(t, fixture.recorder)
+	infos := statWithPrivileges(t, fixture, stagedPath, filepath.Dir(stagedPath))
+	fileInfo, dirInfo := infos[0], infos[1]
+	assert.Equal(t, os.FileMode(stagedFileMode), fileInfo.Mode().Perm())
+	assert.Equal(t, os.FileMode(stagedDirMode), dirInfo.Mode().Perm())
+	fileStat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+	dirStat, ok := dirInfo.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+	assert.EqualValues(t, 0, fileStat.Uid)
+	assert.EqualValues(t, fixture.targetGID, fileStat.Gid)
+	assert.EqualValues(t, 0, dirStat.Uid)
+	assert.EqualValues(t, fixture.targetGID, dirStat.Gid)
+
+	require.NoError(t, os.WriteFile(marker, []byte("done"), 0o600))
+	outcome := waitForOutcome(t, done, 2*time.Second)
+	require.NoError(t, outcome.err)
+	require.Equal(t, 0, outcome.result.ExitCode)
+	assert.NoDirExists(t, filepath.Dir(stagedPath))
+	assert.Equal(t, before, os.Geteuid())
+	assertAuditWindows(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationStagingCleanup,
+	)
+}
+
+func TestPrivilegeGap_StagingCancellationCleansUp(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t, executor.WithFdExecDisabled())
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	path, args := credentialShellCommand(t, fixture, fmt.Sprintf("exec %q 30", sleepPath))
+	cmd := runtimeCommand(path, args, fixture)
+	plan := openVerifiedPlan(t, path, args)
+	t.Cleanup(func() { _ = plan.Close() })
+	writer := newReadyOutputWriter()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	before := os.Geteuid()
+	done := executeAsync(ctx, fixture.executor, plan, cmd, writer)
+	waitForReady(t, writer, time.Second)
+	assertChildCredentials(t, fixture, parseChildCredentials(t, writer.output()))
+	stagedPath := stagedPathFromRecorder(t, fixture.recorder)
+	_ = statWithPrivileges(t, fixture, stagedPath)
+
+	cancel()
+	outcome := waitForOutcome(t, done, 2*time.Second)
+	require.ErrorIs(t, outcome.err, context.Canceled)
+	require.NotNil(t, outcome.result)
+	_, exited := errors.AsType[*exec.ExitError](outcome.err)
+	require.True(t, exited, "staged child must be killed and reaped")
+	assert.NotErrorIs(t, outcome.err, executor.ErrChildNotReaped)
+	assert.NotErrorIs(t, outcome.err, executor.ErrKillAfterCancel)
+	assert.NoDirExists(t, filepath.Dir(stagedPath))
+	assert.Equal(t, before, os.Geteuid())
+	assertElevationOperations(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+		runnertypes.OperationStagingCleanup,
+	)
+}
+
+var errElevationRefusedBeforeWindow = errors.New("test elevation refused before window")
+
+type refusingPrivilegeManager struct{}
+
+func (refusingPrivilegeManager) IsPrivilegedExecutionSupported() bool { return true }
+
+func (refusingPrivilegeManager) WithPrivileges(runnertypes.ElevationContext, func() error) error {
+	return errElevationRefusedBeforeWindow
+}
+
+func TestPrivilegeGap_RefusedElevationDoesNotRecordWindow(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
+	e := executor.NewDefaultExecutor(
+		executor.WithPrivilegeManager(refusingPrivilegeManager{}),
+		executor.WithLogger(fixture.logger),
+		executor.WithAuditLogger(audit.NewAuditLoggerWithCustom(fixture.logger)),
+	)
+	path, args := credentialShellCommand(t, fixture, "")
+	cmd := runtimeCommand(path, args, fixture)
+
+	result, err := e.Execute(context.Background(), nil, cmd, nil, nil)
+	require.ErrorIs(t, err, errElevationRefusedBeforeWindow)
+	require.Nil(t, result)
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "Privileges elevated"))
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"))
 }
