@@ -97,7 +97,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 - ✅ **Statistical Safety**: seteuid() failure rate < 0.001%
 
 #### Residual Risks
-- While the privilege window is open, the process-wide effective UID is raised. However, the window has been narrowed to the start window (the brief `fork`/`execve` interval that starts the child process), so it does not scale with command execution time
+- While the privilege window is open, the process-wide effective UID is raised. However, the window has been narrowed to the start window (the brief `fork`/`execve` interval that starts the child process; the staging fallback also includes copying the verified binary), so it does not scale with command execution time
 - The only non-participating goroutine running in the start window is the logging notification (Slack send) worker. During the short windows opened only to stop a process after cancellation or clean up a temporary copy, output-reading goroutines also run. This is an accepted residual risk
 
 **Design Decision**: Immediate termination on privilege restoration failure is a conservative and appropriate decision prioritizing privilege leak prevention
