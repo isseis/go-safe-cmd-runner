@@ -135,8 +135,8 @@ USER $USERNAME
 # Claude Code CLI (native installer). Installs to ~/.local/bin as this user,
 # so it auto-updates in the background and `claude update` needs no root --
 # unlike the apt package this replaces, which required a system-level upgrade.
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh -o install-claude.sh && bash install-claude.sh && rm install-claude.sh
 
 # Codex CLI (native installer). Same per-user install/update model as above:
 # installs to ~/.local/bin and manages its own versions under ~/.codex.
-RUN curl -fsSL https://chatgpt.com/codex/install.sh | bash
+RUN curl -fsSL https://chatgpt.com/codex/install.sh -o install-codex.sh && bash install-codex.sh && rm install-codex.sh
