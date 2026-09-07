@@ -182,6 +182,7 @@ func TestRunUsesDefaultHashDirectoryWhenNotSpecified(t *testing.T) {
 	// Stubbed because the default hash directory exists only on a machine where
 	// the command has been installed, and the subject here is which directory the
 	// validator is built on rather than whether it is usable.
+	d.resolvePathForCheck = func(path string) (string, error) { return path, nil }
 	d.hashDirSearchable = func(string) error { return nil }
 
 	stdout := &bytes.Buffer{}

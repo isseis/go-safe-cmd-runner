@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, "FATAL: privilege managers rejected setuid entry before readiness")
 			os.Exit(2)
 		}
-		readyFile, err := os.OpenFile(readyPath, os.O_WRONLY|os.O_TRUNC, 0)
+		readyFile, err := os.OpenFile(readyPath, os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "FATAL: failed to open setuid entry marker: %v\n", err)
 			os.Exit(2)
