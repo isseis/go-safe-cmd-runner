@@ -143,9 +143,7 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 }
 
 // TestLogger_LogUserGroupExecution_ByOperationAttrs pins the per-operation
-// breakdown's key format and unit: microseconds, not milliseconds, since a
-// start-phase window (tens of microseconds) would round to 0ms and become
-// indistinguishable from a window that never opened.
+// breakdown's key format and its microsecond unit (see PrivilegeMetrics.ByOperation).
 func TestLogger_LogUserGroupExecution_ByOperationAttrs(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	auditLogger := audit.NewAuditLoggerWithCustom(logger)

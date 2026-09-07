@@ -16,11 +16,9 @@ import (
 
 var errWaitFnSentinel = errors.New("wait replaced")
 
-// TestExecute_WaitFnReplacesWait pins the wiring of WithWaitFn: the wait
-// goroutine must call the injected function instead of execCmd.Wait(), which is
-// what makes the reap-timeout path reachable at all. Without the injection
-// point being consulted, a test that blocks in waitFn would silently get the
-// real Wait() and pass for the wrong reason.
+// TestExecute_WaitFnReplacesWait pins the wiring of WithWaitFn: without the
+// injection point being consulted, a test that blocks in waitFn would silently
+// get the real Wait() and pass for the wrong reason.
 func TestExecute_WaitFnReplacesWait(t *testing.T) {
 	called := false
 	e := executor.NewDefaultExecutor(executor.WithWaitFn(func(cmd *exec.Cmd) error {

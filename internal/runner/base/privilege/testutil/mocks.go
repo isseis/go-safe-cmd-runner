@@ -22,10 +22,7 @@ var (
 	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
 )
 
-// MockWindowPhase identifies when InWindow was called relative to fn. The
-// zero value, MockWindowPhaseUnset, marks a call InWindow should never
-// actually observe; it exists so a forgotten case in a switch over this type
-// fails loudly instead of matching a phase silently.
+// MockWindowPhase identifies when InWindow was called relative to fn.
 type MockWindowPhase int
 
 const (
@@ -35,9 +32,8 @@ const (
 	// with the window already open.
 	MockWindowPhaseBeforeFn
 	// MockWindowPhaseAfterFn is passed immediately after fn (or ExecFn)
-	// returns, with the window still open. Needed because anything fn itself
-	// starts -- e.g. a regression that reintroduces an os/exec copy goroutine
-	// -- exists only after fn returns, not before it is called.
+	// returns, with the window still open. Needed because anything fn starts
+	// -- e.g. a reintroduced os/exec copy goroutine -- exists only afterwards.
 	MockWindowPhaseAfterFn
 )
 
@@ -48,20 +44,19 @@ type MockPrivilegeManager struct {
 	ShouldFail     bool
 	ExecFn         func() error // Custom execution function (for testing)
 
-	// FailFor injects a failure for one specific operation, leaving every
-	// other operation to succeed. ShouldFail cannot express "the kill window
-	// fails but the start window succeeds"; FailFor can.
+	// FailFor injects a failure for one specific operation, leaving the others
+	// to succeed; ShouldFail cannot express "the kill window fails but the
+	// start window succeeds".
 	FailFor map[runnertypes.Operation]error
 
-	// InWindow, when set, is called twice while the window is open: once
-	// right before fn runs and once right after it returns (see
-	// MockWindowPhase). It observes the state of the window at that instant
-	// (goroutines, child process liveness, flags) -- not what fn itself calls,
-	// which is a job for static analysis, not this mock.
+	// InWindow, when set, is called twice while the window is open: right
+	// before fn runs and right after it returns (see MockWindowPhase). It
+	// observes window state at that instant -- goroutines, child liveness --
+	// not what fn itself calls.
 	//
-	// A window that fails before fn -- ShouldFail or FailFor -- never calls it
-	// at all, so a test combining either with InWindow must assert that it was
-	// called rather than only on what it observed, which would pass vacuously.
+	// A window that fails before fn (ShouldFail or FailFor) never calls it, so
+	// a test combining either with InWindow must assert it was called;
+	// asserting only on what it observed passes vacuously.
 	InWindow func(phase MockWindowPhase)
 
 	// inWindow mirrors UnixPrivilegeManager's non-reentrant guard: a call to

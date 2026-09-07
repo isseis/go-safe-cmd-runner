@@ -41,7 +41,7 @@
 
 ## 1. 設計の全体像
 
-### 1.1 このタスクが解く問題
+### 1.1 このタスクが解決する問題
 
 `run_as_user`／`run_as_group` を伴う実行では、特権の隙がコマンドの実行時間そのものと等しい。
 [`executor.go:210`](../../../internal/runner/base/executor/executor.go#L210) が `WithPrivileges` の
@@ -1442,7 +1442,7 @@ setuid モデルの実挙動はユニットテストでは再現できないた�
 
 **スキップ判定。** 現在の `canRunPrivilegedIntegrationTest` は実効 UID が 0 であることしか
 見ない。`sudo go test` では実 UID も 0 になり、`escalatePrivileges` は短絡して `seteuid` を行わず、
-親は子を無条件に kill できる。すなわち本タスクが解く EPERM は起きず、AC-07／AC-09／AC-10 は
+親は子を無条件に kill できる。すなわち本タスクが解決する EPERM は起きず、AC-07／AC-09／AC-10 は
 何も検証しないまま緑になる。したがって本タスクの統合テストには **実 UID が 0 でないこと** も要る。
 
 ただしこの条件を `canRunPrivilegedIntegrationTest` そのものへ足してはならない。同関数は既存の
