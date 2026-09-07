@@ -279,7 +279,17 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	e.logDeferredWarnings(pc)
 
 	if err != nil {
-		e.Logger.Error("User/group privilege execution failed", "error", err, "command", cmd.ExpandedCmd, "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
+		failureAttrs := []any{
+			"error", err,
+			"command", cmd.ExpandedCmd,
+			"user", cmd.RunAsUser(),
+			"group", cmd.RunAsGroup(),
+			"elevation_count", metrics.ElevationCount,
+		}
+		for op, duration := range metrics.ByOperation {
+			failureAttrs = append(failureAttrs, "privilege_duration_"+string(op)+"_us", duration.Microseconds())
+		}
+		e.Logger.Error("User/group privilege execution failed", failureAttrs...)
 		return result, fmt.Errorf("user/group privilege execution failed: %w", err)
 	}
 
@@ -460,7 +470,7 @@ func (e *DefaultExecutor) stageFromFD(identity *risktypes.VerifiedIdentity, cred
 			// staging directory path and the error -- never secret
 			// values. The WriteString form is deliberate: the static
 			// window guard added in a later phase allows
-			// (*os.File).WriteString by name (02_architecture.md §7.2),
+			// (*os.File).WriteString by name (02_architecture.md section 7.2),
 			// and a fmt.Fprintf call would force that allowlist to admit
 			// writes to arbitrary writers instead.
 			//

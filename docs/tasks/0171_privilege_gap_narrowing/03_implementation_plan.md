@@ -1003,24 +1003,26 @@
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した（[#1102](https://github.com/isseis/go-safe-cmd-runner/pull/1102)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 統合テストと実行経路の整備（F-007）
 
 **変更するファイル**: `internal/runner/base/executor/privileged_test_condition_test.go`、
 `internal/runner/base/executor/executor_privilege_gap_integration_test.go`（新規）、
+`internal/runner/base/executor/executor_usergroup_integration_test.go`、
+`scripts/verification/run_executor_setuid_integration.sh`（5-d で追加）、
 `Makefile`、`.pre-commit-config.yaml`
 
 #### 5-a. スキップ判定
 
-- [ ] `privileged_test_condition_test.go` へ純関数
+- [x] `privileged_test_condition_test.go` へ純関数
       `canRunSetuidModelIntegrationTest(uid, euid int, targetUser string) (ok bool, reason string)`
       を追加する。`canRunPrivilegedIntegrationTest` は変更しない（既存の補助グループ統合テストが
       `sudo`（実 UID = 0）前提で使っているため。設計文書 §7.3）。
       新しい述語は `canRunPrivilegedIntegrationTest(euid, targetUser)` の判定に加えて
       `uid != 0` を要求する。
-- [ ] 同ファイルへ薄いラッパー `requireSetuidModel(t skipper)` を追加する。`skipper` は
+- [x] 同ファイルへ薄いラッパー `requireSetuidModel(t skipper)` を追加する。`skipper` は
       同ファイルに置く narrow interface
       `type skipper interface { Helper(); Skipf(format string, args ...any) }` であり、
       `*testing.T` はそのまま満たす。**引数を `*testing.T` にすると、下の
@@ -1029,11 +1031,11 @@
       純関数へ渡し、偽なら理由つきで `t.Skip` するだけ。
       **判定を4つのテストへ書き写さない。** 書き写すと、後でヘルパーへ括り出したときに
       AC-21 の件数チェックが赤くなり、環境変数名を1箇所間違えても全テストがサイレントにスキップする。
-- [ ] `TestCanRunSetuidModelIntegrationTest` を同ファイルへ足す。既存の
+- [x] `TestCanRunSetuidModelIntegrationTest` を同ファイルへ足す。既存の
       `TestCanRunPrivilegedIntegrationTest` と同じ表形式で、
       `real_uid_is_root`／`not_root_euid`／`no_target_user_configured`／
       `target_user_does_not_exist`／`conditions_satisfied` を網羅する。
-- [ ] `TestRequireSetuidModel_ReadsDocumentedEnvVar` を足す。`t.Setenv` で
+- [x] `TestRequireSetuidModel_ReadsDocumentedEnvVar` を足す。`t.Setenv` で
       `TEST_RUNAS_TARGET_USER` に存在しないユーザー名を設定し、`requireSetuidModel` が
       その名前を含む理由でスキップすることを（`skipper` を満たす小さなスタブを渡し、
       `Skipf` に渡された書式と引数を記録して）確かめる。環境変数名の取り違えは、
@@ -1041,55 +1043,59 @@
 
 #### 5-b. 統合テスト
 
-- [ ] `executor_privilege_gap_integration_test.go` を新規に作る
+- [x] `executor_privilege_gap_integration_test.go` を新規に作る
       （`//go:build integration`、`package executor_test`）。冒頭コメントに
       `-tags "test integration"` が要る理由（`executor/testutil` が `test` タグを持つ）を書く。
-- [ ] 各テストの冒頭で `requireSetuidModel(t)` を呼ぶ（4本すべて）。
-- [ ] 監査ログの受け口を共通のヘルパーへ括る: `tu.NewRecordingLogger()` で
+- [x] 初回4テストの冒頭で `requireSetuidModel(t)` を呼ぶ。5-d で追加する全テストにも同じ guard を課す。
+- [x] 監査ログの受け口を共通のヘルパーへ括る: `tu.NewRecordingLogger()` で
       `*slog.Logger` と `*tu.LogRecorder` を作り、`audit.NewAuditLoggerWithCustom(logger)` を
       `executor.WithAuditLogger` へ渡す。`audit.NewAuditLogger` は構築時に `slog.Default()` を
       掴んでしまい差し替えられないので、この経路を使う。
-- [ ] `TestPrivilegeGap_StartWindowIndependentOfCommandDuration`（AC-05）: 1秒休止と5秒休止の
+- [x] `TestPrivilegeGap_StartWindowIndependentOfCommandDuration`（AC-05）: 1秒休止と5秒休止の
       2コマンドを実行し、監査ログの `privilege_duration_user_group_execution_us` を比べる。
       判定は絶対値で行う: **両者とも 5,000 マイクロ秒（5ms）未満**であり、かつ
       **両者の差が 2,000 マイクロ秒未満**であること。
       設計文書 §1.4／§5.2 は起動区間を `fork`／`execve` の時間（数十マイクロ秒）と見積もっており、
       5ms はその 100 倍以上の余裕を見た上限である。ここを 100ms のように緩めると、
       出力中継の起動や `Wait()` が隙の中へ戻る回帰を見逃す。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild`（AC-07）: `run_as_user` 付きの長時間コマンドが
+- [x] `TestPrivilegeGap_TimeoutKillsChild`（AC-07）: `run_as_user` 付きの長時間コマンドが
       タイムアウトで停止し、戻り値から `context.DeadlineExceeded` をたどれる。
-- [ ] `TestPrivilegeGap_CancelKillsChild`（AC-08）: 同じ条件で `context.CancelFunc` による
+- [x] `TestPrivilegeGap_CancelKillsChild`（AC-08）: 同じ条件で `context.CancelFunc` による
       キャンセル（SIGINT／SIGTERM 相当）により子が停止する。停止の確認は、
       `/proc/<pid>` が消えることではなく `Execute` が制限時間内に戻ることで行う。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の両方で、
+- [x] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の両方で、
       `Execute` の前後に `os.Geteuid()` を採り、値が一致することを併せて主張する
-      （AC-12 の特権側）。setuid モデルでは実効 UID は 0、実 UID は起動者なので、
-      非特権環境で成り立つ `os.Geteuid() == os.Getuid()` とは逆の関係になる。ここで見るのは
-      「実効 UID が `Execute` の呼び出しをまたいで変わらないこと」、すなわち起動区間・
-      kill 区間・後始末区間のいずれからも復帰していることである。
-- [ ] `TestPrivilegeGap_OutputLimitAbortsRunningChild`（AC-13、run-as 版）: `MaxSize` を
+      （AC-12 の特権側）。共通セットアップは setuid 起動時の実効 UID = 0 を検査してから
+      実効 UID を起動者へ落とす。比較するのは降格後の実効 UID であり、実装の
+      `restorePrivileges` と識別子検査に合わせて `os.Geteuid() == os.Getuid()` を保つ。
+      対象ユーザーは起動者と異なる非 root UID に限定し、kill の再昇格が不要になる環境を拒否する。
+      `t.Cleanup` で起動時の実効 UID を復元する。プロセス全体の状態なので並列実行しない。
+      キャンセルの2本は `*exec.ExitError` の存在と kill・回収エラーの不在も検査し、
+      起動前キャンセルや子を残した早期リターンによる偽の成功を防ぐ。
+- [x] `TestPrivilegeGap_OutputLimitAbortsRunningChild`（AC-13、run-as 版）: `MaxSize` を
       小さくした `output.Capture` を渡し、上限を超え続ける出力を出す `run_as` コマンドが、
       コマンドの終了を待たずに打ち切られる。非特権版は Phase 1 の
       `TestExecute_OutputLimitAbortsRunningChild` が常時実行される形で覆っている。
 
 #### 5-c. 実行経路
 
-- [ ] `Makefile` に `executor-privileged-integration-test` ターゲットを追加する。内容は
+- [x] `Makefile` に `executor-privileged-integration-test` ターゲットを追加する。内容は
       既存 `integration-test`（598-603行）と同じシェル展開形で環境変数を転送する:
       `$(ENVSET) TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" CGO_ENABLED=1 $(GOTEST) -tags "test integration" -v ./internal/runner/base/executor/`。
       `ENVSET` が `env -i` で環境を空にするため、この明示的な転送が要る。
       `.PHONY` 行へターゲット名を足す。
-- [ ] 同ターゲットを `test-ci`、`test-ci-cgo1` の依存へ足す。
-- [ ] `Makefile` のターゲット一覧コメント（458-470行付近）へ新ターゲットの説明を**英語で**足す。
+- [x] 同ターゲットを `test-ci`、`test-ci-cgo1` の依存へ足す。
+- [x] `Makefile` のターゲット一覧コメント（458-470行付近）へ新ターゲットの説明を**英語で**足す。
       次の3点を書く: (1) `TEST_RUNAS_TARGET_USER` が未設定なら空文字が渡り、テストは
-      `no target user configured` の理由でスキップする（呼び出し方は
+      理由付きでスキップする（既存述語は実効 UID の検査を先に行うため、非 root では
+      root 権限不足、root では対象ユーザー未設定の理由になる。呼び出し方は
       `TEST_RUNAS_TARGET_USER=<user> make executor-privileged-integration-test`）。
       (2) 特権と対象ユーザーが揃わない環境ではスキップし、このターゲットが主張するのは
       `integration` タグ付きファイルがコンパイルでき、スキップ判定が働くことまでである。
       (3) `//go:build integration` のファイルは `make lint` の対象外である
       （`GOLINT` も pre-commit の `golangci-lint` も `--build-tags test` だけを渡す）。
       型・シグネチャの誤りはこのターゲットのコンパイルで捕まえる。
-- [ ] `.pre-commit-config.yaml` に、このターゲットを呼ぶフックを足す。
+- [x] `.pre-commit-config.yaml` に、このターゲットを呼ぶフックを足す。
       必須フィールドを欠かさない: `id: executor-privileged-integration-test`、
       `name: executor privileged integration test`、
       `entry: make executor-privileged-integration-test`、`language: system`、
@@ -1098,32 +1104,115 @@
       pre-commit の設定検証に失敗し、リポジトリ全体のフックが動かなくなる。
       既存の `go-test` フックは `make` を経由せず `-tags test` だけで走るため、
       このフックが無いと `integration` タグ付きファイルは pre-commit でコンパイルすらされない。
-- [ ] 新ターゲットは `-race` を付けない（既存の `elfanalyzer-integration-test` と同じ）。
+- [x] 新ターゲットは `-race` を付けない（既存の `elfanalyzer-integration-test` と同じ）。
       設計文書 §3.2 要点7 の競合検出は `-race` 付きで走る `output_pump_test.go` が担い、
       統合テストは検出しないことを `Makefile` のコメントへ書く。
 
+#### 5-d. PR-7 セキュリティレビュー指摘への対応
+
+PR-7 の初回実装は setuid バイナリから `Execute` を呼べることまでは確認したが、子プロセスの
+実 UID／実効 UID／実効 GID／補助グループ、検証済み FD と staging の実経路、成功時の
+スキップ禁止を直接観測していない。次の作業を PR-7 に追加し、既存4本が PASS したという
+実測記録だけを修正完了の証拠にしない。
+
+- [x] 共通セットアップが次の実行モデルを検査し、1つでも満たさなければ**具体的な値を含む理由**で
+      スキップするようにする: テストバイナリの実 UID は非 root、入口の実効 UID は 0、
+      降格後は `euid == ruid != 0`、対象ユーザーは存在し UID 0 でも起動者 UID でもない。
+      対象ユーザーの primary GID と `GroupIds()` も解決し、比較用の期待値として保持する。
+- [x] `TestPrivilegeGap_ChildCredentialsMatchTarget` を追加する。子に絶対パスの `id` 相当を実行させ、
+      子自身が報告した実 UID、実効 UID、実効 GID、補助グループを `os/user.User` の
+      `Uid`、`Gid`、`GroupIds()` と比較する（グループだけ集合比較）。親の
+      `os.Geteuid() == os.Getuid()` は復帰確認にだけ使い、子 credentials の
+      代用にしない。子が root または起動者の credentials で走っても必ず失敗することを明示する。
+- [x] `TestPrivilegeGap_TimeoutKillsChild` と `TestPrivilegeGap_CancelKillsChild` の子にも、待機へ入る前に
+      credentials と ready 通知を出力させる。cancel は `OutputWriter` が ready を観測した後に行い、
+      timeout は ready が deadline より前に観測されたことを必須 assertion にする。子は
+      deadline より十分長く自然終了しないコマンドへ `exec` する。
+      `Execute` の終了、`*exec.ExitError`、context エラー、kill／reap エラーの不在に加え、
+      ready 前に終了していないことと報告 credentials が対象ユーザーと一致することを主張する。
+- [x] 既存の `TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot` を setuid の必須実行集合へ含める。
+      §4.3 のフィルターと PASS 件数検査も更新し、補助グループ検査だけが通常の `sudo` モデルに
+      取り残されないようにする。
+- [x] `TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials` を追加する。`nil` plan ではなく
+      `openVerifiedPlan` で実ファイルを開いた `CommandPlan` を `Execute` に渡し、実
+      `UnixPrivilegeManager` と OS credentials のまま fd-bound 実行を通す。子 credentials、
+      成功、開始後の FD 解放、親 EUID の復帰を観測する。起動待機中に、親が保持する同一 inode の
+      FD 集合が実行前から増えていないことも比較する。起動直後の `releaseVerifiedFD` を外す変異では
+      余分な FD が1本残り、この専用 assertion が失敗することを確認した。
+- [x] `TestPrivilegeGap_StagingCleanupUsesRealPrivileges` を追加する。`openVerifiedPlan` と
+      `WithFdExecDisabled` で staging を強制し、開始区間の終了直後に `OutputWriter` から通知を受けて、
+      recorder に記録された staged path が実在し root 所有・期待 mode／group であることを
+      テスト goroutine 側で確認する。コールバック内では `testing.T` を呼ばず、観測値を channel で
+      渡す。`Execute` 後は同じ path が消えていること、親 EUID が復帰したことを主張する。
+- [x] staging と cancellation を組み合わせたテストを追加する。staged file の存在と子の ready を
+      観測してから cancel し、kill・reap の完了後に cleanup 区間が実行されて file が消えること、
+      cleanup／復帰エラーが無いことを確認する。`t.Cleanup` は失敗時の最後の安全網に限定し、
+      本体の削除 assertion より前に証拠を消さない。cleanup 昇格を外す変異で両 staging テストを
+      失敗させた後にも、安全網が root 所有ディレクトリを回収し、残存が0件になることを確認した。
+- [x] 実監査出力を、duration キー1個の存在だけでなく window の集合として検証する。正常 fd-bound は
+      `elevation_count == 1` かつ `user_group_execution` のみ、正常 staging は count 2 かつ
+      `user_group_execution`／`staging_cleanup` のみとする。cancel／timeout は
+      `User/group privilege execution failed` の `elevation_count` と duration key 集合を検査し、
+      `kill_after_cancel` が実際に1回開いたこと、存在しない window のキーが無いこと、各 duration が
+      マイクロ秒単位で記録されたことを主張する。
+      昇格前に失敗した試行を開いた window と数えない負例も追加する。失敗時の監査ログにも同じ
+      window 集合を載せ、拒否時は count 0 になることを検査する。`opened || elevErr != nil` として
+      拒否を1件に数える変異で、専用テストが expected 0 / actual 1 と失敗することを再確認した。
+- [x] `requireSetuidModel` の supported 側を決定的にテストできるよう、UID／EUID／環境／user lookup の
+      読み取りを小さな注入口へ分離する。`TestRequireSetuidModel_SupportedDoesNotSkip` を追加し、
+      supported では `Skipf` 0回、各 unsupported 条件では正確に1回かつ欠けた prerequisite を含む
+      message になることを検査する。ラッパー末尾の無条件 `Skipf` という変異で必ず失敗させる。
+- [x] `scripts/verification/run_executor_setuid_integration.sh` と、それを呼ぶ
+      `executor-setuid-integration-test` Make ターゲットを追加する。`env -i` の下で固定 `PATH`、
+      `LANG=C`、`TEST_RUNAS_TARGET_USER`、入口同期 marker だけを明示してテストバイナリを起動する。
+      起動者所有 mode 0700 の使い捨てディレクトリ内で owner UID 0／mode 4755 を検査し、入口の
+      setuid 確認直後に mode 0755 へ戻す。Linux 以外は拒否し、全体 timeout、終了コード、
+      `--- SKIP` 0件、必須テスト名の PASS 集合を検査する。通常の非特権 compile／skip
+      ターゲットとは名前と責務を分ける。
+- [x] `test-ci`、`test-ci-cgo1`、pre-commit は非特権環境で「compile 成功・理由付き skip」を確認する
+      経路として残す一方、ログに PASS と SKIP の件数を表示する。setuid 専用ターゲットが実行される
+      self-hosted／手動の必須ゲートを PR チェックリストへ追加する。自動環境がすべて skip の場合は、
+      それを privileged behavior の成功証拠として扱わない。
+- [x] 非同期 `Execute` を使う全テストに cancel＋完了 channel drain の `t.Cleanup` を登録し、
+      テストの fatal 終了後にも goroutine を止めてから process-wide EUID を復元する。5秒で停止しない
+      場合はテストエラーを記録しても drain を継続し、EUID 復元 cleanup を先へ進めない。プロセス単位の
+      最終上限は setuid ハーネスの `-test.timeout=60s` が担う。
+- [x] staging 2本に実 privilege manager で root 所有ディレクトリを削除する `t.Cleanup` 安全網を置き、
+      assertion 前には走らず、失敗後には残存を回収することを cleanup mutation で確認する。
+- [x] setuid ハーネスに Linux guard と `-test.timeout=60s` を置き、root 所有 directory と入口同期を
+      検査した直後に setuid bit を落とす。親 trap は実行中の子を停止してから artifact を削除する。
+- [x] supplementary group テストの重複 numeric ID parser を共通 helper へ統合する。
+- [x] 次の負の変異を §4.2 の手順で個別に確認する: `Start` 直前に `SysProcAttr.Credential = nil`、
+      verified plan を `nil` にする、cleanup の `WithPrivileges` を外す、`elevation_count` または
+      operation 名を偽造する、supported 条件でも `Skipf` する、target 環境変数の転送を止める、
+      setuid bit を外す。各変異について落ちるテストまたはハーネス検査をコミットメッセージに記す。
+
 **完了の目安**: `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/`
-がコンパイルを通る。特権のある環境で AC-05／AC-07／AC-08／AC-13 が緑（§4.3 の手順で確認）。
-非特権環境では理由つきでスキップし、pre-commit が緑のままである。
+がコンパイルを通る。特権のある環境で子 credentials、fd-bound、staging、cleanup、kill、監査 window が
+実 OS credentials で検証され、必須テストの skip が0件（§4.3 の手順で確認）。非特権環境では
+prerequisite ごとの理由つきでスキップし、pre-commit が緑のままである。
 
 ### PR-7 作成ポイント: privileged integration tests and execution paths
 
-**対象ステップ**: 5-a / 5-b / 5-c
+**対象ステップ**: 5-a / 5-b / 5-c / 5-d
 
 **推奨タイトル**: `test(0171): add privileged integration tests and their execution paths`
 
-**レビュー観点**: スキップ判定が `requireSetuidModel` の1箇所にあり、4本のテストへ書き写されていないこと / `ENVSET` が `env -i` で環境を空にする下で `TEST_RUNAS_TARGET_USER` が転送されること / 非特権環境では理由つきでスキップし、`test-ci` と pre-commit が緑のままであること / `.pre-commit-config.yaml` の必須フィールド（`name` を含む）が揃っていること
+**レビュー観点**: スキップ判定が `requireSetuidModel` の1箇所にあり supported 側もテストされること / 子 credentials を子自身の出力で観測すること / verified FD と強制 staging の両方を実 privilege manager で通すこと / cancellation が ready 後に kill・reap・cleanup を通ること / audit の count と operation 集合が実際に開いた window と一致すること / setuid 専用ハーネスが `env -i`、owner/mode、skip 0件、PASS 集合を検証すること / 非特権 CI の緑を privileged behavior の成功と取り違えないこと
 
 **実装モデル要件**: frontier-required
 
 **判定理由**: ステップ 5-b／5-c は setuid テストバイナリという外部資源の面と、`Makefile` の CI 合成ターゲットおよび pre-commit フックを触る面を持ち、パネルモードの引き金「重い統合テスト／CI／外部資源の面」に当たるため。スキップ判定を誤ると全テストがサイレントにスキップし、無検証のまま緑になる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` が終了コード 0（`make lint`／`make test` は `integration` タグ付きファイルをコンパイルしないため、グリーンゲートだけでは足りない）
-- [ ] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
-- [ ] §4.3 の実行手順を特権のある環境で走らせ、`--- SKIP` が無いことを確認して結果を §4.3 へ追記した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` が終了コード 0（`make lint`／`make test` は `integration` タグ付きファイルをコンパイルしないため、グリーンゲートだけでは足りない）
+- [x] `make -n executor-privileged-integration-test` と `pre-commit validate-config .pre-commit-config.yaml` が §7 AC-22 の期待どおり
+- [x] 初回の §4.3 実行手順を特権のある環境で走らせ、初回4テストに `--- SKIP` が無いことを確認して結果を §4.3 へ追記した
+- [x] 初回4テストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] 5-d の実装後に compile、非特権 compile／skip ターゲット、pre-commit を再実行した
+- [x] `executor-setuid-integration-test` を実行し、入口 credentials、必須 PASS 集合、SKIP 0件を確認して §4.3 へ追記した
+- [x] 5-d の全負の変異を確認し、変異ごとに失敗したテストまたはハーネス検査をコミットメッセージに記した
+- [x] PR を作成した（[#1103](https://github.com/isseis/go-safe-cmd-runner/pull/1103)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1300,7 +1389,7 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 | M2: 構造の分解 | Phase 2 | `command_lifecycle.go`、3フェーズ分解 | 外から見える挙動が変わらない。AC-01 のテストが通る |
 | M3: キャンセル経路の自前化 | Phase 3 | `select` によるキャンセル待機、kill 区間、`OperationKillAfterCancel`、監査メトリクスの内訳 | AC-07／AC-10〜AC-12／AC-14 のテストが通る |
 | M4: 隙の縮小 | Phase 4 | 起動区間だけを `WithPrivileges` で包む形、後始末区間、静的検査 | AC-02〜AC-04／AC-06／AC-17 のテストと静的検査が通る |
-| M5: 検証環境 | Phase 5 | 統合テスト、`Makefile` ターゲット、pre-commit フック | AC-05／AC-08／AC-13（run-as 版）／AC-21／AC-22 |
+| M5: 検証環境 | Phase 5 | 子 credentials、fd-bound／staging／kill／cleanup の実 setuid 統合テスト、fail-safe な skip 判定、専用実行ハーネス | AC-05〜AC-09／AC-12／AC-13（run-as 版）／AC-17／AC-21／AC-22 |
 | M6: 文書 | Phase 6 | 4文書・5つの doc コメント・0170 の5箇所の更新 | AC-19／AC-20 |
 
 順序は 1 → 2 → 3 → 4 → 5 → 6 に固定する。設計文書 §8 は Phase 1 と Phase 3 を
@@ -1325,7 +1414,7 @@ PR の区切りは §2 の各ステップの直後に「PR-N 作成ポイント�
 | PR-4 | 3-d / 3-e | `exec.CommandContext` の置き換え。キャンセル・kill 区間・回収打ち切りとそのテスト | frontier-required |
 | PR-5 | 4-a / 4-b | `WithPrivileges` の範囲を `startPrepared` へ縮小。後始末区間と staged copy の削除位置の変更 | frontier-required |
 | PR-6 | 4-c | `privileged_window_guard_test.go` の新設（隙から到達する呼び出しの静的検査） | frontier-recommended |
-| PR-7 | 5-a / 5-b / 5-c | 特権つき統合テスト、スキップ判定、`Makefile` ターゲット、pre-commit フック | frontier-required |
+| PR-7 | 5-a / 5-b / 5-c / 5-d | 子 credentials と fd-bound／staging／kill／cleanup の実 setuid 統合テスト、fail-safe なスキップ判定、専用実行ハーネス | frontier-required |
 | PR-8 | 6-a / 6-b / 6-c | doc コメント5箇所、設計・利用者向け文書4本、0170 追跡表の5箇所 | standard |
 
 Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
@@ -1390,7 +1479,7 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
 
 設計文書 §7.6 の各行:
 
-- [ ] AC-01 / AC-02 / AC-06・AC-09 / AC-07 / AC-12 / AC-13・AC-14 / AC-16（`errors.Join`） /
+- [x] AC-01 / AC-02 / AC-06・AC-09 / AC-07 / AC-12 / AC-13・AC-14 / AC-16（`errors.Join`） /
       AC-16（stderr の上限） / AC-17 / §3.1 の起動後解放 / §3.2 要点7
 
 §7.6 に無いぶん:
@@ -1400,9 +1489,9 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       `stageFromFD` の中の呼び出しが見えなくなり、この self-test が緑のまま通ってしまうことも確かめる。
       浅くした場合、self-test は実際に緑のままで、代わりに `start_window`／`cleanup_window` の
       「許可リストの項目が1つも到達しない」検査が落ちた。
-- [ ] AC-05: `Wait()` を起動区間の内側へ戻すと、`privilege_duration_user_group_execution_us` が
+- [x] AC-05: `Wait()` を起動区間の内側へ戻すと、`privilege_duration_user_group_execution_us` が
       閾値（5,000 µs）を超えてテストが落ちる。
-- [ ] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
+- [x] AC-10: `killStrategy` の宣言を無視して常に `killReelevated` にすると、
       `TestSupervise_NormalExecutionDoesNotReelevate` が落ちる。
 - [x] AC-02・AC-04（`fn` の後の標本）: `InWindow` の `MockWindowPhaseAfterFn` の呼び出しを
       外すと、`Stdout`／`Stderr` を `*os.File` 以外の writer へ戻す revert を
@@ -1422,9 +1511,10 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       隙の中の削除を消すと `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が
       落ちる。`stagingWindowErr` への記録を消すと
       `TestRemoveStagedCopy_RejectsUndeclaredAndUnavailableStrategies` が落ちる。いずれも確認済み。
-- [ ] AC-11: モックの再入ガード（Phase 3-c）を外すと、kill を別 goroutine から呼ぶ実装に
-      戻しても緑のままになることを確かめる（＝ガードが入っていて初めて主張が成立する）。
-- [ ] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
+- [x] AC-11: kill を別 goroutine から呼ぶ実装に戻すと、モックの再入ガード（Phase 3-c）を
+      外した状態でも `TestSupervise_KillRunsOnExecutingGoroutine` が goroutine ID の不一致で落ちる。
+      現行テストは実行 goroutine を直接比較するため、再入エラーの有無だけに依存しない。
+- [x] AC-15: stdout 用と stderr 用の `outputWrapper` を取り違えて渡すと落ちる。
 - [x] AC-03・AC-04（`Logger` 禁止、PR-6 で確認）: `stageFromFD` に `Logger.Warn` を1行戻すと、
       `G::TestPrivilegeWindowAllowedCalls` と
       `TestStageFromFD_ReportsFailuresWithoutLogging` の両方が落ちる。
@@ -1435,19 +1525,39 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       逆に `(*os.File).WriteString` を許可リストから外すと
       `G::TestPrivilegeWindowAllowedCalls` が落ちることも確かめ、
       許可リストのこの1行が実装に効いていることを固定する。
-- [ ] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
+- [x] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
       AC-18 の `static` 検査が 1 件を返して落ちる。
 - [ ] AC-19 / AC-20 の各 `static` 検査: 置換前のファイルに対して実行し、期待と異なる結果
       （旧文言の検査は 1 件以上、新文言の検査は 0 件）になることを確かめてから、置換後に再実行する。
-- [ ] AC-21: `requireSetuidModel` が読む環境変数名を1文字変えると
+- [x] AC-21: `requireSetuidModel` が読む環境変数名を1文字変えると
       `TestRequireSetuidModel_ReadsDocumentedEnvVar` が落ちる。
-- [ ] AC-22: `.pre-commit-config.yaml` から `name` を外すと pre-commit の設定検証が失敗する
+- [x] AC-22: `.pre-commit-config.yaml` から `name` を外すと pre-commit の設定検証が失敗する
       ことを確かめる（`pre-commit validate-config`）。
+- [x] PR-7 credentials: `Start` 直前に `SysProcAttr.Credential = nil` とする変異で
+      `TestPrivilegeGap_ChildCredentialsMatchTarget`、fd-bound、cancel／timeout の各テストが
+      子の UID／GID／補助グループ不一致により失敗する。入口同期後は setuid bit を落とすため、
+      変異時の子 UID は root ではなく起動者 1000 となり、期待値 65534 との不一致を確認した。
+- [x] PR-7 実経路: verified plan を `nil` にする変異では、fd-bound テストが期待 inode の
+      `FD_ID` 欠落で失敗し、強制 staging 2本も staged-path 記録 0 件で失敗する。
+      cleanup の `WithPrivileges` を外す変異では、両 staging テストが directory exists と
+      count 不足で失敗し、その後の安全網により `/tmp/scr-stage-*` が0件になる。
+      加えて起動直後の verified FD 解放を外す変異では、親の同一 inode FD 集合が1本増え、
+      fd-bound テストの即時解放 assertion が失敗する。
+- [x] PR-7 audit: `elevation_count` を固定値にする、実行していない operation を追加する、または
+      `kill_after_cancel` の記録を消す各変異で、実 setuid テストの window 集合検査が失敗する。
+      count を 1 に固定する変異では期待 2／3 の各ケースが実数 1 で失敗し、operation を
+      `kill_after_cancel` に固定する変異では期待 `user_group_execution` との集合差で失敗した。
+      kill 記録を消す変異では timeout／cancel が count 2→1、staging+cancel が count 3→2 となり、
+      失敗時ログを読む各専用テストが落ちることを再確認した。
+- [x] PR-7 skip／環境: supported 条件でも `Skipf` する変異は、記録された無条件 skip 理由により
+      `TestRequireSetuidModel_SupportedDoesNotSkip` が失敗する。
+      `TEST_RUNAS_TARGET_USER` の転送を外す変異は必須10本が PASS 0／SKIP 10 となってハーネスが
+      失敗し、setuid bit を外す変異は実行前 metadata 検査が owner UID 0／mode 755 を検出して失敗する。
 
 ### 4.3 統合テストの実行手順（AC-21、AC-22）
 
 setuid モデル（実 UID ≠ 0、実効 UID = 0）を作るには、root 所有で setuid ビットを立てた
-テストバイナリを非 root ユーザーから起動する。次の3点に注意する。
+テストバイナリを非 root ユーザーから起動する。次の4点に注意する。
 
 - **置き場が `nosuid` だと setuid ビットが無視される。** systemd の既定 `tmp.mount` は
   `nosuid` を付けるため、`/tmp` に置くと実効 UID が 0 にならず、全テストが理由も分からず
@@ -1462,57 +1572,63 @@ setuid モデル（実 UID ≠ 0、実効 UID = 0）を作るには、root 所�
 - **テストバイナリの終了コードをパイプで捨てない。** `set -eu` の下でも
   `cmd | tee out.txt` の状態はパイプの**最後**（`tee`）のものになるので、テストバイナリが
   panic しても落ちても打ち切られない。`pipefail` は POSIX の `sh` にあるとは限らないため、
-  下の手順ではパイプを使わずファイルへ落としてから `cat` する。
+  専用ハーネスはパイプを使わずファイルへ落としてから `cat` する。
 
 ```sh
-set -eu
-
-# 1. 対象ユーザー（フィクスチャ）を用意する。root 以外であること。冪等に書く。
-id -u scr-runas-fixture >/dev/null 2>&1 || sudo useradd -m scr-runas-fixture
-
-# 2. 使い捨ての置き場を作り、nosuid でないことを確かめる。
-d=$(mktemp -d "${TMPDIR:-/var/tmp}/scr-setuid.XXXXXX")
-trap 'sudo rm -rf "$d"' EXIT
-if findmnt -no OPTIONS -T "$d" | tr ',' '\n' | grep -qx nosuid; then
-  echo "FATAL: $d is on a nosuid mount; the setuid model cannot be exercised here" >&2
-  exit 1
-fi
-
-# 3. テストバイナリを作る（-c は単一パッケージ指定でのみ使える）。
-go test -tags "test integration" -c -o "$d/executor.test" ./internal/runner/base/executor/
-
-# 4. root 所有・setuid にする。
-sudo chown root:root "$d/executor.test"
-sudo chmod u+s "$d/executor.test"
-
-# 5. 非 root ユーザーとして起動する（実 UID = 起動者、実効 UID = 0）。
-# パイプを使わない（パイプの状態は tee のものになり、テストバイナリの失敗が消える）。
-if ! TEST_RUNAS_TARGET_USER=scr-runas-fixture "$d/executor.test" \
-  -test.v -test.run 'TestPrivilegeGap_' > "$d/out.txt" 2>&1; then
-  cat "$d/out.txt"
-  echo "FATAL: the test binary exited non-zero" >&2
-  exit 1
-fi
-cat "$d/out.txt"
-
-# 6. スキップされていないことを確かめる。
-grep -q -- '--- SKIP' "$d/out.txt" && { echo "FATAL: tests were skipped, nothing was verified" >&2; exit 1; }
-for t in StartWindowIndependentOfCommandDuration TimeoutKillsChild CancelKillsChild OutputLimitAbortsRunningChild; do
-  grep -q -- "--- PASS: TestPrivilegeGap_$t" "$d/out.txt" || { echo "FATAL: TestPrivilegeGap_$t did not pass" >&2; exit 1; }
-done
-echo "OK: all four privileged criteria verified"
+TEST_RUNAS_TARGET_USER=nobody make executor-setuid-integration-test
 ```
 
-- [ ] 上記手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
-      なることを確認する。確認した環境（OS、カーネル、Go のバージョン、置き場のマウントオプション）を
-      本節へ追記する。
-- [ ] `make executor-privileged-integration-test` が、上の条件が揃わない環境では
+`nobody` はこの実測環境の例であり、起動者とも root とも異なる既存の非 root ユーザーを指定する。
+安全条件の実装は `scripts/verification/run_executor_setuid_integration.sh` を唯一の正とし、Linux／
+mount／owner／mode／入口同期／即時 setuid 解除／60秒 timeout／必須 PASS／SKIP 0／cleanup を同所で検査する。
+
+- [x] 初回手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
+      なることを確認した。これは下の「Phase 5 初回実測記録」に対応し、5-d の修正完了証拠にはしない。
+- [x] 5-d 後の `executor-setuid-integration-test` を実際に走らせ、子 credentials、fd-bound、staging、
+      cleanup、kill、監査 window、昇格拒否の負例、補助グループを含む必須集合が全て PASS、
+      SKIP 0件になることを確認する。OS、カーネル、Go、起動者／target UID、binary owner／mode、
+      PASS／SKIP 件数を本節へ新しい実測記録として追記する。
+- [x] `make executor-privileged-integration-test` が、setuid 条件が揃わない環境では
       理由つきでスキップし、終了コード 0 で終わることを確認する。
 
 `make executor-privileged-integration-test` は `go test` を直接呼ぶため、setuid バイナリの
 経路は通らない。条件が揃わない環境ではスキップするので、このターゲットが pre-commit で
 主張するのは「`integration` タグ付きファイルがコンパイルでき、スキップ判定が働くこと」までである。
 この限界を `Makefile` のコメントへ書く（Phase 5-c）。
+
+#### Phase 5 初回実測記録（2026-09-06、5-d 適用前）
+
+- Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
+- 起動者 `issei`（UID 1000）、既存フィクスチャ `nobody`（UID 65534）。ユーザー作成は不要だった。
+- `/tmp` の overlay マウントは `rw,relatime` で `nosuid` なし。
+  `mktemp -d /tmp/0171-setuid.XXXXXX` 内でビルドし、root 所有・mode 4755 にして非 root から実行。
+  `-test.run '^TestPrivilegeGap_' -test.timeout=30s` の4本すべて PASS、SKIP なし。
+- 1秒・5秒コマンドの起動区間は 240µs・446µs、差 206µs。
+  タイムアウト 0.21秒、キャンセル 0.22秒、出力上限 0.01秒で PASS。
+- 通常の `make executor-privileged-integration-test` は4本を理由付きでスキップして成功。
+  `make -n` は両ビルドタグと `TEST_RUNAS_TARGET_USER` の明示転送を表示し、
+  `pre-commit validate-config` も成功した。
+- Go overlay で実 UID 判定の除去、環境変数名の誤記、起動区間メトリクスへのコマンド実行時間の混入、
+  context エラー合成の除去、出力中継の読み取り側 close の除去を個別に行い、
+  対応する追加テストが意図した主張で失敗することを確認した。
+  pre-commit フックの `name` 削除も設定検証で失敗した。
+- `CGO_ENABLED=1 -race` と `CGO_ENABLED=0` の setuid バイナリでも4本すべて PASS、SKIP なし。
+  起動区間は race 版 397µs・615µs（差218µs）、CGO無効版408µs・438µs（差30µs）。
+- 実行・変異検証の setuid バイナリは trap/finally で削除した。
+
+#### Phase 5-d 実測記録（2026-09-07）
+
+- Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
+- 起動者 `issei`（UID 1000）、target `nobody`（UID/GID/補助グループ 65534）。
+- `/var/tmp` は `/` の overlay mount（`rw,relatime`、`nosuid` なし）。
+  ハーネスが起動者所有 mode 0700 の使い捨てディレクトリと、バイナリの owner UID 0・mode 4755 を
+  実行前に検査した。入口同期直後に mode 0755 へ戻し、終了時に全 artifact を削除した。
+- `env -i` の専用ハーネスで資格情報、fd-bound、staging、cleanup、cancel/timeout、
+  監査 window、昇格拒否の負例、補助グループを含む必須10テストが PASS、SKIP 0件。
+  canonical Make コマンドの最終実行では、1秒・5秒コマンドの起動区間は 218µs・426µs、差 208µs。
+  実行後は `/var/tmp/scr-setuid.*` と `/tmp/scr-stage-*` の残存がともに0件。
+- 非特権 `make executor-privileged-integration-test` は PASS 116・SKIP 10を表示して成功し、
+  `pre-commit run executor-privileged-integration-test --all-files` も成功した。
 
 ### 4.4 性能の確認（非機能要件）
 
@@ -1542,7 +1658,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 | 読み取り側の閉じ忘れによるデッドロック | `Wait()` が戻らずコマンドがハングする | 書き込み側の解放を隙の外の必ず通る1箇所に置き、長時間コマンドと大量出力の両方でテストする | Phase 1、Phase 3 |
 | `exec.CommandContext` の意味論の取りこぼし | キャンセルが効かない、または二重に kill する | 設計文書 §4.3 の対応表の各行に検証を割り当て、コード上の判断に直結する3点は `superviseCommand` の doc コメントへ残す | Phase 3-d のテスト項目と doc コメント項目 |
 | 再昇格の追加による復帰漏れ | 実効 UID 0 のまま処理が続く | kill 経路も既存の `WithPrivileges` を通し、復帰と識別子検査を共通経路で行う。`Execute` 末尾の `identityChecker` は変更しない | Phase 3 |
-| 特権が要るテストが開発環境で常にスキップされる | 受け入れ基準が実質的に検証されない | (1) 特権と無関係な AC-13 は非特権テストを主たる証拠にする。(2) 環境変数名の取り違えを `TestRequireSetuidModel_ReadsDocumentedEnvVar` で固定する。(3) §4.3 の手順が `--- SKIP` を失敗として扱う | Phase 1、Phase 5、§4.3 |
+| 特権が要るテストが開発環境で常にスキップされる | 受け入れ基準が実質的に検証されない | (1) 特権と無関係な AC-13 は非特権テストを主たる証拠にする。(2) 環境変数名と supported 非 skip の双方を unit test で固定する。(3) setuid 専用ハーネスが入口 credentials、`env -i`、必須 PASS 集合、SKIP 0件を検査する。(4) 非特権 CI の compile／skip と実 setuid PASS を別の結果として表示する | Phase 1、Phase 5-d、§4.3 |
 | 静的検査の許可リストが実装から離れる／検査が空洞化する | AC-03／AC-04 の主張が空洞化する | 許可リストを go/ast + go/types の guard test に置き、追跡対象・到達範囲・型解決手段を先に固定する。negative self-test で検査自体が落ちられることを確かめる | Phase 4-c |
 | 起動区間の中で `os.MkdirTemp` が走る（staging フォールバック時） | 「隙の中でファイルを開かない」という性質が staging 経路では成り立たない | 設計文書 §3.4 差分1 は、この配置を意図して選んでいる。複製を隙の外で作ると staged copy が起動者所有になり、差し替え可能になるためである。本タスクはこの判断を変えない。許可リストを `stageFromFD` が実際に呼ぶものだけに固定し、範囲が広がらないようにする | Phase 4-c の許可リスト |
 | 隙の中のログ出力が、ハンドラ経由で将来 `open` を行いうる | slog ハンドラはファイルを開くことが許されており、隙の中で呼べばその `open` が euid 0 で行われる。出力コピー goroutine について本タスクが取り除いたのと同じ危険 | 隙の中の `Logger` 呼び出しを全廃する（設計文書 §7.2）。`stageFromFD` の2つの警告は戻り値と `preparedCommand.stagingWarn` で隙の外へ運ぶ。許可リストに `Logger` を1つも載せず、negative self-test で「隙の中のログ出力を拒否すること」を確かめる | Phase 2、Phase 4-a、Phase 4-c |
@@ -1561,7 +1677,7 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - [ ] PR-4 マージ済み（対象ステップ: 3-d / 3-e）
 - [ ] PR-5 マージ済み（対象ステップ: 4-a / 4-b）
 - [ ] PR-6 マージ済み（対象ステップ: 4-c）
-- [ ] PR-7 マージ済み（対象ステップ: 5-a / 5-b / 5-c）
+- [ ] PR-7 マージ済み（対象ステップ: 5-a / 5-b / 5-c / 5-d）
 - [ ] PR-8 マージ済み（対象ステップ: 6-a / 6-b / 6-c）
 - [ ] §4.2 のすべての項目について、仕組みを外すとテストが落ちることを確認した
 - [ ] §4.3 の実行手順を実環境で走らせ、スキップされていないことを確認し、結果を追記した
@@ -1634,19 +1750,20 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 種別: `test`
 - 検証: `I::TestPrivilegeGap_StartWindowIndependentOfCommandDuration`
 - 期待: 1秒／5秒のコマンドとも `privilege_duration_user_group_execution_us` が 5,000 未満、
-  かつ両者の差が 2,000 未満
+  かつ両者の差が 2,000 未満。子自身が報告した UID／GID／補助グループが対象ユーザーと一致し、
+  正常 fd-bound の `elevation_count` が1、operation 集合が `user_group_execution` だけである
 - 実装: Phase 3-b（監査メトリクスの内訳）、Phase 4-a（隙の縮小）
 
 ### AC-06: 昇格と復帰の対は1組（kill の分を除く）
 
 - 種別: `test`
-- 検証: `L::TestExecute_SingleElevationPairPerRun`（正常終了する実行で組む）
-- 期待: fd-bound 実行で特権管理ロジックの呼び出しが起動区間の1件のみ。staging フォールバックで
-  `user_group_execution` と `staging_cleanup` の2件、後者が `pc.privilegeWindows` に記録される。
-  この成功経路では昇格と復帰の対は `WithPrivileges` の呼び出しと1対1で、`ElevationCount` は
-  その回数と一致する。
-  監査メトリクスの `ElevationCount`／`ByOperation` を直接主張しないのは、特権の無いテストでは
-  run-as 実行を最後まで走らせられないためである（Phase 4-b の該当ステップ参照）
+- 検証: `L::TestExecute_SingleElevationPairPerRun`（非特権の構造検査）、
+  `I::TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials`、
+  `I::TestPrivilegeGap_StagingCleanupUsesRealPrivileges`（実 setuid 検査）
+- 期待: fd-bound は実際に開いた `user_group_execution` 1件だけで `elevation_count == 1`。
+  staging は staged file の実在を起動後に確認したうえで `user_group_execution` と
+  `staging_cleanup` の2件だけ、`elevation_count == 2`。各成功経路で昇格と復帰が1対1であり、
+  子 credentials と親 EUID の復帰も一致する
 - 種別: `test`（復帰直後の識別子検査が変わらないこと）
 - 検証: 既存 `internal/runner/base/executor/executor_privilege_check_test.go::TestExecute_PrivilegeLeakCausesExit`、
   同 `::TestExecute_NoPrivilegeLeakDoesNotCallExit`
@@ -1657,16 +1774,19 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 種別: `test`
 - 検証: `I::TestPrivilegeGap_TimeoutKillsChild`、`S::TestSupervise_TimeoutJoinsContextAndWaitErrors`、
   `internal/runner/group_executor_timeout_test.go::TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded`
-- 期待: `Execute` がタイムアウト直後に戻り、戻り値から `context.DeadlineExceeded` と
-  `Wait()` のエラーの両方を `errors.Is` でたどれる。実 executor を通した実行で
-  `LogTimeoutExceeded` の記録が現れる（設計文書 §7.3 が AC-07 に課す2点目）
+- 期待: 子が対象 credentials を報告して ready になった後に timeout が成立し、`Execute` が
+  timeout 直後に戻る。戻り値から `context.DeadlineExceeded` と `Wait()` のエラーをたどれ、
+  `LogTimeoutExceeded` と実際に開いた `kill_after_cancel` window が1件現れる。子の自然終了や
+  起動前 timeout では成功しない
 - 実装: Phase 3-d（エラー合成）
 
 ### AC-08: SIGINT／SIGTERM で子プロセスが停止する
 
 - 種別: `test`
 - 検証: `I::TestPrivilegeGap_CancelKillsChild`、`S::TestSupervise_CancelKillsChild`
-- 期待: キャンセル後、`Execute` が `killGraceDelay` 以内に戻り `context.Canceled` をたどれる
+- 期待: 子が対象 credentials を報告して ready になった後に cancel し、`Execute` が
+  `killGraceDelay` 以内に戻って `context.Canceled` と `*exec.ExitError` をたどれる。
+  `kill_after_cancel` が実際に1回開き、子は自然終了せず kill 後に回収される
 - 実装: Phase 3-d
 
 ### AC-09: kill の再昇格は kill だけを含み、直後に復帰と検査を行う
@@ -1675,12 +1795,13 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 - 検証: `S::TestSupervise_KillOpensExactlyOneReelevation`、
   `S::TestKillChild_RecordsOnlyWindowsThatOpened`（監査メトリクスへ届くのは実際に開いた隙だけ）、
   `S::TestKillChild_RejectsUndeclaredAndUnavailableStrategies`（`killUnset` と
-  特権マネージャ不在の fail-secure 側）、
-  `G::TestPrivilegeWindowAllowedCalls`（サブテスト `kill_window`）
+  特権マネージャ不在の fail-secure 側）、`G::TestPrivilegeWindowAllowedCalls`（`kill_window`）、
+  `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`
 - 期待: `ElevationCalls` に `kill_after_cancel` がちょうど1回現れ、
   kill 区間の `MockWindowPhaseBeforeFn` の時点で
   子プロセスがまだ生きている。静的検査で kill 区間から到達する追跡対象の呼び出しが
-  `(*os.Process).Kill` だけである
+  `(*os.Process).Kill` だけである。実 setuid 監査でも ready 後の cancel／timeout ごとに
+  `kill_after_cancel` が1件だけ現れ、存在しない operation は現れない
 - 実装: Phase 3-d、Phase 4-c
 
 ### AC-10: 通常実行では kill の再昇格を行わない
@@ -1706,9 +1827,12 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
   実行中のキャンセル＝ kill 経路）、既存 `F::TestExecute_FdBoundStartFailureNoLeak`（`Start()` 失敗）、
   既存 `E::TestExecute_ContextCancellation`（キャンセル済み context で `Result` が非 `nil`）
 - 期待: 3経路とも反復で記述子が増えない（`numOpenFDs` の差が 1 以下）
-- 検証（特権）: `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`
-- 期待: `Execute` の前後で `os.Geteuid()` が変わらない。**非特権で走るテストへは置かない**:
-  そこでは実効 UID と実 UID が executor の挙動によらず等しく、主張が理由をもって落ちられない
+- 検証（特権）: `I::TestPrivilegeGap_TimeoutKillsChild`、`I::TestPrivilegeGap_CancelKillsChild`、
+  `I::TestPrivilegeGap_StagingCancellationCleansUp`
+- 期待: setuid 入口と降格後の credentials を共通セットアップで確認し、各 `Execute` の前後で
+  親 EUID が降格値に戻る。staging cancellation は ready 前に staged file が実在し、kill・reap 後に
+  file が消える。子 credentials の正しさは子自身の UID／GID／補助グループ出力で別に検査する。
+  **非特権で走る親 EUID 比較だけを証拠にしない**
 - 実装: Phase 2（`release()`）、Phase 3-d（キャンセル済み context の早期リターン）
 
 ### AC-13: 上限超過を実行中に検出し、子を打ち切る
@@ -1756,9 +1880,12 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 ### AC-17: fd-bound と staging フォールバックの双方で成立する
 
 - 種別: `test`
-- 検証: `L::TestExecute_ShebangScriptRunsUnderStagingFallback`、既存 `F::TestExecute_FdBoundOrStaging`
-- 期待: `WithFdExecDisabled` の下でシェバンつきスクリプトが実行でき標準出力が一致する。
-  fd-bound／staging 両経路で終了コードと出力が一致する
+- 検証: `L::TestExecute_ShebangScriptRunsUnderStagingFallback`、既存 `F::TestExecute_FdBoundOrStaging`、
+  `I::TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials`、
+  `I::TestPrivilegeGap_StagingCleanupUsesRealPrivileges`
+- 期待: unit test で両経路の終了コードと出力が一致する。実 setuid test では `nil` でない
+  verified plan を使い、fd-bound と `WithFdExecDisabled` で強制した staging の双方で
+  子 credentials、staged file の作成と削除、window の operation 集合が期待どおりになる
 - 実装: Phase 4-a（staged copy の削除を子の終了後へ移す）
 
 ### AC-18: dry-run の出力が変わらない
@@ -1833,16 +1960,23 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
   ```
 - 期待: 終了コード 0（`//go:build integration` のファイルは `make lint` の対象外なので、
   型・シグネチャの誤りはこのコンパイルでしか捕まらない）
-- 種別: `test`（スキップ判定が既存と同じ形で理由を示す）
-- 検証: `C::TestCanRunSetuidModelIntegrationTest`、`C::TestRequireSetuidModel_ReadsDocumentedEnvVar`
+- 種別: `test`（unsupported と supported の双方で wrapper の分岐を検査する）
+- 検証: `C::TestCanRunSetuidModelIntegrationTest`、`C::TestRequireSetuidModel_ReadsDocumentedEnvVar`、
+  `C::TestRequireSetuidModel_SupportedDoesNotSkip`
 - 期待: 表の各行で `ok` と理由が期待どおり。ラッパーが `TEST_RUNAS_TARGET_USER` を読み、
-  その値を含む理由でスキップする
-- 種別: `static`（4本すべてがスキップ判定を通る）
+  unsupported では `Skipf` が正確に1回で理由が prerequisite を特定し、supported では0回
+- 種別: `static`（追加・改名後も全 `TestPrivilegeGap_` が中央の guard を通る）
 - 検証:
   ```sh
-  rg -F -c 'requireSetuidModel(t)' internal/runner/base/executor/executor_privilege_gap_integration_test.go
+  file=internal/runner/base/executor/executor_privilege_gap_integration_test.go
+  tests=$(rg -c '^func TestPrivilegeGap_' "$file")
+  guards=$(rg -c '^[[:space:]]+requireSetuidModel\(t\)' "$file")
+  test "$tests" -eq "$guards"
   ```
-- 期待: 4 件（AC-05／AC-07／AC-08／AC-13 の各テストが1件ずつ呼ぶ）
+- 期待: 終了コード 0。固定件数にせず、将来追加した privileged test の guard 漏れも検出する
+- 種別: `manual`（supported な setuid モデルではスキップを成功扱いしない）
+- 検証: §4.3 の `executor-setuid-integration-test`
+- 期待: 入口が `ruid != 0, euid == 0`、全必須テストが PASS、`--- SKIP` 0件
 
 ### AC-22: pre-commit と `make` から統合テストを実行できる
 
@@ -1866,13 +2000,21 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
   pre-commit validate-config .pre-commit-config.yaml
   ```
 - 期待: 前者 1 件、後者 終了コード 0（`name` の欠落など必須フィールドの漏れを検出する）
-- 種別: `test`（ターゲットが実際に走り、スキップして緑になる）
+- 種別: `test`（非特権の合成ターゲットが compile し、意図した理由で skip する）
 - 検証:
   ```sh
   make executor-privileged-integration-test
   ```
-- 期待: 非特権環境で終了コード 0。出力に `TestPrivilegeGap_` のスキップ理由が現れる
-  （ターゲットが実際にテストを起動していることの証拠。`make -n` は印字するだけで実行しない）
+- 期待: 非特権環境で終了コード 0。出力に各 `TestPrivilegeGap_` の具体的なスキップ理由と
+  PASS／SKIP 件数が現れる。これは privileged behavior の成功証拠ではない
+- 種別: `manual`（実 setuid 専用ターゲットが最小環境で privileged tests を実行する）
+- 検証:
+  ```sh
+  TEST_RUNAS_TARGET_USER=scr-runas-fixture make executor-setuid-integration-test
+  ```
+- 期待: helper が owner UID 0、mode 4755、`ruid != 0, euid == 0` を確認し、`env -i` 下で
+  子 credentials、fd-bound、staging、kill、cleanup、audit、補助グループの必須集合が全て PASS、
+  SKIP 0件。setuid bit または target 転送を外すと非ゼロ終了する
 
 ### AC-23: すべての受け入れ基準が追跡表から辿れる
 

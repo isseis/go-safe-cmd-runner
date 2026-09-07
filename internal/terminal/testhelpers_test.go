@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"os"
 	"testing"
 )
 
@@ -26,8 +27,19 @@ func setupCleanEnv(t *testing.T, envVars map[string]string) {
 	for _, v := range existenceCheckedVars {
 		if value, specified := envVars[v]; specified {
 			t.Setenv(v, value)
+		} else {
+			original, wasSet := os.LookupEnv(v)
+			if err := os.Unsetenv(v); err != nil {
+				t.Fatalf("unset %s: %v", v, err)
+			}
+			t.Cleanup(func() {
+				if wasSet {
+					_ = os.Setenv(v, original)
+					return
+				}
+				_ = os.Unsetenv(v)
+			})
 		}
-		// If not specified, we leave it unset (don't call t.Setenv at all)
 	}
 
 	// For variables that check value (os.Getenv), set to empty if not specified

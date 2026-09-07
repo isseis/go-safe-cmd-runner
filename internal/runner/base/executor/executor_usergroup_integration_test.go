@@ -18,111 +18,42 @@ package executor_test
 
 import (
 	"context"
-	"log/slog"
 	"os"
-	"os/user"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// parseGroupIDs parses the space-separated numeric GID list printed by
-// `id -G` into a slice of ints.
-func parseGroupIDs(t *testing.T, out string) []int {
-	t.Helper()
-	fields := strings.Fields(out)
-	ids := make([]int, 0, len(fields))
-	for _, f := range fields {
-		n, err := strconv.Atoi(f)
-		require.NoErrorf(t, err, "unexpected non-numeric field %q in `id -G` output %q", f, out)
-		ids = append(ids, n)
-	}
-	return ids
-}
-
-// userGroupIDs returns the target user's own group IDs (primary + supplementary,
-// as reported by the OS user database), converted to ints for comparison
-// against parsed `id -G` output.
-func userGroupIDs(t *testing.T, u *user.User) []int {
-	t.Helper()
-	ids, err := u.GroupIds()
-	require.NoError(t, err)
-	out := make([]int, 0, len(ids))
-	for _, s := range ids {
-		n, err := strconv.Atoi(s)
-		require.NoError(t, err)
-		out = append(out, n)
-	}
-	return out
-}
-
-// TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot is a privileged
-// integration test: it requires running as root against a real fixture user
-// named by TEST_RUNAS_TARGET_USER, so it is gated both by the integration
-// build tag (kept out of ordinary test runs) and, once compiled in, by
-// canRunPrivilegedIntegrationTest (skipped at runtime when the process is not
-// root or the fixture user is not configured/does not exist). It verifies the
-// production (non-mock) privilege manager end to end: a run-as command's
-// supplementary groups match the target user's own group list and do not
-// carry over this (root) process's supplementary groups.
+// TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot exercises the same
+// setuid entry model as the privilege-gap tests. The shared fixture rejects
+// native-root execution and de-escalates to the non-root invoker before the
+// production privilege manager starts the child.
 func TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot(t *testing.T) {
-	targetUser := os.Getenv("TEST_RUNAS_TARGET_USER")
-	if ok, reason := canRunPrivilegedIntegrationTest(os.Geteuid(), targetUser); !ok {
-		t.Skip(reason)
-	}
-	if targetUser == "root" {
-		t.Fatal("TEST_RUNAS_TARGET_USER must not be \"root\": the group-isolation assertions below become vacuous when the target user's own group list includes gid 0")
-	}
-
-	u, err := user.Lookup(targetUser)
-	require.NoError(t, err)
-	wantGroups := userGroupIDs(t, u)
-
-	privMgr := privilege.NewManager(slog.Default())
-	exec := executor.NewDefaultExecutor(
-		executor.WithPrivilegeManager(privMgr),
-		executor.WithLogger(slog.Default()),
-	)
-
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
 	idPath := executortestutil.ResolveCommand("id")
 	cmd := executortestutil.CreateRuntimeCommand(idPath, []string{"-G"},
 		executortestutil.WithWorkDir(""),
-		executortestutil.WithRunAsUser(targetUser))
+		executortestutil.WithRunAsUser(fixture.target.Username))
 
-	result, err := exec.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, result.ExitCode)
 
-	gotGroups := parseGroupIDs(t, result.Stdout)
-	assert.ElementsMatch(t, wantGroups, gotGroups,
+	gotGroups := parseNumericIDs(t, strings.Fields(result.Stdout))
+	assert.ElementsMatch(t, fixture.targetGroups, gotGroups,
 		"run-as child's supplementary groups must match the target user's own group list exactly")
 
-	// gid 0 ("root") is the invoking process's own primary gid (this test only
-	// runs as root, per canRunPrivilegedIntegrationTest), so it always appears
-	// in this process's own `id -G`. Asserting its absence from the child's
-	// groups is an environment-independent check of the core AC-01 property
-	// (the run-as child must not inherit the invoker's identity) -- unlike
-	// diffing against os.Getgroups() below, which only exercises anything on
-	// hosts where root happens to carry extra supplementary groups (e.g.
-	// "docker"), and is a no-op on a bare root with none.
-	if !slices.Contains(wantGroups, 0) {
-		assert.NotContains(t, gotGroups, 0,
-			"run-as child must not carry over the invoking root process's own group (gid 0)")
-	}
-
-	rootGroups, err := os.Getgroups()
+	invokerGroups, err := os.Getgroups()
 	require.NoError(t, err)
-	for _, rg := range rootGroups {
-		if !slices.Contains(wantGroups, rg) {
-			assert.NotContains(t, gotGroups, rg,
-				"run-as child must not carry over this process's own supplementary group %d", rg)
+	for _, group := range invokerGroups {
+		if !slices.Contains(fixture.targetGroups, group) {
+			assert.NotContains(t, gotGroups, group,
+				"run-as child must not carry over the invoker's supplementary group %d", group)
 		}
 	}
 }

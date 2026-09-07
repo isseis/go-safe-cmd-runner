@@ -30,8 +30,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 				RunID: "test-run-001",
 			},
 			envVars: map[string]string{
-				"TERM":     "xterm-256color",
-				"NO_COLOR": "",
+				"TERM": "xterm-256color",
 			},
 			expectHandlers: 2, // Interactive + Conditional text handlers
 			expectError:    false,
@@ -77,6 +76,17 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			originalNoColor, noColorSet := os.LookupEnv("NO_COLOR")
+			if err := os.Unsetenv("NO_COLOR"); err != nil {
+				t.Fatalf("unset NO_COLOR: %v", err)
+			}
+			t.Cleanup(func() {
+				if noColorSet {
+					_ = os.Setenv("NO_COLOR", originalNoColor)
+					return
+				}
+				_ = os.Unsetenv("NO_COLOR")
+			})
 			// Set up environment variables using t.Setenv for automatic cleanup
 			for key, value := range tc.envVars {
 				t.Setenv(key, value)
@@ -157,6 +167,17 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			originalNoColor, noColorSet := os.LookupEnv("NO_COLOR")
+			if err := os.Unsetenv("NO_COLOR"); err != nil {
+				t.Fatalf("unset NO_COLOR: %v", err)
+			}
+			t.Cleanup(func() {
+				if noColorSet {
+					_ = os.Setenv("NO_COLOR", originalNoColor)
+					return
+				}
+				_ = os.Unsetenv("NO_COLOR")
+			})
 			// Set up environment variables using t.Setenv for automatic cleanup
 			for key, value := range tc.envVars {
 				if value == "" {

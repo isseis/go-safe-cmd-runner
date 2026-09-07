@@ -44,8 +44,8 @@ func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 func BenchmarkExpandGroup(b *testing.B) {
 	spec := &runnertypes.GroupSpec{
 		Name:    "test_group",
-		Vars:    map[string]any{"GROUP_VAR": "group_value", "DERIVED": "%{GROUP_VAR}/subdir"},
-		EnvVars: []string{"GROUP_ENV=%{DERIVED}"},
+		Vars:    map[string]any{"group_var": "group_value", "derived": "%{group_var}/subdir"},
+		EnvVars: []string{"GROUP_ENV=%{derived}"},
 	}
 	globalVars := map[string]string{
 		"GLOBAL_VAR": "global_value",
@@ -74,7 +74,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 		Vars:    map[string]any{"CMD_VAR": "cmd_value", "ARG1": "arg1", "ARG2": "arg2"},
 	}
 	groupVars := map[string]string{
-		"GROUP_VAR": "group_value",
+		"group_var": "group_value",
 	}
 
 	// Prepare minimal runtimes for command benchmark
@@ -148,7 +148,7 @@ func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
 	// Prepare group runtime
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "test_group",
-		Vars: map[string]any{"GROUP_VAR": "group_value"},
+		Vars: map[string]any{"group_var": "group_value"},
 	}
 	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
 	if err != nil {
@@ -198,7 +198,7 @@ func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
 	// Prepare group runtime
 	groupSpec := &runnertypes.GroupSpec{
 		Name: "test_group",
-		Vars: map[string]any{"GROUP_VAR": "group_value"},
+		Vars: map[string]any{"group_var": "group_value"},
 	}
 	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
 	if err != nil {

@@ -11,6 +11,13 @@ repos:
         pass_filenames: false
         verbose: true
 
+    -   id: executor-privileged-integration-test
+        name: executor privileged integration test
+        entry: make executor-privileged-integration-test
+        language: system
+        types: [go]
+        pass_filenames: false
+
     -   id: go-tidy
         name: go tidy
         entry: go mod tidy
