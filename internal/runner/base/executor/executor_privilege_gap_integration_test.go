@@ -326,6 +326,10 @@ func registerAsyncCleanup(t *testing.T, cancel context.CancelFunc, done <-chan a
 		case <-done:
 		case <-time.After(5 * time.Second):
 			t.Errorf("command execution did not stop during cleanup")
+			// Do not let later cleanup restore process-wide credentials while
+			// Execute can still be changing them. The harness timeout remains
+			// the process-level bound if cancellation cannot stop the goroutine.
+			<-done
 		}
 	})
 }

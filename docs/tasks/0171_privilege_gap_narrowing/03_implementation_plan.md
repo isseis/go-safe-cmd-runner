@@ -1174,7 +1174,9 @@ PR-7 の初回実装は setuid バイナリから `Execute` を呼べること�
       self-hosted／手動の必須ゲートを PR チェックリストへ追加する。自動環境がすべて skip の場合は、
       それを privileged behavior の成功証拠として扱わない。
 - [x] 非同期 `Execute` を使う全テストに cancel＋完了 channel drain の `t.Cleanup` を登録し、
-      テストの fatal 終了後にも goroutine を止めてから process-wide EUID を復元する。
+      テストの fatal 終了後にも goroutine を止めてから process-wide EUID を復元する。5秒で停止しない
+      場合はテストエラーを記録しても drain を継続し、EUID 復元 cleanup を先へ進めない。プロセス単位の
+      最終上限は setuid ハーネスの `-test.timeout=60s` が担う。
 - [x] staging 2本に実 privilege manager で root 所有ディレクトリを削除する `t.Cleanup` 安全網を置き、
       assertion 前には走らず、失敗後には残存を回収することを cleanup mutation で確認する。
 - [x] setuid ハーネスに Linux guard と `-test.timeout=60s` を置き、root 所有 directory と入口同期を
@@ -1555,7 +1557,7 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
 ### 4.3 統合テストの実行手順（AC-21、AC-22）
 
 setuid モデル（実 UID ≠ 0、実効 UID = 0）を作るには、root 所有で setuid ビットを立てた
-テストバイナリを非 root ユーザーから起動する。次の3点に注意する。
+テストバイナリを非 root ユーザーから起動する。次の4点に注意する。
 
 - **置き場が `nosuid` だと setuid ビットが無視される。** systemd の既定 `tmp.mount` は
   `nosuid` を付けるため、`/tmp` に置くと実効 UID が 0 にならず、全テストが理由も分からず
@@ -1570,68 +1572,23 @@ setuid モデル（実 UID ≠ 0、実効 UID = 0）を作るには、root 所�
 - **テストバイナリの終了コードをパイプで捨てない。** `set -eu` の下でも
   `cmd | tee out.txt` の状態はパイプの**最後**（`tee`）のものになるので、テストバイナリが
   panic しても落ちても打ち切られない。`pipefail` は POSIX の `sh` にあるとは限らないため、
-  下の手順ではパイプを使わずファイルへ落としてから `cat` する。
+  専用ハーネスはパイプを使わずファイルへ落としてから `cat` する。
 
 ```sh
-set -eu
-
-# 1. 対象ユーザー（フィクスチャ）を用意する。root 以外であること。冪等に書く。
-id -u scr-runas-fixture >/dev/null 2>&1 || sudo useradd -m scr-runas-fixture
-
-# 2. 使い捨ての置き場を作り、nosuid でないことを確かめる。
-d=$(mktemp -d "${TMPDIR:-/var/tmp}/scr-setuid.XXXXXX")
-trap 'sudo rm -rf "$d"' EXIT
-if findmnt -no OPTIONS -T "$d" | tr ',' '\n' | grep -qx nosuid; then
-  echo "FATAL: $d is on a nosuid mount; the setuid model cannot be exercised here" >&2
-  exit 1
-fi
-
-# 3. テストバイナリを作る（-c は単一パッケージ指定でのみ使える）。
-go test -tags "test integration" -c -o "$d/executor.test" ./internal/runner/base/executor/
-
-# 4. root 所有・setuid にする。
-sudo chown root:root "$d/executor.test"
-sudo chmod u+s "$d/executor.test"
-
-# 5. 非 root ユーザーとして起動する（実 UID = 起動者、実効 UID = 0）。
-# owner/mode と起動者を先に固定し、実行時環境は env -i で必要最小限にする。
-test "$(id -u)" -ne 0
-test "$(stat -c %u "$d/executor.test")" -eq 0
-test "$(stat -c %a "$d/executor.test")" = 4755
-# パイプを使わない（パイプの状態は tee のものになり、テストバイナリの失敗が消える）。
-if ! env -i PATH=/usr/bin:/bin LANG=C \
-  TEST_RUNAS_TARGET_USER=scr-runas-fixture \
-  "$d/executor.test" -test.v \
-  -test.run '^(TestPrivilegeGap_.*|TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot)$' \
-  > "$d/out.txt" 2>&1; then
-  cat "$d/out.txt"
-  echo "FATAL: the test binary exited non-zero" >&2
-  exit 1
-fi
-cat "$d/out.txt"
-
-# 6. スキップされていないことを確かめる。
-grep -q -- '--- SKIP' "$d/out.txt" && { echo "FATAL: tests were skipped, nothing was verified" >&2; exit 1; }
-for t in ChildCredentialsMatchTarget VerifiedFDExecutionUsesTargetCredentials \
-  StagingCleanupUsesRealPrivileges StagingCancellationCleansUp \
-  StartWindowIndependentOfCommandDuration TimeoutKillsChild CancelKillsChild \
-  OutputLimitAbortsRunningChild; do
-  grep -q -- "--- PASS: TestPrivilegeGap_$t" "$d/out.txt" || { echo "FATAL: TestPrivilegeGap_$t did not pass" >&2; exit 1; }
-done
-grep -q -- '--- PASS: TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot' "$d/out.txt" || {
-  echo "FATAL: supplementary-group setuid test did not pass" >&2
-  exit 1
-}
-echo "OK: all required privileged criteria verified under env -i"
+TEST_RUNAS_TARGET_USER=nobody make executor-setuid-integration-test
 ```
+
+`nobody` はこの実測環境の例であり、起動者とも root とも異なる既存の非 root ユーザーを指定する。
+安全条件の実装は `scripts/verification/run_executor_setuid_integration.sh` を唯一の正とし、Linux／
+mount／owner／mode／入口同期／即時 setuid 解除／60秒 timeout／必須 PASS／SKIP 0／cleanup を同所で検査する。
 
 - [x] 初回手順を実際に走らせ、AC-05／AC-07／AC-08／AC-13 が緑（スキップではない）に
       なることを確認した。これは下の「Phase 5 初回実測記録」に対応し、5-d の修正完了証拠にはしない。
-- [x] 5-d 後の上記手順を `env -i` で実際に走らせ、子 credentials、fd-bound、staging、
-      cleanup、kill、監査 window、補助グループを含む必須集合が全て PASS、SKIP 0件になることを
-      確認する。OS、カーネル、Go、起動者／target UID、binary owner／mode、mount options と
+- [x] 5-d 後の `executor-setuid-integration-test` を実際に走らせ、子 credentials、fd-bound、staging、
+      cleanup、kill、監査 window、昇格拒否の負例、補助グループを含む必須集合が全て PASS、
+      SKIP 0件になることを確認する。OS、カーネル、Go、起動者／target UID、binary owner／mode、
       PASS／SKIP 件数を本節へ新しい実測記録として追記する。
-- [x] `make executor-privileged-integration-test` が、上の条件が揃わない環境では
+- [x] `make executor-privileged-integration-test` が、setuid 条件が揃わない環境では
       理由つきでスキップし、終了コード 0 で終わることを確認する。
 
 `make executor-privileged-integration-test` は `go test` を直接呼ぶため、setuid バイナリの
@@ -1668,7 +1625,7 @@ echo "OK: all required privileged criteria verified under env -i"
   実行前に検査した。入口同期直後に mode 0755 へ戻し、終了時に全 artifact を削除した。
 - `env -i` の専用ハーネスで資格情報、fd-bound、staging、cleanup、cancel/timeout、
   監査 window、昇格拒否の負例、補助グループを含む必須10テストが PASS、SKIP 0件。
-  レビュー修正後の最終実行では、1秒・5秒コマンドの起動区間は 311µs・501µs、差 190µs。
+  canonical Make コマンドの最終実行では、1秒・5秒コマンドの起動区間は 218µs・426µs、差 208µs。
   実行後は `/var/tmp/scr-setuid.*` と `/tmp/scr-stage-*` の残存がともに0件。
 - 非特権 `make executor-privileged-integration-test` は PASS 116・SKIP 10を表示して成功し、
   `pre-commit run executor-privileged-integration-test --all-files` も成功した。
