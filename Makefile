@@ -578,8 +578,9 @@ executor-privileged-integration-test:
 	echo "executor privileged integration summary: PASS=$$PASS_COUNT SKIP=$$SKIP_COUNT"
 
 # This Linux-only target is the required privileged-behavior gate. The harness
-# creates a root-owned mode-0711 directory and mode-4755 binary, clears the
-# setuid bit after privileged entry, rejects skips/missing PASS, and cleans up.
+# creates an invoker-owned mode-0700 directory and root-owned mode-4755 binary,
+# clears the setuid bit after privileged entry, rejects skips/missing PASS, and
+# cleans up.
 executor-setuid-integration-test:
 	TEST_RUNAS_TARGET_USER="$$TEST_RUNAS_TARGET_USER" scripts/verification/run_executor_setuid_integration.sh
 

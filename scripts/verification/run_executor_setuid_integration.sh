@@ -39,6 +39,9 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 run_parent=${TMPDIR:-/var/tmp}
 run_dir=$(mktemp -d "$run_parent/scr-setuid.XXXXXX")
+# The binary is briefly root-setuid, so only the invoking user may reach it.
+# chmod also removes effective access granted by a default ACL on run_parent.
+chmod 0700 "$run_dir"
 binary="$run_dir/executor.test"
 output="$run_dir/output.txt"
 entry_ready="$run_dir/entry-ready"
@@ -72,8 +75,6 @@ fi
 
 cd "$project_root"
 go test -tags "test integration" -c -o "$binary" ./internal/runner/base/executor/
-sudo chown root:root "$run_dir"
-sudo chmod 0711 "$run_dir"
 sudo chown root:root "$binary"
 sudo chmod 4755 "$binary"
 
@@ -81,7 +82,7 @@ dir_owner_uid=$(stat -c %u "$run_dir")
 dir_mode=$(stat -c %a "$run_dir")
 owner_uid=$(stat -c %u "$binary")
 mode=$(stat -c %a "$binary")
-if [ "$dir_owner_uid" -ne 0 ] || [ "$dir_mode" != 711 ]; then
+if [ "$dir_owner_uid" -ne "$invoker_uid" ] || [ "$dir_mode" != 700 ]; then
 	echo "FATAL: invalid artifact directory metadata; owner_uid=$dir_owner_uid mode=$dir_mode path=$run_dir" >&2
 	exit 1
 fi

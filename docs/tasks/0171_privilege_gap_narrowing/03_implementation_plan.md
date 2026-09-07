@@ -1165,7 +1165,7 @@ PR-7 の初回実装は setuid バイナリから `Execute` を呼べること�
 - [x] `scripts/verification/run_executor_setuid_integration.sh` と、それを呼ぶ
       `executor-setuid-integration-test` Make ターゲットを追加する。`env -i` の下で固定 `PATH`、
       `LANG=C`、`TEST_RUNAS_TARGET_USER`、入口同期 marker だけを明示してテストバイナリを起動する。
-      root 所有 mode 0711 の使い捨てディレクトリ内で owner UID 0／mode 4755 を検査し、入口の
+      起動者所有 mode 0700 の使い捨てディレクトリ内で owner UID 0／mode 4755 を検査し、入口の
       setuid 確認直後に mode 0755 へ戻す。Linux 以外は拒否し、全体 timeout、終了コード、
       `--- SKIP` 0件、必須テスト名の PASS 集合を検査する。通常の非特権 compile／skip
       ターゲットとは名前と責務を分ける。
@@ -1621,7 +1621,7 @@ mount／owner／mode／入口同期／即時 setuid 解除／60秒 timeout／必
 - Ubuntu 26.04 LTS、Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64。
 - 起動者 `issei`（UID 1000）、target `nobody`（UID/GID/補助グループ 65534）。
 - `/var/tmp` は `/` の overlay mount（`rw,relatime`、`nosuid` なし）。
-  ハーネスが root 所有 mode 0711 の使い捨てディレクトリと、バイナリの owner UID 0・mode 4755 を
+  ハーネスが起動者所有 mode 0700 の使い捨てディレクトリと、バイナリの owner UID 0・mode 4755 を
   実行前に検査した。入口同期直後に mode 0755 へ戻し、終了時に全 artifact を削除した。
 - `env -i` の専用ハーネスで資格情報、fd-bound、staging、cleanup、cancel/timeout、
   監査 window、昇格拒否の負例、補助グループを含む必須10テストが PASS、SKIP 0件。
