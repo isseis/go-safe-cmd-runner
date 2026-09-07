@@ -370,6 +370,7 @@
 | 最適化 | optimize / optimization | |
 | 順序独立 | order-independent | 変数展開の文脈 |
 | 出力 | output | |
+| 出力中継 | output pump | 子プロセスの stdout／stderr パイプを親側で読み、`OutputWriter` へ流す部品（Task 0171） |
 | 出力ファイル | output file | |
 | 出力サイズ | output size | |
 | オーバーヘッド | overhead | |

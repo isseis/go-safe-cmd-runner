@@ -278,6 +278,10 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 **完了条件**: `rg -F -c -e 'os/exec starts one goroutine per writer' -e 'stdout and stderr wrappers share this Capture' internal/runner/base/output/capture.go`
 が 2 を返す。
 
+> **Task 0171 による更新**: 出力中継への移行により上記リテラルは置き換えられた。以後は
+> `rg -F -c "the executor's output-pump reader goroutines for stdout and stderr share this Capture" internal/runner/base/output/capture.go`
+> が 1 を返すことを確認する。
+
 #### Step 1-3: K3・K4・K5 に根拠を書く（AC-15）
 
 - [x] `internal/runner/bootstrap/logger.go:457` の `var wg sync.WaitGroup`:
@@ -296,6 +300,10 @@ rg -F -c -e 'guards the fields below against the send worker started by go sd.ru
 - `rg -F -c 'this WaitGroup is what makes the Slack flush concurrent' internal/runner/bootstrap/logger.go` が 1 を返す
 - `rg -F -c 'output copy goroutine' internal/logging/log_line_tracker.go internal/redaction/error_collector.go` が
   2ファイル合計で 2 以上を返し、どちらのファイルも 1 件以上を含む
+
+> **Task 0171 による更新**: 出力中継への移行により上記リテラルは置き換えられた。以後は
+> `rg -F -c "the executor's output-pump reader goroutine" internal/logging/log_line_tracker.go internal/redaction/error_collector.go`
+> が各ファイルで 1 件以上を返すことを確認する。
 
 #### Step 1-4: K6 の2箇所に根拠を書く（AC-16）
 
@@ -1469,13 +1477,19 @@ D5・D6 への追随として**内容だけを変更**し、ファイルの新�
 | AC-10 | test | `internal/runner/base/risktypes/types_test.go::TestVerifiedFD_FdAndIdempotentClose`、同 `::TestVerifiedFD_NilReceiverClose` | 二重 `Close` で `syscall.Close` は1回だけ走り（fd 番号の再利用で確認）、nil レシーバは `nil` を返す |
 | AC-10 | static | `rg -F -n -e 'safe for concurrent use' -e 'CWE-1341' internal/runner/base/risktypes/types.go` | 0 件 |
 | AC-11 | static | `rg -F -c -e 'The window is not serialized' -e 'raised for every goroutine' -e 'This is an unresolved design issue' internal/runner/base/privilege/unix.go` | 3 |
+
+> **Task 0171 による更新**: 出力中継への移行により `This is an unresolved design issue` は置き換えられた。以後は `rg -F -c 'The window is not serialized' internal/runner/base/privilege/unix.go` および `rg -F -c 'raised for every goroutine' internal/runner/base/privilege/unix.go` がそれぞれ 1 を返すことを確認する。
 | AC-12 | static | `rg -ni -e 'mutex' -e 'thread.safe' -e 'safe for concurrent' -e 'protected from concurrent' -e 'acquired the .*lock' -g '!*_test.go' internal/runner/base/privilege/` | 0 件（HEAD では `unix.go:92-98,248,287` が該当するため、Step 3-3 を飛ばすと失敗する） |
 | AC-13 | static | Step 1-0 の `.git/0170-baseline/covfunc-*.txt` と削除後の `CGO_ENABLED=1 go tool cover -func` 出力を関数単位で `diff` する | カバレッジが落ちた関数が0件（ただし `privilege` パッケージについては Step 3-4 の議論で代替する） |
 | AC-13 | static | `git log <base>..HEAD --format='%s%n%b' \| rg -c '^Coverage: '` | 11 以上 |
 | AC-14 | static | `rg -F -c -e 'os/exec starts one goroutine per writer' -e 'stdout and stderr wrappers share this Capture' internal/runner/base/output/capture.go` | 2 |
+
+> **Task 0171 による更新**: 出力中継への移行により上記リテラルは置き換えられた。以後は `rg -F -c "the executor's output-pump reader goroutines for stdout and stderr share this Capture" internal/runner/base/output/capture.go` が 1 を返すことを確認する。
 | AC-15 | static | `rg -F -c -e 'guards the fields below against the send worker started by go sd.run()' -e 'Flush and Close can both reach this from different goroutines' -e 'terminate waits here for the goroutines running sendSync' -e 'updated concurrently by the send worker and by callers' internal/logging/slack_sender.go` | 4（K1a〜K1d） |
 | AC-15 | static | `rg -F -c 'this WaitGroup is what makes the Slack flush concurrent' internal/runner/bootstrap/logger.go` | 1（K3） |
 | AC-15 | static | `rg -F -c 'output copy goroutine' internal/logging/log_line_tracker.go internal/redaction/error_collector.go` | 各ファイル 1 件以上（K4・K5） |
+
+> **Task 0171 による更新**: 出力中継への移行により上記リテラルは置き換えられた。以後は `rg -F -c "the executor's output-pump reader goroutine" internal/logging/log_line_tracker.go internal/redaction/error_collector.go` が各ファイルで 1 件以上を返すことを確認する。
 | AC-16 | static | `rg -F -c 'memoization, not mutual exclusion' internal/runner/base/executor/fdexec_linux.go internal/runner/base/risktypes/runas_ident.go` | 2 |
 | AC-16 | static | `rg -F -c 'must not be replaced with a hand-written lazy initialization' internal/runner/base/risktypes/runas_ident.go` | 1 |
 | AC-17 | static | `rg -F -c -e 'process-wide cursor' -e 'silently wrong enumeration' -e 'deliberately kept by task 0170' internal/groupmembership/membership_cgo.go` | 3 |

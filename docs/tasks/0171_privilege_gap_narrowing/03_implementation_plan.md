@@ -1213,8 +1213,8 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 - [x] `executor-setuid-integration-test` を実行し、入口 credentials、必須 PASS 集合、SKIP 0件を確認して §4.3 へ追記した
 - [x] 5-d の全負の変異を確認し、変異ごとに失敗したテストまたはハーネス検査をコミットメッセージに記した
 - [x] PR を作成した（[#1103](https://github.com/isseis/go-safe-cmd-runner/pull/1103)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 文書と doc コメントの更新（F-006）
 
@@ -1229,7 +1229,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 
 #### 6-a. Go の doc コメント
 
-- [ ] `privilege/unix.go` の `WithPrivileges` doc コメントの次の段落（91-96行）を置き換える（AC-20）。
+- [x] `privilege/unix.go` の `WithPrivileges` doc コメントの次の段落（91-96行）を置き換える（AC-20）。
       **各語が行をまたがないよう改行位置を守る**（§7 の検証コマンドが行単位で照合するため）。
 
       変更前:
@@ -1254,7 +1254,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
       // design -- pausing the pump around the window, or moving privileged
       // operations into a separate process -- not a lock here.
       ```
-- [ ] `output/capture.go` の `Capture` doc コメントの次の段落を置き換える。
+- [x] `output/capture.go` の `Capture` doc コメントの次の段落を置き換える。
 
       変更前:
       ```
@@ -1274,15 +1274,15 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
       // WriteOutput on this Capture concurrently. mutex protects the fields those
       // goroutines contend on.
       ```
-- [ ] `redaction/error_collector.go` の `InMemoryErrorCollector` doc コメントの
+- [x] `redaction/error_collector.go` の `InMemoryErrorCollector` doc コメントの
       `output copy goroutine os/exec starts for a non-*os.File Cmd.Stdout/Cmd.Stderr, so
       RecordFailure` の前半を（同じ言い回しが `log_line_tracker.go` にもあるので、
       `RecordFailure` を含む側がこのファイルである）
       `output-pump reader goroutine the executor starts for the child's stdout/stderr pipes` へ
       書き替える。`mu` が要ることは変わらない。
-- [ ] `logging/log_line_tracker.go` の `DefaultLogLineTracker` doc コメントを同じ理由で
+- [x] `logging/log_line_tracker.go` の `DefaultLogLineTracker` doc コメントを同じ理由で
       同じ言い回しへ書き替える。`atomic.Int64` が要ることは変わらない。
-- [ ] `synccensus/census_guard_test.go` の3行の `reason` を書き替える。
+- [x] `synccensus/census_guard_test.go` の3行の `reason` を書き替える。
       - `capture.go` / `mutex`: `"the executor's output-pump reader goroutines for stdout and stderr share this Capture"`
       - `log_line_tracker.go` / `lineCounter`: `"incremented from the executor's output-pump reader goroutine"`
       - `error_collector.go` / `mu`: `"reached from the executor's output-pump reader goroutine through the redacting handler"`
@@ -1290,7 +1290,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 
 #### 6-b. 設計・利用者向け文書
 
-- [ ] `security-architecture.ja.md`（1196行付近）の「特権管理」節の残存リスク1件目を置き換える（AC-19）。
+- [x] `security-architecture.ja.md`（1196行付近）の「特権管理」節の残存リスク1件目を置き換える（AC-19）。
 
       変更前:
       ```
@@ -1306,9 +1306,9 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
         goroutine が生きている間に開く。どちらも例外的な場合にだけ開き、中で行うのは
         `kill(2)` 1回または自分が作ったディレクトリ1つの削除だけである。これは受け入れた残存リスクである
       ```
-- [ ] 同節の残存リスク2件目（再入ガードが同期を伴わない旨）は維持する。本タスクは前提を
+- [x] 同節の残存リスク2件目（再入ガードが同期を伴わない旨）は維持する。本タスクは前提を
       強めこそすれ変えないため、文言を変えない。
-- [ ] `security-risk-assessment.ja.md`（99-101行付近）の残存リスクを置き換える（AC-19）。
+- [x] `docs/user/security-risk-assessment.ja.md`（99-101行付近）の残存リスクを置き換える（AC-19）。
 
       変更前:
       ```
@@ -1325,12 +1325,12 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
         キャンセル時のプロセス停止と、一時複製の後始末のときにだけ開く短い隙では、
         出力を読み取る処理も動いている。これは受け入れた残存リスクである
       ```
-- [ ] 上の置換後テキストで導入する語のうち、`security-architecture.ja.md` の読者に
+- [x] 上の置換後テキストで導入する語のうち、`security-architecture.ja.md` の読者に
       前提が無い「起動区間」は、同ファイルの初出箇所に「（子プロセスを起こす `fork`／`execve` の区間）」を
       添えて説明する。`security-risk-assessment.ja.md` の側は上の変更後テキストが既に説明を含む。
-- [ ] `security-architecture.md` と `security-risk-assessment.md` を `/mktrans` で
+- [x] `security-architecture.md` と `docs/user/security-risk-assessment.md` を `/mktrans` で
       日本語版から反映する（CLAUDE.md の翻訳方針: 日本語版を先にコミットしてから翻訳する）。
-- [ ] `docs/translation_glossary.md` に「出力中継」「起動区間」「kill 区間」「後始末区間」の
+- [x] `docs/translation_glossary.md` に「出力中継」「起動区間」「kill 区間」「後始末区間」の
       訳語が登録されているか確認し、未登録なら `/mktrans` の手順に従って追加する。
 
 #### 6-c. 先行タスク 0170 の追跡表の陳腐化対応
@@ -1339,19 +1339,19 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 古くなる。5箇所すべてに、0171 で文言が置き換わった旨の注記と置換後の検証コマンドを併記する。
 0170 の他の行は変更しない。
 
-- [ ] `03_implementation_plan.md:1471`（0170 AC-11）: `This is an unresolved design issue` が
+- [x] `03_implementation_plan.md:1471`（0170 AC-11）: `This is an unresolved design issue` が
       `unix.go` から消えるため、期待値 3 が 2 になる。注記と、置換後の検証コマンド
       `rg -F -c 'The window is not serialized' internal/runner/base/privilege/unix.go`（期待値 1）
       および `rg -F -c 'raised for every goroutine' internal/runner/base/privilege/unix.go`（期待値 1）を併記する。
-- [ ] `03_implementation_plan.md:1475`（0170 AC-14）: `capture.go` の2つのリテラルが消える。
+- [x] `03_implementation_plan.md:1475`（0170 AC-14）: `capture.go` の2つのリテラルが消える。
       注記と、置換後の検証コマンド
       `rg -F -c "the executor's output-pump reader goroutines for stdout and stderr share this Capture" internal/runner/base/output/capture.go`（期待値 1）を併記する。
-- [ ] `03_implementation_plan.md:1478`（0170 AC-15）: `output copy goroutine` が消える。
+- [x] `03_implementation_plan.md:1478`（0170 AC-15）: `output copy goroutine` が消える。
       注記と、置換後の検証コマンド
       `rg -F -c "the executor's output-pump reader goroutine" internal/logging/log_line_tracker.go internal/redaction/error_collector.go`（期待値 各ファイル 1 件以上）を併記する。
-- [ ] `03_implementation_plan.md:278` 付近（0170 Step 1-2 の完了条件、`capture.go` の2リテラル）:
+- [x] `03_implementation_plan.md:278` 付近（0170 Step 1-2 の完了条件、`capture.go` の2リテラル）:
       同じ注記を足す。
-- [ ] `03_implementation_plan.md:297` 付近（0170 Step 1-3 の完了条件、`output copy goroutine`）:
+- [x] `03_implementation_plan.md:297` 付近（0170 Step 1-3 の完了条件、`output copy goroutine`）:
       同じ注記を足す。
 
 **完了の目安**: §7 の AC-19／AC-20 の検証コマンドが期待どおりの結果を返す。
@@ -1369,11 +1369,11 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 
 **判定理由**: 文言の置き換えと追跡表への注記のみで、未踏の設計判断・パネルモードの引き金・approach 未確定・隔離された高リスク step のいずれにも当たらないため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] §8 の文言に関する横断検索（`output copy goroutine` の不在、置換後文言の存在、0170 追跡表の `0171` 5件以上）が期待どおり
-- [ ] §4.4 の性能測定を全変更が入った状態で行い、結果を §4.4 へ追記した
-- [ ] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] §8 の文言に関する横断検索（`output copy goroutine` の不在、置換後文言の存在、0170 追跡表の `0171` 5件以上）が期待どおり
+- [x] §4.4 の性能測定を全変更が入った状態で行い、結果を §4.4 へ追記した
+- [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
+- [x] PR を作成した（[#1104](https://github.com/isseis/go-safe-cmd-runner/pull/1104)）
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1527,7 +1527,7 @@ Phase 3 と Phase 4 だけを2つに割った理由は次のとおり。
       許可リストのこの1行が実装に効いていることを固定する。
 - [x] AC-18: `dryrun_manager.go` へ `d.executor.Execute(...)` の呼び出しを1行足すと、
       AC-18 の `static` 検査が 1 件を返して落ちる。
-- [ ] AC-19 / AC-20 の各 `static` 検査: 置換前のファイルに対して実行し、期待と異なる結果
+- [x] AC-19 / AC-20 の各 `static` 検査: 置換前のファイルに対して実行し、期待と異なる結果
       （旧文言の検査は 1 件以上、新文言の検査は 0 件）になることを確かめてから、置換後に再実行する。
 - [x] AC-21: `requireSetuidModel` が読む環境変数名を1文字変えると
       `TestRequireSetuidModel_ReadsDocumentedEnvVar` が落ちる。
@@ -1632,11 +1632,28 @@ mount／owner／mode／入口同期／即時 setuid 解除／60秒 timeout／必
 
 ### 4.4 性能の確認（非機能要件）
 
-- [ ] `/bin/true` 相当の短いコマンドを 200 回繰り返し、変更前（`main`）と変更後で実時間の
+- [x] `/bin/true` 相当の短いコマンドを 200 回繰り返し、変更前（`main`）と変更後で実時間の
       中央値を測り、その差を**絶対値**で記録する。判断の基準は `fork`／`exec` に要する
       数十マイクロ秒との比較であり、相対的な増減では判断しない（CLAUDE.md の性能方針）。
-- [ ] 測定結果（測定環境、回数、中央値、差）を本節へ追記する。差が数十マイクロ秒の
+- [x] 測定結果（測定環境、回数、中央値、差）を本節へ追記する。差が数十マイクロ秒の
       オーダーに収まる場合は「実時間に差は出ない」と結論して閉じ、機構は追加しない。
+
+#### Phase 6 完了時の実測記録（2026-09-07）
+
+- 測定ハーネスは両 revision の `internal/runner/base/executor` に同一の一時テストを置いた。
+  `NewDefaultExecutor(WithFileSystem(&executortestutil.MockFileSystem{}))` と
+  `CreateRuntimeCommand("/bin/true", nil, WithWorkDir(""))` を各テストプロセスで1回作り、
+  200回の各 `Execute(context.Background(), nil, cmd, map[string]string{}, nil)` の直前を
+  `time.Now()`、直後を `time.Since()` で測った。全結果の終了コード0を検査し、昇順に並べた
+  100番目と101番目（1始まり）の算術平均を中央値とした。warm-up は設けていない。
+- 両 revision で実行したコマンドは
+  `go test -tags test -run '^TestTask0171MeasureTrue200$' -count=1 -v ./internal/runner/base/executor/`。
+  テスト出力の `TASK0171_MEDIAN_NS` は変更前 `229312`、変更後 `239417` だった。
+  一時テストと detached worktree は測定後に削除した。
+- Linux 7.0.12-linuxkit、Go 1.26.3 linux/arm64（aarch64）。
+- `DefaultExecutor.Execute` で `/bin/true` を変更前（`main`、`24872a7e`）と変更後にそれぞれ200回実行した。
+- 中央値は変更前 229.312µs、変更後 239.417µs、絶対差 10.105µs。差は数十マイクロ秒の
+  オーダーに収まって計画の判断基準内であり、コマンド1回の実時間に差は出ないと判断したため、追加の機構は設けない。
 
 ### 4.5 後方互換性
 
@@ -2038,37 +2055,37 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 （`docs/tasks/` の過去タスクの記録は歴史的事実なので書き換えない。ただし 0170 の追跡表だけは
 Phase 6-c で注記を足す）。
 
-- [ ] 削除した `executeCommandWithPath` の残存参照:
+- [x] 削除した `executeCommandWithPath` の残存参照:
       ```sh
       rg -n 'executeCommandWithPath' internal/ cmd/ test/ Makefile
       ```
       期待: マッチ 0 件（コメント・テスト名を含む）
-- [ ] 削除した `prepareExecCommand` の残存参照:
+- [x] 削除した `prepareExecCommand` の残存参照:
       ```sh
       rg -n 'prepareExecCommand' internal/ cmd/ test/ Makefile
       ```
       期待: マッチ 0 件（`test/security/output_security_test.go:181,252` のコメントを含む）
-- [ ] `exec.CommandContext` を使い切っていないこと:
+- [x] `exec.CommandContext` の呼び出しを使い切っていないこと:
       ```sh
-      rg -n 'exec\.CommandContext' internal/runner/base/executor/
+      rg -n 'exec\.CommandContext\(' internal/runner/base/executor/
       ```
       期待: マッチ 0 件
-- [ ] 旧文言 `output copy goroutine` の一掃:
+- [x] 旧文言 `output copy goroutine` の一掃:
       ```sh
       rg -n -F 'output copy goroutine' internal/ cmd/
       ```
       期待: マッチ 0 件（`census_guard_test.go` の理由文字列を含む）
-- [ ] 置換後の文言が実際に入っていること:
+- [x] 置換後の文言が実際に入っていること:
       ```sh
       rg -F -c "output-pump reader goroutine" internal/logging/log_line_tracker.go internal/redaction/error_collector.go internal/runner/base/output/capture.go internal/testutil/synccensus/census_guard_test.go
       ```
       期待: 各ファイル 1 件以上
-- [ ] 0170 の追跡表の陳腐化対応が入っていること:
+- [x] 0170 の追跡表の陳腐化対応が入っていること:
       ```sh
       rg -n -F '0171' docs/tasks/0170_excess_synchronization_removal/03_implementation_plan.md
       ```
       期待: 5 件以上（Phase 6-c の5箇所）
-- [ ] 新規の型名が executor パッケージの外へ漏れておらず、他パッケージに同名の宣言も無いこと:
+- [x] 新規の型名が executor パッケージの外へ漏れておらず、他パッケージに同名の宣言も無いこと:
       ```sh
       rg -n -e 'boundedBuffer' -e 'outputPump' -e 'preparedCommand' -e 'killStrategy' -e 'execBinding' --glob '*.go' internal/ cmd/ | rg -v '^internal/runner/base/executor/'
       ```

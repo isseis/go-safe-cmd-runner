@@ -1198,7 +1198,8 @@ The system implements multiple security layers:
 - Emergency shutdown on failure
 
 **Residual Risks**:
-- While the privilege window is open, goroutines that do not participate in it are not protected. This is an unresolved design issue
+- For the command-execution path, the privilege window has been narrowed to the start window (the `fork`/`execve` interval that starts the child process; the staging fallback also includes copying the verified binary). The only non-participating goroutine that runs in this window is the logging system's Slack send worker
+- The kill window on cancellation and the cleanup window for the staging fallback open while output-reader goroutines are alive. Both open only in exceptional cases and perform only one `kill(2)` call or remove one directory created by this process. This is an accepted residual risk
 - The reentrancy guard in `WithPrivileges` uses no synchronization primitive, so it assumes a single calling goroutine. Two goroutines calling it concurrently is a data race, and the guard itself does not hold in that case (both can read the unset flag and open a window)
 
 ### Environment Manipulation

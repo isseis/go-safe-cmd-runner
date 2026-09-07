@@ -13,10 +13,9 @@ type Failure struct {
 }
 
 // InMemoryErrorCollector collects redaction failures in memory. RedactingHandler
-// calls RecordFailure, and that call can run on the output copy goroutine
-// os/exec starts for a non-*os.File Cmd.Stdout/Cmd.Stderr, so RecordFailure
-// can run concurrently with the main goroutine's reads; mu guards against
-// that.
+// calls RecordFailure, and that call can run on the output-pump reader goroutine
+// the executor starts for the child's stdout/stderr pipes, so RecordFailure can
+// run concurrently with the main goroutine's reads; mu guards against that.
 type InMemoryErrorCollector struct {
 	mu       sync.RWMutex
 	failures []Failure
