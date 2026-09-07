@@ -11,12 +11,11 @@ import (
 
 // Capture represents an active output capture session using temporary file.
 //
-// os/exec starts one goroutine per writer when Cmd.Stdout/Cmd.Stderr is not
-// an *os.File, and stdout and stderr wrappers share this Capture: the
-// executor gives both the stdoutWrapper and the stderrWrapper the same
-// OutputWriter, so the two per-writer goroutines can call WriteOutput on this
-// Capture concurrently. mutex protects the fields those goroutines contend
-// on.
+// The executor's output pump starts one reader goroutine per stream, and the
+// stdout and stderr wrappers share this Capture: the executor gives both the
+// same OutputWriter, so the two output-pump reader goroutines can call
+// WriteOutput on this Capture concurrently. mutex protects the fields those
+// goroutines contend on.
 type Capture struct {
 	OutputPath   string       // Final output file path
 	TempFilePath string       // Temporary file path

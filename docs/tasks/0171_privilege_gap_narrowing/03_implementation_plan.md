@@ -1229,7 +1229,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 
 #### 6-a. Go の doc コメント
 
-- [ ] `privilege/unix.go` の `WithPrivileges` doc コメントの次の段落（91-96行）を置き換える（AC-20）。
+- [x] `privilege/unix.go` の `WithPrivileges` doc コメントの次の段落（91-96行）を置き換える（AC-20）。
       **各語が行をまたがないよう改行位置を守る**（§7 の検証コマンドが行単位で照合するため）。
 
       変更前:
@@ -1254,7 +1254,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
       // design -- pausing the pump around the window, or moving privileged
       // operations into a separate process -- not a lock here.
       ```
-- [ ] `output/capture.go` の `Capture` doc コメントの次の段落を置き換える。
+- [x] `output/capture.go` の `Capture` doc コメントの次の段落を置き換える。
 
       変更前:
       ```
@@ -1274,15 +1274,15 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
       // WriteOutput on this Capture concurrently. mutex protects the fields those
       // goroutines contend on.
       ```
-- [ ] `redaction/error_collector.go` の `InMemoryErrorCollector` doc コメントの
+- [x] `redaction/error_collector.go` の `InMemoryErrorCollector` doc コメントの
       `output copy goroutine os/exec starts for a non-*os.File Cmd.Stdout/Cmd.Stderr, so
       RecordFailure` の前半を（同じ言い回しが `log_line_tracker.go` にもあるので、
       `RecordFailure` を含む側がこのファイルである）
       `output-pump reader goroutine the executor starts for the child's stdout/stderr pipes` へ
       書き替える。`mu` が要ることは変わらない。
-- [ ] `logging/log_line_tracker.go` の `DefaultLogLineTracker` doc コメントを同じ理由で
+- [x] `logging/log_line_tracker.go` の `DefaultLogLineTracker` doc コメントを同じ理由で
       同じ言い回しへ書き替える。`atomic.Int64` が要ることは変わらない。
-- [ ] `synccensus/census_guard_test.go` の3行の `reason` を書き替える。
+- [x] `synccensus/census_guard_test.go` の3行の `reason` を書き替える。
       - `capture.go` / `mutex`: `"the executor's output-pump reader goroutines for stdout and stderr share this Capture"`
       - `log_line_tracker.go` / `lineCounter`: `"incremented from the executor's output-pump reader goroutine"`
       - `error_collector.go` / `mu`: `"reached from the executor's output-pump reader goroutine through the redacting handler"`
@@ -1290,7 +1290,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 
 #### 6-b. 設計・利用者向け文書
 
-- [ ] `security-architecture.ja.md`（1196行付近）の「特権管理」節の残存リスク1件目を置き換える（AC-19）。
+- [x] `security-architecture.ja.md`（1196行付近）の「特権管理」節の残存リスク1件目を置き換える（AC-19）。
 
       変更前:
       ```
@@ -1306,9 +1306,9 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
         goroutine が生きている間に開く。どちらも例外的な場合にだけ開き、中で行うのは
         `kill(2)` 1回または自分が作ったディレクトリ1つの削除だけである。これは受け入れた残存リスクである
       ```
-- [ ] 同節の残存リスク2件目（再入ガードが同期を伴わない旨）は維持する。本タスクは前提を
+- [x] 同節の残存リスク2件目（再入ガードが同期を伴わない旨）は維持する。本タスクは前提を
       強めこそすれ変えないため、文言を変えない。
-- [ ] `security-risk-assessment.ja.md`（99-101行付近）の残存リスクを置き換える（AC-19）。
+- [x] `docs/user/security-risk-assessment.ja.md`（99-101行付近）の残存リスクを置き換える（AC-19）。
 
       変更前:
       ```
@@ -1325,12 +1325,12 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
         キャンセル時のプロセス停止と、一時複製の後始末のときにだけ開く短い隙では、
         出力を読み取る処理も動いている。これは受け入れた残存リスクである
       ```
-- [ ] 上の置換後テキストで導入する語のうち、`security-architecture.ja.md` の読者に
+- [x] 上の置換後テキストで導入する語のうち、`security-architecture.ja.md` の読者に
       前提が無い「起動区間」は、同ファイルの初出箇所に「（子プロセスを起こす `fork`／`execve` の区間）」を
       添えて説明する。`security-risk-assessment.ja.md` の側は上の変更後テキストが既に説明を含む。
-- [ ] `security-architecture.md` と `security-risk-assessment.md` を `/mktrans` で
+- [ ] `security-architecture.md` と `docs/user/security-risk-assessment.md` を `/mktrans` で
       日本語版から反映する（CLAUDE.md の翻訳方針: 日本語版を先にコミットしてから翻訳する）。
-- [ ] `docs/translation_glossary.md` に「出力中継」「起動区間」「kill 区間」「後始末区間」の
+- [x] `docs/translation_glossary.md` に「出力中継」「起動区間」「kill 区間」「後始末区間」の
       訳語が登録されているか確認し、未登録なら `/mktrans` の手順に従って追加する。
 
 #### 6-c. 先行タスク 0170 の追跡表の陳腐化対応
@@ -1339,19 +1339,19 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 古くなる。5箇所すべてに、0171 で文言が置き換わった旨の注記と置換後の検証コマンドを併記する。
 0170 の他の行は変更しない。
 
-- [ ] `03_implementation_plan.md:1471`（0170 AC-11）: `This is an unresolved design issue` が
+- [x] `03_implementation_plan.md:1471`（0170 AC-11）: `This is an unresolved design issue` が
       `unix.go` から消えるため、期待値 3 が 2 になる。注記と、置換後の検証コマンド
       `rg -F -c 'The window is not serialized' internal/runner/base/privilege/unix.go`（期待値 1）
       および `rg -F -c 'raised for every goroutine' internal/runner/base/privilege/unix.go`（期待値 1）を併記する。
-- [ ] `03_implementation_plan.md:1475`（0170 AC-14）: `capture.go` の2つのリテラルが消える。
+- [x] `03_implementation_plan.md:1475`（0170 AC-14）: `capture.go` の2つのリテラルが消える。
       注記と、置換後の検証コマンド
       `rg -F -c "the executor's output-pump reader goroutines for stdout and stderr share this Capture" internal/runner/base/output/capture.go`（期待値 1）を併記する。
-- [ ] `03_implementation_plan.md:1478`（0170 AC-15）: `output copy goroutine` が消える。
+- [x] `03_implementation_plan.md:1478`（0170 AC-15）: `output copy goroutine` が消える。
       注記と、置換後の検証コマンド
       `rg -F -c "the executor's output-pump reader goroutine" internal/logging/log_line_tracker.go internal/redaction/error_collector.go`（期待値 各ファイル 1 件以上）を併記する。
-- [ ] `03_implementation_plan.md:278` 付近（0170 Step 1-2 の完了条件、`capture.go` の2リテラル）:
+- [x] `03_implementation_plan.md:278` 付近（0170 Step 1-2 の完了条件、`capture.go` の2リテラル）:
       同じ注記を足す。
-- [ ] `03_implementation_plan.md:297` 付近（0170 Step 1-3 の完了条件、`output copy goroutine`）:
+- [x] `03_implementation_plan.md:297` 付近（0170 Step 1-3 の完了条件、`output copy goroutine`）:
       同じ注記を足す。
 
 **完了の目安**: §7 の AC-19／AC-20 の検証コマンドが期待どおりの結果を返す。

@@ -18,10 +18,10 @@ type LogLineTracker interface {
 
 // DefaultLogLineTracker implements LogLineTracker. output.Capture calls
 // Logger.Error when captured output exceeds its size limit, and that call can
-// run on the output copy goroutine os/exec starts for a non-*os.File
-// Cmd.Stdout/Cmd.Stderr; the slog handler reached from there can call
-// IncrementLine concurrently with the main goroutine, so lineCounter is
-// atomic rather than a plain int.
+// run on the output-pump reader goroutine the executor starts for the child's
+// stdout/stderr pipes; the slog handler reached from there can call
+// IncrementLine concurrently with the main goroutine, so lineCounter is atomic
+// rather than a plain int.
 type DefaultLogLineTracker struct {
 	lineCounter atomic.Int64
 }
