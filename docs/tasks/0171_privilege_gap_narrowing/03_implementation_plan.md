@@ -1328,7 +1328,7 @@ prerequisite ごとの理由つきでスキップし、pre-commit が緑のま�
 - [x] 上の置換後テキストで導入する語のうち、`security-architecture.ja.md` の読者に
       前提が無い「起動区間」は、同ファイルの初出箇所に「（子プロセスを起こす `fork`／`execve` の区間）」を
       添えて説明する。`security-risk-assessment.ja.md` の側は上の変更後テキストが既に説明を含む。
-- [ ] `security-architecture.md` と `docs/user/security-risk-assessment.md` を `/mktrans` で
+- [x] `security-architecture.md` と `docs/user/security-risk-assessment.md` を `/mktrans` で
       日本語版から反映する（CLAUDE.md の翻訳方針: 日本語版を先にコミットしてから翻訳する）。
 - [x] `docs/translation_glossary.md` に「出力中継」「起動区間」「kill 区間」「後始末区間」の
       訳語が登録されているか確認し、未登録なら `/mktrans` の手順に従って追加する。
