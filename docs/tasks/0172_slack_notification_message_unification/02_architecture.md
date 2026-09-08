@@ -15,7 +15,8 @@
 - [01_requirements.md](01_requirements.md) — 本設計が満たす要件と受け入れ基準
 - [0163 redaction coverage and slack async](../0163_redaction_coverage_and_slack_async/02_architecture.md) — 送信キューと優先度、送信失敗ロガー、ドライランの扱いを定めた先行設計
 - [0068 separate slack webhooks](../0068_separate_slack_webhooks/02_architecture.md) — 成功用・エラー用 Webhook の分離
-- [security-architecture.md](../../dev/architecture_design/security-architecture.md) — 本タスクで記述の更新が必要（3.8）
+- [security-architecture.ja.md](../../dev/architecture_design/security-architecture.ja.md) / [security-architecture.md](../../dev/architecture_design/security-architecture.md) — 本タスクで記述の更新が必要（3.8）
+- [slack_async_delivery.ja.md](../../dev/architecture_design/slack_async_delivery.ja.md) / [slack_async_delivery.md](../../dev/architecture_design/slack_async_delivery.md) — 高優先度キューの根拠を「セキュリティアラート等」と記しており、更新が必要（3.8）
 - [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) — 図の記法
 
 ## 用語
@@ -140,13 +141,13 @@ Text 行は次の形に固定する。
 | INFO 以上 WARN 未満 | ✅ | `SUCCESS` | `good` |
 | INFO 未満 | ⚠️ | `WARNING` | `warning` |
 
-`slog` のレベルは整数値であり、上の表に挙げた代表値以外も表現できる。そのため判定は等値ではなく閾値で行う。INFO 未満を成功ではなく警告に倒すのは、想定していないレベルの通知を「成功」と名乗らせないためである。`SlackHandler.Enabled` は既定のレベルモードで INFO 未満を除外するため、この行は本番では到達しない。ただし除外はハンドラ生成時の既定値に依存しており、`envelopeFor` 自身の性質ではないため、この分岐を持たせる。
+`slog` のレベルは整数値であり、上の表に挙げた代表値以外も表現できる。そのため判定は等値ではなく閾値で行う。INFO 未満を成功ではなく警告に倒すのは、想定していないレベルの通知を「成功」と名乗らせないためである。本番の 2 つのハンドラは `LevelModeExactInfo`（成功用 Webhook）と `LevelModeWarnAndAbove`（エラー用 Webhook）で生成される。`SlackHandler.Enabled` は前者では INFO 以外を、後者では WARN 未満を落とすため、INFO 未満の行も、INFO と WARN のあいだの行も本番では到達しない（`LevelModeDefault` は本番では使われない）。ただしこの除外はハンドラ生成時に渡すレベルモードに依存しており、`envelopeFor` 自身の性質ではないため、この分岐を持たせる。
 
 **WARNING の行に本番の書き手がいないこと**。削除前に WARN で書かれていた通知は `privilege_escalation_failure` だけであり、これは削除対象である。削除後に残る 3 種別は INFO（グループ実行の成功）または ERROR（グループ実行の失敗、実行前エラー、user/group コマンドの失敗）でしか書かれない。したがって WARNING の 2 行は、将来の種別追加と想定外レベルに備えた定義であり、本番の通知としては現れない。
 
 添付フィールドは、種別固有のフィールドを先に並べ、末尾に必ず Scope・Hostname・Run ID の 3 件をこの順で置く。`###` は使わず、強調は Slack の mrkdwn である `*...*` で表す。
 
-3 つ目の例に `config_parsing_failed` ではなく `file_access_failed` を挙げているのは、設定ファイルの解析失敗が Slack へ届かないためである。理由は 3.5 の「Slack へ届く実行前エラーの範囲」に述べる。
+3 つ目の例の要約は実行前エラーの種別名である。要件定義書の例は `config_parsing_failed` を挙げているが、この種別名は Slack ハンドラの登録前に起きる TOML の解析失敗でも、登録後に起きるグローバル設定の展開失敗やグループ選択の誤りでも使われる。すなわち Slack に出ることも出ないこともあり、例としては到達性を語れない。ここで `file_access_failed` を挙げているのは、Slack に必ず届く経路（グローバル対象ファイルの検証失敗）を持つ種別名を選んだためである。到達性の線引きは 3.5 の「Slack へ届く実行前エラーの範囲」に述べる。
 
 ### 1.5 設計判断の一覧
 
@@ -369,8 +370,10 @@ func (c NotificationContext) LogValue() slog.Value
 func (c NotificationContext) LogAttr() slog.Attr
 
 // ScopeFromAttr は LogAttr が書き出した値を読み戻す。値がグループ値でない場合、
-// scope が既知の 3 値でない場合、および scope と名前の組み合わせが成り立たない
-// 場合は ok=false を返す。
+// scope が既知の 3 値でない場合、および scope が ScopeGroup か ScopeCommand で
+// ありながらグループ名が空の場合は ok=false を返す。
+// ScopeCommand でコマンド名が空であることは失敗ではない。グループ名という
+// 発生箇所の情報が残っており、6.2 のとおりグループ名だけで描画するためである。
 func ScopeFromAttr(v slog.Value) (c NotificationContext, ok bool)
 ```
 
@@ -382,7 +385,7 @@ func ScopeFromAttr(v slog.Value) (c NotificationContext, ok bool)
 
 **矛盾した値をそれでも受け取りうる理由**。読み側の `SlackHandler` が見るのは `NotificationContext` そのものではなく、レコードに載った属性値である。属性はハンドラ連鎖を通るあいだに姿を変えうる。とくに `RedactingHandler` は、`slog.LogValuer` の解決に失敗した属性や、キー名が秘匿値のパターンに一致した属性を文字列の置き換え値に差し替える。その結果、読み側はグループ値ではなく文字列を受け取ることがある。`ScopeFromAttr` はこれを `ok=false` として返し、呼び出し側は 4.1 の扱いに従う。
 
-**`GlobalScope()` の位置付け**。グローバルな通知の発火点は `Scope` をゼロ値のまま残してよい。ゼロ値がグローバルであることは型の定義そのものであり、明示を義務にしても、構造体リテラルで組み立てる 17 箇所の `PreExecutionError` に強制する手段が無い。`GlobalScope()` は、スコープを引数として渡す場面とテストで意図を明示するための書き方として提供する（AC-09 が 3 つのコンストラクタを要求している）。
+**`GlobalScope()` の位置付け**。グローバルな通知の発火点は `Scope` をゼロ値のまま残してよい。ゼロ値がグローバルであることは型の定義そのものであり、明示を義務にしても、構造体リテラルで組み立てる 17 箇所の `PreExecutionError` に強制する手段が無い。`GlobalScope()` は、スコープを引数として渡す場面とテストで意図を明示するための書き方として提供する（AC-09 が 3 つのコンストラクタを要求している）。その帰結として `GlobalScope()` は production の呼び出し元を持たず、`make deadcode` が到達不能として報告する。AC-08 の確認はフェーズ 4（3 種別の削除が終わった時点）で行い、その時点ではこの関数はまだ存在しないため AC-08 とは衝突しない。フェーズ 5 以降に `make deadcode` を実行する場合は、この 1 件を AC-09 が要求した既知の残存として扱い、新たな到達不能コードとは数えない。
 
 ### 3.2 通知種別の単一定義
 
@@ -432,7 +435,23 @@ var messageSpecs = map[common.MessageType]messageSpec{ /* 3 種別 */ }
 
 **`string` と `MessageType` の境界**。レコードから読み取った `message_type` は任意の文字列でありうる。`Handle` はこれを `common.MessageType` へ変換して 1 回だけ `messageSpecs` を引き、見つからなければ未登録として扱う（4.1）。変換は検証ではなく、マップの検索が検証そのものである。
 
-**優先度を送信側から引き直さない**。現在の `slackSender` は、送信要求の `messageType`（文字列）から `isHighPriority` で優先度を判定している。変更後は `Handle` が引いた種別定義の `highPriority` を送信要求に載せ、送信側はその値でキューを選ぶ。`isHighPriority` は削除する。これにより、種別集合を知るコードは `Handle` の 1 箇所だけになり、「同じ種別集合を独立に列挙する箇所が他に無い」（AC-27）が構造として成り立つ。送信要求が持つ `messageType` の文字列は、送信件数の種別別集計のキーとしてのみ残る。
+**優先度を送信側から引き直さない**。現在の `slackSender` は、送信要求の `messageType`（文字列）から `isHighPriority` で優先度を判定している。変更後は `Handle` が引いた種別定義の `highPriority` を送信要求に載せ、送信側はその値でキューを選ぶ。`isHighPriority` は削除する。これにより、`internal/logging` の中で種別集合を知るコードは `messageSpecs` の 1 箇所だけになる。送信要求が持つ `messageType` の文字列は、送信件数の種別別集計のキーとしてのみ残る。
+
+**種別名の定数と `messageSpecs` は 2 度目の列挙になる**。上の集約だけでは AC-27 の「同じ種別集合を独立に列挙する箇所が他に無い」は満たせない。`internal/common` の `MessageType` 定数（書き側が種別を名乗るための名前）と `internal/logging` の `messageSpecs`（読み側の定義）は、依然として同じ集合を 2 箇所で列挙しているためである。定数だけを足して `messageSpecs` に足し忘れると、汎用メッセージへ落ちる。これは `user_group_command_failure` で実際に起きた欠陥と同じ形であり、7.2 の横断検証は `messageSpecs` を `range` するため、この漏れを捉えられない。
+
+そこで `internal/common/logschema.go` に、定数を要素とする `AllMessageTypes` を定数宣言の直後に置く。
+
+```go
+// AllMessageTypes は定義済みの通知種別の全体である。
+// 読み側の定義（logging.messageSpecs）との一致はテストが検証する。
+var AllMessageTypes = []MessageType{
+    MessageTypeCommandGroupSummary,
+    MessageTypePreExecutionError,
+    MessageTypeUserGroupCommandFailure,
+}
+```
+
+`internal/logging` のテストは `common.AllMessageTypes` を `range` して各要素が `messageSpecs` に登録されていることを確かめ、あわせて `len(messageSpecs) == len(common.AllMessageTypes)` を確かめる（7.2）。これで、定数を足して定義を足し忘れた場合も、定義を足して定数を足し忘れた場合も、実行時の WARN を待たずにビルドが赤くなる。定数と `AllMessageTypes` は隣接した 1 箇所にあり、離れた 2 箇所が黙って食い違う形は残らない。
 
 **組み立て関数がレコードだけを引数に取る理由**。種別固有の部分に Run ID や Hostname は現れない。それらはエンベロープの担当である。引数をレコードだけにすると、種別ごとの組み立て関数は `SlackHandler` に依存しない純粋な関数になり、ハンドラを組み立てずに単体で検証できる。
 
@@ -485,7 +504,16 @@ func (sd *slackSender) warn(msg string, attrs ...slog.Attr)
 
 `command_group_summary` の色は、これまで `status` 属性から決めていた。変更後はログレベルから決まる。発火点は成功なら INFO、エラーなら ERROR で書き出しており、`status` 属性とログレベルは同じ情報を二重に持っていた。したがって表示上の情報は失われない。`status` 属性そのものは構造化ログの属性として残す。
 
-`user_group_command_failure` の固有フィールドを組み立てるには、書き側と読み側が属性キーを共有する必要がある。現在 `audit.Logger.LogUserGroupExecution` はキーを文字列リテラルで書いている。`internal/common/logschema.go` に属性キーの定義を追加し、書き側もそれを使う形に変える。ここで注意が要るのは、必要なキーのうち `exit_code` が既に `common.LogFieldExitCode` として同ファイルに存在し、`command_name` と `stderr` は削除対象の `common.PrivilegedCommandFailureAttrs` にも同じ値で定義されていることである。同じ値の定数が 3 個できることを避けるため、既存の `LogField*` 定数を再利用し、不足するキー（コマンドのパス）だけを足す。エラー出力の切り詰め長は現行の 500 文字を据え置き、既存の定数を再利用する。
+`user_group_command_failure` の固有フィールドを組み立てるには、書き側と読み側が属性キーを共有する必要がある。現在 `audit.Logger.LogUserGroupExecution` はキーを文字列リテラルで書いている。`internal/common/logschema.go` に属性キーの定義を追加し、書き側もそれを使う形に変える。ここで注意が要るのは、必要な 4 つのキーで既存の状況が揃っていないことである。
+
+| キー | 既存の定義 | 扱い |
+|---|---|---|
+| `exit_code` | `common.LogFieldExitCode`（同じ値）、および削除対象の `PrivilegedCommandFailureAttrs.ExitCode` | 既存の `LogFieldExitCode` を再利用する |
+| `stderr` | `common.LogFieldStderr`（同じ値）、および削除対象の `PrivilegedCommandFailureAttrs.Stderr` | 既存の `LogFieldStderr` を再利用する |
+| `command_name` | 削除対象の `PrivilegedCommandFailureAttrs.CommandName` と `PrivilegeEscalationFailureAttrs.CommandName` のみ | 新たに定数を足す |
+| `command_path` | 削除対象の `PrivilegedCommandFailureAttrs.CommandPath` のみ | 新たに定数を足す |
+
+`command_name` に `common.LogFieldName` を流用しない。`LogFieldName` の値は `"name"` であって `"command_name"` ではなく、流用すれば書き側の属性キーが変わって監査ログのスキーマが理由なく壊れる。`LogField*` は `CommandResult` の構造化ログの語彙であり、監査ログの語彙とは別物である。削除対象の 2 つの属性構造体が消えたあと `command_name` と `command_path` の定義はどこにも残らないため、この 2 つは新規に足す必要がある。エラー出力の切り詰め長は現行の 500 文字を据え置き、既存の定数を再利用する。
 
 要約と Scope の描画には表示上の制約がある。6.2 に定める。
 
@@ -507,8 +535,10 @@ func (sd *slackSender) warn(msg string, attrs ...slog.Attr)
 
 | 到達性 | 実行前エラーの例 |
 |---|---|
-| Slack へ届く | グローバル設定の展開失敗、グローバル対象ファイルの検証失敗、グループ選択の誤り、グループ実行中の検証失敗（`runner.executeGroups`） |
-| Slack へ届かない | 設定ファイルの解析失敗、ログファイルの開設失敗、Webhook URL の検証失敗、`--run-id` の書式違反、ビルド時設定の誤り、特権の放棄失敗 |
+| Slack へ届く | グローバル設定の展開失敗、テンプレート検証の失敗、グローバル対象ファイルの検証失敗、起動時ディレクトリ権限監査の失敗、グループ選択の誤り、グループ実行中の検証失敗（`runner.executeGroups`） |
+| Slack へ届かない | TOML ファイル自体の読み込みと解析の失敗（`bootstrap.LoadAndPrepareConfig` まで）、ログレベル引数の誤り、ログファイルの開設失敗、Webhook URL の検証失敗、`--run-id` の書式違反、ビルド時設定の誤り、特権の放棄失敗 |
+
+**到達性は `ErrorType` の値では決まらない**。この分かれ目は発生の時点であって種別名ではない。`logging.ErrorTypeConfigParsing`（`config_parsing_failed`）は、`SetupSlackLogging` の前（TOML の解析、ログレベル引数、Webhook 環境変数の検証）でも後（グローバル設定の展開、テンプレート検証、グループ選択）でも使われるため、Slack へ届く側と届かない側の両方に現れる。`logging.ErrorTypeFileAccess` も同様である。したがって「この種別名は Slack に出ない」と読める整理は成り立たず、1.4 と 7.3 もこの前提で書いてある。
 
 届かない側は、ハンドラが未登録であることに加えて、`cmd/runner/main.go` の一部の経路が通知の flush を経ずに終了することにもよる。この範囲は本タスクの変更前後で変わらない。すなわち本設計はこの欠落を作りもしないが直しもしない。書式の統一とスコープの付与という要件の範囲を超えるためである。運用上の含意は 5.4 に、テストの対象選定への影響は 7.3 に述べる。
 
@@ -620,7 +650,10 @@ classDiagram
 | `cmd/runner/main.go` | 変更 | `HandlePreExecutionError` の呼び出し形式の変更（5 箇所） | `cmd/runner/main_test.go`、`cmd/runner/integration_slack_flush_test.go`（`pre_execution_error` のレコードを組み立てている） |
 | `internal/runner/e2e_slack_webhook_separation_test.go` | 変更 | 未登録種別 `test_warning` を使っており、変更後は WARN が記録される。宛先分離の検証意図を保ったまま、登録済み種別または WARN を織り込んだ形へ直す | 同左 |
 | `internal/runner/bootstrap/logger_test.go` | 変更 | 送信内訳の文字列（`sent_by_message_type`）を検証している | 同左 |
-| `docs/dev/architecture_design/security-architecture.md` | 変更 | セキュリティイベントの Slack 通知を提供すると記している箇所を、削除後の実態に合わせて修正する | — |
+| `docs/dev/architecture_design/security-architecture.ja.md` | 変更 | セキュリティイベントの Slack 通知を提供すると記している箇所を、削除後の実態に合わせて修正する | — |
+| `docs/dev/architecture_design/security-architecture.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
+| `docs/dev/architecture_design/slack_async_delivery.ja.md` | 変更 | 高優先度キューの根拠を「セキュリティアラート等」と記している箇所を、存続する `pre_execution_error` に合わせて修正する | — |
+| `docs/dev/architecture_design/slack_async_delivery.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
 | `docs/user/runner_command.ja.md` | 変更 | 通知種別・統一書式・Scope 表示・製品名の記載 | — |
 | `docs/user/runner_command.md` | 変更 | 上記の翻訳 | — |
 
@@ -722,7 +755,7 @@ flowchart LR
 
 削除する 3 種別のうち、`security_alert` と `privilege_escalation_failure` は書き手が本番に無く、`privileged_command_failure` は書き手そのものが存在しない。したがって削除によって失われる本番の通知は無い。特権昇格の記録が残ることと、その記録の限界は 3.6 に示した。
 
-削除後は、セキュリティイベントの Slack 通知という機能が production コードから無くなる。`docs/dev/architecture_design/security-architecture.md` はこの機能が存在すると記しているため、同じフェーズで記述を実態に合わせる（3.8）。
+削除後は、セキュリティイベントの Slack 通知という機能が production コードから無くなる。`docs/dev/architecture_design/security-architecture.ja.md` はこの機能が存在すると記しているため、同じフェーズで記述を実態に合わせ、`security-architecture.md` へは `/mktrans` で反映する（3.8）。`slack_async_delivery.ja.md` が高優先度キューの根拠として挙げている「セキュリティアラート等」も同様に直す。
 
 ### 5.3 外部サービス機能の検証（Slack）
 
@@ -839,7 +872,7 @@ flowchart LR
 |---|---|---|
 | `common.NotificationContext` | ゼロ値がグローバルとして扱われること、各コンストラクタが作った値を `LogAttr` と `ScopeFromAttr` で往復できること | AC-09 |
 | `common.NotificationContext.LogValue` | `scope` と `group` が含まれ、コマンド名が無い場合に `command` 属性が出ないこと | AC-10 |
-| `common.ScopeFromAttr` | グループ値でない値、既知でない `scope` の値を `ok=false` として返すこと | AC-12 |
+| `common.ScopeFromAttr` | グループ値でない値、既知でない `scope` の値、グループ名が空の group/command スコープを `ok=false` として返すこと。コマンド名だけが空の command スコープは `ok=true` であること | AC-12 |
 | スコープの描画 | 6.2 の表の全行 | AC-12, AC-15 |
 | Text 行に入る値の制約 | 改行を含むコマンド名・本文が 1 行に正規化され、上限で切り詰められること | AC-18 |
 | `envelopeFor` | ログレベルと絵文字・STATUS・色の対応が 1.4 の表のとおりであること（INFO 未満を含む） | AC-19 |
@@ -860,6 +893,8 @@ AC-09 のうち「コンストラクタ以外の方法でパッケージ外か�
 
 代表的なレコードは種別定義から作れないため、種別名をキーとするテスト側の入力表を持つことになる。この表に行が無い種別があればテストを失敗させる。こうすると、種別を足したときに検証から漏れるのではなく、入力の追加を促す形で失敗する。
 
+あわせて、書き側の種別名と読み側の定義の一致を別のテストで確かめる（3.2）。`common.AllMessageTypes` を `range` して各要素が `messageSpecs` に存在することと、`len(messageSpecs) == len(common.AllMessageTypes)` の 2 点である。前者だけでは `messageSpecs` にしか無い種別を捉えられず、後者だけでは要素の入れ替わりを捉えられないため、両方を置く。
+
 ### 7.3 統合テスト
 
 | 対象 | 検証する内容 | 対応 AC |
@@ -870,7 +905,7 @@ AC-09 のうち「コンストラクタ以外の方法でパッケージ外か�
 | 宛先分離 | INFO が成功用 Webhook、WARN 以上がエラー用 Webhook へ送られること（既存の挙動が変わらないこと） | AC-31 |
 | 実機確認 | `make slack-notify-test` と `make slack-group-notification-test`（5.3 の確認項目） | AC-18 |
 
-AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録された後に起きるもの（グローバル対象ファイルの検証失敗など）から選ぶ。設定ファイルの解析失敗はそもそも Slack へ届かないため（3.5）、これを題材にすると、production では通知が出ないのにテストだけが緑になる。
+AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録された後に起きるもの（グローバル対象ファイルの検証失敗など）から選ぶ。TOML 自体の解析失敗はそもそも Slack へ届かないため（3.5）、これを題材にすると、production では通知が出ないのにテストだけが緑になる。題材は種別名ではなく発生の時点で選ぶ。`config_parsing_failed` は登録前にも登録後にも使われる種別名であり、名前だけでは到達性が決まらないためである。
 
 ### 7.4 セキュリティテスト
 
@@ -905,7 +940,7 @@ AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録�
 | 1 | `privileged_command_failure` の削除 | AC-01, AC-04, AC-06 |
 | 2 | `security_alert` の削除 | AC-02, AC-04, AC-06, AC-07 |
 | 3 | `privilege_escalation_failure` の削除 | AC-03, AC-04, AC-05, AC-06 |
-| 4 | `make deadcode` の確認、`security-architecture.md` の記述更新 | AC-08 |
+| 4 | `make deadcode` の確認、`security-architecture.ja.md` と `slack_async_delivery.ja.md` の記述更新および `/mktrans` による英語版への反映 | AC-08 |
 | 5 | `common.NotificationContext` の追加 | AC-09, AC-10 |
 | 6 | 種別定義の集約（`MessageType`、`messageSpecs`、`Handle` の書き換え、`isHighPriority` の削除） | AC-23, AC-24, AC-27 |
 | 7 | エンベロープの集約（`buildMessage`、`envelopeFor`、製品名、描画の制約） | AC-18, AC-19, AC-20, AC-21, AC-22, AC-25, AC-33 |
@@ -956,7 +991,7 @@ AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録�
 | AC-24 | 4.1、7.1 |
 | AC-25 | 3.3、4.1、7.1 |
 | AC-26 | 7.2 |
-| AC-27 | 3.2、7.1 |
+| AC-27 | 3.2、7.1、7.2 |
 | AC-28, AC-29 | 3.8、8 |
 | AC-30 | 8 |
 | AC-31 | 7.3 |
