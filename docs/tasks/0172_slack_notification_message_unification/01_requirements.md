@@ -223,6 +223,14 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
 | `user_group_command_failure` | `RuntimeCommand` に group 名を保持させる。[`NewRuntimeCommand`](../../../internal/runner/base/runnertypes/runtime.go#L279) は既に `groupName` を引数で受け取っており（現状はタイムアウト解決のログにしか使わず捨てている）、保持と参照メソッドの追加だけで済むため、シグネチャの変更は不要 |
 | `command_group_summary` | 既に group 名を持つ。スコープ型に載せ替える |
 
+表に挙げた伝搬方法は、要件を定めた時点で見込んだ形である。要件として定めるのは「発火点まで
+group 名とコマンド名が届くこと」までであり、具体的な実現方式は `02_architecture.md` で決める。
+たとえば `user_group_command_failure` の行では、`RuntimeCommand` に新しい `groupName` フィールドを
+足す案を採らず、既に同じ値を保持している `TimeoutResolution.GroupName` の上に参照メソッドを置く
+形へ変えた。この判断の理由は [02_architecture.md](02_architecture.md) の付録B（決定履歴）に記して
+ある。AC-16 は「生成時に渡された group 名を参照メソッドから返す」という観測可能な挙動として
+書いてあり、いずれの方式でも満たされる。
+
 ## 受け入れ基準（Acceptance Criteria）
 
 #### F-001: 本番の書き手がない通知種別の削除
