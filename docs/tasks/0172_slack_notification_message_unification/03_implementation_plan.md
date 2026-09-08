@@ -65,7 +65,7 @@
 - Slack 向けのエスケープ関数は存在しない。`&`・`<`・`>` だけを entity へ変換する関数を `internal/logging` に新設する。`html.EscapeString` は `"` と `'` も変換するため使わない。
 - `logElevationOutcome` が出す 2 つの Info レコードを検証するテストが存在しない。AC-05 の根拠となるテストを Phase 3 で新設する。`newPlatformManager` は `Manager` インタフェースを返し、`logElevationOutcome` は `*UnixPrivilegeManager` の非公開メソッドであるため、この関数経由では呼び出せない。テストは同一パッケージ内にあるので `&UnixPrivilegeManager{logger: rec}` を直接組み立てる。`newPlatformManager` は内部で `isPrivilegeExecutionSupported` を呼び、root 実行時に Info を 1 件出すため、この関数を通すとレコード件数の検証も汚染される。
 
-  **承認済みアーキテクチャとの差異**: [02_architecture.md §7.1](02_architecture.md#71-単体テスト) は AC-05 を「`privilege.logElevationOutcome` の native root と `seteuid` の**既存テスト**が残り」で検証するとしているが、調査の結果そのような既存テストは存在しない。本計画では新規テストを追加する形へ改める。承認済み文書の検証前提を変える差異であるため、実装計画のレビュー時にこの点を明示的に確認し、必要なら 02_architecture.md §7.1 と §8.1 を改訂して再承認する。
+  この不足は当初 [02_architecture.md](02_architecture.md) §7.1 と §8.1 が「既存テストが残る」ことを AC-05 の検証手段としていた点と食い違っていたため、同文書の §2.2、§7.1、§8.1 を「テストを新規に追加する」形へ修正済みである。設計の内容は変わらないため、同文書のステータスは `approved` のまま維持している。
 - `slackRequest` は優先度を持たない。Phase 5 で確定済み優先度のフィールドを追加する。
 
 ## 2. 実装ステップ
