@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-08 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | AC-09: ゼロ値を `ScopeUnknown` として `ScopeGlobal` から区別するよう変更し、再承認 |
 
 ## 関連 Issue
 
@@ -133,13 +133,15 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
 ### 通知スコープは型で宣言する
 
 「group 名が空であること」に意味を持たせるのをやめ、スコープを明示的な値として運ぶ。
-`internal/common` に、非公開フィールドとコンストラクタだけで構築する型を置く。
+`internal/common` に、非公開フィールドを持つ型を置く。有効な値はコンストラクタで構築し、
+Go のゼロ値は未指定を表す値として残す。
 
 ```go
 type NotificationScope int
 
 const (
-    ScopeGlobal NotificationScope = iota // ゼロ値。group にも command にも紐付かない
+    ScopeUnknown NotificationScope = iota // ゼロ値。未指定を表し、有効なスコープとして扱わない
+    ScopeGlobal
     ScopeGroup
     ScopeCommand
 )
@@ -152,7 +154,7 @@ func GroupScope(group string) NotificationContext
 func CommandScope(group, command string) NotificationContext
 ```
 
-ゼロ値は `ScopeGlobal`、すなわち入力について最も仮定しない解釈になる。構築の入口を
+ゼロ値は `ScopeUnknown` とし、有効なグローバルスコープとは区別する。グローバル通知は `GlobalScope()` で明示的に構築する。構築の入口を
 コンストラクタに限ることで、group 名を入れ忘れた `ScopeGroup` の値をパッケージ外から作れなく
 する。
 
@@ -260,9 +262,9 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
 通知の発生箇所を、文字列の有無からではなく明示的な型から読み取れるようにする。
 
 **Acceptance Criteria**:
-- **AC-09**: `common.NotificationContext` はコンストラクタ（`GlobalScope`、`GroupScope`、
-  `CommandScope`）以外の方法ではパッケージ外から構築できない。ゼロ値のスコープは
-  `ScopeGlobal` として扱われる。
+- **AC-09**: `common.NotificationContext` のフィールドはパッケージ外から指定できず、有効な値は
+  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）で構築する。ゼロ値のスコープは
+  `ScopeUnknown` として明示的に区別され、有効なグローバルスコープとして扱われない。
 - **AC-10**: `NotificationContext` のログ出力に `scope` と `group` が含まれ、コマンド名が
   無い場合は `command` 属性を出さない。
 - **AC-11**: 生きている 3 種別すべての発火点が、送出するレコードに `NotificationContext` を
