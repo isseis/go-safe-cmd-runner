@@ -74,22 +74,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # pre-commit
 RUN pip3 install --break-system-packages pre-commit
 
-# Claude Code CLI (apt repository, verify signing key fingerprint)
-RUN apt-get update && apt-get install -y gnupg \
-    && install -d -m 0755 /etc/apt/keyrings \
-    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
-    -o /etc/apt/keyrings/claude-code.asc \
-    && FINGERPRINT="$(gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
-    | awk -F: '/^fpr:/ { print $10; exit }')" \
-    && if [ "${FINGERPRINT}" != "31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE" ]; then \
-    echo "unexpected Claude Code signing key fingerprint: ${FINGERPRINT}" >&2; \
-    exit 1; \
-    fi \
-    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
-    > /etc/apt/sources.list.d/claude-code.list \
-    && apt-get update && apt-get install -y claude-code \
-    && apt-get purge -y gnupg && apt-get autoremove -y \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Claude Code and Codex CLIs are installed later, as the non-root user, via
+# their native curl installers (see below) so the user can self-update them
+# from inside the devcontainer without root.
 
 # herdr (agent session persistence tool, verified via official manifest SHA-256)
 ARG HERDR_VERSION=0.8.2
@@ -144,3 +131,12 @@ RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
 
 WORKDIR /home/$USERNAME
 USER $USERNAME
+
+# Claude Code CLI (native installer). Installs to ~/.local/bin as this user,
+# so it auto-updates in the background and `claude update` needs no root --
+# unlike the apt package this replaces, which required a system-level upgrade.
+RUN curl -fsSL https://claude.ai/install.sh -o install-claude.sh && bash install-claude.sh && rm install-claude.sh
+
+# Codex CLI (native installer). Same per-user install/update model as above:
+# installs to ~/.local/bin and manages its own versions under ~/.codex.
+RUN curl -fsSL https://chatgpt.com/codex/install.sh -o install-codex.sh && bash install-codex.sh && rm install-codex.sh
