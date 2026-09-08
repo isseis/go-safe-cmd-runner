@@ -4,15 +4,15 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-08 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-09-08 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連 Issue
 
-- [#1092 Slack post for an error command should contain richer infomration](https://github.com/isseis/go-safe-cmd-runner/issues/1092)
+- [#1092 Slack post for an error command should contain richer information](https://github.com/isseis/go-safe-cmd-runner/issues/1092)
 
 ## 背景
 
@@ -81,11 +81,16 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
    （[`slack_sender.go:59-63`](../../../internal/logging/slack_sender.go#L59)）、`Handle` の分岐、
    高優先度キューの判定（`isHighPriority`）が、それぞれ独立に種別を列挙している。問題 4 は
    このうち 2 本への登録漏れである。
+7. **通知が送信元を名乗らない。** [`SlackMessage`](../../../internal/logging/slack_handler.go#L95)
+   が持つのは `Text`・`Blocks`・`Attachments` だけで、どのビルダーも本文に製品名を入れていない。
+   メッセージから読み取れる送信元の手掛かりは Hostname と Run ID だけであり、どちらも「どの
+   ツールが出したのか」には答えない。複数のツールが同じチャンネルに投稿する運用では、通知を
+   見ても自分たちの runner のものか判別できない。
 
 ## 目的
 
-- どの通知を受け取っても、**どこで起きたのか**（グローバルか、どの group か、どのコマンドか）
-  が Text 行と添付フィールドの双方から読み取れるようにする。
+- どの通知を受け取っても、**誰が出したのか**（送信元の製品名）と**どこで起きたのか**
+  （グローバルか、どの group か、どのコマンドか）が、Text 行から読み取れるようにする。
 - 通知の見出し・色・末尾フィールドを 1 つの規則に統一し、種別が増えても崩れないようにする。
 - 本番で発火しない通知種別を先に削除し、統一の対象を実際に届く 3 種別に絞る。
 - 種別の登録漏れが黙って通る現在の構造をやめ、漏れがあれば必ず表に出るようにする。
@@ -97,6 +102,7 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
 1. 本番の書き手がない 3 種別（`security_alert`、`privilege_escalation_failure`、
    `privileged_command_failure`）の削除。
 2. 通知スコープ（グローバル／group／コマンド）を表す型の追加と、生きている 3 種別すべてへの付与。
+   あわせて送信元の製品名を全通知に付与する。
 3. group 名およびコマンド名の発火点までの伝搬。
 4. 全種別に共通する見出し・色・末尾フィールドの統一。
 5. `user_group_command_failure` の種別登録と、未登録種別の検知。
@@ -111,6 +117,8 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
 - **出力の切り詰め長。** stdout 1000 文字・stderr 500 文字という現在の上限は据え置く。
 - **削除した 3 種別の再実装。** 特権昇格の監査やセキュリティイベントの通知を新たに配線する
   ことは、本タスクでは行わない。必要になった時点で別タスクとして起票する。
+- **送信元表示の設定による上書き。** 製品名は固定とし、TOML やコマンドライン引数で
+  チャンネルごとの表示名を変えられるようにはしない（理由は「決定事項」に記す）。
 - **`HandleExecutionError` の Slack 通知化。** コマンド実行失敗は `command_group_summary` の
   エラー側で通知される現在の設計を維持する。
 
@@ -170,12 +178,15 @@ func CommandScope(group, command string) NotificationContext
 Text 行（Slack のプッシュ通知に出る行）を次の形に統一する。
 
 ```
-✅ *SUCCESS* — group=backup : 3 commands in 1.2s
-❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)
-❌ *ERROR* — (global) : config_parsing_failed
+[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s
+[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)
+[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed
 ```
 
-- 先頭の絵文字、`*STATUS*`、添付の色は**ログレベルだけ**で決まる。種別ごとの裁量をなくす。
+- 先頭は送信元の製品名を `[...]` で囲んで置く。同じチャンネルに複数のツールが投稿する運用で、
+  自分たちの通知を見分けるための表示である。値は固定の文字列 `go-safe-cmd-runner` とし、
+  定義は 1 箇所に置く。
+- 絵文字、`*STATUS*`、添付の色は**ログレベルだけ**で決まる。種別ごとの裁量をなくす。
 
   | ログレベル | 絵文字 | STATUS | 色 |
   |---|---|---|---|
@@ -190,6 +201,18 @@ Text 行（Slack のプッシュ通知に出る行）を次の形に統一する
 添付フィールドは、種別固有のフィールドを先に並べ、**末尾に必ず Scope・Hostname・Run ID の
 3 件をこの順で置く**。Component は `pre_execution_error` にしか無いため、末尾の固定 3 件には
 含めず種別固有フィールドとして扱う。
+
+### 送信元は Slack の表示名ではなく本文で名乗る
+
+Incoming Webhook のペイロードには `username` と `icon_emoji` という表示名の上書き項目がある
+が、これに頼らない。Slack アプリとして作成した Webhook はこの上書きを無視してアプリ名で投稿
+するため、利用者が Webhook をどの方式で作ったかによって表示が変わり、送信元が名乗られる保証
+がない。本文の先頭に製品名を置けば、Webhook の作り方によらず必ず表示される。
+
+製品名は固定の文字列とする。**チャンネルごとの表示名を TOML で上書きできるようにすることは
+本タスクの対象外**とする。まず「どのツールか」が分かる状態を作るのが先で、「どの用途の
+runner か」の区別は Scope（group 名）と Hostname で足りると判断した。足りないと分かった時点で
+別タスクとして起票する。
 
 ### group 名の伝搬経路
 
@@ -266,7 +289,9 @@ Text 行（Slack のプッシュ通知に出る行）を次の形に統一する
 
 **Acceptance Criteria**:
 - **AC-18**: 生きている 3 種別すべての Text 行が
-  `<絵文字> *<STATUS>* — <スコープ> : <要約>` の形になっている。
+  `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形になっている。
+- **AC-33**: 汎用メッセージを含め、Slack に送られるすべてのメッセージの Text 行が製品名で
+  始まる。製品名の定義は production コードに 1 箇所しかない。
 - **AC-19**: 絵文字・STATUS・添付の色が「統一書式」の表のとおりログレベルだけで決まり、
   種別によって変わらない。
 - **AC-20**: 生成されるどのメッセージにも `###` が含まれない。
@@ -296,7 +321,7 @@ Text 行（Slack のプッシュ通知に出る行）を次の形に統一する
 
 **Acceptance Criteria**:
 - **AC-28**: `docs/user/runner_command.ja.md` の Slack 通知の節に、通知される種別、統一書式、
-  Scope の表示（`(global)` を含む）が記載されている。
+  Scope の表示（`(global)` を含む）、および Text 行の先頭に付く製品名が記載されている。
 - **AC-29**: AC-28 の内容が `docs/user/runner_command.md` に翻訳として反映されている。
 
 #### F-007: 全体の健全性
@@ -305,13 +330,14 @@ Text 行（Slack のプッシュ通知に出る行）を次の形に統一する
 - **AC-30**: 各コミットの時点で `make test` と `make lint` が通る。
 - **AC-31**: 削除・統一の前後で、通知の宛先分離（INFO は成功用 Webhook、WARN 以上はエラー用
   Webhook）の挙動が変わらない。
-- **AC-32**: AC-11〜AC-26 を検証する各テストが、検証対象の挙動を壊すと失敗する（CLAUDE.md
+- **AC-32**: F-002 から F-005 までの各 AC を検証するテストが、検証対象の挙動を壊すと失敗する（CLAUDE.md
   「Every test must be able to fail for its stated reason」）。確認したことをコミット
   メッセージに記す。
 
 ## Success Criteria（要件レベル）
 
-- Slack に届くすべての通知から、グローバルか、どの group か、どのコマンドかが判別できる。
+- Slack に届くすべての通知から、送信元が go-safe-cmd-runner であることと、グローバルか、
+  どの group か、どのコマンドかが判別できる。
 - 通知の見出し・色・末尾フィールドが 1 つの規則に従っており、種別ごとの例外が無い。
 - 本番で発火しない通知種別が production コードに残っていない。
 - 種別の登録漏れがテストで検知され、汎用メッセージへ黙って落ちることがない。
