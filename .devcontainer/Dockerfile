@@ -135,15 +135,19 @@ USER $USERNAME
 
 # GitHub's "web-flow" GPG key, so `git log --show-signature` can verify
 # commits GitHub creates when a PR is merged via its web UI (these are signed
-# with this key, not a contributor's personal key). Fingerprint pinned and
-# checked so a compromised or substituted response fails the build instead of
-# silently importing the wrong key.
+# with this key, not a contributor's personal key). The downloaded file
+# legitimately contains more than one key (GitHub's current key plus an old
+# expired one), so it's imported into a scratch keyring first and only the
+# key matching the pinned fingerprint is exported into the real keyring --
+# that way a compromised or substituted response can't smuggle in an extra
+# key alongside (or instead of) the real one.
 ARG GITHUB_WEBFLOW_GPG_FINGERPRINT=968479A1AFF927E37D1A566BB5690EEEBB952194
 RUN set -eux \
     && curl -fsSL https://github.com/web-flow.gpg -o /tmp/web-flow.gpg \
-    && gpg --import /tmp/web-flow.gpg \
+    && gpg --no-default-keyring --keyring /tmp/web-flow-scratch.gpg --import /tmp/web-flow.gpg \
+    && gpg --no-default-keyring --keyring /tmp/web-flow-scratch.gpg --export "${GITHUB_WEBFLOW_GPG_FINGERPRINT}" | gpg --import \
     && gpg --list-keys --with-colons "${GITHUB_WEBFLOW_GPG_FINGERPRINT}" \
-    && rm /tmp/web-flow.gpg
+    && rm -f /tmp/web-flow.gpg /tmp/web-flow-scratch.gpg
 
 # Claude Code CLI (native installer). Installs to ~/.local/bin as this user,
 # so it auto-updates in the background and `claude update` needs no root --
