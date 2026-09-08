@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
+    gnupg \
     libssl-dev \
     locales \
     man-db \
@@ -131,6 +132,18 @@ RUN mkdir -p /home/$USERNAME/.vscode-server/extensions \
 
 WORKDIR /home/$USERNAME
 USER $USERNAME
+
+# GitHub's "web-flow" GPG key, so `git log --show-signature` can verify
+# commits GitHub creates when a PR is merged via its web UI (these are signed
+# with this key, not a contributor's personal key). Fingerprint pinned and
+# checked so a compromised or substituted response fails the build instead of
+# silently importing the wrong key.
+ARG GITHUB_WEBFLOW_GPG_FINGERPRINT=968479A1AFF927E37D1A566BB5690EEEBB952194
+RUN set -eux \
+    && curl -fsSL https://github.com/web-flow.gpg -o /tmp/web-flow.gpg \
+    && gpg --import /tmp/web-flow.gpg \
+    && gpg --list-keys --with-colons "${GITHUB_WEBFLOW_GPG_FINGERPRINT}" \
+    && rm /tmp/web-flow.gpg
 
 # Claude Code CLI (native installer). Installs to ~/.local/bin as this user,
 # so it auto-updates in the background and `claude update` needs no root --
