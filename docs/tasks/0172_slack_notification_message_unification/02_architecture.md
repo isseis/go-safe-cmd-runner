@@ -4,17 +4,25 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-08 |
-| Review date | 2026-09-08 |
-| Reviewer | isseis |
-| Comments | AC-05 の検証手段を修正。§7.1 と §8.1 が既存テストによる確認としていたが、`logElevationOutcome` を対象とする既存テストは存在しないため、テストの新規追加へ改めた。あわせて §2.2 に対象テストファイルの行を追加。設計の内容は変えていないため `approved` を維持する |
+| Review date | - |
+| Reviewer | - |
+| Comments | 比較レビューの指摘を反映中。ゼロ値、単一定義、ログ互換性、Run ID、表示境界を再設計したため再レビューが必要 |
+
+## 関連文書
+
+- [01_requirements.md](01_requirements.md) — 本設計が満たす要件と受け入れ基準
+- [0163 redaction coverage and slack async](../0163_redaction_coverage_and_slack_async/02_architecture.md) — 送信キュー、送信失敗ロガー、ドライランの既存契約
+- [0068 separate slack webhooks](../0068_separate_slack_webhooks/02_architecture.md) — 成功用・エラー用 Webhook の分離
+- [security-architecture.ja.md](../../dev/architecture_design/security-architecture.ja.md) / [security-architecture.md](../../dev/architecture_design/security-architecture.md) — 削除する通知について記述を更新する
+- [slack_async_delivery.ja.md](../../dev/architecture_design/slack_async_delivery.ja.md) / [slack_async_delivery.md](../../dev/architecture_design/slack_async_delivery.md) — 高優先度通知の説明を更新する
 
 ## 用語
 
 | 用語 | 意味 |
 |---|---|
-| 通知コンテキスト | 通知の発生箇所を表す `common.NotificationContext`。ゼロ値の `ScopeUnknown` は未指定であり、有効値はグローバル、グループ、コマンドのいずれか |
+| 通知コンテキスト | 通知の発生箇所を表す `common.NotificationContext`。ゼロ値はグローバルであり、有効値はグローバル、グループ、コマンドのいずれか。レコード上の属性欠落とは区別する |
 | 通知種別定義 | `message_type`、メッセージ組み立て関数、送信キューの優先度を一体として保持する定義 |
 | 種別固有部分 | 通知種別ごとに異なる要約と添付フィールド。Scope、Hostname、Run ID は含まない |
 | 共通エンベロープ | 製品名、ログレベルに対応する表示、Scope、Hostname、Run ID を全通知へ加える共通部分 |
@@ -24,7 +32,7 @@
 
 ### 1.1 設計原則
 
-1. 通知の発生箇所は文字列の有無から推測せず、`common.NotificationContext` で宣言する。レコード上では §3.1 の固定エンコードで運ぶ。ハンドラ側が読む `scope` は発火元が自由に書ける文字列ではなく、この enum が出力する閉じた語彙であり、`switch` の `default` を不正へ倒して復元する。ログ本文や group 名の内容から階層を推測しない、という禁止はそのまま維持する。
+1. 通知の発生箇所は文字列の有無から推測せず、`common.NotificationContext` で宣言する。ゼロ値は要件どおりグローバルとする一方、レコードに通知コンテキスト属性が無い状態は付与漏れとして不正にする。レコード上では §3.1 の固定エンコードで運び、未知の語は不正へ倒して復元する。
 2. 存続する通知種別は 1 つの通知種別定義に集約する。種別名、組み立て関数、キュー優先度を別々に列挙しない。
 3. 種別ごとの組み立て関数は種別固有部分だけを返し、共通エンベロープの生成は 1 箇所に集約する。
 4. 未知の通知種別や矛盾した通知コンテキストを補正しない。利用者への汎用通知と送信失敗ロガーの WARN により定義漏れを観測可能にする。
@@ -147,7 +155,7 @@ flowchart LR
 |---|---|---|---|
 | `internal/common/notification_context.go` | 新規 | 通知スコープ、通知コンテキスト、コンストラクタ、参照メソッド、`slog.LogValuer` を定義する | 新規 `internal/common/notification_context_test.go` でゼロ値、各スコープ、属性の省略、矛盾値を検証する |
 | `internal/common/notification_context_test.go` | 新規 | F-002 の型とログ表現を検証する | - |
-| `internal/common/logschema.go` | 変更 | 削除する 3 種別の属性定義と重大度定数を除き、`UserGroupCommandFailureAttrs` を含む存続する通知の共有属性名と型を定義する。`GroupSummaryAttrs.Group` を削除し、通知コンテキストのキー名とスコープ名の対応表を加える | 該当定義を直接使う各パッケージのテスト。`GroupSummaryAttrs.Group` を参照する `internal/redaction/redactor_test.go`、`internal/logging/slack_handler_test.go`、`internal/logging/slack_sender_test.go`、`internal/runner/integration_command_results_test.go` |
+| `internal/common/logschema.go` | 変更 | 削除する 3 種別の属性定義と重大度定数を除き、`UserGroupCommandFailureAttrs` を含む存続する通知の共有属性名と型を定義する。既存の `GroupSummaryAttrs.Group` を維持し、通知コンテキストのキー名とスコープ名の対応表を加える | 該当定義を直接使う各パッケージのテスト。通知コンテキストを追加する各パッケージのテスト |
 | `internal/logging/notification.go` | 新規 | 存続する通知種別の唯一の定義、発火元用の属性生成関数、確定済み優先度、種別固有部分の契約を定義する | 新規 `internal/logging/notification_test.go` で通知種別定義の集合と発火元の静的契約を検証する |
 | `internal/logging/notification_test.go` | 新規 | 全定義の共通契約と、本番コードの発火元が属性生成関数を迂回しないことを検証する | - |
 | `internal/logging/slack_handler.go` | 変更 | 通知種別定義の参照、種別固有部分の生成、共通エンベロープ、未知種別と不正スコープの WARN を担う。削除対象の 3 ビルダーを削除する | `TestSlackHandler_Handle_WithMockServer` と同ファイルのメッセージ構築、切り詰め、属性抽出のテスト |
@@ -156,8 +164,8 @@ flowchart LR
 | `internal/logging/slack_sender_test.go` | 変更 | 存続する `pre_execution_error` で高優先度の実効性を検証する | `security_alert` を使う既存ケースを置換する |
 | `internal/logging/pre_execution_error.go` | 変更 | `PreExecutionError` に通知コンテキストを加え、`HandlePreExecutionError` が構造体を受け取って属性として記録する。共有ヘルパー `handleErrorCommon` は `slack_notify` と `message_type` を自前で組まず、呼び出し元の属性をそのまま記録する | `TestHandlePreExecutionError_AllTypes`、`TestHandlePreExecutionError_SlackNotification`、`HandleExecutionError` の既存テスト |
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
-| `internal/runner/base/runnertypes/runtime.go` | 変更 | `NewRuntimeCommand` が既に受け取るグループ名を非公開フィールドへ保持し、参照メソッドで返す | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
-| `internal/runner/base/runnertypes/runtime_test.go` | 変更 | グループ名の保持と参照を検証する | 構造体リテラルを使う既存ケースは非公開フィールドに依存させない |
+| `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
+| `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -171,12 +179,14 @@ flowchart LR
 | `cmd/runner/integration_slack_flush_test.go` | 変更 | 終了時 flush で送る通知レコードへ通知コンテキストを付け、共通書式を検証する | `TestIntegration_RunnerFlushesSlackOnNormalExit` |
 | `internal/runner/e2e_slack_webhook_separation_test.go` | 変更 | INFO と WARN 以上の Webhook 分離および新書式を検証する | `TestE2E_SlackWebhookSeparation_*`、`TestE2E_SlackWebhookSeparation_MessageFormat` |
 | `internal/runner/e2e_slack_webhook_test.go` | 変更 | モックサーバーで新しいペイロード全体を検証する | `TestE2E_SlackWebhookWithMockServer` |
+| `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | 削除後のセキュリティイベント通知の実態へ更新し、英語版へ反映する | - |
+| `docs/dev/architecture_design/slack_async_delivery.ja.md`・`.md` | 変更 | 高優先度通知の説明を `pre_execution_error` に合わせ、英語版へ反映する | - |
 | `docs/user/runner_command.ja.md` | 変更 | 通知種別、統一書式、Scope、製品名、ドライラン時の挙動を日本語で説明する | - |
 | `docs/user/runner_command.md` | 変更 | 日本語版と同じ利用者向け説明を英語へ反映する | - |
 
-検索の結果、`internal/redaction/redactor_test.go`、`internal/runner/bootstrap/logger_test.go`、`internal/runner/integration_command_results_test.go` にも通知属性の文字列が現れる。これらは既存の redaction、ハンドラ構成、コマンド結果スキーマを確認するテストであり、検証している挙動そのものは変えない。ただし `GroupSummaryAttrs.Group` の削除は、`internal/redaction/redactor_test.go` と `internal/runner/integration_command_results_test.go` のコンパイルを壊すため、両ファイルから当該行を除く機械的な更新が必要である。
+既存のトップレベル `group` 属性は、構造化ログを解析する外部利用者との互換性のため維持する。新しい通知コンテキスト属性を追加しても、Slack 表示とスコープ判定は通知コンテキストだけを参照し、文字列の有無からスコープを推測しない。
 
-`GroupSummaryAttrs.Group` の削除は JSON ログのスキーマ変更でもある。これまで `group` は構造化ログのトップレベル属性だったが、以後は通知コンテキストの下に入る。ログを解析する外部の利用者に影響するため、Phase 5 のリリースノートで新旧の JSON 例を示す（§8.2）。重複した表現を残さないことは §3.4 の方針どおりであり、移行期間中に両方を出すことはしない。`internal/runner/runerrors` の `ErrorSeverityCritical` は別の型であり、削除対象の `common.SeverityCritical` ではないため変更しない。
+削除する `security_alert` と `privilege_escalation_failure` は既存の設計文書にも機能として記載されている。production コードの削除と同じフェーズで `security-architecture` と `slack_async_delivery` の日本語版を実態に合わせ、英語版へ翻訳を反映する。
 
 新規パッケージは作らず、既存の `internal/common`、`internal/logging`、`internal/runner` の責務を再利用する。
 
@@ -230,14 +240,13 @@ sequenceDiagram
 
 ### 3.1 通知コンテキスト
 
-`internal/common` に次の型を置く。フィールドを非公開にすることで、パッケージ外の発火元が group と command を直接組み替えることを防ぎ、スコープをコンストラクタで宣言させる。Go ではゼロ値を `ScopeUnknown` として明示的に予約し、グローバル通知とは区別する。グローバル通知は `GlobalScope()` で構築した値だけを有効とする。
+`internal/common` に次の型を置く。フィールドを非公開にすることで、パッケージ外の発火元が group と command を直接組み替えることを防ぎ、スコープをコンストラクタで宣言させる。要件どおり `ScopeGlobal` をゼロ値にする。
 
 ```go
 type NotificationScope int
 
 const (
-    ScopeUnknown NotificationScope = iota
-    ScopeGlobal
+    ScopeGlobal NotificationScope = iota
     ScopeGroup
     ScopeCommand
 )
@@ -256,33 +265,32 @@ func (c NotificationContext) Scope() NotificationScope
 func (c NotificationContext) GroupName() string
 func (c NotificationContext) CommandName() string
 func (c NotificationContext) LogValue() slog.Value
+func (c NotificationContext) LogAttr() slog.Attr
 ```
 
-`NotificationContext.LogValue` は `scope` と `group` を常に出す。ゼロ値では `scope=unknown` を出し、グローバルとして記録しない。コマンド名が空の場合だけ `command` を省略する。発火元は §3.4 の属性生成関数を通して、共通の属性名でこの `slog.LogValuer` をレコードへ載せる。これにより、JSON ログと Slack ハンドラが同じ宣言を読む。
+`NotificationContext` のゼロ値と `GlobalScope()` の戻り値は同じ有効なグローバルスコープである。ただし、通知レコードに通知コンテキスト属性自体が無い状態とは区別する。発火元はグローバルな場合も `GlobalScope().LogAttr()` を明示的に付ける。これにより、型のゼロ値要件を満たしながら、属性の付与漏れを正常なグローバル通知に見せない。
 
 #### レコード上のエンコード
 
-`SlackHandler` は `common.NotificationContext` という具象型をレコードから受け取れない。`bootstrap` はハンドラ構成の最上位で `redaction.NewRedactingHandler` が `MultiHandler`（`SlackHandler` を含む）を包むように組み立てており、`RedactingHandler.processLogValuer` は `LogValue()` を解決したうえで、解決後の値から属性を組み直して下位ハンドラへ渡すためである。したがって `SlackHandler` に届くのは常に解決後の `slog.KindGroup` の値である。既存の `extractCommandResults` が `value.Resolve()` をグループとして読んでいるのは同じ制約による前例である。
-
-そこで `LogValue` の出力を次の固定エンコードとして規定し、これを型と同じ強さの契約として扱う。
+`SlackHandler` は `common.NotificationContext` という具象型をレコードから受け取れない。`RedactingHandler.processLogValuer` が `LogValue()` を解決したうえで下位ハンドラへ渡すため、SlackHandler に届くのは解決後の `slog.KindGroup` である。このため `LogValue` の出力を固定エンコードとして規定する。
 
 | キー | 型 | 出力条件 | 値 |
 |---|---|---|---|
-| `scope` | string | 常に | `unknown` / `global` / `group` / `command` のいずれか |
-| `group` | string | 常に | group 名。グローバルとゼロ値では空文字 |
+| `scope` | string | 常に | `global` / `group` / `command` のいずれか |
+| `group` | string | 常に | group 名。グローバルでは空文字 |
 | `command` | string | 空でないときだけ | command 名 |
 
-`scope` の 4 語は `NotificationScope` の `String()` が返す閉じた集合であり、発火元が自由に決める文字列ではない。`SlackHandler` はこの 4 語を `switch` で `NotificationScope` へ戻し、`default` を不正へ倒す。復元と表示に使う対応表は `internal/common` に 1 つだけ置き、書き出し側と読み取り側が同じ定義を参照する。エンコードの往復（各スコープを `LogValue` して復元すると元のスコープに戻ること、未知の語が不正になること）はテストで固定する。
+読み側の復元処理は `internal/common` の 1 箇所に置く。下位キーを SlackHandler 側へ複製しない。属性の存在確認は SlackHandler が行い、属性値の復元と値の妥当性確認は common の関数が行う。
 
-| 宣言 | Scope の表示 | 妥当性 |
+| 入力 | Scope の表示 | 妥当性 |
 |---|---|---|
-| ゼロ値（`ScopeUnknown`） | `(scope: invalid)` | 不正。グローバルへ補正せず WARN を記録する |
-| `GlobalScope()` | `(global)` | 妥当。group と command は空であること |
-| `GroupScope("backup")` | `group=backup` | group が空でなければ妥当。command は空であること |
-| `CommandScope("backup", "pg_dump")` | `group=backup command=pg_dump` | group と command がともに空でなければ妥当 |
-| 上記の組み合わせに反する値 | `(scope: invalid)` | 不正。グローバルへ補正せず WARN を記録する |
+| 属性があり、値がゼロ値または `GlobalScope()` のエンコード | `(global)` | 妥当。group と command は空であること |
+| `GroupScope("backup")` | `group=backup` | group が空でなく、command が空であること |
+| `CommandScope("backup", "pg_dump")` | `group=backup command=pg_dump` | group と command がともに空でないこと |
+| 通知コンテキスト属性が無い、重複する、またはグループ値でない | `(scope: invalid)` | 不正。WARN を記録する |
+| 未知の scope、または上記の組み合わせに反する値 | `(scope: invalid)` | 不正。WARN を記録する |
 
-コンストラクタは空文字をエラーとして返さない。F-002 は、構築時の失敗でログ経路を中断するのではなく、定義の矛盾を実際の通知と WARN の両方に示すことを求めるためである。非公開フィールドはスコープの種類と値の組をコンストラクタへ集約するが、空文字まで排除しない。Slack ハンドラ側の妥当性確認が値の欠落を検知する。
+コンストラクタは空文字をエラーとして返さない。ログ経路を中断せず、SlackHandler の境界で不正表示と WARN の両方を残す。command scope で command 名が空の場合も、どのコマンドかを示せず Success Criteria を満たさないため不正とする。
 
 ### 3.2 `PreExecutionError` と発火元
 
@@ -303,7 +311,7 @@ func HandlePreExecutionError(preExecErr *PreExecutionError)
 
 `cmd/runner` の設定読み込み、Run ID、ビルド設定、特権降格などの起動前エラーは `GlobalScope()` を渡す。`runner.executeGroups` のグループ検証エラーだけは `GroupScope(verErr.Group)` を渡す。検証結果本文から `Group: <name>, ` を除き、グループ名の唯一の表示場所を Scope にする。stderr と stdout の既存形式、および `HandleExecutionError` が Slack 通知を行わない契約は維持する。
 
-`NotificationContext` は公開フィールドであり、ゼロ値は `ScopeUnknown`、すなわち §3.6 で不正となる値である。したがって `PreExecutionError` を構築するすべての本番コードを移行対象とする。`cmd/runner/main.go` の 11 箇所に加え、`internal/runner/bootstrap/config.go` の 4 箇所と `internal/runner/bootstrap/environment.go` の 2 箇所がある。AC-15 が例に挙げる設定読み込み失敗は `bootstrap/config.go` で構築されるため、この移行を落とすと `(global)` ではなく `(scope: invalid)` になる。移行漏れは §3.4 の静的契約テストでは捕まらないので、`PreExecutionError` のリテラルを構文木で走査し、`NotificationContext` フィールドが省略されていないことを検証するテストを併せて置く。
+`NotificationContext` は公開フィールドであり、そのゼロ値は有効なグローバルスコープである。それでも意図を明示し `GlobalScope()` を production で使用するため、`cmd/runner/main.go` の 11 箇所、`internal/runner/bootstrap/config.go` の 4 箇所、`internal/runner/bootstrap/environment.go` の 2 箇所を移行対象とする。`HandlePreExecutionError` はこの値から通知コンテキスト属性を必ず生成する。構文木の静的契約テストは、本番の `PreExecutionError` リテラルで `NotificationContext` が省略されていないことを検証する。
 
 `HandlePreExecutionError` が報告に使うフィールドは次のとおり固定し、現在の挙動をそのまま保つ。
 
@@ -315,21 +323,23 @@ func HandlePreExecutionError(preExecErr *PreExecutionError)
 
 `HandlePreExecutionError` と `HandleExecutionError` が共有する `handleErrorCommon` は、`slack_notify` と `message_type` を構造体フィールドから直接組み立てず、呼び出し元が渡した `[]slog.Attr` をそのまま記録する形へ変える。`HandlePreExecutionError` は §3.4 の `NotificationAttrs` が返す属性を渡し、`HandleExecutionError` は Slack へ送らない自分の属性を渡す。これにより、共有ヘルパーへ例外を設けずに §3.4 の静的契約テストを適用できる。
 
+#### Slack へ届く実行前エラーの範囲
+
+SlackHandler は TOML から許可ホストを読んだ後に登録されるため、TOML 自体の読み込み・解析失敗、ログ設定、Webhook URL 検証など登録前のエラーは Slack へ届かない。登録後に起きるグローバル設定の展開、テンプレート・対象ファイルの検証、グループ選択、および `runner.executeGroups` の検証エラーは届く。この境界は本タスクで変更しない。
+
+到達性は `ErrorType` ではなく発生時点で決まる。たとえば `config_parsing_failed` は登録前後の両方で使われるため、AC-15 の統合テストには SlackHandler 登録後に発生するグローバル対象ファイルの検証失敗などを使う。production では届かない経路を handler 単体テストだけで緑にしない。
+
 ### 3.3 `RuntimeCommand` のグループ名
 
-`RuntimeCommand` に非公開の `groupName string` と `GroupName() string` を加える。`NewRuntimeCommand` のシグネチャは現在と同じであり、タイムアウト解決のために既に受け取っている `groupName` をそのまま保持する。
+`RuntimeCommand` には、`NewRuntimeCommand` が受け取ったグループ名が既に `TimeoutResolution.GroupName` として保持されている。新しい重複フィールドは追加せず、その値を返す参照メソッドだけを追加する。
 
 ```go
-type RuntimeCommand struct {
-    Spec *CommandSpec
-    // 既存フィールドは省略
-    groupName string
+func (r *RuntimeCommand) GroupName() string {
+    return r.TimeoutResolution.GroupName
 }
-
-func (r *RuntimeCommand) GroupName() string
 ```
 
-`audit.Logger.LogUserGroupExecution` は失敗時に `CommandScope(cmd.GroupName(), cmd.Name())` を付ける。コマンド名をログ本文や引数から推測しない。既存のコンストラクタ引数を保持するだけで F-003 を満たせるため、新しいデータ構造やグループ検索機構は導入しない。
+`audit.Logger.LogUserGroupExecution` は失敗時に `CommandScope(cmd.GroupName(), cmd.Name())` を付ける。コマンド名をログ本文や引数から推測しない。本番の `RuntimeCommand` は `NewRuntimeCommand` を通じて構築されるため、通知経路では生成時のグループ名を参照できる。テストで構造体リテラルを使う場合は `TimeoutResolution` を明示し、コンストラクタを迂回した不完全な値を本番相当として扱わない。
 
 ### 3.4 通知種別定義
 
@@ -361,11 +371,14 @@ type messageTypeDefinition struct {
 }
 
 var (
-    CommandGroupSummaryNotification     Notification
-    PreExecutionErrorNotification       Notification
-    UserGroupCommandFailureNotification Notification
+    commandGroupSummaryNotification     = registerNotification(...)
+    preExecutionErrorNotification       = registerNotification(...)
+    userGroupCommandFailureNotification = registerNotification(...)
 )
 
+func CommandGroupSummaryNotification() Notification
+func PreExecutionErrorNotification() Notification
+func UserGroupCommandFailureNotification() Notification
 func NotificationAttrs(notification Notification, notificationContext common.NotificationContext) []slog.Attr
 ```
 
@@ -379,11 +392,11 @@ func NotificationAttrs(notification Notification, notificationContext common.Not
 
 `common.UserGroupCommandFailureAttrs` は `command_name`（string）、`exit_code`（int）、`stdout`（string）、`stderr`（string）を定義し、`audit.Logger.LogUserGroupExecution` とユーザー／グループ指定コマンド固有のビルダーが共有する。属性の記録側と参照側が同じ属性名と型を使うため、固有ビルダーに文字列リテラルを複製しない。
 
-`command_group_summary` の `status` 属性は Slack 表示の判定に使わず、ログレベルを唯一の判定基準とする。発火元は既存どおり実行結果から INFO または ERROR を選ぶ。`GroupSummaryAttrs.Group` は通知コンテキストに置き換え、重複する属性を残さない。
+`command_group_summary` の `status` 属性は Slack 表示の判定に使わず、ログレベルを唯一の判定基準とする。発火元は既存どおり実行結果から INFO または ERROR を選ぶ。`GroupSummaryAttrs.Group` は既存の構造化ログ利用者との互換性のため残す。Slack の Scope は通知コンテキストだけから生成し、トップレベルの `group` を推論や表示には使わない。
 
-各公開 `Notification` 変数は、パッケージ初期化時に非公開の登録関数へ `message_type`、組み立て関数、優先度を 1 回だけ渡して生成する。登録関数は同じ `messageTypeDefinition` を通知種別定義の集合へ加え、そのポインタを非公開フィールドに保持するトークンを返す。この 1 回の宣言だけで、文字列、ビルダー、優先度、発火元が使うトークンを定義する。別の種別一覧や対応表は作らず、初期化後の集合は変更しない。`Notification` のフィールドは非公開なのでパッケージ外で作れるのはゼロ値だけである。`NotificationAttrs` はゼロ値を受け取った場合、`slack_notify=true` と空の `message_type` を返す。空文字は §3.6 の未知種別に一致するため、通知は汎用メッセージとして送られ、送信失敗ロガーへ `unknown_message_type` の WARN が残る。通知を黙って落とす選択はしない。それは F-005 が取り除こうとしている無言の握り潰しそのものであり、未知の `message_type` でも汎用送信と WARN を出すという §3.6 の扱いとも食い違うためである。本番コードでのゼロ値の使用は静的契約テストでも拒否するが、静的テストは本番コードの構文しか見ないため、実行時の挙動も併せて loud failure にしておく。
+各非公開 `Notification` 変数は、パッケージ初期化時に非公開の登録関数へ `message_type`、組み立て関数、優先度を 1 回だけ渡して生成する。登録関数は同じ `messageTypeDefinition` を通知種別定義の集合へ加え、そのポインタを非公開フィールドに保持するトークンを返す。外部パッケージには、再代入できる公開変数ではなく、値を返すアクセサ関数だけを公開する。この 1 回の宣言だけで、文字列、ビルダー、優先度、発火元が使うトークンを定義する。別の種別一覧や対応表は作らず、初期化後の集合は変更しない。`Notification` のフィールドは非公開なのでパッケージ外で作れるのはゼロ値だけである。`NotificationAttrs` はゼロ値を受け取った場合、`slack_notify=true` と空の `message_type` を返す。空文字は §3.6 の未知種別に一致するため、通知は汎用メッセージとして送られ、送信失敗ロガーへ `unknown_message_type` の WARN が残る。通知を黙って落とす選択はしない。それは F-005 が取り除こうとしている無言の握り潰しそのものであり、未知の `message_type` でも汎用送信と WARN を出すという §3.6 の扱いとも食い違うためである。本番コードでのゼロ値の使用は静的契約テストでも拒否するが、静的テストは本番コードの構文しか見ないため、実行時の挙動も併せて loud failure にしておく。
 
-発火元は `NotificationAttrs` と公開トークンを使い、`slack_notify`、`message_type`、通知コンテキストを一組でレコードへ加える。この API を `internal/logging` に置くのは、発火元が既に依存するログ通知契約へ属性生成を集約し、`internal/common` に Slack 固有の種別を持ち込まないためである。テストは登録済みの通知種別定義を順に走査し種別名の一意性、組み立て関数、共通エンベロープ、優先度、公開トークンとの同一性を検証する。さらに本番コードが `slack_notify=true` または `message_type` を直接構築せず、`NotificationAttrs` の第 1 引数に登録済みの公開トークンだけを渡すことを Go 構文木の静的契約テストで検証する。
+発火元は `NotificationAttrs` と公開アクセサが返す opaque token を使い、`slack_notify`、`message_type`、通知コンテキストを一組でレコードへ加える。この API を `internal/logging` に置くのは、発火元が既に依存するログ通知契約へ属性生成を集約し、`internal/common` に Slack 固有の種別を持ち込まないためである。テストは登録済みの通知種別定義を順に走査し種別名の一意性、組み立て関数、共通エンベロープ、優先度、公開アクセサが返す token との同一性を検証する。さらに本番コードが `slack_notify=true` または `message_type` を直接構築せず、`NotificationAttrs` の第 1 引数に登録済み token を返す公開アクセサの呼び出しだけを渡すことを Go 構文木の静的契約テストで検証する。
 
 `security_alert`、`privilege_escalation_failure`、`privileged_command_failure` は定義、ビルダー、ログスキーマ、発火元、テストから削除する。`pre_execution_error` は削除対象の高優先度種別の代わりに、高優先度キューの実効性を検証する基準となる。
 
@@ -397,9 +410,10 @@ func NotificationAttrs(notification Notification, notificationContext common.Not
 |---|---|---|---|
 | `level >= slog.LevelError` | ❌ | `ERROR` | `danger` |
 | `level >= slog.LevelWarn` | ⚠️ | `WARNING` | `warning` |
-| 上記以外（INFO 以下、DEBUG や中間値を含む） | ✅ | `SUCCESS` | `good` |
+| `level >= slog.LevelInfo` かつ WARN 未満 | ✅ | `SUCCESS` | `good` |
+| INFO 未満 | ⚠️ | `WARNING` | `warning` |
 
-閾値による範囲判定にするのは、AC-19 が求める「ログレベルだけで決まる」写像を全域関数にするためである。等値比較の 3 行だけでは未対応のレベルに既定値がなく、現在の汎用メッセージのように `r.Level.String()` がそのまま表示へ漏れる。深刻な側へ倒れる誤りを避けるため、境界は「ERROR 未満は WARNING にしない、WARN 未満は SUCCESS」という単調な閾値で切る。
+閾値による範囲判定にするのは、AC-19 が求める「ログレベルだけで決まる」写像を全域関数にするためである。本番の成功用・エラー用ハンドラでは INFO 未満は到達しないが、公開された既定モードから想定外レベルが届いても成功と誤表示しないよう WARNING へ倒す。
 
 Text 行は常に次の形とする。
 
@@ -409,7 +423,7 @@ Text 行は常に次の形とする。
 
 添付フィールドは、種別固有フィールドの後ろに Scope、Hostname、Run ID をこの順で追加する。汎用メッセージも同じ処理を通す。Scope フィールドの値は Text 行と同じスコープ表現にする。
 
-動的な group 名、command 名、要約、添付フィールド値は既存の redaction 後の値を受け取り、Slack が特別に解釈する `&`、`<`、`>` を公式仕様どおり entity へ変換する。表示境界だけで処理し、構造化ログの元値は変更しない。改行、mrkdwn 区切り、コードフェンスを含む既存値の追加正規化は、表示内容を変える承認済み要件がないため本タスクでは導入しない。
+動的な group 名、command 名、要約、添付フィールド値は既存の redaction 後の値を受け取り、Slack が特別に解釈する `&`、`<`、`>` を公式仕様どおり entity へ変換する。Text 行へ埋め込む値では CR、LF、その他の制御文字を空白へ置換し、必ず 1 行にする。これらは表示境界だけで処理し、構造化ログの元値は変更しない。`*`、`_`、`~`、バッククォートの解釈を完全に無効化する確実なエスケープは前提にせず、entity 変換と 1 行化でリンク、メンション、偽の見出し行を防ぐ。装飾だけが変わりうる点は残余リスクとして扱う。stdout 1000 文字、stderr 500 文字の既存上限は変えない。
 
 ### 3.6 未知種別と不正スコープ
 
@@ -421,7 +435,7 @@ Text 行は常に次の形とする。
 |---|---|---|
 | 欠落 | 通知コンテキストのキーを持つ属性がない | `missing_notification_context` |
 | 重複 | 同じキーの属性が 2 個以上ある | `duplicate_notification_context` |
-| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`scope` が 4 語のいずれでもない、`scope=unknown`、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
+| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`scope` が 3 語のいずれでもない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
 
 `scope=global` で group と command がともに空の場合だけ `(global)` と表示する。通知コンテキストが不正でも、汎用メッセージには切り替えず、元の通知種別の固有部分を保ったまま Scope を `(scope: invalid)` とする。
 
@@ -507,7 +521,7 @@ flowchart TD
 
 ### 5.3 Slack での表示互換性
 
-本設計では、既存の Incoming Webhook、トップレベルの `text`、legacy secondary attachment の `color` と `fields` だけを使用する。新しい Slack API 機能は導入しない。Slack は secondary attachment の `fields` を 2〜3 個以内にすることを推奨している。一方、現在のグループ集計はコマンドごとにフィールドを持つため、既にこの推奨数を超える場合がある。F-004 では stdout 1000 文字、stderr 500 文字の既存上限を据え置くため、本タスクでは集約上限やフィールド数を変更しない。コマンド数の多いグループやサイズの大きい種別固有メッセージが Slack に拒否される可能性と、改行や mrkdwn の区切りによって表示が変わる可能性は、既存のリスクとして残る。送信失敗は、既存の送信失敗ロガーが記録する HTTP エラーから確認できる。集約上限、追加の表示正規化、Block Kit への移行は、利用者向けの挙動と AC を定めた別タスクで扱う。Slack の公式文書は 2026-09-08 に確認した。Incoming Webhook で通常のメッセージ書式を利用できること、トップレベルのメッセージでは `mrkdwn` が既定であること、`*bold*` が太字になること、`&`、`<`、`>` のエスケープが必要なことを確認している。
+本設計では、既存の Incoming Webhook、トップレベルの `text`、legacy secondary attachment の `color` と `fields` だけを使用する。新しい Slack API 機能は導入しない。Slack は secondary attachment の `fields` を 2〜3 個以内にすることを推奨している。一方、現在のグループ集計はコマンドごとにフィールドを持つため、既にこの推奨数を超える場合がある。F-004 では stdout 1000 文字、stderr 500 文字の既存上限を据え置くため、本タスクでは集約上限やフィールド数を変更しない。コマンド数の多いグループやサイズの大きい種別固有メッセージが Slack に拒否される可能性は、既存のリスクとして残る。送信失敗は、既存の送信失敗ロガーが記録する HTTP エラーから確認できる。Text 行の動的値は 1 行化し `&`、`<`、`>` を entity へ変換するが、その他の mrkdwn 記号による装飾変化は残余リスクとして受け入れる。集約上限や Block Kit への移行は、利用者向けの挙動と AC を定めた別タスクで扱う。Slack の公式文書は 2026-09-08 に確認した。Incoming Webhook で通常のメッセージ書式を利用できること、トップレベルのメッセージでは `mrkdwn` が既定であること、`*bold*` が太字になること、`&`、`<`、`>` のエスケープが必要なことを確認している。
 
 - [Sending messages using incoming webhooks](https://api.slack.com/messaging/webhooks)
 - [Formatting message text](https://docs.slack.dev/messaging/formatting-message-text/)
@@ -519,6 +533,10 @@ flowchart TD
 本設計は [Task 0163 §3.4](../0163_redaction_coverage_and_slack_async/02_architecture.md#34-slack-送信の非同期化f-004-f-005-f-006) の非同期送信ポリシーを維持する。とくに、メッセージはキュー投入前に構築すること、高優先度キューを先に処理すること、送信失敗と破棄を Slack に依存しないロガーへ記録すること、ドライランでは送信機構を作らないことを変更しない。
 
 Task 0163 では `security_alert` と `privilege_escalation_failure` を高優先度としていた。本タスクは、どちらにも本番の呼び出し元がないという承認済み要件 F-001 に基づいて、この 2 種別を削除する。これは高優先度の意味を緩める例外ではなく、到達不能な定義を取り除く変更である。存続する `pre_execution_error` の優先度は変えない。古い種別を使う `TestSlackSender_HighPriorityBypassesFullNormalQueue` と `TestSlackSender_QueueOverflowDropsAndRecords` は `pre_execution_error` を使うよう更新し、優先度を通常へ倒すと失敗することを確認する。
+
+削除後、高優先度種別は `pre_execution_error` だけになる。コマンド失敗を表す `command_group_summary` と `user_group_command_failure` は、大量発生によって高優先度キューを埋めないよう通常優先度に保つ。その結果、通常キューが飽和すると個々の失敗通知が落ちうる残余リスクを受け入れる。既存の送信失敗記録と flush 時の種別別集計を運用上の検知手段とする。
+
+削除後、通常キューにあるコマンド失敗通知は大量の失敗によって破棄されうる。これらを高優先度へ移すと、氾濫する側が `pre_execution_error` を押し出しうるため移さない。破棄の個別記録と flush 時の種別別集計を運用上の担保とし、この残余リスクを関連文書にも反映する。
 
 Task 0163 §3.4.1 は `slackSender` が `failureLogger` を所有すると定めている。本設計も所有権を移さず、`SlackHandler` は既存の `slackSender` を介して WARN を記録する。メッセージ構築を省く契約も、nil 送信機構、ドライラン、受付停止済み送信機構の 3 つすべてについて維持する。§3.6 と §6.1 が受付停止判定より前へ出すのは種別の照合と通知コンテキストの検証だけであり、`buildCommandGroupSummary` を含む構築は現在と同じく受付停止判定の後に置く。
 
@@ -612,9 +630,9 @@ flowchart TD
 
 | 観点 | 検証内容 | 対応 AC |
 |---|---|---|
-| 通知コンテキスト | ゼロ値を `ScopeUnknown` として不正扱いし、`GlobalScope`、グループ、コマンド、属性の欠落・重複・型違い・値の矛盾と区別する | AC-09, AC-10, AC-12 |
+| 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
-| レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 3 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
+| レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
 | 構築の遅延 | 受付停止済みの送信機構では種別固有部分を構築せず、それでも定義不備の WARN は残る | AC-24 |
 | 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ | AC-11, AC-13, AC-15, AC-17 |
@@ -626,10 +644,11 @@ flowchart TD
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
 | 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる | AC-24, AC-25 |
 | WARN の件数 | 未知種別と不正な通知コンテキストが同時に成立するレコードで WARN が 1 件だけ記録され、`reasons` に両方の理由コードが規定の順で並ぶ | AC-24 |
-| 単一定義 | 登録関数が返すトークンと、そのトークンが参照する定義に、種別名、ビルダー、優先度がまとめて保持されることを検証する。構文木の静的契約テストで本番コードによる直接の `slack_notify=true` と `message_type` の構築、および登録済み公開トークン以外の引数を禁止する。同じ静的テストで `PreExecutionError` のリテラルが `NotificationContext` を省略していないことも検証する | AC-26, AC-27 |
+| 単一定義 | 登録関数が返すトークンと、そのトークンが参照する定義に、種別名、ビルダー、優先度がまとめて保持されることを検証する。構文木の静的契約テストで本番コードによる直接の `slack_notify=true` と `message_type` の構築、および登録済み token を返す公開アクセサ以外の引数を禁止する。同じ静的テストで `PreExecutionError` のリテラルが `NotificationContext` を省略していないことも検証する | AC-26, AC-27 |
 | 優先度 | 通常キューを満たしても `pre_execution_error` が高優先度キューへ入り、先に送られる。優先度を通常へ変えると失敗する | AC-07, AC-27 |
 | 削除対象の種別 | 本番コードを `rg` で検索し、対象の型、定数、関数、文字列がない | AC-01〜AC-03 |
 | 特権監査 | `privilege.logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを、新規テストで検証する。`logElevationOutcome` を対象とする既存テストは無いため、Phase 3 で追加する。呼び出し元から `logElevationOutcome` の呼び出しを取り除くと失敗する形にし、関数本体だけの検証にしない | AC-05 |
+| Text 行の安全性 | group 名、command 名、汎用要約に CR、LF、制御文字、`&`、`<`、`>` を含め、出力が 1 行になりリンク・メンション・偽の見出しを作らない | AC-18, AC-33 |
 | 切り詰めと redaction | stdout 1000 文字、stderr 500 文字の既存上限と、既存 redaction が維持される | F-004, F-007 |
 | 宛先分離 | INFO は成功用、WARN と ERROR はエラー用ハンドラだけで有効になる | AC-31 |
 
@@ -648,7 +667,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 
 ### 7.3 セキュリティテスト
 
-- command 名と汎用メッセージに `&`、`<`、`>`、Slack のリンク・メンション形式を含め、entity 変換後のペイロードが意図しないリンクやメンションを作らないことを確認する。
+- group 名、command 名、汎用メッセージに CR、LF、制御文字、`&`、`<`、`>`、Slack のリンク・メンション形式を含め、Text 行が 1 行のままで、entity 変換後のペイロードが意図しないリンク、メンション、偽の見出しを作らないことを確認する。
 - 未知種別と不正スコープの WARN が送信失敗ロガーだけへ届き、新しい Slack 通知を再帰的に発生させないことを確認する。
 - WARN に通知本文、group 名、command 名、Webhook URL が含まれないことを確認する。
 - `go test -race ./internal/logging/...` で、通知種別定義の参照と既存の並行投入・flush に競合がないことを確認する。定義は実行中に変更しない。
@@ -665,14 +684,14 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
 | 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する | AC-09〜AC-17、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
-| 6 | 利用者向け日本語文書を更新し、英語版へ翻訳する | AC-28〜AC-30 |
+| 6 | 利用者向け文書に加え、`security-architecture` と `slack_async_delivery` の日本語版を更新し、各英語版へ翻訳する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
 
 ### 8.2 実装順の根拠
 
-削除対象の種別を先に除くことで、通知種別定義と共通エンベロープは実際に発火する 3 種別だけを扱う。型の伝搬を表示変更より先に行うことで、各発火元の契約と Slack 表示の問題を分けて検証できる。文書は最終的な表示が確定してから更新する。Phase 5 では旧 group 属性だけを先に削除する中間状態を作らず、発火元とハンドラを同じコミットで切り替える。
+削除対象の種別を先に除くことで、通知種別定義と共通エンベロープは実際に発火する 3 種別だけを扱う。型の伝搬を表示変更より先に行うことで、各発火元の契約と Slack 表示の問題を分けて検証できる。文書は最終的な表示が確定してから更新する。削除する通知を記載した開発者向け設計書も同時に更新する。Phase 5 では発火元とハンドラを同じコミットで切り替え、既存のトップレベル `group` 属性は維持する。
 
-統一書式では Text 行と添付フィールドの順序が変わるため、Slack ワークフロー、通知本文を解析する監視ルール、運用スクリプトに影響する破壊的変更となる。まず、リポジトリ内の利用箇所と文書を検索する。外部利用者には、リリースノートで新旧のペイロード例を示す。あわせて、`group` が構造化ログのトップレベルから通知コンテキストの下へ移る JSON の新旧例も示す。実際の Webhook はテスト用チャンネルで先に検証し、3 種別、未知種別、宛先分離を確認してから通常のチャンネルへ展開する。問題があれば Phase 5 の単一コミットを取り消す。製品名を固定する承認済み方針と YAGNI に従い、設定で旧書式へ切り替える機能は追加しない。
+統一書式では Text 行と添付フィールドの順序が変わるため、Slack ワークフロー、通知本文を解析する監視ルール、運用スクリプトに影響する破壊的変更となる。まず、リポジトリ内の利用箇所と文書を検索する。外部利用者には、リリースノートで新旧のペイロード例を示す。既存のトップレベル `group` 属性は維持し、追加される通知コンテキスト属性をリリースノートで示す。実際の Webhook はテスト用チャンネルで先に検証し、3 種別、未知種別、宛先分離を確認してから通常のチャンネルへ展開する。問題があれば Phase 5 の単一コミットを取り消す。製品名を固定する承認済み方針と YAGNI に従い、設定で旧書式へ切り替える機能は追加しない。
 
 各 Phase では変更した Go コードに `make fmt` を適用し、`make test` と `make lint` を通す。Phase 3 後と最終 Phase では `make deadcode` を追加する。実サービスのテストに必要な Webhook はリポジトリへ保存しない。
 
@@ -702,9 +721,9 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 
 ### B.1 通知種別定義を初期化時の 1 回きりの登録とする理由
 
-通知種別は 3 個であり、実行時に追加・削除しない。当初は要素を一望できる素の配列を検討したが、§3.4 が必要とする「発火元が受け取る公開トークン」を配列だけでは型として与えられない。配列の添字や種別名の文字列を発火元へ渡すと、結局は種別を独立に列挙する第 2 の一覧が生まれ、AC-27 を満たせない。
+通知種別は 3 個であり、実行時に追加・削除しない。当初は要素を一望できる素の配列を検討したが、§3.4 が必要とする「発火元が公開アクセサから受け取る opaque token」を配列だけでは型として与えられない。配列の添字や種別名の文字列を発火元へ渡すと、結局は種別を独立に列挙する第 2 の一覧が生まれ、AC-27 を満たせない。
 
-そこで、定義の記述は 1 ファイル内の `var` 初期化に閉じ、非公開の登録関数が `message_type`、組み立て関数、優先度を 1 回だけ受け取って集合へ加え、その要素を指すトークンを返す形を採る。この形でも B.1 が避けたかった性質は残さない。定義は 1 箇所に並んで一望でき、テストは同じ集合を range でき、集合は初期化後に変更されないため競合状態を持たず（§7.3 の `-race` で確認する）、パッケージ外へ登録 API を公開しないため利用されない拡張点も作らない。初期化順序への依存は、登録を同一パッケージの同一ファイルに閉じ、他パッケージの `init` から呼ばせないことで避ける。
+そこで、定義の記述は 1 ファイル内の `var` 初期化に閉じ、非公開の登録関数が `message_type`、組み立て関数、優先度を 1 回だけ受け取って集合へ加え、その要素を指すトークンを返す形を採る。この形でも B.1 が避けたかった性質は残さない。定義は 1 箇所に並んで一望でき、テストは同じ集合を range でき、集合は初期化後に変更されないため競合状態を持たず（§7.3 の `-race` で確認する）、パッケージ外へ登録 API や再代入可能な token 変数を公開しないため、利用されない拡張点や実行中の書き換えも作らない。初期化順序への依存は、登録を同一パッケージの同一ファイルに閉じ、他パッケージの `init` から呼ばせないことで避ける。
 
 ### B.2 `switch` を 1 個にまとめる案を採用しない理由
 
@@ -713,3 +732,24 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 ### B.3 共通エンベロープを各ビルダーから呼ぶ案を採用しない理由
 
 各ビルダーが共通関数を呼ぶ形では、呼び忘れや呼び出し後の上書きを型で防げない。F-004 と F-005 は全種別への一律適用と漏れの検知を求めるため、種別固有部分の戻り型から共通フィールドを除き、`SlackHandler.Handle` 側で必ず共通エンベロープを付ける。
+
+
+### B.4 ゼロ値と属性欠落を区別する理由
+
+AC-09 に従い `NotificationContext` のゼロ値はグローバルとする。一方、SlackHandler が受け取るレコードでは「ゼロ値を明示的に属性へ変換した状態」と「属性そのものが無い状態」を区別できる。後者までグローバルにすると AC-11 の付与漏れが正常に見えるため、属性欠落は不正とする。
+
+### B.5 既存のトップレベル `group` 属性を残す理由
+
+通知コンテキストは Slack のスコープを構造化するために追加する。既存の `GroupSummaryAttrs.Group` を削除すると、Slack 書式の変更に加えて JSON ログ利用者へ不要な破壊的変更を課す。SlackHandler は通知コンテキストだけを参照すれば推論禁止を守れるため、既存属性は互換性のため維持する。
+
+### B.6 `RuntimeCommand` にグループ名を重複保持しない理由
+
+`NewRuntimeCommand` が受け取るグループ名は、既に `TimeoutResolution.GroupName` に保持されている。通知専用の非公開フィールドを追加すると同じ値を同期する不変条件が増えるため、`GroupName()` は既存値を返す。
+
+### B.7 Text 行を 1 行へ正規化する理由
+
+製品名を先頭に固定しても、動的な値に改行があれば直下へ偽の見出し行を作れる。要件が要約を 1 行と定めていることにも合わせ、Text 行へ埋め込む値だけ CR、LF、制御文字を空白へ置換する。構造化ログや添付フィールドの元値は変えない。
+
+### B.8 公開変数ではなく token アクセサを使う理由
+
+フィールドが非公開の `Notification` でも、公開パッケージ変数は外部から再代入できる。登録済み token は非公開変数に保持し、公開関数が値を返す形にすることで、発火元が文字列を再列挙せず利用でき、実行中の書き換えも防げる。
