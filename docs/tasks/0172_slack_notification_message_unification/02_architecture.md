@@ -413,7 +413,7 @@ type PreExecutionError struct {
 func HandlePreExecutionError(preExecErr *PreExecutionError)
 ```
 
-`cmd/runner` の設定読み込み、Run ID、ビルド設定、特権降格などの起動前エラーは `GlobalScope()` を渡す。`runner.executeGroups` のグループ検証エラーだけは `GroupScope(verErr.Group)` を渡す。検証結果本文から `Group: <name>, ` を除き、グループ名の唯一の表示場所を Scope にする。stderr と stdout の既存形式、および `HandleExecutionError` が Slack 通知を行わない契約は維持する。
+`cmd/runner` の設定読み込み、Run ID、ビルド設定、特権降格などの起動前エラーは `GlobalScope()` を渡す。`runner.executeGroups` のグループ検証エラーだけは `GroupScope(verErr.Group)` を渡す。検証結果本文から `Group: <name>, ` を除き、グループ名の唯一の表示場所を Scope にする。この除去は Scope の描画と同じ Phase 5 で行う（§8.2）。stderr と stdout の既存形式、および `HandleExecutionError` が Slack 通知を行わない契約は維持する。
 
 `NotificationContext` のゼロ値は有効なグローバルスコープである。それでも意図を明示し `GlobalScope()` を production で使用するため、`cmd/runner/main.go` の 11 箇所、`internal/runner/bootstrap/config.go` の 4 箇所、`internal/runner/bootstrap/environment.go` の 2 箇所を移行対象とする。`HandlePreExecutionError` はこの値から通知コンテキスト属性を必ず生成する。構文木の静的契約テストは、本番の `PreExecutionError` リテラルで `NotificationContext` が省略されていないことを検証する。
 
@@ -657,11 +657,13 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 |---|---|---|
 | 欠落 | 通知コンテキストのキーを持つ属性がない | `missing_notification_context` |
 | 重複 | 同じキーの属性が 2 個以上ある | `duplicate_notification_context` |
-| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`group` が無い、`scope`・`group`・`command` のいずれかの値が `slog.KindString` でない、`scope` が 3 語のいずれでもない、グループの中で `scope`・`group`・`command` のいずれかが 2 回以上現れる、group 名または command 名が §3.5 の補間契約を通すと表示できる文字を残さない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
+| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`group` が無い、`scope`・`group`・`command` のいずれかの値が `slog.KindString` でない、`scope` が 3 語のいずれでもない、グループの中に `scope`・`group`・`command` 以外のキーがある、グループの中で `scope`・`group`・`command` のいずれかが 2 回以上現れる、group 名または command 名が §3.5 の補間契約を通すと表示できる文字を残さない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
 
 下位キーの型を presence だけで済ませないのは、`slog.Value.String()` がどの種別の値でも文字列を返すためである。`group` に整数を持たせた手組みのレコードは、型を見なければ空でない group 名として復元され、スキーマ違反の WARN も出ないまま通ってしまう。§3.1 のエンコードが 3 個とも string と定めている以上、その型を読み側でも要求する。
 
 同じ理由で、`group` は**存在すること**も要求する。§3.1 のエンコードは `group` を常に出力すると定めており（`command` だけが「空でないときだけ」である）、`group` を欠くグループは正規の `LogValue` からは生じない。ここを見ないと、`scope="global"` だけを持つ手組みのレコードが素通りする。欠けた `group` は空文字として復元され、それはグローバルが要求する値そのものであるため、組み合わせの検査にも掛からず、`(global)` が WARN 無しで表示されてしまう。すなわち偽装された正当なスコープになる。`scope="group"` で `group` を欠く場合は復元後に空となり既存の組み合わせ検査が捕まえるため、この穴はグローバルに固有である。存在の検査は `command` には課さない。エンコードが条件付き出力と定めており、不在が正常だからである。
+
+知らない下位キーも同じ理由で拒否する。§3.1 のエンコードはキーを 3 個に固定しており、`{scope="global", group="", tenant="backup"}` のようなグループは正規の `LogValue` からは生じない。3 個が揃っていることだけを見て余りを黙って捨てると、`LogValue` が作れない形のレコードが妥当な `(global)` として表示され、スキーマ違反の WARN も出ない。既知のキーの過不足を拒む一方で未知のキーを通すのは一貫しないため、キー集合がちょうど一致することを要求する。
 
 グループの**外側**のキーが重複する場合と、グループの**内側**の下位キーが重複する場合は、検出する場所が違うだけで扱いは同じである。外側は SlackHandler の属性走査が `duplicate_notification_context` として検出し、内側は復元関数が `invalid_notification_context` として拒否する。内側の重複を「最初の値を採る」「最後の値を採る」のいずれかで通すことはしない。どちらの値が発生箇所なのかを補正で決める形になり、本設計の「補正しない」に反する。
 
@@ -883,7 +885,7 @@ flowchart LR
 |---|---|---|
 | 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する。`GroupScope("")` は構築でき、表示境界で `(scope: invalid)` と WARN になることも確認する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
-| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。`scope`・`group`・`command` の値が文字列でない行を 3 個の下位キーそれぞれについて持ち、`Value.String()` によって数値などが名前として復元されないことを確認する。`scope="global"` だけを持ち `group` を欠くレコードが `(global)` にならず `invalid_notification_context` になる行を持ち、`group` の存在検査を外すとこの行が失敗する形にする。`command` を欠く group スコープは正常として通ることも同じ表で確認し、存在検査が `command` へ広がっていないことを示す。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する。補間契約を通すと表示できる文字が残らない group 名・command 名（制御文字だけの名前）も `(scope: invalid)` になることを同じ表で確認する | AC-12 |
+| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。`scope`・`group`・`command` の値が文字列でない行を 3 個の下位キーそれぞれについて持ち、`Value.String()` によって数値などが名前として復元されないことを確認する。`scope="global"` だけを持ち `group` を欠くレコードが `(global)` にならず `invalid_notification_context` になる行を持ち、`group` の存在検査を外すとこの行が失敗する形にする。`command` を欠く group スコープは正常として通ることも同じ表で確認し、存在検査が `command` へ広がっていないことを示す。3 個が揃ったうえで未知の下位キーを 1 個持つレコード（`tenant` など）も `invalid_notification_context` になる行を持ち、キー集合の一致検査を外すと失敗する形にする。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する。補間契約を通すと表示できる文字が残らない group 名・command 名（制御文字だけの名前）も `(scope: invalid)` になることを同じ表で確認する | AC-12 |
 | 通知コンテキストの下位キーの重複 | グループの内側で `scope`、`group`、`command` のいずれかが 2 回以上現れるレコードが `invalid_notification_context` として拒否され、最初の値や最後の値を採って通らないことを、3 個の下位キーそれぞれについて検証する。グループの外側のキーの重複が `duplicate_notification_context` になることと区別して確認する | AC-12, AC-24 |
 | レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
@@ -891,9 +893,9 @@ flowchart LR
 | 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ。SlackHandler 登録後のグローバルな起動前エラーでは `(global)` になる | AC-11, AC-13, AC-15, AC-17 |
 | グループ検証エラー | Scope に group 名があり、Error Message に `Group: <name>, ` がない | AC-13, AC-14 |
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
-| 設定の検証 | コマンド名が空の設定、制御文字や書式制御文字だけで表示できる文字を持たない設定、および長さ上限を 1 byte 超える group 名・command 名を持つ設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。上限ちょうどの名前は通ることも同じ表で確認する。各検査を外すと対応する行が失敗する | AC-17 |
+| 設定の検証 | コマンド名が空の設定、制御文字や書式制御文字だけで表示できる文字を持たない設定、および長さ上限を 1 byte 超える group 名・command 名を持つ設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。上限ちょうどの名前は通ることも同じ表で確認する。制御文字・書式制御文字の検査には、表示できる文字を**残す**入力（`backup\nother`、`backup` + U+202E + `evil`）を必ず含める。制御文字だけの名前は「表示できる内容を持たない」検査でも拒否されるため、それだけでは 2 つの検査を区別できず、無条件の制御文字拒否を外しても行が緑のままになる。各検査を外すと対応する行が失敗する | AC-17 |
 | 識別子を切り詰めない | 長さ上限ちょうどまでの group 名が Scope フィールドと Text 行に接頭辞ではなく全体として現れることを検証する。先頭が長く一致する 2 つの group 名が異なる Scope として表示されることも確認し、識別子へ切り詰めを入れると失敗する形にする | AC-13, AC-18 |
-| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）の双方を group 名・command 名に持つ設定が、redaction 用のセンチネルエラーで読み込みを拒否されることを `errors.Is` で検証する。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。さらに `slack_allowed_host` を設定した状態で、そのホストを含む URL 形の command 名が拒否されることと、同じ名前が許可ホスト未設定なら通ることを 1 組の行として持つ。既定の `NewConfig()` で検査する実装へ戻すとこの組が失敗する。TOML の許可ホストを大文字で書いた行も持ち、正規化前の値で検査する実装を落とす。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
+| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）を持つ設定が、redaction 用のセンチネルエラーで読み込みを拒否されることを `errors.Is` で検証する。ただし各行が使える識別子の種類は group 名の文法で決まる。`GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）は `.`、`:`、`/` を許さず、しかも `ValidateGroupNames` は `loadConfigInternal` の中、すなわち `bootstrap` の redaction 検査より前に走る。したがって JWT 形と URL 形は group 名では `ErrInvalidGroupName` で落ち、redaction のセンチネルには届かないため、この 2 形は command 名の行としてのみ書く。group 名と command 名の双方で使えるのは、語の一致で潰れる名前と、`AKIA` 形・`ghp_` 形のように英数字と下線だけで綴れる値形式に限る。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。さらに `slack_allowed_host` を設定した状態で、そのホストを含む URL 形の command 名が拒否されることと、同じ名前が許可ホスト未設定なら通ることを 1 組の行として持つ。既定の `NewConfig()` で検査する実装へ戻すとこの組が失敗する。TOML の許可ホストを大文字で書いた行も持ち、正規化前の値で検査する実装を落とす。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
 | エンベロープ値の出力の性質 | §3.5 の継ぎ目（`internal/logging` の非公開パッケージ変数）を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
@@ -942,14 +944,16 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる・redaction の変換が書き換える識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
-| 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、役割ごとの補間契約、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる・redaction の変換が書き換える識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-11、AC-16、AC-30、AC-32 |
+| 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、役割ごとの補間契約、WARN を 1 個の取り消し可能なコミットで導入する。あわせてグループ検証エラー本文からの `Group: <name>, ` 除去も行う | AC-12〜AC-15、AC-17、AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
 
 ### 8.2 実装順の根拠
 
 削除対象の種別を先に除くことで、通知種別定義と共通エンベロープは実際に発火する 3 種別だけを扱う。型の伝搬を表示変更より先に行うことで、各発火元の契約と Slack 表示の問題を分けて検証できる。文書は最終的な表示が確定してから更新する。削除する通知を記載した開発者向け設計書も同時に更新する。Phase 5 では発火元とハンドラを同じコミットで切り替え、既存のトップレベル `group` 属性は維持する。
+
+AC-12〜AC-15 と AC-17 を Phase 4 ではなく Phase 5 の完了条件とするのは、いずれも Slack の**表示**についての基準だからである。Phase 4 が入れるのは通知コンテキストの型と伝搬、および設定境界の拒否であり、この時点では SlackHandler はまだ新しい属性を読まず、旧書式のまま送る。Scope の描画、`(scope: invalid)` と WARN、共通エンベロープはすべて Phase 5 で入る。Phase 4 の完了条件にこれらを置くと、そのコミットでは満たしようのない基準になる。同じ理由で、グループ検証エラー本文からの `Group: <name>, ` 除去も Phase 5 へ置く。Scope が描画される前に本文から group 名を取り除くと、その 1 コミットのあいだだけ通知から group 名が消えるためである（AC-13、AC-14）。
 
 統一書式では Text 行と添付フィールドの順序が変わるため、Slack ワークフロー、通知本文を解析する監視ルール、運用スクリプトに影響する破壊的変更となる。まず、リポジトリ内の利用箇所と文書を検索する。外部利用者には、リリースノートで新旧のペイロード例を示す。既存のトップレベル `group` 属性は維持し、追加される通知コンテキスト属性をリリースノートで示す。実際の Webhook はテスト用チャンネルで先に検証し、3 種別、未知種別、宛先分離を確認してから通常のチャンネルへ展開する。問題があれば Phase 5 の単一コミットを取り消す。製品名を固定する承認済み方針と YAGNI に従い、設定で旧書式へ切り替える機能は追加しない。
 
