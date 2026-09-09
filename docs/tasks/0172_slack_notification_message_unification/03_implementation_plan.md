@@ -494,10 +494,19 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       観点）を検証する。`GroupScope("")` については、`scope=group`・`group=""` として
       エンコードされ、判定が `invalid_notification_context` を返すことを assert する。
 - [ ] `internal/logging` 側のテストへ、通知コンテキストを持つレコードを
-      `RedactingHandler` 経由で `SlackHandler` へ流し、直接エンコードした場合と同じ妥当性
-      判定になることを検証するケースを追加する（02_architecture.md §7.1「エンコードの往復」）。
-      設計は `RedactingHandler.processLogValuer` が `LogValue()` を解決してから下位ハンドラへ
-      渡すことを前提にしているため、この経路を確かめないと前提が崩れても気付けない。
+      `RedactingHandler` へ流し、**下位ハンドラを捕捉用ハンドラ**（`tu.NewCallbackHandler`）
+      とし、そこで受け取った属性を §4.1 の復元関数へ直接渡して、直接エンコードした場合と
+      同じ妥当性判定になることを検証するケースを追加する
+      （02_architecture.md §7.1「エンコードの往復」）。設計は
+      `RedactingHandler.processLogValuer` が `LogValue()` を解決してから下位ハンドラへ渡す
+      ことを前提にしているため、この経路を確かめないと前提が崩れても気付けない。
+      **下位ハンドラを `SlackHandler` にはしない。** 本 Phase の `SlackHandler.Handle` は
+      通知コンテキスト属性を読みも検証もせず（その実装は §5.3）、本 Phase の対象ファイルにも
+      `slack_handler.go` は入っていない。`SlackHandler` へ流す形で書くと、妥当・不正・欠落の
+      どれもが同じく無視されるため、テストが宣言した理由では失敗しえない。捕捉用ハンドラと
+      復元関数の直接呼び出しにすれば、検証対象（`LogValue()` の解決が redaction を跨いで
+      保たれること）だけが結果を決める。Phase 5 で `Handle` が実際に判定を行うようになった
+      後の経路全体の検証は §5.5 の不正な通知コンテキストのケースが受け持つ。
 
 #### 4.2 `RuntimeCommand` のグループ名
 
@@ -1029,8 +1038,11 @@ M2 の時点では Slack の表示は変わらない。AC-12〜AC-15 と AC-17 �
   `internal/logging/notification_contract_guard_test.go`（構文木の静的契約）、
   `internal/runner/bootstrap/identifier_redaction_test.go`（識別子の redaction 検査）。
 - **拡張**: `internal/logging/slack_handler_test.go`（レベル表示、共通エンベロープ、未知種別、
-  WARN の件数と内容、識別子を載せるフィールド、切り詰めないこと、`RedactingHandler` を挟んだ
-  経路）、`internal/runner/config/validation_test.go`（識別子の設定検証）、
+  WARN の件数と内容、識別子を載せるフィールド、切り詰めないこと。いずれも Phase 5）。
+  `RedactingHandler` を挟んだエンコード往復の検証は Phase 4 に置き、下位ハンドラを捕捉用
+  ハンドラとして復元関数を直接呼ぶ（§4.1）。Phase 4 の `SlackHandler` はまだ通知コンテキストを
+  読まないため、`SlackHandler` を経路に含めるとテストが宣言した理由で失敗しえない。
+  `internal/runner/config/validation_test.go`（識別子の設定検証）、
   `internal/redaction/redactor_test.go`（新しい述語と層の切り分け）、
   `internal/runner/base/runnertypes/runtime_test.go`（`GroupName`）、
   `internal/runner/base/privilege/unix_privilege_test.go`（特権昇格結果ログ）。
