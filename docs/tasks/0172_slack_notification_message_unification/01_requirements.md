@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-08 |
 | Reviewer | isseis |
-| Comments | AC-09: ゼロ値を `ScopeUnknown` として `ScopeGlobal` から区別するよう変更し、再承認 |
+| Comments | AC-09: 有効値の構築をコンストラクタに限定し、`ScopeGlobal` をゼロ値とするよう変更し、再承認 |
 
 ## 関連 Issue
 
@@ -134,14 +134,13 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
 
 「group 名が空であること」に意味を持たせるのをやめ、スコープを明示的な値として運ぶ。
 `internal/common` に、非公開フィールドを持つ型を置く。有効な値はコンストラクタで構築し、
-Go のゼロ値は未指定を表す値として残す。
+`ScopeGlobal` を Go のゼロ値とする。
 
 ```go
 type NotificationScope int
 
 const (
-    ScopeUnknown NotificationScope = iota // ゼロ値。未指定を表し、有効なスコープとして扱わない
-    ScopeGlobal
+    ScopeGlobal NotificationScope = iota
     ScopeGroup
     ScopeCommand
 )
@@ -154,9 +153,10 @@ func GroupScope(group string) NotificationContext
 func CommandScope(group, command string) NotificationContext
 ```
 
-ゼロ値は `ScopeUnknown` とし、有効なグローバルスコープとは区別する。グローバル通知は `GlobalScope()` で明示的に構築する。構築の入口を
-コンストラクタに限ることで、group 名を入れ忘れた `ScopeGroup` の値をパッケージ外から作れなく
-する。
+`NotificationContext` のゼロ値は有効なグローバルスコープとする。発火元はグローバルな場合も
+`GlobalScope()` で明示的に構築し、通知コンテキスト属性を付与する。構築の入口をコンストラクタに
+限ることで、group 名を入れ忘れた `ScopeGroup` の値をパッケージ外から作れなくする。通知
+コンテキスト属性自体が無い状態は、ゼロ値とは別に読み側で検知する。
 
 ### スコープの矛盾は補正せず、通知の上で表に出す
 
@@ -263,8 +263,9 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
 
 **Acceptance Criteria**:
 - **AC-09**: `common.NotificationContext` のフィールドはパッケージ外から指定できず、有効な値は
-  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）で構築する。ゼロ値のスコープは
-  `ScopeUnknown` として明示的に区別され、有効なグローバルスコープとして扱われない。
+  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）で構築する。`ScopeGlobal` を
+  ゼロ値とし、発火元はグローバルな場合も `GlobalScope()` で明示的に通知コンテキスト属性を
+  付与する。属性自体が無い状態は読み側で検知される。
 - **AC-10**: `NotificationContext` のログ出力に `scope` と `group` が含まれ、コマンド名が
   無い場合は `command` 属性を出さない。
 - **AC-11**: 生きている 3 種別すべての発火点が、送出するレコードに `NotificationContext` を
