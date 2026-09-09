@@ -196,7 +196,7 @@ flowchart LR
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
 | `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 3 検査を、既存の `ValidateGroupNames` と同じ経路へ追加する。redaction の検査だけは正規化済みの許可ホストが要るため `bootstrap` 側に置く（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
 | `internal/runner/config/errors.go` | 変更 | 空のコマンド名、表示できる文字を持たないコマンド名、長さ上限を超える識別子、redaction の変換が書き換える識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
-| `internal/redaction/redactor.go` | 変更 | `RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue`）が値を書き換えるかを返す述語を公開する。既存の変換を読み取るだけで、redaction の適用範囲は変えない（§3.1） | 既存テストは変更しない。述語が `ValueDetector` の検出も覆うことを新規ケースで検証する |
+| `internal/redaction/redactor.go` | 変更 | `RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue`）が値を書き換えるかを返す述語を公開する。既存の変換を読み取るだけで、redaction の適用範囲は変えない（§3.1） | 既存テストは変更しない。述語が `ValueDetector` の検出にも及ぶことを新規ケースで検証する |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -382,7 +382,7 @@ func (c NotificationContext) LogAttr() slog.Attr
 
 この検査は通知のためだけのものではない。名前を持たないコマンドは、Slack 通知に限らずログでも監査記録でも指し示せない。名前を設定境界で検査することで、「外部入力の誤りは読み込みで拒否する」「発火点へ届いた空の名前は呼び出し側の不具合であり、表示境界で `(scope: invalid)` として表に出す」という役割分担が成り立つ。空の名前を黙って通したうえで通知だけを不正表示にすると、設定が誤っていることは Slack を見た者にしか分からず、当のコマンドはそのまま実行され続ける。
 
-機密パターンの検査は、`DefaultSensitivePatterns().IsSensitiveValue` だけを呼ぶ形にはしない。この判定は redaction が識別子を書き換える経路の一部しか覆わないためである。`Config.RedactLogAttribute`（`internal/redaction/redactor.go`）は、文字列値に対してまず `RedactText` を呼ぶ。`RedactText` はキー名由来の `key=value` 置換を当てたのち `ValueDetector.Mask` を通し、ここが AWS アクセスキー ID（`AKIA`／`ASIA` + 16 文字）、GitHub トークンと fine-grained PAT、JWT、および設定された Webhook ホストを含む URL を、語の一致とは無関係に `[REDACTED]` へ置き換える。`IsSensitiveValue` が呼ばれるのはその後、値が変化しなかったときだけである。したがって `AKIAIOSFODNN7EXAMPLE` のような group 名は `IsSensitiveValue` に一致しないまま `ValueDetector` に潰される。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` はこの形の名前を許すため、実在する TOML から到達できる。
+機密パターンの検査は、`DefaultSensitivePatterns().IsSensitiveValue` だけを呼ぶ形にはしない。この判定は redaction が識別子を書き換える経路の一部にしか及ばないためである。`Config.RedactLogAttribute`（`internal/redaction/redactor.go`）は、文字列値に対してまず `RedactText` を呼ぶ。`RedactText` はキー名由来の `key=value` 置換を当てたのち `ValueDetector.Mask` を通し、ここが AWS アクセスキー ID（`AKIA`／`ASIA` + 16 文字）、GitHub トークンと fine-grained PAT、JWT、および設定された Webhook ホストを含む URL を、語の一致とは無関係に `[REDACTED]` へ置き換える。`IsSensitiveValue` が呼ばれるのはその後、値が変化しなかったときだけである。したがって `AKIAIOSFODNN7EXAMPLE` のような group 名は `IsSensitiveValue` に一致しないまま `ValueDetector` に潰される。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` はこの形の名前を許すため、実在する TOML から到達できる。
 
 そこで検査は語の一覧ではなく**変換そのもの**を基準にする。すなわち、本番と同じ redaction の変換を識別子へ適用し、**値が変化したら拒否する**。判定は `internal/redaction` 側に述語として置き、`RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue` の両方）と同じ経路を通す。設定検証側で変換の一覧を複製しない。この形にすると、将来 `ValueDetector` に検出器が増えたときも設定検証が自動的に追随する。列挙で書けば、増えた検出器の分だけ Scope が `[REDACTED]` に潰れる名前が読み込みを通るようになる。
 
@@ -614,7 +614,7 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 | 制約 | 実現方法 | 実現する性質 | 理由 |
 |---|---|---|---|
-| 改行と制御文字を含めない | 一般カテゴリ Cc の文字（U+0000〜U+001F と U+007F〜U+009F。C0、DEL、C1 をすべて含む）、および Unicode の行区切り U+2028 と段落区切り U+2029 を 1 文字ずつ半角空白へ置き換える | 1 行であること、制御文字と書式制御文字を含まないこと | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1）。範囲を C0 と DEL の列挙ではなくカテゴリ Cc で定めるのは、C1（U+0080〜U+009F）が C0 にも DEL にも Cf にも属さず、列挙では漏れるためである。とりわけ U+0085（NEL）は Unicode が改行として扱う文字であり、漏らせば 1 行の保証が破れる。Cc はこの 3 者をちょうど覆う。U+2028 と U+2029 は Cc に含まれないが、Unicode では改行として扱われる文字であり、同じ経路を与えてしまう |
+| 改行と制御文字を含めない | 一般カテゴリ Cc の文字（U+0000〜U+001F と U+007F〜U+009F。C0、DEL、C1 をすべて含む）、および Unicode の行区切り U+2028 と段落区切り U+2029 を 1 文字ずつ半角空白へ置き換える | 1 行であること、制御文字と書式制御文字を含まないこと | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1）。範囲を C0 と DEL の列挙ではなくカテゴリ Cc で定めるのは、C1（U+0080〜U+009F）が C0 にも DEL にも Cf にも属さず、列挙では漏れるためである。とりわけ U+0085（NEL）は Unicode が改行として扱う文字であり、漏らせば 1 行の保証が破れる。Cc はこの 3 者を過不足なく含む。U+2028 と U+2029 は Cc に含まれないが、Unicode では改行として扱われる文字であり、同じ経路を与えてしまう |
 | 書式制御文字を含めない | 一般カテゴリ Cf の文字を 1 文字ずつ半角空白へ置き換える | 制御文字と書式制御文字を含まないこと | 双方向表示制御の U+202A〜U+202E と U+2066〜U+2069 は Cc でも U+2028／U+2029 でもないため、前の規則を素通りする。これらは表示順を反転させるため、Scope や `Command` を実際とは別のコマンドを名乗るように見せられる。装飾が変わるだけの残余リスクとは別種の強さであり、受け入れない |
 | Slack の制御構文を解釈させない | `&`→`&amp;`、`<`→`&lt;`、`>`→`&gt;` へ置き換える | 実体参照化されていること | `<!channel>` や `<@U012345>` がメンションとして、`<URL｜表示文字>` がリンクとして解釈されるのを防ぐ。裸の URL の自動リンクはこの規則の対象外であり、下の残余リスクで扱う |
 | 長さに上限を設ける | 置き換え後の値を UTF-8 で 500 byte 以下に切り詰める | 長さが上限を超えないこと、有効な UTF-8 であること | Text 行はプッシュ通知に出る 1 行であり、長大な本文が入ると読めなくなる |
