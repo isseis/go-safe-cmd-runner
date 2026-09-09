@@ -49,7 +49,6 @@ flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
-    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     SRC["通知の発火元"] --> REC[("slog レコード<br>message_type・notification_context")]
     REC --> REG["通知種別定義"]
@@ -60,22 +59,33 @@ flowchart LR
     MSG --> SEND["既存の送信機構"]
     SEND --> SLACK[("Slack Incoming Webhook")]
 
-    subgraph Legend["Legend"]
-        L1[("データ")]
-        L2["変更しない既存処理"]
-        L3["変更・追加する処理"]
-        L4["新規パッケージまたは型"]
-        L5["解消する問題"]
-    end
-
-    class REC,MSG,SLACK,L1 data
-    class SRC,SEND,L2 process
-    class ENV,L3 enhanced
-    class REG,SPEC,L4 newpkg
-    class L5 problem
+    class REC,MSG,SLACK data
+    class SRC,SEND process
+    class ENV enhanced
+    class REG,SPEC newpkg
 ```
 
-矢印 A → B は「A が B へデータを渡す、または B の生成に寄与する」ことを表す。緑は変更する処理、紫は新しい型、橙は変更しない処理を示す。赤は凡例だけで使用する。本タスクでは新規パッケージを作らない。
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    L1[("データ")]
+    L2["変更しない既存処理"]
+    L3["変更・追加する処理"]
+    L4["新しく追加する型"]
+
+    class L1 data
+    class L2 process
+    class L3 enhanced
+    class L4 newpkg
+```
+
+矢印 A → B は「A が B へデータを渡す、または B の生成に寄与する」ことを表す。本タスクでは新規パッケージを作らないため、紫は新しく追加する型を指す。
 
 通知コンテキストと通知種別定義は役割が異なる。通知コンテキストは発火元が知る「どこで起きたか」を保持する。通知種別定義は `internal/logging` が知る「どの固有部分を作り、どちらのキューへ入れるか」を保持する。この分割により、発火元は Slack の表示形式や送信キューを知らずに済む。
 
@@ -97,7 +107,6 @@ flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
-    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     subgraph Producers["通知の発火元"]
         MAIN["cmd/runner"]
@@ -134,19 +143,30 @@ flowchart LR
     PAYLOAD --> SENDER
     SENDER --> WEBHOOK
 
-    subgraph Legend["Legend"]
-        L1[("データ")]
-        L2["変更しない既存処理"]
-        L3["変更・追加する処理"]
-        L4["新規パッケージまたは型"]
-        L5["解消する問題"]
-    end
+    class RECORD,PAYLOAD,WEBHOOK data
+    class SENDER process
+    class MAIN,RUNNER,AUDIT,RT,COMMON,LOGGING enhanced
+    class NCTX,DEF newpkg
+```
 
-    class RECORD,PAYLOAD,WEBHOOK,L1 data
-    class SENDER,L2 process
-    class MAIN,RUNNER,AUDIT,RT,COMMON,LOGGING,L3 enhanced
-    class NCTX,DEF,L4 newpkg
-    class L5 problem
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    L1[("データ")]
+    L2["変更しない既存処理"]
+    L3["変更・追加する処理"]
+    L4["新しく追加する型"]
+
+    class L1 data
+    class L2 process
+    class L3 enhanced
+    class L4 newpkg
 ```
 
 実線の矢印 A → B は「A のデータが B へ流れる」こと、破線の矢印 A ⇢ B は「A が B の型を利用する」というパッケージ依存を表す。`internal/logging` から発火元への逆向き依存は作らない。`internal/common` に通知コンテキストを置くのは、`internal/runner` と `internal/logging` の循環 import を避け、既存のログスキーマ共有責務を再利用するためである。
@@ -209,17 +229,17 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    box rgb(232,245,232) Legend — 変更・追加する処理
+    box rgb(232,245,232) 変更・追加する処理
         participant P as 通知の発火元
         participant C as common.NotificationContext
         participant H as SlackHandler.Handle
         participant D as 通知種別定義
         participant E as 共通エンベロープ生成
     end
-    box rgb(255,241,230) Legend — 変更しない既存処理
+    box rgb(255,241,230) 変更しない既存処理
         participant S as slackSender
     end
-    box rgb(230,247,255) Legend — データまたは外部サービス
+    box rgb(230,247,255) 外部サービス
         participant W as Slack Incoming Webhook
     end
 
@@ -237,7 +257,24 @@ sequenceDiagram
     S->>W: 既存のリトライ方針で送信
 ```
 
-矢印 A → B は「処理の呼び出し、またはデータの受け渡し」を表し、破線の矢印は戻り値を表す。図上部の `Legend` と記した色付きボックスが凡例であり、緑は変更・追加する処理、橙は変更しない既存処理、青はデータまたは外部サービスを表す。未知種別の WARN と不正スコープの WARN は Slack へ戻さず、既存の送信失敗ロガーへ書く。
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+
+    L1["変更・追加する処理"]
+    L2["変更しない既存処理"]
+    L3[("外部サービス")]
+
+    class L1 enhanced
+    class L2 process
+    class L3 data
+```
+
+矢印 A → B は「処理の呼び出し、またはデータの受け渡し」を表し、破線の矢印は戻り値を表す。参加者を囲む色付きボックスの色は上の凡例に対応する。未知種別の WARN と不正スコープの WARN は Slack へ戻さず、既存の送信失敗ロガーへ書く。
 
 ### 2.4 副作用の境界
 
@@ -523,9 +560,7 @@ WARN は 1 レコードにつき 1 件に固定する。未知種別と不正な
 ```mermaid
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-    classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     INPUT[("TOML の group 名<br>command 名 / ログ本文")]
@@ -549,19 +584,26 @@ flowchart TD
     C2 --> LOG
     C3 --> SLACK
 
-    subgraph Legend["Legend"]
-        L1[("保護対象データまたは出力")]
-        L2["変更しない既存処理"]
-        L3["追加する対策"]
-        L4["新規パッケージまたは型"]
-        L5["脅威"]
-    end
+    class INPUT,LOG,SLACK data
+    class C1,C2,C3 enhanced
+    class T1,T2,T3 problem
+```
 
-    class INPUT,LOG,SLACK,L1 data
-    class L2 process
-    class C1,C2,C3,L3 enhanced
-    class L4 newpkg
-    class T1,T2,T3,L5 problem
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
+
+    L1[("保護対象データまたは出力")]
+    L2["追加する対策"]
+    L3["脅威"]
+
+    class L1 data
+    class L2 enhanced
+    class L3 problem
 ```
 
 矢印 A → B は、脅威入力から脅威への辺では「A から B が生じる」こと、脅威から対策への辺では「B が A を抑制する」こと、対策から出力への辺では「A の適用後に B へ出力する」ことを表す。新しい通知コンテキストは権限判断やコマンド実行には使わず、表示と監査相関にだけ使うため、改ざんされても実行権限は拡大しない。
@@ -604,8 +646,6 @@ flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-    classDef newpkg fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
-    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     START(["SlackHandler.Handle"])
     NOTIFY{"slack_notify が真?"}
@@ -650,19 +690,26 @@ flowchart TD
     DROP --> DONE
     QUEUE --> DONE
 
-    subgraph Legend["Legend"]
-        L1[("データ")]
-        L2["変更しない既存処理"]
-        L3["変更・追加する処理"]
-        L4["新規パッケージまたは型"]
-        L5["解消する問題"]
-    end
+    class RECORD data
+    class START,NOTIFY,NOSENDER,CLOSED,DROP,QUEUE,DONE process
+    class LOOKUP,DEF,GENERIC,SCOPE,VALID,INVALID,WARNLOG,EMITWARN,BUILD,ENVELOPE enhanced
+```
 
-    class RECORD,L1 data
-    class START,NOTIFY,NOSENDER,CLOSED,DROP,QUEUE,DONE,L2 process
-    class LOOKUP,DEF,GENERIC,SCOPE,VALID,INVALID,WARNLOG,EMITWARN,BUILD,ENVELOPE,L3 enhanced
-    class L4 newpkg
-    class L5 problem
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+
+    L1[("データ")]
+    L2["変更しない既存処理"]
+    L3["変更・追加する処理"]
+
+    class L1 data
+    class L2 process
+    class L3 enhanced
 ```
 
 矢印 A → B は「A の判定または処理の次に B を実行する」ことを表す。通知種別とスコープの検証を受付停止判定より前に置くため、終了時に破棄されたレコードでも定義不備の WARN が残る。一方で種別固有部分と共通エンベロープの構築は受付停止判定の後に置き、破棄経路で全コマンド結果を走査しない既存の性質を保つ。キュー投入以降の並行処理は Task 0163 のままであり、本タスクでは変更しない。
