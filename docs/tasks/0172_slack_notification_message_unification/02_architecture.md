@@ -17,6 +17,8 @@
 - [0068 separate slack webhooks](../0068_separate_slack_webhooks/02_architecture.md) — 成功用・エラー用 Webhook の分離
 - [security-architecture.ja.md](../../dev/architecture_design/security-architecture.ja.md) / [security-architecture.md](../../dev/architecture_design/security-architecture.md) — 本タスクで記述の更新が必要（3.8）
 - [slack_async_delivery.ja.md](../../dev/architecture_design/slack_async_delivery.ja.md) / [slack_async_delivery.md](../../dev/architecture_design/slack_async_delivery.md) — 高優先度キューの根拠を「セキュリティアラート等」と記しており、更新が必要（3.8）
+- [README.ja.md](../../../README.ja.md) / [README.md](../../../README.md) — Slack 統合をセキュリティイベントのリアルタイム通知と説明しており、更新が必要（5.2）
+- [security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) / [security-risk-assessment.md](../../user/security-risk-assessment.md) — 高優先度キューが「セキュリティアラート等」を保持すると記しており、更新が必要（5.2）
 - [mermaid_reference.md](../../dev/developer_guide/mermaid_reference.md) — 図の記法
 
 ## 用語
@@ -54,7 +56,7 @@
 |---|---|
 | 宣言し、推論しない | 発生箇所を「グループ名が空かどうか」から推論せず、`NotificationScope` という列挙値として運ぶ。ゼロ値は最も仮定の少ない `ScopeGlobal` とする |
 | 型で不変条件を守る | `NotificationContext` は非公開フィールドとし、パッケージ外からはコンストラクタ経由でしか構築できないようにする |
-| 補正せず、拒否する | グループ名が空のグループスコープを受け取ってもグローバルへ落とさない。`(scope: invalid)` と表示し、送信失敗ロガーに WARN を残す |
+| 補正せず、拒否する | 名前を欠いたスコープを受け取っても、上位のスコープへ落として描画しない。`(scope: invalid)` と表示し、送信失敗ロガーに WARN を残す。コマンド名が空の設定は、そもそも設定の検証で拒否する |
 | 漏れは黙らせず表に出す | 種別定義に載っていない `message_type` は汎用メッセージで送りつつ WARN を記録する。無言で汎用へ落とすことをやめる |
 | DRY | エンベロープの組み立てを 1 箇所に集約し、種別ごとの組み立ては固有フィールドと要約だけを返す |
 | YAGNI | 削除した 3 種別を作り直さない。製品名の設定による上書きも作らない |
@@ -164,6 +166,7 @@ Text 行は次の形に固定する。
 | スコープの矛盾 | 補正せず `(scope: invalid)` と表示し、WARN を記録する | 3.1, 4.1 |
 | `user_group_command_failure` の優先度 | 通常キューのまま。高優先度キューへは入れない | 3.2, 5.4 |
 | 製品名の置き場所 | `internal/logging` の非公開定数。production コードでの利用者が `internal/logging` の外に無い | 3.3 |
+| コマンド名の空の扱い | 設定の検証で空のコマンド名を拒否し、`CommandScope` は空のコマンド名を呼び出し側の誤りとして panic で拒否する | 3.1, 3.5 |
 | グループ名の参照元 | `RuntimeCommand` は既に `TimeoutResolution.GroupName` としてグループ名を保持している。新しいフィールドを足さず、参照メソッドをこの値の上に置く | 3.5 |
 
 ---
@@ -355,8 +358,9 @@ func (s NotificationScope) String() string
 type NotificationContext struct { /* 非公開フィールド */ }
 
 func GlobalScope() NotificationContext
-// GroupScope と CommandScope は group が空なら panic する。空の group は
-// 呼び出し側のプログラミングエラーであり、不正なコンテキストを生成しない。
+// GroupScope は group が空なら panic する。CommandScope は group か command の
+// いずれかが空なら panic する。空の名前は呼び出し側のプログラミングエラーであり、
+// 不正なコンテキストを生成しない。
 func GroupScope(group string) NotificationContext
 func CommandScope(group, command string) NotificationContext
 
@@ -376,10 +380,9 @@ func (c NotificationContext) LogAttr() slog.Attr
 //   - 値がグループ値でない
 //   - scope が既知の 3 値でない
 //   - scope が ScopeGroup か ScopeCommand でありながらグループ名が空である
+//   - scope が ScopeCommand でありながらコマンド名が空である
 //   - scope が ScopeGroup でありながらコマンド名が空でない
 //   - scope が ScopeGlobal でありながらグループ名またはコマンド名が空でない
-// ScopeCommand でコマンド名が空であることは失敗ではない。グループ名という
-// 発生箇所の情報が残っており、6.2 のとおりグループ名だけで描画するためである。
 func ScopeFromAttr(v slog.Value) (c NotificationContext, ok bool)
 ```
 
@@ -387,7 +390,9 @@ func ScopeFromAttr(v slog.Value) (c NotificationContext, ok bool)
 
 ゼロ値が `ScopeGlobal` であることには意味がある。`NotificationContext` のゼロ値を属性として明示的に記録した場合は、最も仮定の少ない解釈であるグローバルとして扱われる。一方、`notification_scope` 属性そのものが無いレコードは、対応するすべての発火点が明示的なコンテキストを付けるという不変条件に反するため、不正として扱う。
 
-**構築の入口をコンストラクタに限る理由**。フィールドが公開されていると、グループ名を入れ忘れた `ScopeGroup` の値をパッケージ外で作れてしまう。そうした値は「グループで起きたと主張しているのに、どのグループか言えない」通知になる。`GroupScope` と `CommandScope` は空のグループ名を受け取ると panic し、値を返さない。空のグループ名は外部入力の検証エラーではなく、検証済みの名前を渡す発火点側のプログラミングエラーであるため、エラーを返して無視できる形にはしない。非公開フィールドとこの事前条件により、コンストラクタからデコーダーが不正とみなすコンテキストを生成できない。
+**構築の入口をコンストラクタに限る理由**。フィールドが公開されていると、グループ名を入れ忘れた `ScopeGroup` の値や、コマンド名を入れ忘れた `ScopeCommand` の値をパッケージ外で作れてしまう。そうした値は「グループ（コマンド）で起きたと主張しているのに、どのグループ（コマンド）か言えない」通知になる。`GroupScope` は空のグループ名を、`CommandScope` は空のグループ名と空のコマンド名を受け取ると panic し、値を返さない。空の名前は外部入力の検証エラーではなく、検証済みの名前を渡す発火点側のプログラミングエラーであるため、エラーを返して無視できる形にはしない。非公開フィールドとこの事前条件により、コンストラクタからデコーダーが不正とみなすコンテキストを生成できない。
+
+**コマンド名が空の設定を先に拒否する**。上の事前条件が成り立つには、発火点へ届く時点でコマンド名が空でないことが保証されている必要がある。現在 `internal/runner/config/validation.go` はグループ名が空の設定を拒否する一方、コマンド名が空の設定は素通りさせており、`CommandScope(group, "")` が実在の設定から到達しうる。これは「補正せず、拒否する」に反する形であるため、設定の検証にコマンド名が空でないことの検査を足す（3.5）。これにより、コマンド名の空は設定の検証で拒否され、`CommandScope` へ届いた場合は呼び出し側の誤りであるという役割分担が成り立つ。
 
 **余分な発生箇所の情報も矛盾として拒否する理由**。`scope=global` と名乗りながらグループ名やコマンド名を伴う値は、コンストラクタからは作れない組み合わせである。これを受け入れて `(global)` と描画すると、レコードに残っていた発生箇所の情報を黙って捨てたうえ、「グローバルで起きた」という誤った断定を通知に載せることになる。どちらの読み方が正しいのかを補正で決めてしまう形であり、「補正せず、拒否する」という本設計の立場に反する。同じ理由で、`scope=group` と名乗りながらコマンド名を伴う値も拒否する。いずれも `(scope: invalid)` と描画し、WARN を記録する（4.1）。
 
@@ -540,6 +545,8 @@ func (sd *slackSender) warn(msg string, attrs ...slog.Attr)
 | `audit.Logger.LogUserGroupExecution` | 失敗時の属性に `common.CommandScope(cmd.GroupName(), cmd.Name())` を追加する |
 | `runnertypes.RuntimeCommand` | 参照メソッド `GroupName()` を追加する。返す値は既存の `TimeoutResolution.GroupName` である |
 
+**コマンド名の空を設定の検証で拒否する**。`audit.Logger.LogUserGroupExecution` が渡す `cmd.Name()` は設定から来る値である。`internal/runner/config/validation.go` の `ValidateGroupNames` はグループ名が空の設定を `ErrEmptyGroupName` で拒否しているが、コマンド名についてはどの検証も空を拒否していない。そのため `name` を書き忘れたコマンドが設定として通り、`CommandScope(group, "")` が実在の設定から到達しうる。設定の読み込み時にコマンド名が空でないことを検査し、空であれば専用のセンチネルエラーで拒否する。検証の位置は `ValidateGroupNames` と同じ、`config.Loader` が設定を読み込む経路である。これは通知のためだけの検査ではない。名前を持たないコマンドは、ログでも監査記録でも指し示せないためである。
+
 **`HandlePreExecutionError` の引数**。既存の `PreExecutionError` 型をそのまま受け取る形にする。同じ内容を運ぶ構造体を 2 つ持たないためである。呼び出し元は `cmd/runner/main.go` の 5 箇所と `internal/runner/runner.go` の 1 箇所である。このうち `main.go` の 1 箇所は既に `*PreExecutionError` を手元に持っており、そのまま渡せる。他の呼び出し元は構造体リテラルを組み立てる。エラーの詳細文字列は既存の `Detail()` メソッドから得る。
 
 この変更で Run ID の取得元が変わる。現在 `main.go` の該当箇所は、エラー値が持つ `RunID` ではなく呼び出し側の変数を渡している。構造体を渡す形にすると `PreExecutionError.RunID` が使われる。production の構築箇所（`cmd/runner/main.go`、`internal/runner/bootstrap/config.go`、`internal/runner/bootstrap/environment.go`）はいずれも `RunID` を設定しているため、送出される `run_id` は変わらない。ただしこれは型が強制する性質ではないため、`run_id` が空でないことを検証するテストを置く（7.1）。
@@ -659,6 +666,8 @@ classDiagram
 | `internal/logging/pre_execution_error.go` | 変更 | `PreExecutionError` に `Scope` を追加、`HandlePreExecutionError` の引数を構造体化 | `internal/logging/pre_execution_error_test.go` |
 | `internal/runner/runner.go` | 変更 | グループサマリとグループ検証エラーへのスコープ付与、重複したグループ名接頭辞の削除 | `internal/runner/runner_test.go` |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | `GroupName()` の追加 | `internal/runner/base/runnertypes/runtime_test.go` |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空の設定を拒否する検証の追加（3.5） | `internal/runner/config/validation_test.go` |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名を表すセンチネルエラーの追加 | — |
 | `internal/runner/base/audit/logger.go` | 変更 | スコープ付与、属性キーの共有化、`LogSecurityEvent` と `LogPrivilegeEscalation` の削除 | `internal/runner/base/audit/logger_test.go`（削除される 6 テスト、`LogUserGroupExecution` の属性検証） |
 | `cmd/runner/main.go` | 変更 | `HandlePreExecutionError` の呼び出し形式の変更（5 箇所） | `cmd/runner/main_test.go`、`cmd/runner/integration_slack_flush_test.go`（`pre_execution_error` のレコードを組み立てている） |
 | `internal/runner/e2e_slack_webhook_separation_test.go` | 変更 | 未登録種別 `test_warning` を使っており、変更後は WARN が記録される。宛先分離の検証意図を保ったまま、登録済み種別または WARN を織り込んだ形へ直す | 同左 |
@@ -667,6 +676,10 @@ classDiagram
 | `docs/dev/architecture_design/security-architecture.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
 | `docs/dev/architecture_design/slack_async_delivery.ja.md` | 変更 | 高優先度キューの根拠を「セキュリティアラート等」と記している箇所を、存続する `pre_execution_error` に合わせて修正する | — |
 | `docs/dev/architecture_design/slack_async_delivery.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
+| `README.ja.md` | 変更 | Slack 統合の説明から、セキュリティイベントのリアルタイム通知という記述を削除し、実際に通知される内容に合わせる | — |
+| `README.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
+| `docs/user/security-risk-assessment.ja.md` | 変更 | 高優先度キューの保持対象を「セキュリティアラート等」から `pre_execution_error` に合わせて修正する | — |
+| `docs/user/security-risk-assessment.md` | 変更 | 上記の翻訳（`/mktrans`） | — |
 | `docs/user/runner_command.ja.md` | 変更 | 通知種別・統一書式・Scope 表示・製品名の記載 | — |
 | `docs/user/runner_command.md` | 変更 | 上記の翻訳 | — |
 
@@ -682,6 +695,7 @@ classDiagram
 |---|---|---|
 | 種別定義に無い `message_type`（空文字列を含む） | 汎用メッセージ。エンベロープは通常どおり付く | 送信失敗ロガーへ WARN。種別の値を含める |
 | scope がグループまたはコマンドなのにグループ名が空 | Scope の表示が `(scope: invalid)` | 送信失敗ロガーへ WARN |
+| scope がコマンドなのにコマンド名が空 | 同上 | 同上 |
 | scope がグローバルなのにグループ名またはコマンド名が空でない | 同上 | 同上 |
 | scope がグループなのにコマンド名が空でない | 同上 | 同上 |
 | スコープ属性がグループ値でない（秘匿値の置き換えなどで文字列に変わった場合を含む） | 同上 | 同上 |
@@ -770,7 +784,18 @@ flowchart LR
 
 削除する 3 種別のうち、`security_alert` と `privilege_escalation_failure` は書き手が本番に無く、`privileged_command_failure` は書き手そのものが存在しない。したがって削除によって失われる本番の通知は無い。特権昇格の記録が残ることと、その記録の限界は 3.6 に示した。
 
-削除後は、セキュリティイベントの Slack 通知という機能が production コードから無くなる。`docs/dev/architecture_design/security-architecture.ja.md` はこの機能が存在すると記しているため、同じフェーズで記述を実態に合わせ、`security-architecture.md` へは `/mktrans` で反映する（3.8）。`slack_async_delivery.ja.md` が高優先度キューの根拠として挙げている「セキュリティアラート等」も同様に直す。
+削除後は、セキュリティイベントの Slack 通知という機能が production コードから無くなる。この機能が存在すると記している文書は、開発者向けだけでなく利用者向けにもある。いずれも削除と同じフェーズ（8 章のフェーズ 4）で記述を実態に合わせる。
+
+| 文書 | 現在の記述 | 直し方 |
+|---|---|---|
+| `docs/dev/architecture_design/security-architecture.ja.md` | セキュリティイベントの Slack 通知を提供すると記している | 削除後の実態に合わせる |
+| `docs/dev/architecture_design/slack_async_delivery.ja.md` | 高優先度キューの根拠を「セキュリティアラート等」と記している | 存続する `pre_execution_error` に合わせる |
+| `README.ja.md`（96 行目付近） | Slack 統合の説明を「セキュリティイベントのリアルタイム通知」としている | 実際に通知される内容（グループ実行の結果と実行前エラー）に合わせる |
+| `docs/user/security-risk-assessment.ja.md`（301 行目付近） | 高優先度キューが「セキュリティアラート等」を保持すると記している | `pre_execution_error` に合わせる |
+
+英語版（`security-architecture.md`、`slack_async_delivery.md`、`README.md`、`docs/user/security-risk-assessment.md`）は、いずれも日本語版を先に直したうえで `/mktrans` によって反映する。日英を直接両方編集しない（3.8）。
+
+これらの文書の修正は本設計書の変更には含まれない。実装フェーズで行う。
 
 ### 5.3 外部サービス機能の検証（Slack）
 
@@ -862,14 +887,14 @@ flowchart LR
 | 属性なし | — | — | `(scope: invalid)` |
 | グループ | あり | — | `group=<グループ名>` |
 | コマンド | あり | あり | `group=<グループ名> command=<コマンド名>` |
-| コマンド | あり | なし | `group=<グループ名>` |
+| コマンド | あり | なし | `(scope: invalid)` |
 | グループまたはコマンド | なし | — | `(scope: invalid)` |
 | グローバル | あり | — | `(scope: invalid)` |
 | グローバル | — | あり | `(scope: invalid)` |
 | グループ | あり | あり | `(scope: invalid)` |
 | 読み戻しに失敗（4.1） | — | — | `(scope: invalid)` |
 
-コマンドスコープでコマンド名が無い場合を `(scope: invalid)` としないのは、グループ名という発生箇所の情報が残っており、通知として意味をなすためである。グループ名が無い場合は発生箇所の情報が何も無く、そのスコープの主張が成り立たない。
+グループ名またはコマンド名を欠いたスコープを `(scope: invalid)` とするのは、スコープの主張に必要な発生箇所の情報がそろっていないためである。コマンドスコープをグループ名だけで描画すると、コマンド名を欠いた通知が正常なグループスコープの通知と見分けられなくなり、AC-17 が黙って満たされない状態を作る。コマンド名は設定の検証（3.1、3.5）と `CommandScope` の事前条件の双方で空を排しているため、この行に本番の書き手はいない。
 
 逆に、スコープの主張よりも多くの発生箇所の情報を伴う値も `(scope: invalid)` とする。グローバルと名乗りながらグループ名を持つ値を `(global)` と描画すると、残っていた発生箇所の情報を捨てたうえで誤った断定を通知に載せることになる（3.1）。
 
@@ -898,9 +923,9 @@ flowchart LR
 
 | 対象 | 検証する内容 | 対応 AC |
 |---|---|---|
-| `common.NotificationContext` | ゼロ値がグローバルとして扱われること、各コンストラクタが作った値を `LogAttr` と `ScopeFromAttr` で往復できること、`GroupScope("")` と `CommandScope("", command)` が panic して値を生成しないこと | AC-09 |
+| `common.NotificationContext` | ゼロ値がグローバルとして扱われること、各コンストラクタが作った値を `LogAttr` と `ScopeFromAttr` で往復できること、`GroupScope("")`、`CommandScope("", command)`、`CommandScope(group, "")` が panic して値を生成しないこと | AC-09 |
 | `common.NotificationContext.LogValue` | `scope` と `group` が含まれ、コマンド名が無い場合に `command` 属性が出ないこと | AC-10 |
-| `common.ScopeFromAttr` | グループ値でない値、既知でない `scope` の値、グループ名が空の group/command スコープ、グループ名またはコマンド名を伴う global スコープ、コマンド名を伴う group スコープを `ok=false` として返すこと。コマンド名だけが空の command スコープは `ok=true` であること | AC-12 |
+| `common.ScopeFromAttr` | グループ値でない値、既知でない `scope` の値、グループ名が空の group/command スコープ、コマンド名が空の command スコープ、グループ名またはコマンド名を伴う global スコープ、コマンド名を伴う group スコープを `ok=false` として返すこと | AC-12 |
 | スコープの描画 | 6.2 の表の全行（属性なし、および余分な発生箇所の情報を伴うスコープが `(global)` ではなく `(scope: invalid)` になり WARN を記録することを含む） | AC-12, AC-15 |
 | Text 行に入る値の制約 | LF と CR、および U+0000〜U+001F と U+007F の各制御文字を含むコマンド名・本文が 1 行に正規化されること。500 byte の境界直前・境界上・境界直後について、ASCII、多 byte rune、`&amp;`・`&lt;`・`&gt;` の各ケースが rune や実体参照の途中で切れないこと | AC-18 |
 | `envelopeFor` | ログレベルと絵文字・STATUS・色の対応が 1.4 の表のとおりであること（INFO 未満を含む） | AC-19 |
@@ -908,6 +933,7 @@ flowchart LR
 | `buildMessage` | Text 行の形、末尾 3 フィールドの並び、`###` を含まないこと | AC-18, AC-20, AC-21, AC-22, AC-33 |
 | 未登録種別 | 汎用メッセージが送られ、WARN が記録されること | AC-24, AC-25 |
 | 優先度の受け渡し | 種別定義の `highPriority` が送信要求に載り、キューの選択がその値だけで決まること | AC-27 |
+| 設定の検証 | コマンド名が空の設定が専用のセンチネルエラーで拒否されること（`errors.Is` で検証する） | AC-17 |
 | `RuntimeCommand.GroupName` | `NewRuntimeCommand` に渡したグループ名を返すこと | AC-16 |
 | `logGroupExecutionSummary` | グループスコープの属性が載ること | AC-11 |
 | `HandlePreExecutionError` | スコープを含む構造体を受け取り、属性として載せること。`run_id` が空でないこと | AC-11 |
@@ -972,11 +998,11 @@ AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録�
 | 1 | `privileged_command_failure` の削除 | AC-01, AC-04, AC-06 |
 | 2 | `security_alert` の削除 | AC-02, AC-04, AC-06, AC-07 |
 | 3 | `privilege_escalation_failure` の削除 | AC-03, AC-04, AC-05, AC-06 |
-| 4 | `make deadcode` の確認、`security-architecture.ja.md` と `slack_async_delivery.ja.md` の記述更新および `/mktrans` による英語版への反映 | AC-08 |
+| 4 | `make deadcode` の確認、日本語版文書（`security-architecture.ja.md`、`slack_async_delivery.ja.md`、`README.ja.md`、`docs/user/security-risk-assessment.ja.md`）の記述更新および `/mktrans` による英語版への反映 | AC-08 |
 | 5 | `common.NotificationContext` の追加 | AC-09, AC-10 |
 | 6 | 種別定義の集約（`MessageType`、`messageSpecs`、`Handle` の書き換え、`isHighPriority` の削除） | AC-23, AC-24, AC-27 |
 | 7 | エンベロープの集約（`buildMessage`、`envelopeFor`、製品名、描画の制約） | AC-18, AC-19, AC-20, AC-21, AC-22, AC-25, AC-33 |
-| 8 | スコープの伝搬（`GroupName()`、`HandlePreExecutionError`、3 発火点） | AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17 |
+| 8 | スコープの伝搬（`GroupName()`、`HandlePreExecutionError`、3 発火点、コマンド名が空の設定を拒否する検証） | AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17 |
 | 9 | 全種別を横断する検証とセキュリティテストの追加 | AC-26 |
 | 10 | 実機確認と利用者向けドキュメント | AC-28, AC-29 |
 
@@ -1013,7 +1039,7 @@ AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録�
 | AC-13, AC-14 | 3.5、7.3 |
 | AC-15 | 6.2、7.3 |
 | AC-16 | 3.5、7.1 |
-| AC-17 | 3.4、3.5、7.3 |
+| AC-17 | 3.1、3.4、3.5、6.2、7.1、7.3 |
 | AC-18 | 1.4、3.3、6.2、7.1、7.3 |
 | AC-19 | 1.4、3.3、7.1 |
 | AC-20 | 1.4、3.3、7.1 |
@@ -1042,7 +1068,7 @@ AC-15 の検証に使う実行前エラーは、Slack のハンドラが登録�
 
 **`RuntimeCommand` に `groupName` フィールドを足す案**。要件定義書はこの形を想定していた。設計時に確認したところ、`NewRuntimeCommand` が受け取ったグループ名は既に `TimeoutResolution.GroupName` として保持されていた。同じ値を持つフィールドを 2 個置くと、両者を一致させる不変条件を誰も守らない形になるため、参照メソッドを既存の値の上に置く形へ変えた。AC-16 は「生成時に渡されたグループ名を参照メソッドから返す」という挙動の要求であり、この形でも満たされる。
 
-**スコープの矛盾をコンストラクタからエラーで返す案**。`GroupScope` が `(NotificationContext, error)` を返す形も検討した。採らなかったのは、空のグループ名は検証済みの名前を渡す発火点側のプログラミングエラーであり、呼び出し側がエラーを無視して通知を続行できる形にすべきでないためである。`GroupScope` と `CommandScope` は空のグループ名を panic で拒否する。なお、属性はハンドラ連鎖で変形しうるため、`ScopeFromAttr` の検証も別の防御層として残す。
+**スコープの矛盾をコンストラクタからエラーで返す案**。`GroupScope` が `(NotificationContext, error)` を返す形も検討した。採らなかったのは、空のグループ名は検証済みの名前を渡す発火点側のプログラミングエラーであり、呼び出し側がエラーを無視して通知を続行できる形にすべきでないためである。`GroupScope` は空のグループ名を、`CommandScope` は空のグループ名と空のコマンド名を panic で拒否する。なお、属性はハンドラ連鎖で変形しうるため、`ScopeFromAttr` の検証も別の防御層として残す。
 
 **`command_group_summary` の `status` 属性を削除する案**。色とアイコンの決定に使われなくなるため削除も検討したが、構造化ログの属性としては引き続き意味を持つ。ログの互換性を壊す理由が無いため残す。
 
