@@ -17,6 +17,8 @@
 - [0068 separate slack webhooks](../0068_separate_slack_webhooks/02_architecture.md) — 成功用・エラー用 Webhook の分離
 - [security-architecture.ja.md](../../dev/architecture_design/security-architecture.ja.md) / [security-architecture.md](../../dev/architecture_design/security-architecture.md) — 削除する通知について記述を更新する
 - [slack_async_delivery.ja.md](../../dev/architecture_design/slack_async_delivery.ja.md) / [slack_async_delivery.md](../../dev/architecture_design/slack_async_delivery.md) — 高優先度通知の説明を更新する
+- [README.ja.md](../../../README.ja.md) / [README.md](../../../README.md) — Slack 統合を「セキュリティイベントのリアルタイム通知」と説明しており、削除後の実態に合わせて更新する
+- [security-risk-assessment.ja.md](../../user/security-risk-assessment.ja.md) / [security-risk-assessment.md](../../user/security-risk-assessment.md) — 高優先度キューが「セキュリティアラート等」を保持すると記しており、更新する
 
 ## 用語
 
@@ -183,12 +185,23 @@ flowchart LR
 | `internal/runner/e2e_slack_webhook_test.go` | 変更 | モックサーバーで新しいペイロード全体を検証する | `TestE2E_SlackWebhookWithMockServer` |
 | `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | 削除後のセキュリティイベント通知の実態へ更新し、英語版へ反映する | - |
 | `docs/dev/architecture_design/slack_async_delivery.ja.md`・`.md` | 変更 | 高優先度通知の説明を `pre_execution_error` に合わせ、英語版へ反映する | - |
+| `README.ja.md`（96 行目付近） | 変更 | Slack 統合の説明「セキュリティイベントのリアルタイム通知」を、実際に通知される内容（グループ実行の結果と実行前エラー）へ改める | - |
+| `docs/user/security-risk-assessment.ja.md`（301 行目付近） | 変更 | 高優先度キューの説明「セキュリティアラート等」を、削除後に唯一残る `pre_execution_error` へ改める | - |
 | `docs/user/runner_command.ja.md` | 変更 | 通知種別、統一書式、Scope、製品名、ドライラン時の挙動を日本語で説明する | - |
-| `docs/user/runner_command.md` | 変更 | 日本語版と同じ利用者向け説明を英語へ反映する | - |
+| `README.md`・`docs/user/security-risk-assessment.md`・`docs/user/runner_command.md` | 変更 | 上記 3 件の日本語版を先にコミットしたうえで、`/mktrans` で英語版へ反映する | - |
 
 既存のトップレベル `group` 属性は、構造化ログを解析する外部利用者との互換性のため維持する。新しい通知コンテキスト属性を追加しても、Slack 表示とスコープ判定は通知コンテキストだけを参照し、文字列の有無からスコープを推測しない。
 
-削除する `security_alert` と `privilege_escalation_failure` は既存の設計文書にも機能として記載されている。production コードの削除と同じフェーズで `security-architecture` と `slack_async_delivery` の日本語版を実態に合わせ、英語版へ翻訳を反映する。
+削除する `security_alert` と `privilege_escalation_failure` は、開発者向けだけでなく**利用者向けの文書にも機能として記載されている**。放置すると、production から消えた通知を約束したままの記述が残る。次の 4 件を実態に合わせる。
+
+| 文書 | 現在の記述 |
+|---|---|
+| `docs/dev/architecture_design/security-architecture.ja.md` | セキュリティイベントの Slack 通知を提供すると記している |
+| `docs/dev/architecture_design/slack_async_delivery.ja.md` | 高優先度キューの根拠を「セキュリティアラート等」と記している |
+| `README.ja.md` | Slack 統合を「セキュリティイベントのリアルタイム通知」と説明している |
+| `docs/user/security-risk-assessment.ja.md` | 高優先度キューが「セキュリティアラート等」を保持すると記している |
+
+いずれも日本語版を先に直してコミットし、英語版（`security-architecture.md`、`slack_async_delivery.md`、`README.md`、`docs/user/security-risk-assessment.md`）へは `/mktrans` で反映する。日英を直接両方編集しない。
 
 新規パッケージは作らず、既存の `internal/common`、`internal/logging`、`internal/runner` の責務を再利用する。
 
@@ -729,7 +742,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
 | 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空のコマンド名を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
-| 6 | 利用者向け文書に加え、`security-architecture` と `slack_async_delivery` の日本語版を更新し、各英語版へ翻訳する | AC-28〜AC-30 |
+| 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
 
 ### 8.2 実装順の根拠
