@@ -194,8 +194,9 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
-| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、および機密パターンが値として一致する group 名・command 名を持つ設定を読み込み時に拒否する検査を、既存の `ValidateGroupNames` と同じ経路へ追加する（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
-| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、表示できる文字を持たないコマンド名、長さ上限を超える識別子、機密パターンに値として一致する識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、および本番と同じ redaction の変換が書き換える group 名・command 名を持つ設定を読み込み時に拒否する検査を、既存の `ValidateGroupNames` と同じ経路へ追加する（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、表示できる文字を持たないコマンド名、長さ上限を超える識別子、redaction の変換が書き換える識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
+| `internal/redaction/redactor.go` | 変更 | `RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue`）が値を書き換えるかを返す述語を公開する。既存の変換を読み取るだけで、redaction の適用範囲は変えない（§3.1） | 既存テストは変更しない。述語が `ValueDetector` の検出も覆うことを新規ケースで検証する |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -373,15 +374,21 @@ func (c NotificationContext) LogAttr() slog.Attr
 | 空でないこと | command 名（group 名は既存の `ErrEmptyGroupName` で拒否済み） | `name` の書き忘れが読み込みを通り、`CommandScope(group, "")` として発火点へ届く |
 | 制御文字と書式制御文字を含まず、§3.5 の補間契約を通すと表示できる文字が 1 文字以上残ること | command 名（group 名は既存の文字種検証で担保済み） | 制御文字や空白だけの名前は、通知でもログでも監査記録でも指し示せない。双方向表示制御などの書式制御文字は、名前を実際とは別の順序で見せる |
 | 長さが上限を超えないこと | group 名と command 名 | 補間契約は識別子を切り詰めない（§3.5）。長すぎる名前を表示境界で短くすると、先頭が一致する 2 つの名前が同じ Scope として表示され、どの group・どの command の通知か判別できなくなる |
-| 機密パターンが値として一致しないこと | group 名と command 名 | 一致する名前は `RedactingHandler` が `[REDACTED]` へ置き換えるため、通知でも JSON ログでも発生箇所を指し示せなくなる（§3.5） |
+| redaction が値を書き換えないこと | group 名と command 名 | 書き換えられる名前は `RedactingHandler` が `[REDACTED]` へ置き換えるため、通知でも JSON ログでも発生箇所を指し示せなくなる（§3.5）。語の一致（`IsSensitiveValue`）だけでなく、`ValueDetector` による値形式の検出（AWS キー ID、GitHub トークン、JWT など）も対象に含む |
 
-センチネルエラーは検査ごとに独立させる。空の名前を書き忘れた設定、見た目には値があるのに指し示せない設定、長すぎる設定、機密語を含む設定では、利用者が直す箇所も直し方も違うためである。空だけを拒否すると、制御文字だけからなる名前が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前も、表示境界で短くするしかない名前も、設定境界で拒否する。
+センチネルエラーは検査ごとに独立させる。空の名前を書き忘れた設定、見た目には値があるのに指し示せない設定、長すぎる設定、redaction に潰される設定では、利用者が直す箇所も直し方も違うためである。空だけを拒否すると、制御文字だけからなる名前が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前も、表示境界で短くするしかない名前も、設定境界で拒否する。
 
 識別子 1 個あたりの長さ上限は `internal/common` の定数として置き、設定検証だけが参照する。値は補間契約の 500 byte 上限より十分小さい 128 byte とする。Text 行には製品名、STATUS、Scope、要約が並ぶため、識別子 1 個がその大半を占めると Text 行の役割を果たせない。上限を `internal/common/notification_context.go` に置くのは、通知コンテキストが載せる識別子の制約であり、その型の定義と同じ場所に置くことで同じ値を 2 箇所へ書かずに済むためである。
 
 この検査は通知のためだけのものではない。名前を持たないコマンドは、Slack 通知に限らずログでも監査記録でも指し示せない。名前を設定境界で検査することで、「外部入力の誤りは読み込みで拒否する」「発火点へ届いた空の名前は呼び出し側の不具合であり、表示境界で `(scope: invalid)` として表に出す」という役割分担が成り立つ。空の名前を黙って通したうえで通知だけを不正表示にすると、設定が誤っていることは Slack を見た者にしか分からず、当のコマンドはそのまま実行され続ける。
 
-機密パターンの検査は、`internal/redaction` の既存の公開判定（`DefaultSensitivePatterns().IsSensitiveValue`）をそのまま呼ぶ。機密語の一覧を設定検証側へ複製しない。`internal/runner/config` から `internal/redaction` への依存は新しい辺であるが、`internal/redaction` は `internal/runner/config` に依存しないため循環は生じない。
+機密パターンの検査は、`DefaultSensitivePatterns().IsSensitiveValue` だけを呼ぶ形にはしない。この判定は redaction が識別子を書き換える経路の一部しか覆わないためである。`Config.RedactLogAttribute`（`internal/redaction/redactor.go`）は、文字列値に対してまず `RedactText` を呼ぶ。`RedactText` はキー名由来の `key=value` 置換を当てたのち `ValueDetector.Mask` を通し、ここが AWS アクセスキー ID（`AKIA`／`ASIA` + 16 文字）、GitHub トークンと fine-grained PAT、JWT、および設定された Webhook ホストを含む URL を、語の一致とは無関係に `[REDACTED]` へ置き換える。`IsSensitiveValue` が呼ばれるのはその後、値が変化しなかったときだけである。したがって `AKIAIOSFODNN7EXAMPLE` のような group 名は `IsSensitiveValue` に一致しないまま `ValueDetector` に潰される。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` はこの形の名前を許すため、実在する TOML から到達できる。
+
+そこで検査は語の一覧ではなく**変換そのもの**を基準にする。すなわち、本番と同じ redaction の変換を識別子へ適用し、**値が変化したら拒否する**。判定は `internal/redaction` 側に述語として置き、`RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue` の両方）と同じ経路を通す。設定検証側で変換の一覧を複製しない。この形にすると、将来 `ValueDetector` に検出器が増えたときも設定検証が自動的に追随する。列挙で書けば、増えた検出器の分だけ Scope が `[REDACTED]` に潰れる名前が読み込みを通るようになる。
+
+ひとつだけ設定境界では覆えない変換がある。Webhook ホストの URL パターンは `redaction.NewConfig(redaction.WithWebhookHost(...))` が Webhook の宛先から組み立てるものであり（`bootstrap/logger.go` の `AddSlackHandlers`）、設定の読み込み時点ではまだ決まっていない。したがって設定境界の検査は既定の `NewConfig()` が持つ変換までを対象とし、Webhook ホストの一致だけで潰れる識別子は残余リスクとして受け入れる。この場合の表れ方は Scope が `[REDACTED]` になることであり、通知が出ないことでも誤ったスコープを名乗ることでもない。
+
+`internal/runner/config` から `internal/redaction` への依存は新しい辺であるが、`internal/redaction` は `internal/runner/config` に依存しないため循環は生じない。
 
 コンストラクタ側は前段落までのとおり全域関数のままとし、事前条件違反で panic させることはしない。通知コンテキストの構築はログ出力の途中に置かれるため、ここで panic するとエラー報告の最中にプロセスを落とす。拒否は設定境界に、検知は表示境界に置き、その中間にあるログ経路は決して停止させない。
 
@@ -577,7 +584,7 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 | 性質 | 内容 | 適用する役割 |
 |---|---|---|
 | 1 行であること | 改行として扱われる文字（U+000A、U+000D、U+2028、U+2029）が出力に 1 文字も含まれない | 識別子、エンベロープ値、自由文 |
-| 制御文字と書式制御文字を含まないこと | C0 制御文字、DEL、および Unicode の一般カテゴリ Cf（書式制御文字。双方向表示制御の U+202A〜U+202E と U+2066〜U+2069 を含む）の文字が出力に 1 文字も含まれない | 同上 |
+| 制御文字と書式制御文字を含まないこと | Unicode の一般カテゴリ Cc（制御文字。C0 の U+0000〜U+001F と、DEL および C1 の U+007F〜U+009F）、および一般カテゴリ Cf（書式制御文字。双方向表示制御の U+202A〜U+202E と U+2066〜U+2069 を含む）の文字が出力に 1 文字も含まれない | 同上 |
 | 実体参照化されていること | 裸の `&`、`<`、`>` が出力に含まれない | 同上 |
 | 長さが上限を超えないこと | 出力が UTF-8 で 500 byte 以下である | エンベロープ値、自由文 |
 | 有効な UTF-8 であること | 出力が常に有効な UTF-8 であり、`&amp;`・`&lt;`・`&gt;` を途中で切らない | 識別子、エンベロープ値、自由文 |
@@ -588,7 +595,7 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 | 値の役割 | 適用する規則 |
 |---|---|
-| 識別子 | 設定の読み込みで、空・表示できる内容を持たない名前・書式制御文字を含む名前・過剰な長さ・機密パターンに値として一致する名前を拒否する（§3.1）。そのうえで、識別子を載せる**すべての**フィールド（Scope、Text 行、`Command` など）で 1 行化、書式制御文字の除去、実体参照化を通す。接頭辞での切り詰めは行わない |
+| 識別子 | 設定の読み込みで、空・表示できる内容を持たない名前・書式制御文字を含む名前・過剰な長さ・redaction の変換が書き換える名前を拒否する（§3.1）。そのうえで、識別子を載せる**すべての**フィールド（Scope、Text 行、`Command` など）で 1 行化、書式制御文字の除去、実体参照化を通す。接頭辞での切り詰めは行わない |
 | エンベロープ値 | 1 行化、書式制御文字の除去、実体参照化を通す。長さ上限も同じく適用する（実際の値はいずれも上限より短いが、経路を分けない） |
 | 自由文 | 1 行化、書式制御文字の除去、実体参照化、長さ上限のすべてを適用する |
 | 大量出力 | 既存の切り詰め規則（stdout 1000 文字、stderr 500 文字）のままとし、本タスクでは変更しない |
@@ -601,8 +608,8 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 | 制約 | 実現方法 | 実現する性質 | 理由 |
 |---|---|---|---|
-| 改行と制御文字を含めない | C0 制御文字（U+0000〜U+001F）、DEL（U+007F）、および Unicode の行区切り U+2028 と段落区切り U+2029 を 1 文字ずつ半角空白へ置き換える | 1 行であること、制御文字と書式制御文字を含まないこと | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1）。U+2028 と U+2029 は C0 に含まれないが、Unicode では改行として扱われる文字であり、同じ経路を与えてしまう |
-| 書式制御文字を含めない | 一般カテゴリ Cf の文字を 1 文字ずつ半角空白へ置き換える | 制御文字と書式制御文字を含まないこと | 双方向表示制御の U+202A〜U+202E と U+2066〜U+2069 は C0 でも DEL でも U+2028／U+2029 でもないため、前の規則を素通りする。これらは表示順を反転させるため、Scope や `Command` を実際とは別のコマンドを名乗るように見せられる。装飾が変わるだけの残余リスクとは別種の強さであり、受け入れない |
+| 改行と制御文字を含めない | 一般カテゴリ Cc の文字（U+0000〜U+001F と U+007F〜U+009F。C0、DEL、C1 をすべて含む）、および Unicode の行区切り U+2028 と段落区切り U+2029 を 1 文字ずつ半角空白へ置き換える | 1 行であること、制御文字と書式制御文字を含まないこと | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1）。範囲を C0 と DEL の列挙ではなくカテゴリ Cc で定めるのは、C1（U+0080〜U+009F）が C0 にも DEL にも Cf にも属さず、列挙では漏れるためである。とりわけ U+0085（NEL）は Unicode が改行として扱う文字であり、漏らせば 1 行の保証が破れる。Cc はこの 3 者をちょうど覆う。U+2028 と U+2029 は Cc に含まれないが、Unicode では改行として扱われる文字であり、同じ経路を与えてしまう |
+| 書式制御文字を含めない | 一般カテゴリ Cf の文字を 1 文字ずつ半角空白へ置き換える | 制御文字と書式制御文字を含まないこと | 双方向表示制御の U+202A〜U+202E と U+2066〜U+2069 は Cc でも U+2028／U+2029 でもないため、前の規則を素通りする。これらは表示順を反転させるため、Scope や `Command` を実際とは別のコマンドを名乗るように見せられる。装飾が変わるだけの残余リスクとは別種の強さであり、受け入れない |
 | Slack の制御構文を解釈させない | `&`→`&amp;`、`<`→`&lt;`、`>`→`&gt;` へ置き換える | 実体参照化されていること | `<!channel>` や `<@U012345>` がメンションとして、`<URL｜表示文字>` がリンクとして解釈されるのを防ぐ |
 | 長さに上限を設ける | 置き換え後の値を UTF-8 で 500 byte 以下に切り詰める | 長さが上限を超えないこと、有効な UTF-8 であること | Text 行はプッシュ通知に出る 1 行であり、長大な本文が入ると読めなくなる |
 
@@ -614,11 +621,11 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 **識別子を接頭辞で切り詰めない理由**。`command_group_summary` では、group 名が現れる場所は Scope フィールドだけである。ここで接頭辞を素朴に切ると、先頭 500 byte が一致する 2 つの group は同じ Scope として表示され、どちらの group の集計なのか通知から判別できなくなる。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` は文字種を縛るだけで長さを縛らないため、この状態は現在の設定検証を通る。「補正しない」に従い、長すぎる識別子は表示境界で黙って短くせず、設定の読み込みで拒否する（§3.1）。接頭辞の切り詰めは、識別子ではない自由文とエンベロープ値にだけ残す。
 
-**識別子と既存の値まるごと redaction の関係**。`RedactingHandler` の `Config.RedactLogAttribute` は、キー名の判定と本文中の `key=value` 形式の置換に加えて、**値まるごと**を未アンカーの `SensitivePatterns.IsSensitiveValue`（`(?i)(password|token|secret|key|api_key)`、`bearer`、`basic`、`authorization` など）で判定する。語の一部に一致するため、`monkey`、`keyring`、`rotate_api_key` のような group 名や command 名は `[REDACTED]` へ置き換わり、Scope が発生箇所を指し示せなくなる。
+**識別子と既存の値まるごと redaction の関係**。`RedactingHandler` の `Config.RedactLogAttribute` は、キー名の判定と本文中の `key=value` 形式の置換に加えて、**値まるごと**を未アンカーの `SensitivePatterns.IsSensitiveValue`（`(?i)(password|token|secret|key|api_key)`、`bearer`、`basic`、`authorization` など）で判定する。語の一部に一致するため、`monkey`、`keyring`、`rotate_api_key` のような group 名や command 名は `[REDACTED]` へ置き換わり、Scope が発生箇所を指し示せなくなる。語の一致はこの経路の一部でしかない。`RedactLogAttribute` は `IsSensitiveValue` より先に `RedactText` を呼び、その中の `ValueDetector` が AWS アクセスキー ID、GitHub トークン、JWT、Webhook ホストの URL を値の形式だけで潰す。`AKIAIOSFODNN7EXAMPLE` のような名前はどの機密語も含まないまま `[REDACTED]` になる（§3.1）。
 
 この過剰な置換を、識別子のキーだけ値まるごとの判定から外すことでは解消しない。`RedactingHandler` が包むのは Slack ハンドラ単体ではなく、JSON ログを含むすべての出力先を持つ `MultiHandler` である（`bootstrap/logger.go`）。除外を入れれば Slack だけでなく JSON ログのマスクも同時に弱まる。01_requirements.md の対象外は `internal/redaction` の適用範囲を変更しないと定めており、広げるにせよ狭めるにせよ本タスクでは触らない。
 
-代わりに、設定の読み込みで拒否する（§3.1）。機密パターンが値として一致する group 名・command 名を持つ設定は、専用のセンチネルエラーで読み込みに失敗する。「補正しない」に従い、通知で `[REDACTED]` に潰れる名前を黙って通すことも、識別子だけ redaction を緩めることもせず、利用者に名前を変えてもらう。判定には redaction 側の既存の公開判定をそのまま使い、機密語の一覧を設定検証側へ複製しない。
+代わりに、設定の読み込みで拒否する（§3.1）。本番と同じ redaction の変換が値を書き換える group 名・command 名を持つ設定は、専用のセンチネルエラーで読み込みに失敗する。「補正しない」に従い、通知で `[REDACTED]` に潰れる名前を黙って通すことも、識別子だけ redaction を緩めることもせず、利用者に名前を変えてもらう。判定は語の一覧ではなく変換そのものを基準にし、redaction 側に置いた述語を呼ぶ（§3.1）。設定検証側へ機密語や値形式の一覧を複製しない。
 
 **Hostname と Run ID も同じ契約を通す理由**。Hostname の値は `common.GetHostname()`（`os.Hostname`）の戻り値をそのまま載せており、どこでも検証していない。契約を通すことで、上の「出力の性質」をエンベロープ値についても処理として保証し、ホスト名を差し替えたテストで検証できるようにする（テスト機の実際のホスト名に依存させない）。ただしこれは注入ではなく一貫性の欠落である。ホスト名は本設計の脅威モデルが信用しない TOML の作成者ではなく、機械の管理者が決める値である。危険度を実際より大きく見せず、AC-20 が検証できる状態にすることが目的である。なお `###` は Slack の mrkdwn では見出しにならず、契約はこの 3 文字を対象にしない。AC-20 の `###` に関する主張は Text 行の骨格とフィールド見出しに限り、Hostname と Run ID の値については「出力の性質」を検証する。
 
@@ -642,9 +649,11 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 |---|---|---|
 | 欠落 | 通知コンテキストのキーを持つ属性がない | `missing_notification_context` |
 | 重複 | 同じキーの属性が 2 個以上ある | `duplicate_notification_context` |
-| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`scope`・`group`・`command` のいずれかの値が `slog.KindString` でない、`scope` が 3 語のいずれでもない、グループの中で `scope`・`group`・`command` のいずれかが 2 回以上現れる、group 名または command 名が §3.5 の補間契約を通すと表示できる文字を残さない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
+| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`group` が無い、`scope`・`group`・`command` のいずれかの値が `slog.KindString` でない、`scope` が 3 語のいずれでもない、グループの中で `scope`・`group`・`command` のいずれかが 2 回以上現れる、group 名または command 名が §3.5 の補間契約を通すと表示できる文字を残さない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
 
 下位キーの型を presence だけで済ませないのは、`slog.Value.String()` がどの種別の値でも文字列を返すためである。`group` に整数を持たせた手組みのレコードは、型を見なければ空でない group 名として復元され、スキーマ違反の WARN も出ないまま通ってしまう。§3.1 のエンコードが 3 個とも string と定めている以上、その型を読み側でも要求する。
+
+同じ理由で、`group` は**存在すること**も要求する。§3.1 のエンコードは `group` を常に出力すると定めており（`command` だけが「空でないときだけ」である）、`group` を欠くグループは正規の `LogValue` からは生じない。ここを見ないと、`scope="global"` だけを持つ手組みのレコードが素通りする。欠けた `group` は空文字として復元され、それはグローバルが要求する値そのものであるため、組み合わせの検査にも掛からず、`(global)` が WARN 無しで表示されてしまう。すなわち偽装された正当なスコープになる。`scope="group"` で `group` を欠く場合は復元後に空となり既存の組み合わせ検査が捕まえるため、この穴はグローバルに固有である。存在の検査は `command` には課さない。エンコードが条件付き出力と定めており、不在が正常だからである。
 
 グループの**外側**のキーが重複する場合と、グループの**内側**の下位キーが重複する場合は、検出する場所が違うだけで扱いは同じである。外側は SlackHandler の属性走査が `duplicate_notification_context` として検出し、内側は復元関数が `invalid_notification_context` として拒否する。内側の重複を「最初の値を採る」「最後の値を採る」のいずれかで通すことはしない。どちらの値が発生箇所なのかを補正で決める形になり、本設計の「補正しない」に反する。
 
@@ -730,7 +739,7 @@ flowchart LR
 ### 5.2 既存の保護との関係
 
 - `internal/redaction` がログ境界で機密値を置換する現在の責務を維持する。本タスクの Slack 表示用エスケープは redaction の代替ではなく、その後段で書式制御文字だけを扱う。
-- `internal/redaction` の適用範囲は変更しない。機密パターンが値として一致する識別子は、redaction を識別子だけ緩めるのではなく、設定の読み込みで拒否する（§3.1、§3.5）。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包むため、除外は Slack 以外のマスクも弱める。
+- `internal/redaction` の適用範囲は変更しない。redaction の変換が書き換える識別子は、redaction を識別子だけ緩めるのではなく、設定の読み込みで拒否する（§3.1、§3.5）。判定用の述語を `internal/redaction` へ足すことは、既存の変換を読み取るだけであり適用範囲を変えない。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包むため、除外は Slack 以外のマスクも弱める。
 - Webhook URL、許可ホスト、HTTPS 検証、送信失敗ロガーが Slack に依存しない構成を変更しない。
 - INFO は成功用 Webhook、WARN 以上はエラー用 Webhook という `SlackHandlerLevelMode` の振り分けを変更しない。
 - キューの容量、優先処理、リトライ、送信期限、flush 期限、同期モードを変更しない。削除対象の高優先度種別を除いた後も `pre_execution_error` を高優先度に保つ。
@@ -866,7 +875,7 @@ flowchart LR
 |---|---|---|
 | 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する。`GroupScope("")` は構築でき、表示境界で `(scope: invalid)` と WARN になることも確認する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
-| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。`scope`・`group`・`command` の値が文字列でない行を 3 個の下位キーそれぞれについて持ち、`Value.String()` によって数値などが名前として復元されないことを確認する。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する。補間契約を通すと表示できる文字が残らない group 名・command 名（制御文字だけの名前）も `(scope: invalid)` になることを同じ表で確認する | AC-12 |
+| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。`scope`・`group`・`command` の値が文字列でない行を 3 個の下位キーそれぞれについて持ち、`Value.String()` によって数値などが名前として復元されないことを確認する。`scope="global"` だけを持ち `group` を欠くレコードが `(global)` にならず `invalid_notification_context` になる行を持ち、`group` の存在検査を外すとこの行が失敗する形にする。`command` を欠く group スコープは正常として通ることも同じ表で確認し、存在検査が `command` へ広がっていないことを示す。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する。補間契約を通すと表示できる文字が残らない group 名・command 名（制御文字だけの名前）も `(scope: invalid)` になることを同じ表で確認する | AC-12 |
 | 通知コンテキストの下位キーの重複 | グループの内側で `scope`、`group`、`command` のいずれかが 2 回以上現れるレコードが `invalid_notification_context` として拒否され、最初の値や最後の値を採って通らないことを、3 個の下位キーそれぞれについて検証する。グループの外側のキーの重複が `duplicate_notification_context` になることと区別して確認する | AC-12, AC-24 |
 | レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
@@ -876,7 +885,7 @@ flowchart LR
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
 | 設定の検証 | コマンド名が空の設定、制御文字や書式制御文字だけで表示できる文字を持たない設定、および長さ上限を 1 byte 超える group 名・command 名を持つ設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。上限ちょうどの名前は通ることも同じ表で確認する。各検査を外すと対応する行が失敗する | AC-17 |
 | 識別子を切り詰めない | 長さ上限ちょうどまでの group 名が Scope フィールドと Text 行に接頭辞ではなく全体として現れることを検証する。先頭が長く一致する 2 つの group 名が異なる Scope として表示されることも確認し、識別子へ切り詰めを入れると失敗する形にする | AC-13, AC-18 |
-| 識別子と機密パターン | `monkey`、`keyring`、`rotate_api_key` を group 名・command 名に持つ設定が、機密パターン用のセンチネルエラーで読み込みを拒否されることを `errors.Is` で検証する。これらの語を含まない名前が通ることも同じ表で確認する。同じ語を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを 1 行で確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
+| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）の双方を group 名・command 名に持つ設定が、redaction 用のセンチネルエラーで読み込みを拒否されることを `errors.Is` で検証する。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
 | エンベロープ値の出力の性質 | §3.5 の継ぎ目（`internal/logging` の非公開パッケージ変数）を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
@@ -890,7 +899,7 @@ flowchart LR
 | 優先度 | 通常キューを満たしても `pre_execution_error` が高優先度キューへ入り、先に送られる。優先度を通常へ変えると失敗する | AC-07, AC-27 |
 | 削除対象の種別 | 本番コードを `rg` で検索し、対象の型、定数、関数、文字列がない | AC-01〜AC-03 |
 | 特権監査 | `privilege.logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを、新規テストで検証する。`logElevationOutcome` を対象とする既存テストは無いため、Phase 3 で追加する。呼び出し元から `logElevationOutcome` の呼び出しを取り除くと失敗する形にし、関数本体だけの検証にしない | AC-05 |
-| 表示安全な補間契約 | §3.5 の 2 つの一覧から 1 個の表駆動テストを作る。入力側は「動的な値の一覧」の各行を役割ごとに代表させ、識別子（group 名、command 名）、エンベロープ値（Hostname、Run ID）、自由文（各種別の要約、Error Message、Component、Duration）を対象とする。フィールド名ではなく役割で範囲が決まることを行として持ち、値の途中に U+0000〜U+001F の各制御文字、DEL（U+007F）、U+2028、U+2029、双方向表示制御（U+202A〜U+202E、U+2066〜U+2069）、`&`、`<`、`>`、Slack のリンク・メンション形式を置く。出力側は「出力の性質」の各行を共通の検査として当てる。置き換え集合から 1 文字を外すと、その文字の行が対応する性質の検査で失敗する。あわせて `notificationDefinitions` を走査し、各種別固有ビルダーが返すフィールドの値がすべて一覧のいずれかの行に対応することを検証する。一覧に無いフィールドを足すと失敗する | AC-18, AC-20, AC-33 |
+| 表示安全な補間契約 | §3.5 の 2 つの一覧から 1 個の表駆動テストを作る。入力側は「動的な値の一覧」の各行を役割ごとに代表させ、識別子（group 名、command 名）、エンベロープ値（Hostname、Run ID）、自由文（各種別の要約、Error Message、Component、Duration）を対象とする。フィールド名ではなく役割で範囲が決まることを行として持ち、値の途中に U+0000〜U+001F の各制御文字、DEL（U+007F）、C1 制御文字（とくに改行として扱われる U+0085）、U+2028、U+2029、双方向表示制御（U+202A〜U+202E、U+2066〜U+2069）、`&`、`<`、`>`、Slack のリンク・メンション形式を置く。出力側は「出力の性質」の各行を共通の検査として当てる。置き換え集合から 1 文字を外すと、その文字の行が対応する性質の検査で失敗する。あわせて `notificationDefinitions` を走査し、各種別固有ビルダーが返すフィールドの値がすべて一覧のいずれかの行に対応することを検証する。一覧に無いフィールドを足すと失敗する | AC-18, AC-20, AC-33 |
 | 自由文の切り詰め | 500 byte の境界直前・境界上・境界直後について、ASCII、複数 byte の rune、`&amp;`／`&lt;`／`&gt;` の各ケースが rune や実体参照の途中で切れず、常に有効な UTF-8 になることを検証する。同じ入力を識別子の役割で通すと切り詰められないことも確認し、役割の `switch` を取り違えると失敗する形にする | AC-18 |
 | 切り詰めと redaction | stdout 1000 文字、stderr 500 文字の既存上限と、既存 redaction が維持される | F-004, F-007 |
 | 宛先分離 | INFO は成功用、WARN と ERROR はエラー用ハンドラだけで有効になる | AC-31 |
@@ -910,7 +919,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 
 ### 7.3 セキュリティテスト
 
-- group 名、command 名、汎用メッセージ、Error Message に CR、LF、C0 制御文字、DEL、U+2028、U+2029、双方向表示制御（U+202A〜U+202E、U+2066〜U+2069）、`&`、`<`、`>`、Slack のリンク・メンション形式を含め、Text 行、Scope フィールド、識別子を載せる `Command` フィールド、自由文の添付フィールドが 1 行のままで、entity 変換後のペイロードが意図しないリンク、メンション、偽の見出し、表示順の反転を作らないことを確認する（§3.5 の表示安全な補間契約）。
+- group 名、command 名、汎用メッセージ、Error Message に CR、LF、C0 制御文字、DEL、C1 制御文字（U+0085 を含む）、U+2028、U+2029、双方向表示制御（U+202A〜U+202E、U+2066〜U+2069）、`&`、`<`、`>`、Slack のリンク・メンション形式を含め、Text 行、Scope フィールド、識別子を載せる `Command` フィールド、自由文の添付フィールドが 1 行のままで、entity 変換後のペイロードが意図しないリンク、メンション、偽の見出し、表示順の反転を作らないことを確認する（§3.5 の表示安全な補間契約）。
 - 未知種別と不正スコープの WARN が送信失敗ロガーだけへ届き、新しい Slack 通知を再帰的に発生させないことを確認する。
 - WARN に通知本文、group 名、command 名、Webhook URL が含まれないことを確認する。
 - `go test -race ./internal/logging/...` で、通知種別定義の参照と既存の並行投入・flush に競合がないことを確認する。定義は実行中に変更しない。
@@ -925,7 +934,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる・機密パターンに値として一致する識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる・redaction の変換が書き換える識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、役割ごとの補間契約、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
