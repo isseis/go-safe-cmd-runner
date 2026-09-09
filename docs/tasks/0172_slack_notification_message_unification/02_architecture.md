@@ -166,6 +166,8 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定を読み込み時に拒否する検査を、既存の `ValidateGroupNames` と同じ経路へ追加する（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名に対するセンチネルエラーを既存の `ErrEmptyGroupName` に並べて定義する | - |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -301,6 +303,16 @@ func (c NotificationContext) LogAttr() slog.Attr
 コンストラクタは空文字をエラーとして返さず、必ず値を返す全域関数とする。理由は 2 つある。1 つは、通知コンテキストの構築がログ出力の途中に置かれるため、ここで失敗するとログ経路そのものを中断させてしまうこと。もう 1 つは、呼び出し元に意味のある回復手段が無く、エラーを返しても握り潰すか panic するかしか選べないことである。
 
 したがって `GroupScope("")` や `CommandScope("group", "")` は構築でき、AC-09 が言う「パッケージ外から不正な値を作れない」は、フィールドが非公開でコンストラクタ以外の経路が無いという意味に限られる。空の名前は発火元（producer）の不具合であり、グローバル扱いへ黙って正規化することはしない。SlackHandler の表示境界で `(scope: invalid)` と送信失敗ロガーの WARN として大きく表面化させ、不具合が正しい通知と見分けられない状態を作らない。command scope で command 名が空の場合も、どのコマンドかを示せず Success Criteria を満たさないため同様に不正とする。
+
+#### 空のコマンド名は設定の読み込みで拒否する
+
+表示境界の検知は最後の防御であって、最初の防御ではない。`audit.Logger.LogUserGroupExecution` が `CommandScope` へ渡す `cmd.Name()` は設定ファイル由来の値であり、現在の設定検証はこれが空である場合を拒否していない。`internal/runner/config/validation.go` の `ValidateGroupNames` はグループ名が空の設定を `ErrEmptyGroupName` で拒否する一方、コマンド名について空を拒否する検証はどこにも無い。すなわち `name` を書き忘れたコマンドを含む TOML が現在は読み込みを通り、`CommandScope(group, "")` が実在の設定から到達しうる。
+
+そこで、設定の読み込み時にコマンド名が空でないことを検査し、空であれば専用のセンチネルエラーで拒否する。検証の位置は `ValidateGroupNames` と同じ、`config.Loader` が設定を読み込む経路とする。
+
+この検査は通知のためだけのものではない。名前を持たないコマンドは、Slack 通知に限らずログでも監査記録でも指し示せない。名前の空を設定境界で拒否することで、「外部入力の誤りは読み込みで拒否する」「発火点へ届いた空の名前は呼び出し側の不具合であり、表示境界で `(scope: invalid)` として表に出す」という役割分担が成り立つ。空の名前を黙って通したうえで通知だけを不正表示にすると、設定が誤っていることは Slack を見た者にしか分からず、当のコマンドはそのまま実行され続ける。
+
+コンストラクタ側は前段落までのとおり全域関数のままとし、事前条件違反で panic させることはしない。通知コンテキストの構築はログ出力の途中に置かれるため、ここで panic するとエラー報告の最中にプロセスを落とす。拒否は設定境界に、検知は表示境界に置き、その中間にあるログ経路は決して停止させない。
 
 ### 3.2 `PreExecutionError` と発火元
 
@@ -649,6 +661,7 @@ flowchart TD
 | 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ。SlackHandler 登録後のグローバルな起動前エラーでは `(global)` になる | AC-11, AC-13, AC-15, AC-17 |
 | グループ検証エラー | Scope に group 名があり、Error Message に `Group: <name>, ` がない | AC-13, AC-14 |
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
+| 設定の検証 | コマンド名が空の設定が専用のセンチネルエラーで拒否されることを `errors.Is` で検証する。検査を外すと失敗する | AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、生成した Text 行の見出しと末尾 3 フィールドにおける `###` の不在、末尾 3 フィールドの順序を検証する。種別固有部分に埋め込まれる動的な値は対象にしない | AC-18〜AC-22, AC-26 |
 | 製品名 | 登録済み種別と汎用メッセージが同じ製品名で始まり、本番コード内の定義箇所が 1 つである | AC-33 |
@@ -693,7 +706,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する | AC-09〜AC-17、AC-30、AC-32 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空のコマンド名を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | 利用者向け文書に加え、`security-architecture` と `slack_async_delivery` の日本語版を更新し、各英語版へ翻訳する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
@@ -764,3 +777,11 @@ AC-09 に従い `NotificationContext` のゼロ値はグローバルとする。
 ### B.8 公開変数ではなく token アクセサを使う理由
 
 フィールドが非公開の `Notification` でも、公開パッケージ変数は外部から再代入できる。登録済み token は非公開変数に保持し、公開関数が値を返す形にすることで、発火元が文字列を再列挙せず利用でき、実行中の書き換えも防げる。
+
+### B.9 空の名前をコンストラクタの panic で拒否する案を採用しない理由
+
+`GroupScope("")` と `CommandScope(group, "")` を事前条件違反として panic させる案を検討した。空の名前は検証済みの名前を渡すはずの発火点側の不具合であり、エラーを返して握り潰せる形にすべきではない、という論拠である。
+
+採らなかったのは、通知コンテキストの構築がログ出力の途中に置かれるためである。ここで panic すると、エラーを報告している最中にプロセスを落とすことになり、報告そのものが失われる。ログ経路は、入力が壊れていても停止しないことが求められる側である。
+
+代わりに、拒否を 1 段上流の設定境界へ移した（§3.1）。空のコマンド名は設定の読み込みで拒否され、そこを通った値が発火点で空になることは無い。それでも空が届いた場合は表示境界で `(scope: invalid)` と WARN として表に出る。「外部入力は読み込みで拒否し、内部の不整合は表示で検知し、その中間は停止させない」という 3 段の配置であり、panic は不要になる。
