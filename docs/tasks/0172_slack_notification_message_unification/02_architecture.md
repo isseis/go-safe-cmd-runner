@@ -171,6 +171,12 @@ flowchart LR
 
 実線の矢印 A → B は「A のデータが B へ流れる」こと、破線の矢印 A ⇢ B は「A が B の型を利用する」というパッケージ依存を表す。`internal/logging` から発火元への逆向き依存は作らない。`internal/common` に通知コンテキストを置くのは、`internal/runner` と `internal/logging` の循環 import を避け、既存のログスキーマ共有責務を再利用するためである。
 
+**`internal/runner/base/audit` から `internal/logging` への依存**。この図で `AUDIT ⇢ LOGGING` は新しい辺である。`audit` は現在 `internal/common`、`internal/redaction`、`internal/runner/base/*` にしか依存しておらず、`internal/logging` を取り込んでいない。§3.4 の設計では発火元が `logging.NotificationAttrs` と公開アクセサの返す token を使うため、`audit` もこの依存を得る。
+
+循環は生じない。`internal/logging` の依存は `internal/ansicolor`、`internal/common`、`internal/groupmembership`、`internal/safefileio`、`internal/terminal` であり、`runnertypes` も `audit` も含まない（`go list -deps ./internal/logging` で確認済み）。`cmd/runner` と `internal/runner` は既に `internal/logging` に依存しているため、新しい辺は `audit` の 1 本だけである。
+
+それでもこれは base 層から `logging` への辺を 1 本増やす判断である。代案は、種別名を `internal/common` に定数として置き、発火元が文字列で名乗る形にすることであった。採らなかったのは、それが AC-27 の求める「同じ種別集合を独立に列挙する箇所が他に無い」を崩すためである。定数の一覧と読み側の定義という 2 本目の列挙が生まれ、その一致を別の機構で守る必要が出る。token を渡す形なら発火元は種別名の文字列を一度も書かないため、列挙は §3.4 の登録 1 箇所に留まる。依存 1 本と引き換えに並行リストを 1 本消す取引として、前者を選ぶ。
+
 ### 2.2 コンポーネント配置
 
 | ファイル | 種別 | 責務 | 更新が必要な既存テスト |
