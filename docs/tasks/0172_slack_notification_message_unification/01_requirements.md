@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-08 |
 | Reviewer | isseis |
-| Comments | AC-09: 有効値の構築をコンストラクタに限定し、`ScopeGlobal` をゼロ値とするよう変更し、再承認 |
+| Comments | AC-09: 有効値の構築をコンストラクタに限定し、`ScopeGlobal` をゼロ値とするよう変更し、再承認。AC-09・AC-15・AC-20 を、02_architecture.md が実装する境界（構築時ではなく表示境界、SlackHandler 登録後のエラー、生成した見出しとエンベロープ）に合わせて表現し直した |
 
 ## 関連 Issue
 
@@ -262,10 +262,13 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
 通知の発生箇所を、文字列の有無からではなく明示的な型から読み取れるようにする。
 
 **Acceptance Criteria**:
-- **AC-09**: `common.NotificationContext` のフィールドはパッケージ外から指定できず、有効な値は
-  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）で構築する。`ScopeGlobal` を
+- **AC-09**: `common.NotificationContext` のフィールドはパッケージ外から指定できず、値は
+  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）でのみ構築する。`ScopeGlobal` を
   ゼロ値とし、発火元はグローバルな場合も `GlobalScope()` で明示的に通知コンテキスト属性を
-  付与する。属性自体が無い状態は読み側で検知される。
+  付与する。コンストラクタは空の group 名・command 名を拒否せず必ず値を返す（ログ経路を
+  中断させないため）。スコープと名前の組み合わせの妥当性は SlackHandler の表示境界で確認し、
+  空の名前は AC-12 のとおり `(scope: invalid)` と WARN として現れる。属性自体が無い状態も
+  読み側で検知される。
 - **AC-10**: `NotificationContext` のログ出力に `scope` と `group` が含まれ、コマンド名が
   無い場合は `command` 属性を出さない。
 - **AC-11**: 生きている 3 種別すべての発火点が、送出するレコードに `NotificationContext` を
@@ -283,8 +286,9 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
   Scope として表示される。
 - **AC-14**: AC-13 の通知の Error Message から、group 名の重複表示（`Group: <name>, ` の
   接頭辞）が取り除かれている。
-- **AC-15**: 設定ファイルの読み込み失敗など group に紐付かないエラーの通知で、Scope が
-  `(global)` と表示される。
+- **AC-15**: SlackHandler の登録後に起きる group に紐付かないエラー（グローバル対象ファイルの
+  検証失敗など）の通知で、Scope が `(global)` と表示される。設定ファイルの読み込み・解析の
+  失敗は SlackHandler の登録前に起きて通知そのものが発生しないため、この基準の対象外とする。
 - **AC-16**: `RuntimeCommand` が、生成時に渡された group 名を参照メソッドから返す。
 - **AC-17**: user/group 指定コマンドの失敗通知に、group 名とコマンド名の双方が表示される。
 
@@ -297,7 +301,9 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
   始まる。製品名の定義は production コードに 1 箇所しかない。
 - **AC-19**: 絵文字・STATUS・添付の色が「統一書式」の表のとおりログレベルだけで決まり、
   種別によって変わらない。
-- **AC-20**: 生成されるどのメッセージにも `###` が含まれない。
+- **AC-20**: 生成される Text 行の見出しと共通エンベロープのフィールド（Scope、Hostname、
+  Run ID）に `###` が含まれない。コマンド出力など動的な値は §3.5 のエスケープを通しても
+  `###` を含みうるため、メッセージ全体は対象にしない。
 - **AC-21**: 生きている 3 種別すべてで、添付フィールドの末尾 3 件が Scope、Hostname、
   Run ID の順に並んでいる。
 - **AC-22**: Text 行と末尾 3 フィールドの生成が 1 箇所に集約されており、種別ごとの組み立て

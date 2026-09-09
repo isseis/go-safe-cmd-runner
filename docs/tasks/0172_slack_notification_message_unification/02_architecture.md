@@ -172,7 +172,7 @@ flowchart LR
 | `internal/runner/runner.go` | 変更 | グループ検証エラーを `GroupScope` と構造化された本文で通知し、グループ集計へ通知コンテキストを付ける | `TestSlackNotification` と検証エラー経路のテスト |
 | `internal/runner/runner_test.go` | 変更 | グループ集計とグループ検証エラーの通知コンテキストを検証する | `TestSlackNotification` を拡張する |
 | `cmd/runner/main.go` | 変更 | 11 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加え、報告境界で Run ID を代入してから構造体を渡す | 起動前エラーの統合テスト群 |
-| `internal/runner/bootstrap/config.go` | 変更 | 4 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。AC-15 が例に挙げる設定読み込み失敗はここで構築される | 同パッケージの設定読み込みエラーのテスト |
+| `internal/runner/bootstrap/config.go` | 変更 | 4 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。ここで構築される設定読み込み失敗は SlackHandler の登録前に起きるため Slack へは届かず、AC-15 の検証対象ではない | 同パッケージの設定読み込みエラーのテスト |
 | `internal/runner/bootstrap/environment.go` | 変更 | 2 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える | 同パッケージの環境準備エラーのテスト |
 | `cmd/runner/startup_privilege_test.go` | 変更 | 特権降格エラーの新しい引数形を検証する | `TestReportStartupPrivilegeFailure_UsesValidRunID` |
 | `cmd/runner/integration_pre_execution_error_test.go` | 変更 | 設定読み込みなどの起動前エラーがグローバルスコープを保つことを検証する | 同ファイルの既存 E2E テスト |
@@ -290,7 +290,9 @@ func (c NotificationContext) LogAttr() slog.Attr
 | 通知コンテキスト属性が無い、重複する、またはグループ値でない | `(scope: invalid)` | 不正。WARN を記録する |
 | 未知の scope、または上記の組み合わせに反する値 | `(scope: invalid)` | 不正。WARN を記録する |
 
-コンストラクタは空文字をエラーとして返さない。ログ経路を中断せず、SlackHandler の境界で不正表示と WARN の両方を残す。command scope で command 名が空の場合も、どのコマンドかを示せず Success Criteria を満たさないため不正とする。
+コンストラクタは空文字をエラーとして返さず、必ず値を返す全域関数とする。理由は 2 つある。1 つは、通知コンテキストの構築がログ出力の途中に置かれるため、ここで失敗するとログ経路そのものを中断させてしまうこと。もう 1 つは、呼び出し元に意味のある回復手段が無く、エラーを返しても握り潰すか panic するかしか選べないことである。
+
+したがって `GroupScope("")` や `CommandScope("group", "")` は構築でき、AC-09 が言う「パッケージ外から不正な値を作れない」は、フィールドが非公開でコンストラクタ以外の経路が無いという意味に限られる。空の名前は発火元（producer）の不具合であり、グローバル扱いへ黙って正規化することはしない。SlackHandler の表示境界で `(scope: invalid)` と送信失敗ロガーの WARN として大きく表面化させ、不具合が正しい通知と見分けられない状態を作らない。command scope で command 名が空の場合も、どのコマンドかを示せず Success Criteria を満たさないため同様に不正とする。
 
 ### 3.2 `PreExecutionError` と発火元
 
@@ -311,7 +313,7 @@ func HandlePreExecutionError(preExecErr *PreExecutionError)
 
 `cmd/runner` の設定読み込み、Run ID、ビルド設定、特権降格などの起動前エラーは `GlobalScope()` を渡す。`runner.executeGroups` のグループ検証エラーだけは `GroupScope(verErr.Group)` を渡す。検証結果本文から `Group: <name>, ` を除き、グループ名の唯一の表示場所を Scope にする。stderr と stdout の既存形式、および `HandleExecutionError` が Slack 通知を行わない契約は維持する。
 
-`NotificationContext` は公開フィールドであり、そのゼロ値は有効なグローバルスコープである。それでも意図を明示し `GlobalScope()` を production で使用するため、`cmd/runner/main.go` の 11 箇所、`internal/runner/bootstrap/config.go` の 4 箇所、`internal/runner/bootstrap/environment.go` の 2 箇所を移行対象とする。`HandlePreExecutionError` はこの値から通知コンテキスト属性を必ず生成する。構文木の静的契約テストは、本番の `PreExecutionError` リテラルで `NotificationContext` が省略されていないことを検証する。
+`NotificationContext` のゼロ値は有効なグローバルスコープである。それでも意図を明示し `GlobalScope()` を production で使用するため、`cmd/runner/main.go` の 11 箇所、`internal/runner/bootstrap/config.go` の 4 箇所、`internal/runner/bootstrap/environment.go` の 2 箇所を移行対象とする。`HandlePreExecutionError` はこの値から通知コンテキスト属性を必ず生成する。構文木の静的契約テストは、本番の `PreExecutionError` リテラルで `NotificationContext` が省略されていないことを検証する。
 
 `HandlePreExecutionError` が報告に使うフィールドは次のとおり固定し、現在の挙動をそのまま保つ。
 
@@ -630,16 +632,16 @@ flowchart TD
 
 | 観点 | 検証内容 | 対応 AC |
 |---|---|---|
-| 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する | AC-09, AC-10, AC-12 |
+| 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する。`GroupScope("")` は構築でき、表示境界で `(scope: invalid)` と WARN になることも確認する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
 | レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
 | 構築の遅延 | 受付停止済みの送信機構では種別固有部分を構築せず、それでも定義不備の WARN は残る | AC-24 |
-| 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ | AC-11, AC-13, AC-15, AC-17 |
+| 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ。SlackHandler 登録後のグローバルな起動前エラーでは `(global)` になる | AC-11, AC-13, AC-15, AC-17 |
 | グループ検証エラー | Scope に group 名があり、Error Message に `Group: <name>, ` がない | AC-13, AC-14 |
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
-| 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、`###` の不在、末尾 3 フィールドの順序を検証する | AC-18〜AC-22, AC-26 |
+| 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、生成した Text 行の見出しと末尾 3 フィールドにおける `###` の不在、末尾 3 フィールドの順序を検証する。種別固有部分に埋め込まれる動的な値は対象にしない | AC-18〜AC-22, AC-26 |
 | 製品名 | 登録済み種別と汎用メッセージが同じ製品名で始まり、本番コード内の定義箇所が 1 つである | AC-33 |
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
 | 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる | AC-24, AC-25 |
@@ -658,7 +660,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 
 ### 7.2 統合テスト
 
-- `cmd/runner/integration_pre_execution_error_test.go` で設定読み込み失敗などが `(global)` として Slack 用レコードへ伝わることを確認する（AC-15）。
+- `cmd/runner/integration_pre_execution_error_test.go` で、SlackHandler 登録後に起きるグローバルな起動前エラー（グローバル対象ファイルの検証失敗など）が `(global)` として Slack 用レコードへ伝わることを確認する。設定ファイルの読み込み・解析の失敗は登録前に起きて通知が発生しないため使わない（AC-15）。
 - `internal/runner` の検証エラー経路で group 名が Scope に一度だけ現れることを確認する（AC-13, AC-14）。
 - ユーザー／グループ指定コマンドを失敗させ、group 名、command 名、終了コードを持つ固有通知になることを確認する（AC-17, AC-23）。
 - `internal/runner/e2e_slack_webhook_separation_test.go` で INFO と WARN 以上の宛先が変わらないことを確認する（AC-31）。
