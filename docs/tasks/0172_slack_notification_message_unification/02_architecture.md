@@ -194,8 +194,8 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
-| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定を読み込み時に拒否する検査を、既存の `ValidateGroupNames` と同じ経路へ追加する（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
-| `internal/runner/config/errors.go` | 変更 | 空のコマンド名に対するセンチネルエラーを既存の `ErrEmptyGroupName` に並べて定義する | - |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、および表示できる文字を含まない設定を読み込み時に拒否する検査を、既存の `ValidateGroupNames` と同じ経路へ追加する（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名と表示できない文字だけのコマンド名に対する 2 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -351,6 +351,7 @@ func (c NotificationContext) LogAttr() slog.Attr
 | `scope=command` で command が空 | `(scope: invalid)` | 不正。同上 |
 | `scope=global` で group または command が空でない | `(scope: invalid)` | 不正。名乗ったスコープより多くの情報を伴う |
 | `scope=group` で command が空でない | `(scope: invalid)` | 不正。同上 |
+| group 名または command 名が、§3.5 の補間契約を通すと表示できる文字を 1 文字も残さない | `(scope: invalid)` | 不正。名乗ったスコープの発生箇所を指し示せない |
 
 情報を**欠く**組み合わせだけでなく、名乗ったスコープより情報を**過剰に伴う**組み合わせも不正とする。`scope=global` と名乗りながら group 名を持つ値は、コンストラクタからは作れない。これを受け入れて `(global)` と描画すると、レコードに残っていた発生箇所の情報を黙って捨てたうえ、「グローバルで起きた」という誤った断定を通知に載せることになる。どちらの読み方が正しいのかを補正で決める形であり、本設計の「補正しない」に反する。`scope=group` と名乗りながら command 名を伴う値も同じ理由で拒否する。
 
@@ -360,11 +361,13 @@ func (c NotificationContext) LogAttr() slog.Attr
 
 したがって `GroupScope("")` や `CommandScope("group", "")` は構築でき、AC-09 が言う「パッケージ外から不正な値を作れない」は、フィールドが非公開でコンストラクタ以外の経路が無いという意味に限られる。空の名前は発火元（producer）の不具合であり、グローバル扱いへ黙って正規化することはしない。SlackHandler の表示境界で `(scope: invalid)` と送信失敗ロガーの WARN として大きく表面化させ、不具合が正しい通知と見分けられない状態を作らない。command scope で command 名が空の場合も、どのコマンドかを示せず Success Criteria を満たさないため同様に不正とする。
 
-#### 空のコマンド名は設定の読み込みで拒否する
+#### 表示できないコマンド名は設定の読み込みで拒否する
 
 表示境界の検知は最後の防御であって、最初の防御ではない。`audit.Logger.LogUserGroupExecution` が `CommandScope` へ渡す `cmd.Name()` は設定ファイル由来の値であり、現在の設定検証はこれが空である場合を拒否していない。`internal/runner/config/validation.go` の `ValidateGroupNames` はグループ名が空の設定を `ErrEmptyGroupName` で拒否する一方、コマンド名について空を拒否する検証はどこにも無い。すなわち `name` を書き忘れたコマンドを含む TOML が現在は読み込みを通り、`CommandScope(group, "")` が実在の設定から到達しうる。
 
-そこで、設定の読み込み時にコマンド名が空でないことを検査し、空であれば専用のセンチネルエラーで拒否する。検証の位置は `ValidateGroupNames` と同じ、`config.Loader` が設定を読み込む経路とする。
+そこで、設定の読み込み時にコマンド名が**表示できる内容を持つ**ことを検査し、持たなければ専用のセンチネルエラーで拒否する。検証の位置は `ValidateGroupNames` と同じ、`config.Loader` が設定を読み込む経路とする。
+
+検査は 2 段とし、どちらも独立したセンチネルエラーを返す。1 つは名前が空文字である場合の拒否である。もう 1 つは、空ではないが §3.5 の補間契約を通すと表示できる文字が 1 文字も残らない場合、すなわち制御文字だけからなる名前の拒否である。後者を分けるのは、空の `name` を書き忘れた設定と、見た目には値があるのに通知でもログでも指し示せない設定とで、利用者が直す箇所が違うためである。空だけを拒否すると、`name = "\u0001"` のような設定が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前は設定境界で拒否する。
 
 この検査は通知のためだけのものではない。名前を持たないコマンドは、Slack 通知に限らずログでも監査記録でも指し示せない。名前の空を設定境界で拒否することで、「外部入力の誤りは読み込みで拒否する」「発火点へ届いた空の名前は呼び出し側の不具合であり、表示境界で `(scope: invalid)` として表に出す」という役割分担が成り立つ。空の名前を黙って通したうえで通知だけを不正表示にすると、設定が誤っていることは Slack を見た者にしか分からず、当のコマンドはそのまま実行され続ける。
 
@@ -489,6 +492,8 @@ func NotificationAttrs(notification Notification, notificationContext common.Not
 | `pre_execution_error` | 高 | `error_type` | Error Message、Component |
 | `user_group_command_failure` | 通常 | `command failed (exit <終了コード>)` | Command、Exit Code、存在する場合は Output と Error Output |
 
+**Scope、Hostname、Run ID の 3 個のフィールド見出しは共通エンベロープの予約語とする**。種別固有のビルダーはこの 3 語を見出しに使えない。同じ見出しのフィールドが種別固有部分と末尾 3 件の双方に現れると、読み手にはどちらが発生箇所を表すのか判別できず、AC-21 が言う「末尾 3 件が Scope、Hostname、Run ID である」ことも見た目には確かめられなくなる。予約語は共通エンベロープと同じ 1 箇所に定数として置き、末尾 3 フィールドの生成とビルダー側の検査が同じ定数を読む。検査は `notificationDefinitions` を走査するテストで行う（§7.1）。
+
 `common.UserGroupCommandFailureAttrs` は `command_name`（string）、`exit_code`（int）、`stdout`（string）、`stderr`（string）を定義し、`audit.Logger.LogUserGroupExecution` とユーザー／グループ指定コマンド固有のビルダーが共有する。属性の記録側と参照側が同じ属性名と型を使うため、固有ビルダーに文字列リテラルを複製しない。
 
 `command_group_summary` の `status` 属性は Slack 表示の判定に使わず、ログレベルを唯一の判定基準とする。発火元は既存どおり実行結果から INFO または ERROR を選ぶ。`GroupSummaryAttrs.Group` は既存の構造化ログ利用者との互換性のため残す。Slack の Scope は通知コンテキストだけから生成し、トップレベルの `group` を推論や表示には使わない。
@@ -520,21 +525,21 @@ Text 行は常に次の形とする。
 [go-safe-cmd-runner] <絵文字> *<STATUS>* — <Scope> : <種別固有の要約>
 ```
 
-添付フィールドは、種別固有フィールドの後ろに Scope、Hostname、Run ID をこの順で追加する。汎用メッセージも同じ処理を通す。Scope フィールドの値は Text 行と同じスコープ表現にする。
+添付フィールドは、種別固有フィールドの後ろに Scope、Hostname、Run ID をこの順で追加する。汎用メッセージも同じ処理を通す。Scope フィールドの値は Text 行と同じスコープ表現にし、下の表示安全な補間契約を通す。この 3 個の見出しは §3.4 のとおり予約語であり、種別固有フィールドには現れない。
 
 動的な group 名、command 名、要約、添付フィールド値は既存の redaction 後の値を受け取る。これらの加工は表示境界だけで行い、構造化ログの元値は変更しない。stdout 1000 文字、stderr 500 文字の既存上限は変えない。
 
-#### Text 行へ埋め込む値の制約
+#### 表示安全な補間契約
 
-エンベロープが行の骨格を組み立てるとはいえ、Scope と要約はその行の**中へ**埋め込まれる。group 名は設定の読み込み時に文字種が検証されるが、command 名に文字種の検証は無く、汎用メッセージの要約はレコードの本文そのものである。したがって、埋め込む値の側に次の制約を課す。
+エンベロープが行の骨格を組み立てるとはいえ、Scope と要約はその行の**中へ**埋め込まれる。group 名は設定の読み込み時に文字種が検証されるが、command 名に文字種の検証は無く、汎用メッセージの要約はレコードの本文そのものである。したがって、埋め込む値の側に次の制約を課す。この制約の集合を**表示安全な補間契約**と呼び、Text 行と Scope フィールドへ埋め込むすべての値に適用する。他節（AC-20、§3.1、§3.6）はこの契約を参照し、同じ規則を書き写さない。
 
 | 制約 | 実現方法 | 理由 |
 |---|---|---|
-| 改行と制御文字を含めない | C0 制御文字（U+0000〜U+001F）と DEL（U+007F）を 1 文字ずつ半角空白へ置き換える | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1） |
+| 改行と制御文字を含めない | C0 制御文字（U+0000〜U+001F）、DEL（U+007F）、および Unicode の行区切り U+2028 と段落区切り U+2029 を 1 文字ずつ半角空白へ置き換える | 改行を通すと、本物の見出し行の直下に任意の行を作れる（§5.1 の脅威1）。U+2028 と U+2029 は C0 に含まれないが、Unicode では改行として扱われる文字であり、同じ経路を与えてしまう |
 | Slack の制御構文を解釈させない | `&`→`&amp;`、`<`→`&lt;`、`>`→`&gt;` へ置き換える | `<!channel>` や `<@U012345>` がメンションとして、`<URL｜表示文字>` がリンクとして解釈されるのを防ぐ |
 | 長さに上限を設ける | 置き換え後の各補間値を UTF-8 で 500 byte 以下に切り詰める | Text 行はプッシュ通知に出る 1 行であり、長大な本文が入ると読めなくなる |
 
-置き換えの順序は、**制御文字 → `&`・`<`・`>` → 切り詰め**に固定する。`&` の置き換えを先に行わないと、後段が入れた `&amp;` の `&` が二重に置き換えられる。
+置き換えの順序は、**行区切りを含む制御文字 → `&`・`<`・`>` → 切り詰め**に固定する。`&` の置き換えを先に行わないと、後段が入れた `&amp;` の `&` が二重に置き換えられる。
 
 切り詰めは 500 byte を越えない最大の接頭辞を採る。ただし末尾が不完全な UTF-8 rune、またはこの処理が生成した `&amp;`・`&lt;`・`&gt;` の途中になってはならず、その場合は当該 rune または実体参照の全体を取り除く。切り詰め後の値は常に有効な UTF-8 であり、裸の `&am` や `&l` を末尾に残さない。上限を表す定数は Scope 名と要約で共有する。
 
@@ -542,7 +547,11 @@ Text 行は常に次の形とする。
 
 **`*`、`_`、`~`、バッククォートは置き換えない**。これらを似た字形の別文字へ差し替えれば装飾は防げるが、利用者の group 名や command 名を黙って別の文字列に書き換えることになり、通知に出る名前が TOML の定義と一致しなくなる。「補正しない」という本設計の立場に反するうえ、名前による突き合わせを壊す。entity 変換と 1 行化でリンク・メンション・偽の見出し行は防げるため、**装飾だけが変わりうる点は残余リスクとして受け入れる**。
 
-この制約は Text 行へ埋め込む値にだけ課す。添付フィールドの値（stdout、stderr など）は既存の切り詰め規則のままとする。
+契約の出力は次の 2 つの性質を必ず満たす。1 つは**1 行であること**、すなわち出力に改行として扱われる文字（U+000A、U+000D、U+2028、U+2029）が 1 文字も含まれないことである。もう 1 つは、出力が常に有効な UTF-8 であり、`&amp;`・`&lt;`・`&gt;` を途中で切らないことである。この 2 つを契約の出力の性質として定め、置き換え集合の各行ではなく性質そのものを表駆動テストで検証する（§7.1）。置き換え集合に文字を足し忘れたときは、1 行であることの検査が失敗する。
+
+補間後に表示できる文字が 1 文字も残らない値は、埋め込む前に不正として扱う。Scope については §3.6 のとおり `(scope: invalid)` とし、コマンド名についてはそもそも §3.1 のとおり設定境界で拒否する。空白だけに潰れた名前を通知へ載せると、発生箇所を書いていない通知と見分けられなくなる。
+
+この制約は Text 行と Scope フィールドへ埋め込む値にだけ課す。他の添付フィールドの値（stdout、stderr など）は既存の切り詰め規則のままとする。
 
 ### 3.6 未知種別と不正スコープ
 
@@ -554,7 +563,9 @@ Text 行は常に次の形とする。
 |---|---|---|
 | 欠落 | 通知コンテキストのキーを持つ属性がない | `missing_notification_context` |
 | 重複 | 同じキーの属性が 2 個以上ある | `duplicate_notification_context` |
-| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`scope` が 3 語のいずれでもない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
+| 不正 | 属性値が `slog.KindGroup` でない、`scope` が無い、`scope` が 3 語のいずれでもない、グループの中で `scope`・`group`・`command` のいずれかが 2 回以上現れる、group 名または command 名が §3.5 の補間契約を通すと表示できる文字を残さない、またはスコープと group／command の組が §3.1 の表に反する | `invalid_notification_context` |
+
+グループの**外側**のキーが重複する場合と、グループの**内側**の下位キーが重複する場合は、検出する場所が違うだけで扱いは同じである。外側は SlackHandler の属性走査が `duplicate_notification_context` として検出し、内側は復元関数が `invalid_notification_context` として拒否する。内側の重複を「最初の値を採る」「最後の値を採る」のいずれかで通すことはしない。どちらの値が発生箇所なのかを補正で決める形になり、本設計の「補正しない」に反する。
 
 `scope=global` で group と command がともに空の場合だけ `(global)` と表示する。通知コンテキストが不正でも、汎用メッセージには切り替えず、元の通知種別の固有部分を保ったまま Scope を `(scope: invalid)` とする。
 
@@ -773,16 +784,18 @@ flowchart LR
 |---|---|---|
 | 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する。`GroupScope("")` は構築でき、表示境界で `(scope: invalid)` と WARN になることも確認する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
-| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する | AC-12 |
+| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する。補間契約を通すと表示できる文字が残らない group 名・command 名（制御文字だけの名前）も `(scope: invalid)` になることを同じ表で確認する | AC-12 |
+| 通知コンテキストの下位キーの重複 | グループの内側で `scope`、`group`、`command` のいずれかが 2 回以上現れるレコードが `invalid_notification_context` として拒否され、最初の値や最後の値を採って通らないことを、3 個の下位キーそれぞれについて検証する。グループの外側のキーの重複が `duplicate_notification_context` になることと区別して確認する | AC-12, AC-24 |
 | レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
 | 構築の遅延 | 受付停止済みの送信機構では種別固有部分を構築せず、それでも定義不備の WARN は残る | AC-24 |
 | 発火元 | 存続する 3 種別の全発火点が通知コンテキストを持つ。SlackHandler 登録後のグローバルな起動前エラーでは `(global)` になる | AC-11, AC-13, AC-15, AC-17 |
 | グループ検証エラー | Scope に group 名があり、Error Message に `Group: <name>, ` がない | AC-13, AC-14 |
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
-| 設定の検証 | コマンド名が空の設定が専用のセンチネルエラーで拒否されることを `errors.Is` で検証する。検査を外すと失敗する | AC-17 |
+| 設定の検証 | コマンド名が空の設定と、制御文字だけで表示できる文字を持たない設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。各検査を外すと対応する行が失敗する | AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
-| 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、生成した Text 行の見出しと末尾 3 フィールドにおける `###` の不在、末尾 3 フィールドの順序を検証する。種別固有部分に埋め込まれる動的な値は対象にしない | AC-18〜AC-22, AC-26 |
+| 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し、Hostname と Run ID の値）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
+| 予約フィールド見出し | `notificationDefinitions` を走査し、どの種別固有ビルダーの返すフィールドも Scope、Hostname、Run ID を見出しに使わないことを検証する。ビルダーの 1 つに予約見出しのフィールドを足すと失敗する | AC-21, AC-26 |
 | 製品名 | 登録済み種別と汎用メッセージが同じ製品名で始まり、本番コード内の定義箇所が 1 つである | AC-33 |
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
 | 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる | AC-24, AC-25 |
@@ -791,7 +804,7 @@ flowchart LR
 | 優先度 | 通常キューを満たしても `pre_execution_error` が高優先度キューへ入り、先に送られる。優先度を通常へ変えると失敗する | AC-07, AC-27 |
 | 削除対象の種別 | 本番コードを `rg` で検索し、対象の型、定数、関数、文字列がない | AC-01〜AC-03 |
 | 特権監査 | `privilege.logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを、新規テストで検証する。`logElevationOutcome` を対象とする既存テストは無いため、Phase 3 で追加する。呼び出し元から `logElevationOutcome` の呼び出しを取り除くと失敗する形にし、関数本体だけの検証にしない | AC-05 |
-| Text 行の安全性 | group 名、command 名、汎用要約に CR、LF、制御文字、`&`、`<`、`>` を含め、出力が 1 行になりリンク・メンション・偽の見出しを作らない。LF と CR だけでなく U+0000〜U+001F の各制御文字と DEL（U+007F）を値の途中に置いた表駆動とする | AC-18, AC-33 |
+| 表示安全な補間契約 | §3.5 の契約を 1 個の表駆動テストで検証する。行は U+0000〜U+001F の各制御文字、DEL（U+007F）、U+2028、U+2029、`&`、`<`、`>`、Slack のリンク・メンション形式を値の途中に置いたものとし、出力に改行として扱われる文字（U+000A、U+000D、U+2028、U+2029）が含まれないこと、リンク・メンション・偽の見出しを作らないこと、出力が有効な UTF-8 であることを共通の検査として当てる。置き換え集合から 1 文字を外すと、その文字の行が 1 行であることの検査で失敗する | AC-18, AC-20, AC-33 |
 | Text 行の切り詰め | 500 byte の境界直前・境界上・境界直後について、ASCII、複数 byte の rune、`&amp;`／`&lt;`／`&gt;` の各ケースが rune や実体参照の途中で切れず、常に有効な UTF-8 になることを検証する | AC-18 |
 | 切り詰めと redaction | stdout 1000 文字、stderr 500 文字の既存上限と、既存 redaction が維持される | F-004, F-007 |
 | 宛先分離 | INFO は成功用、WARN と ERROR はエラー用ハンドラだけで有効になる | AC-31 |
@@ -811,7 +824,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 
 ### 7.3 セキュリティテスト
 
-- group 名、command 名、汎用メッセージに CR、LF、制御文字、`&`、`<`、`>`、Slack のリンク・メンション形式を含め、Text 行が 1 行のままで、entity 変換後のペイロードが意図しないリンク、メンション、偽の見出しを作らないことを確認する。
+- group 名、command 名、汎用メッセージに CR、LF、C0 制御文字、DEL、U+2028、U+2029、`&`、`<`、`>`、Slack のリンク・メンション形式を含め、Text 行と Scope フィールドが 1 行のままで、entity 変換後のペイロードが意図しないリンク、メンション、偽の見出しを作らないことを確認する（§3.5 の表示安全な補間契約）。
 - 未知種別と不正スコープの WARN が送信失敗ロガーだけへ届き、新しい Slack 通知を再帰的に発生させないことを確認する。
 - WARN に通知本文、group 名、command 名、Webhook URL が含まれないことを確認する。
 - `go test -race ./internal/logging/...` で、通知種別定義の参照と既存の並行投入・flush に競合がないことを確認する。定義は実行中に変更しない。
@@ -826,7 +839,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空のコマンド名を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて表示できないコマンド名を設定の読み込みで拒否する（§3.1） | AC-09〜AC-17、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、WARN を 1 個の取り消し可能なコミットで導入する | AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
@@ -855,7 +868,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | AC-05〜AC-08 | §2.2、§3.4、§7.1、§8.1 |
 | AC-09〜AC-12 | §3.1、§3.6、§7.1 |
 | AC-13〜AC-17 | §3.2、§3.3、§6.2、§7.1〜§7.2 |
-| AC-18〜AC-22 | §3.4〜§3.5、§7.1 |
+| AC-18〜AC-22 | §3.4〜§3.5、§7.1。AC-20 の動的な値は §3.5 の表示安全な補間契約が担う |
 | AC-23〜AC-27 | §1.3、§3.4、§3.6、§6.1、§7.1 |
 | AC-28〜AC-29 | §2.2、§7.2、§8.1 |
 | AC-30〜AC-32 | §2.4、§5.2、§7、§8 |
