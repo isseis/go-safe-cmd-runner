@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-08 |
-| Review date | 2026-09-09 |
+| Review date | 2026-09-10 |
 | Reviewer | isseis |
-| Comments | 2026-09-09 に §3.1 の識別子 redaction 検査の位置（付録 B.11）と §3.6 の未知種別の優先度規則を改訂したため再承認待ち |
+| Comments | - |
 
 ## 関連文書
 
