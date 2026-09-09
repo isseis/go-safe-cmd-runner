@@ -859,8 +859,10 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
       は Phase 4 で括り出し済みである（§4.3）。本 Phase では追加せず、そのまま呼ぶ。
 - [ ] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
-      `PreExecutionError` リテラルの検査に加えて、(a) `internal/logging` 以外のパッケージが
-      `slack_notify` または `message_type` の文字列リテラルを直接構築していないこと、
+      `PreExecutionError` リテラルの検査に加えて、(a) **`slack_notify` の属性を構築してよいのは
+      `notification.go` の `NotificationAttrs` だけであること**（`internal/logging` を含む
+      すべての本番ファイルが対象。パッケージ単位の除外にしない）、および `message_type` の
+      文字列リテラルを `internal/logging` 以外のパッケージが直接構築していないこと、
       (b) `NotificationAttrs` の第 1 引数が登録済み token を返す公開アクセサの呼び出しだけで
       あること、(c) **登録済み種別名と同じ文字列リテラルが、`internal/logging/notification.go`
       の登録以外のどの本番ファイルにも現れないこと**を追加する。(c) の期待値は
@@ -869,6 +871,15 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `slack_sender.go` が集計・送信失敗ログで書く `slog.String("message_type", req.messageType)`
       のように、**属性キー `message_type` と、変数から読んだ種別名**は対象外である。禁じるのは
       種別名の**リテラル**であって、属性キーの使用ではない。
+      **(a) で `slack_notify` だけをパッケージ単位ではなくファイル単位に絞る理由。** 通知を
+      発生させる引き金は `slack_notify` であり、これを組み立てる正当な場所は
+      `NotificationAttrs` 1 箇所しかない。一方 `message_type` は、`slack_sender.go` が集計と
+      送信失敗ログで、`slack_handler.go` が読み取りで正当に扱うため、`internal/logging` の中では
+      許す必要がある。2 つを同じ粒度で扱うと、緩い方に引きずられて `slack_notify` の除外が
+      パッケージ全体に広がる。**これは仮想の攻撃者を想定した話ではない。** 本計画は Phase 4 で
+      `pre_execution_error.go` に `slack_notify=true` を手で組ませ（§4.3 の中間実装）、Phase 5 で
+      `NotificationAttrs` へ移す（§5.4）。パッケージ単位の除外のままだと、**この移行をやり残しても
+      どの検査も鳴らない**。移行の完了を見張るのが (a) の主目的である。
 - [ ] (c) だけでは足りないため、(d) を追加する。**`notification.go` 以外の本番コードが
       `Notification` 値を得る経路は、`NotificationAttrs` の第 1 引数位置での公開アクセサ
       呼び出し 1 つだけである。** 具体的には次をすべて拒否する。
@@ -1203,7 +1214,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-06 | static | Phase 1〜3 の各コミットの直前と直後に `go test -tags test -coverprofile=<file> ./internal/logging/... ./internal/runner/base/audit/... ./internal/common/...` を実行し、`go tool cover -func=<file>` を関数ごとに比較する。検証は `git log -1 --format=%B <sha>` に比較結果が含まれることで行う |
 | AC-07 | test | `internal/logging/slack_sender_test.go::TestSlackSender_HighPriorityBypassesFullNormalQueue`（`pre_execution_error` へ移行済み）。優先度判定を常に通常へ倒すと失敗する |
 | AC-08 | static | Phase 3 の完了時と Phase 7 で `make deadcode` を実行し、新たな到達不能コードの報告が無い |
-| AC-09 | test + static | test: `internal/common/notification_context_test.go::TestNotificationContext_ZeroValueIsGlobalScope` と `::TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary`（`GroupScope("")` が構築でき、`scope=group`・`group=""` としてエンコードされ、判定が `invalid_notification_context` を返すこと）。static + test: 本番コードがコンストラクタを迂回して複合リテラルを書いていないこと。**判定は `internal/logging/notification_contract_guard_test.go` の構文木検査で行う。** `internal/common` を import するファイルごとに、Phase 4 で括り出した走査と `ResolveLocalImports` で**その file の実際の import 名を解決**し、解決結果が `internal/common` を指す修飾子つきの `NotificationContext` 複合リテラルを拒否する。補助として `rg -n -g '!*_test.go' -F "common.NotificationContext{" --type go cmd internal` が一致なし（`-F` は `{` を量指定子として解釈させないため必須。付け忘れると `regex parse error` で落ちる。`--type go` は `*.go` で `_test.go` を含むため、本番だけを見るには `-g '!*_test.go'` が要る。テストは複合リテラルを正当に書く）。**この `rg` は補助でしかない。** 既定の import 名を literal で探すため、`import c ".../internal/common"` と別名を付けて `c.NotificationContext{}` と書けば素通りする。これは正規の Go であり、`GlobalScope()` を呼ばずにゼロ値を構築できてしまう。別名に強い判定は AST 側だけが持つ |
+| AC-09 | test + static | test: `internal/common/notification_context_test.go::TestNotificationContext_ZeroValueIsGlobalScope` と `::TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary`（`GroupScope("")` が構築でき、`scope=group`・`group=""` としてエンコードされ、判定が `invalid_notification_context` を返すこと）。static + test: 本番コードが**非グローバルなスコープを**コンストラクタを迂回して組み立てていないこと。**この主張は「コンストラクタ以外で値を作らせない」ではない。** `NotificationContext` のフィールドはすべて非公開であり（§4.1）、`internal/common` の外から書けるリテラルは空の `NotificationContext{}` だけである。その値はゼロ値であり、§4.1 が `TestNotificationContext_ZeroValueIsGlobalScope` で `GlobalScope()` と同一のエンコードになることを**設計として固定している**。したがって `var ctx common.NotificationContext` も `new(common.NotificationContext)` も、正しく定義されたグローバルスコープを作るだけで、不正な値は作れない。これらを禁じる検査は追加しない（禁じる理由が無く、`GlobalScope()` と等価であることは AC-09 自身が要求している）。検査が防ぐのは、`group`／`command` スコープを**リテラルで組んだつもりになって**グローバルが出来てしまう取り違えである。**判定は `internal/logging/notification_contract_guard_test.go` の構文木検査で行う。** `internal/common` を import するファイルごとに、Phase 4 で括り出した走査と `ResolveLocalImports` で**その file の実際の import 名を解決**し、解決結果が `internal/common` を指す修飾子つきの `NotificationContext` 複合リテラルを拒否する。補助として `rg -n -g '!*_test.go' -F "common.NotificationContext{" --type go cmd internal` が一致なし（`-F` は `{` を量指定子として解釈させないため必須。付け忘れると `regex parse error` で落ちる。`--type go` は `*.go` で `_test.go` を含むため、本番だけを見るには `-g '!*_test.go'` が要る。テストは複合リテラルを正当に書く）。**この `rg` は補助でしかない。** 既定の import 名を literal で探すため、`import c ".../internal/common"` と別名を付けて `c.NotificationContext{}` と書けば素通りする。これは正規の Go であり、`GlobalScope()` を呼ばずにゼロ値を構築できてしまう。別名に強い判定は AST 側だけが持つ |
 | AC-10 | test | `internal/common/notification_context_test.go::TestNotificationContext_LogValueEncoding`。`scope` と `group` が常に出力され、command 名が無い場合に `command` が出ないことを検証する |
 | AC-11 | test + static | static: `internal/logging/notification_contract_guard_test.go`（本番コードの `PreExecutionError` リテラルが `NotificationContext` を省略していないこと。省略したリテラルを 1 個足すと失敗する）。test: `internal/runner/runner_test.go::TestLogGroupExecutionSummary_LogLevel`（グループ集計が通知コンテキストを持つこと）とグループ検証エラー経路の新規テスト（§5.5）、および `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution`（失敗経路がコマンドスコープを持つこと）。構文木ガードは引数 1 個の形しか見ないため、残る 2 発火元が実際に正しいスコープを載せることは実行テストで確かめる。**この 2 件の実行テストは、属性を載せるコード変更と同じ Phase 4 に置く**（§4.3）。Phase 5 へ送ると、2 発火元から属性を落としても Phase 4 が緑のままになり、Phase 4 の完了条件が確かめていないものを緑と称することになる |
 | AC-12 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`。02_architecture.md §3.1 の判定表と §3.6 の理由コードを行として持ち、`(scope: invalid)` の表示と送信失敗ロガーへの WARN を検証する。表示できる文字を残さない名前の行も含む |
