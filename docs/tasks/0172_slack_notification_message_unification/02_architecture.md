@@ -288,7 +288,15 @@ func (c NotificationContext) LogAttr() slog.Attr
 | `GroupScope("backup")` | `group=backup` | group が空でなく、command が空であること |
 | `CommandScope("backup", "pg_dump")` | `group=backup command=pg_dump` | group と command がともに空でないこと |
 | 通知コンテキスト属性が無い、重複する、またはグループ値でない | `(scope: invalid)` | 不正。WARN を記録する |
-| 未知の scope、または上記の組み合わせに反する値 | `(scope: invalid)` | 不正。WARN を記録する |
+| 未知の scope | `(scope: invalid)` | 不正。WARN を記録する |
+| `scope=group` または `scope=command` で group が空 | `(scope: invalid)` | 不正。名乗ったスコープに必要な情報を欠く |
+| `scope=command` で command が空 | `(scope: invalid)` | 不正。同上 |
+| `scope=global` で group または command が空でない | `(scope: invalid)` | 不正。名乗ったスコープより多くの情報を伴う |
+| `scope=group` で command が空でない | `(scope: invalid)` | 不正。同上 |
+
+情報を**欠く**組み合わせだけでなく、名乗ったスコープより情報を**過剰に伴う**組み合わせも不正とする。`scope=global` と名乗りながら group 名を持つ値は、コンストラクタからは作れない。これを受け入れて `(global)` と描画すると、レコードに残っていた発生箇所の情報を黙って捨てたうえ、「グローバルで起きた」という誤った断定を通知に載せることになる。どちらの読み方が正しいのかを補正で決める形であり、本設計の「補正しない」に反する。`scope=group` と名乗りながら command 名を伴う値も同じ理由で拒否する。
+
+同様に、command スコープを group 名だけで描画することもしない。command 名を欠いた通知が正常な group スコープの通知と見分けられなくなり、AC-17 が黙って満たされない状態を作るためである。
 
 コンストラクタは空文字をエラーとして返さず、必ず値を返す全域関数とする。理由は 2 つある。1 つは、通知コンテキストの構築がログ出力の途中に置かれるため、ここで失敗するとログ経路そのものを中断させてしまうこと。もう 1 つは、呼び出し元に意味のある回復手段が無く、エラーを返しても握り潰すか panic するかしか選べないことである。
 
@@ -634,6 +642,7 @@ flowchart TD
 |---|---|---|
 | 通知コンテキスト | ゼロ値と `GlobalScope()` がグローバルとして同じエンコードになり、属性欠落・重複・型違い・値の矛盾とは区別されることを検証する。`GroupScope("")` は構築でき、表示境界で `(scope: invalid)` と WARN になることも確認する | AC-09, AC-10, AC-12 |
 | エンコードの往復 | 各スコープを `LogValue` して復元すると元のスコープに戻り、未知の `scope` 語と非グループ値は不正になる。`RedactingHandler` を挟んだ経路でも同じ判定になる | AC-10, AC-12 |
+| 妥当性判定の全行 | §3.1 の判定表を行ごとに検証する。情報を欠く組み合わせ（group が空の group／command スコープ、command が空の command スコープ）に加え、情報を過剰に伴う組み合わせ（group または command を持つ global スコープ、command を持つ group スコープ）が `(global)` や `group=<名前>` へ落ちず `(scope: invalid)` になることを確認する | AC-12 |
 | レベル表示の全域性 | DEBUG と INFO・WARN の中間値を含む全レベルが表の 4 行のいずれかに一致し、`r.Level.String()` が表示へ漏れない | AC-19 |
 | ゼロ値トークン | ゼロ値の `Notification` を渡すと汎用メッセージが送られ、`unknown_message_type` の WARN が残る（無送信にならない） | AC-24, AC-25 |
 | 構築の遅延 | 受付停止済みの送信機構では種別固有部分を構築せず、それでも定義不備の WARN は残る | AC-24 |
