@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-08 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | AC-09: 有効値の構築をコンストラクタに限定し、`ScopeGlobal` をゼロ値とするよう変更し、再承認。AC-09・AC-15・AC-20 を、02_architecture.md が実装する境界（構築時ではなく表示境界、SlackHandler 登録後のエラー、生成した見出しとエンベロープ）に合わせて表現し直した。続くレビューで、AC-20 の `###` に関する主張を共通エンベロープの静的な部分だけに限り、Scope・Hostname・Run ID の値を含む動的な値は 02_architecture.md §3.5 の表示安全な補間契約が保証する出力の性質で扱うよう改めた |
 
 ## 関連 Issue
 
@@ -133,13 +133,14 @@ HEAD を調査した結果、`message_type` は 6 種類定義されているが
 ### 通知スコープは型で宣言する
 
 「group 名が空であること」に意味を持たせるのをやめ、スコープを明示的な値として運ぶ。
-`internal/common` に、非公開フィールドとコンストラクタだけで構築する型を置く。
+`internal/common` に、非公開フィールドを持つ型を置く。有効な値はコンストラクタで構築し、
+`ScopeGlobal` を Go のゼロ値とする。
 
 ```go
 type NotificationScope int
 
 const (
-    ScopeGlobal NotificationScope = iota // ゼロ値。group にも command にも紐付かない
+    ScopeGlobal NotificationScope = iota
     ScopeGroup
     ScopeCommand
 )
@@ -152,9 +153,10 @@ func GroupScope(group string) NotificationContext
 func CommandScope(group, command string) NotificationContext
 ```
 
-ゼロ値は `ScopeGlobal`、すなわち入力について最も仮定しない解釈になる。構築の入口を
-コンストラクタに限ることで、group 名を入れ忘れた `ScopeGroup` の値をパッケージ外から作れなく
-する。
+`NotificationContext` のゼロ値は有効なグローバルスコープとする。発火元はグローバルな場合も
+`GlobalScope()` で明示的に構築し、通知コンテキスト属性を付与する。構築の入口をコンストラクタに
+限ることで、group 名を入れ忘れた `ScopeGroup` の値をパッケージ外から作れなくする。通知
+コンテキスト属性自体が無い状態は、ゼロ値とは別に読み側で検知する。
 
 ### スコープの矛盾は補正せず、通知の上で表に出す
 
@@ -260,16 +262,21 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
 通知の発生箇所を、文字列の有無からではなく明示的な型から読み取れるようにする。
 
 **Acceptance Criteria**:
-- **AC-09**: `common.NotificationContext` はコンストラクタ（`GlobalScope`、`GroupScope`、
-  `CommandScope`）以外の方法ではパッケージ外から構築できない。ゼロ値のスコープは
-  `ScopeGlobal` として扱われる。
+- **AC-09**: `common.NotificationContext` のフィールドはパッケージ外から指定できず、値は
+  コンストラクタ（`GlobalScope`、`GroupScope`、`CommandScope`）でのみ構築する。`ScopeGlobal` を
+  ゼロ値とし、発火元はグローバルな場合も `GlobalScope()` で明示的に通知コンテキスト属性を
+  付与する。コンストラクタは空の group 名・command 名を拒否せず必ず値を返す（ログ経路を
+  中断させないため）。スコープと名前の組み合わせの妥当性は SlackHandler の表示境界で確認し、
+  空の名前は AC-12 のとおり `(scope: invalid)` と WARN として現れる。属性自体が無い状態も
+  読み側で検知される。
 - **AC-10**: `NotificationContext` のログ出力に `scope` と `group` が含まれ、コマンド名が
   無い場合は `command` 属性を出さない。
 - **AC-11**: 生きている 3 種別すべての発火点が、送出するレコードに `NotificationContext` を
   付与する。
 - **AC-12**: スコープが group またはコマンドでありながら group 名が空のレコードを受け取った
   場合、Scope の表示が `(scope: invalid)` になり、送信失敗ロガーに WARN が記録される。
-  グローバル扱いには落とさない。
+  グローバル扱いには落とさない。表示できる文字が 1 文字も残らない名前（制御文字だけの
+  名前など）も同じ扱いとする。
 
 #### F-003: group 名とコマンド名の伝搬
 
@@ -280,8 +287,9 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
   Scope として表示される。
 - **AC-14**: AC-13 の通知の Error Message から、group 名の重複表示（`Group: <name>, ` の
   接頭辞）が取り除かれている。
-- **AC-15**: 設定ファイルの読み込み失敗など group に紐付かないエラーの通知で、Scope が
-  `(global)` と表示される。
+- **AC-15**: SlackHandler の登録後に起きる group に紐付かないエラー（グローバル対象ファイルの
+  検証失敗など）の通知で、Scope が `(global)` と表示される。設定ファイルの読み込み・解析の
+  失敗は SlackHandler の登録前に起きて通知そのものが発生しないため、この基準の対象外とする。
 - **AC-16**: `RuntimeCommand` が、生成時に渡された group 名を参照メソッドから返す。
 - **AC-17**: user/group 指定コマンドの失敗通知に、group 名とコマンド名の双方が表示される。
 
@@ -294,7 +302,13 @@ runner か」の区別は Scope（group 名）と Hostname で足りると判断
   始まる。製品名の定義は production コードに 1 箇所しかない。
 - **AC-19**: 絵文字・STATUS・添付の色が「統一書式」の表のとおりログレベルだけで決まり、
   種別によって変わらない。
-- **AC-20**: 生成されるどのメッセージにも `###` が含まれない。
+- **AC-20**: 共通エンベロープの静的な部分、すなわち Text 行の骨格と添付フィールドの見出し
+  （Scope、Hostname、Run ID）に `###` が含まれない。Scope・Hostname・Run ID の値や、要約に
+  入る group 名・コマンド名などの動的な値は本基準の対象外とし、`02_architecture.md` §3.5 の
+  表示安全な補間契約が扱う。補間契約が保証する出力の性質は、1 行であること、制御文字と書式
+  制御文字を含まないこと、実体参照化されていること、長さが上限を超えないことの 4 つであり、
+  `###` を含まないことは意図してこれに含めない。補間契約の置き換え集合は `#` を対象にして
+  おらず、どの規則も生み出さない性質を保証したことにはできないためである。
 - **AC-21**: 生きている 3 種別すべてで、添付フィールドの末尾 3 件が Scope、Hostname、
   Run ID の順に並んでいる。
 - **AC-22**: Text 行と末尾 3 フィールドの生成が 1 箇所に集約されており、種別ごとの組み立て
