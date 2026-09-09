@@ -424,6 +424,7 @@ func (r *RuntimeCommand) GroupName() string {
 `internal/logging` に、存続する 3 種別を保持する唯一の通知種別定義の集合を置く。各要素は種別名、種別固有部分の組み立て関数、キュー優先度を一体で保持する。
 
 ```go
+// notificationPriority は送信キューの選択に使う確定済みの優先度。
 type notificationPriority int
 
 const (
@@ -431,22 +432,37 @@ const (
     priorityHigh
 )
 
+// messageDetails は種別固有部分。共通エンベロープ（製品名、レベルに対応する
+// 表示、Scope、Hostname、Run ID）は含まない。
 type messageDetails struct {
-    Headline string
-    Fields   []SlackAttachmentField
+    headline string
+    fields   []SlackAttachmentField
 }
 
-type messageBuilder func(*SlackHandler, slog.Record) messageDetails
+// messageBuilder は種別固有部分だけを作る。レコード以外の入力を取らない。
+type messageBuilder func(slog.Record) messageDetails
 
+// messageTypeDefinition は 1 種別の定義。値は registerNotification でのみ設定し、
+// 初期化後は変更しない。
+type messageTypeDefinition struct {
+    messageType string
+    priority    notificationPriority
+    build       messageBuilder
+}
+
+// Notification は発火元が種別を名乗るための token。フィールドが非公開であり、
+// パッケージ外で作れるのはゼロ値だけである。
 type Notification struct {
     definition *messageTypeDefinition
 }
 
-type messageTypeDefinition struct {
-    MessageType string
-    Priority    notificationPriority
-    Build       messageBuilder
-}
+// notificationDefinitions は通知種別の唯一の定義集合である。
+// 種別の一覧、メッセージの組み立て、キュー優先度はすべてここから引く。
+var notificationDefinitions []*messageTypeDefinition
+
+// registerNotification は定義を notificationDefinitions へ加え、
+// それを指す token を返す。呼び出しは下の var 宣言に限る。
+func registerNotification(messageType string, priority notificationPriority, build messageBuilder) Notification
 
 var (
     commandGroupSummaryNotification     = registerNotification(...)
@@ -454,11 +470,16 @@ var (
     userGroupCommandFailureNotification = registerNotification(...)
 )
 
+// 発火元向けの公開 API。再代入できる公開変数は置かない。
 func CommandGroupSummaryNotification() Notification
 func PreExecutionErrorNotification() Notification
 func UserGroupCommandFailureNotification() Notification
 func NotificationAttrs(notification Notification, notificationContext common.NotificationContext) []slog.Attr
 ```
+
+`messageTypeDefinition`、`messageDetails`、`notificationDefinitions` はいずれも `internal/logging` の外から名指しできない。したがってフィールドも非公開とする。非公開の型に公開フィールドを持たせても、パッケージ外から書き換えられる範囲は変わらない一方、「外から設定される値である」という誤った合図を残す。
+
+**`messageBuilder` が `*SlackHandler` を取らない理由**。組み立て関数が受け取るのはレコードだけとする。現在の 3 ビルダーが receiver から読んでいるのは `s.runID` の 1 個だけであり、その Run ID は本設計では共通エンベロープの担当へ移る。ハンドラを渡さなければ、ビルダーはエンベロープの要素を組み立てる手段そのものを持たない。AC-22 の「Text 行と末尾 3 フィールドの生成が 1 箇所に集約されている」が、規約ではなく引数の型によって保証される。副次的に、ビルダーはハンドラを構築せずに単体で検証できる純粋な関数になる。
 
 定義する 3 種別は次のとおりである。
 
@@ -766,7 +787,7 @@ flowchart LR
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
 | 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる | AC-24, AC-25 |
 | WARN の件数 | 未知種別と不正な通知コンテキストが同時に成立するレコードで WARN が 1 件だけ記録され、`reasons` に両方の理由コードが規定の順で並ぶ | AC-24 |
-| 単一定義 | 登録関数が返すトークンと、そのトークンが参照する定義に、種別名、ビルダー、優先度がまとめて保持されることを検証する。構文木の静的契約テストで本番コードによる直接の `slack_notify=true` と `message_type` の構築、および登録済み token を返す公開アクセサ以外の引数を禁止する。同じ静的テストで `PreExecutionError` のリテラルが `NotificationContext` を省略していないことも検証する | AC-26, AC-27 |
+| 単一定義 | 登録関数が返すトークンと、そのトークンが参照する定義に、種別名、ビルダー、優先度がまとめて保持されることを検証する。`notificationDefinitions` を走査して種別名が一意であることも確かめる。構文木の静的契約テストで本番コードによる直接の `slack_notify=true` と `message_type` の構築、および登録済み token を返す公開アクセサ以外の引数を禁止する。同じ静的テストで `PreExecutionError` のリテラルが `NotificationContext` を省略していないことも検証する | AC-26, AC-27 |
 | 優先度 | 通常キューを満たしても `pre_execution_error` が高優先度キューへ入り、先に送られる。優先度を通常へ変えると失敗する | AC-07, AC-27 |
 | 削除対象の種別 | 本番コードを `rg` で検索し、対象の型、定数、関数、文字列がない | AC-01〜AC-03 |
 | 特権監査 | `privilege.logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを、新規テストで検証する。`logElevationOutcome` を対象とする既存テストは無いため、Phase 3 で追加する。呼び出し元から `logElevationOutcome` の呼び出しを取り除くと失敗する形にし、関数本体だけの検証にしない | AC-05 |
@@ -884,3 +905,11 @@ AC-09 に従い `NotificationContext` のゼロ値はグローバルとする。
 採らなかったのは、通知コンテキストの構築がログ出力の途中に置かれるためである。ここで panic すると、エラーを報告している最中にプロセスを落とすことになり、報告そのものが失われる。ログ経路は、入力が壊れていても停止しないことが求められる側である。
 
 代わりに、拒否を 1 段上流の設定境界へ移した（§3.1）。空のコマンド名は設定の読み込みで拒否され、そこを通った値が発火点で空になることは無い。それでも空が届いた場合は表示境界で `(scope: invalid)` と WARN として表に出る。「外部入力は読み込みで拒否し、内部の不整合は表示で検知し、その中間は停止させない」という 3 段の配置であり、panic は不要になる。
+
+### B.10 組み立て関数に `*SlackHandler` を渡す案を採用しない理由
+
+当初のスケッチは `messageBuilder` を `func(*SlackHandler, slog.Record) messageDetails` としていた。現在の各ビルダーが `SlackHandler` のメソッドであるため、その形を引き継いだものである。
+
+採らなかったのは、AC-22 を型で守れなくなるためである。ハンドラを渡せば、ビルダーは Run ID も Hostname も製品名も手に取れる。すなわちエンベロープの要素を種別ごとに組み立て直すことが可能なままであり、「エンベロープの生成は 1 箇所」は規約でしか守られない。
+
+引数をレコードだけにすると、ビルダーはエンベロープを組み立てる手段そのものを持たない。現行コードを確認したところ、存続する 3 ビルダーが receiver から読んでいるのは `s.runID` の 1 個だけであり、その Run ID は本設計で共通エンベロープの担当へ移る。したがってハンドラを渡さないことによる不足は生じない。副次的に、ビルダーはハンドラを構築せずに検証できる純粋な関数になる。
