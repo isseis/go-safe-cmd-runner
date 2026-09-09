@@ -186,8 +186,8 @@ flowchart LR
 | `internal/common/logschema.go` | 変更 | 削除する 3 種別の属性定義と重大度定数を除き、`UserGroupCommandFailureAttrs` を含む存続する通知の共有属性名と型を定義する。既存の `GroupSummaryAttrs.Group` を維持し、通知コンテキストのキー名とスコープ名の対応表を加える | 該当定義を直接使う各パッケージのテスト。通知コンテキストを追加する各パッケージのテスト |
 | `internal/logging/notification.go` | 新規 | 存続する通知種別の唯一の定義、発火元用の属性生成関数、確定済み優先度、種別固有部分の契約を定義する | 新規 `internal/logging/notification_test.go` で通知種別定義の集合と発火元の静的契約を検証する |
 | `internal/logging/notification_test.go` | 新規 | 全定義の共通契約と、本番コードの発火元が属性生成関数を迂回しないことを検証する | - |
-| `internal/logging/slack_handler.go` | 変更 | 通知種別定義の参照、種別固有部分の生成、共通エンベロープ、未知種別と不正スコープの WARN を担う。削除対象の 3 ビルダーを削除する | `TestSlackHandler_Handle_WithMockServer` と同ファイルのメッセージ構築、切り詰め、属性抽出のテスト |
-| `internal/logging/slack_handler_test.go` | 変更 | 存続する全種別と汎用メッセージの書式、Scope、フィールド順、未知種別、不正スコープを検証する | 削除対象 3 種別のケースを除く |
+| `internal/logging/slack_handler.go` | 変更 | 通知種別定義の参照、種別固有部分の生成、共通エンベロープ、未知種別と不正スコープの WARN を担う。削除対象の 3 ビルダーを削除する。ホスト名取得を指す非公開のパッケージ変数（初期値は `common.GetHostname`）を置き、共通エンベロープの Hostname をこれだけに経由させる（§3.5） | `TestSlackHandler_Handle_WithMockServer` と同ファイルのメッセージ構築、切り詰め、属性抽出のテスト |
+| `internal/logging/slack_handler_test.go` | 変更 | 存続する全種別と汎用メッセージの書式、Scope、フィールド順、未知種別、不正スコープを検証する。ホスト名の継ぎ目を差し替えてエンベロープ値の「出力の性質」も検証する（§7.1） | 削除対象 3 種別のケースを除く |
 | `internal/logging/slack_sender.go` | 変更 | 独立した種別定数一覧と `isHighPriority` を削除し、確定済みの優先度で既存キューを選ぶ | `TestSlackSender_HighPriorityBypassesFullNormalQueue`、`TestSlackSender_QueueOverflowDropsAndRecords`、`TestSlackSender_FlushLogsMessageTypeBreakdown` |
 | `internal/logging/slack_sender_test.go` | 変更 | 存続する `pre_execution_error` で高優先度の実効性を検証する | `security_alert` を使う既存ケースを置換する |
 | `internal/logging/pre_execution_error.go` | 変更 | `PreExecutionError` に通知コンテキストを加え、`HandlePreExecutionError` が構造体を受け取って属性として記録する。共有ヘルパー `handleErrorCommon` は `slack_notify` と `message_type` を自前で組まず、呼び出し元の属性をそのまま記録する | `TestHandlePreExecutionError_AllTypes`、`TestHandlePreExecutionError_SlackNotification`、`HandleExecutionError` の既存テスト |
@@ -620,7 +620,9 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 代わりに、設定の読み込みで拒否する（§3.1）。機密パターンが値として一致する group 名・command 名を持つ設定は、専用のセンチネルエラーで読み込みに失敗する。「補正しない」に従い、通知で `[REDACTED]` に潰れる名前を黙って通すことも、識別子だけ redaction を緩めることもせず、利用者に名前を変えてもらう。判定には redaction 側の既存の公開判定をそのまま使い、機密語の一覧を設定検証側へ複製しない。
 
-**Hostname と Run ID も同じ契約を通す理由**。Hostname の値は `common.GetHostname()`（`os.Hostname`）の戻り値をそのまま載せており、どこでも検証していない。契約を通すことで、上の「出力の性質」をエンベロープ値についても処理として保証し、`osHostname` を差し替えたテストで検証できるようにする（テスト機の実際のホスト名に依存させない）。ただしこれは注入ではなく一貫性の欠落である。ホスト名は本設計の脅威モデルが信用しない TOML の作成者ではなく、機械の管理者が決める値である。危険度を実際より大きく見せず、AC-20 が検証できる状態にすることが目的である。なお `###` は Slack の mrkdwn では見出しにならず、契約はこの 3 文字を対象にしない。AC-20 の `###` に関する主張は Text 行の骨格とフィールド見出しに限り、Hostname と Run ID の値については「出力の性質」を検証する。
+**Hostname と Run ID も同じ契約を通す理由**。Hostname の値は `common.GetHostname()`（`os.Hostname`）の戻り値をそのまま載せており、どこでも検証していない。契約を通すことで、上の「出力の性質」をエンベロープ値についても処理として保証し、ホスト名を差し替えたテストで検証できるようにする（テスト機の実際のホスト名に依存させない）。ただしこれは注入ではなく一貫性の欠落である。ホスト名は本設計の脅威モデルが信用しない TOML の作成者ではなく、機械の管理者が決める値である。危険度を実際より大きく見せず、AC-20 が検証できる状態にすることが目的である。なお `###` は Slack の mrkdwn では見出しにならず、契約はこの 3 文字を対象にしない。AC-20 の `###` に関する主張は Text 行の骨格とフィールド見出しに限り、Hostname と Run ID の値については「出力の性質」を検証する。
+
+**ホスト名を差し替える継ぎ目を `internal/logging` に置く**。`internal/common/system.go` の `osHostname` は非公開のパッケージ変数であり、同じパッケージのテストからしか差し替えられない。一方、上の性質を検証する対象は共通エンベロープが組み立てた Hostname フィールドの値であり、その組み立ては `internal/logging` にある。したがって `internal/common` 側の変数を差し替える形ではテストが書けない。`internal/common/system.go` と同じ書き方で、`internal/logging` にホスト名取得を指す非公開のパッケージ変数（初期値は `common.GetHostname`）を 1 個置き、テストはこれを入れ替える。共通エンベロープの Hostname はこの変数だけを経由し、現在 `slack_handler.go` の 5 箇所に散っている `common.GetHostname()` の直接呼び出しは残さない。`SlackHandlerOptions` へホスト名の項目を公開して渡す形は採らない。本番の呼び出し元が誰も設定しない拡張点になり、ホスト名の出どころが 2 つに割れるためである。
 
 **書式の解釈を止めるのではなく、埋め込む値の側を書き換える理由**。Slack には「この項目だけ mrkdwn として解釈しない」という項目別の切り替えが無い。ペイロードの `mrkdwn` を false にすると、エンベロープ自身の `*STATUS*` の強調も同時に失われる。したがって補間される値の側を、Text 行へ置く前に無害化する。
 
@@ -877,7 +879,7 @@ flowchart LR
 | 識別子と機密パターン | `monkey`、`keyring`、`rotate_api_key` を group 名・command 名に持つ設定が、機密パターン用のセンチネルエラーで読み込みを拒否されることを `errors.Is` で検証する。これらの語を含まない名前が通ることも同じ表で確認する。同じ語を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを 1 行で確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
-| エンベロープ値の出力の性質 | `osHostname` を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
+| エンベロープ値の出力の性質 | §3.5 の継ぎ目（`internal/logging` の非公開パッケージ変数）を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
 | 予約フィールド見出し | `notificationDefinitions` を走査し、どの種別固有ビルダーの返すフィールドも Scope、Hostname、Run ID を見出しに使わないことを検証する。ビルダーの 1 つに予約見出しのフィールドを足すと失敗する | AC-21, AC-26 |
 | 製品名 | 登録済み種別と汎用メッセージが同じ製品名で始まり、本番コード内の定義箇所が 1 つである | AC-33 |
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
