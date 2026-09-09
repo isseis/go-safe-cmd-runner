@@ -213,7 +213,7 @@ Phase 5 で個別に気付く形にせず、共有ヘルパー `slackRecord` の
   `testdata` を `fs.SkipDir` で除外する）。**現在この走査はそのテストファイルの中にあり
   再利用できない**。本タスクで 2 本目を書くと複製になるため、走査部分を
   `internal/testutil/identitymutationguard` へ関数として括り出し、`synccensus` と新しいガード
-  の双方から呼ぶ（§5.5）。
+  の双方から呼ぶ。括り出しは、最初の利用者である構文木ガードと同じ Phase 4 で行う（§4.3）。
 - これらのヘルパーは `//go:build test` を持つため、それを import するテストファイルにも同じ
   タグが要る（`cmd/runner/startup_order_guard_test.go` と同じ扱い）。
 
@@ -433,7 +433,10 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/runner/config/validation_test.go`、`internal/runner/config/loader.go`、
 `internal/runner/cli/filter.go`、`internal/redaction/redactor.go`、
 `internal/redaction/redactor_test.go`、`cmd/runner/startup_privilege_test.go`、
-`internal/logging/notification_contract_guard_test.go`（新規）、`sample/*.toml`
+`internal/logging/notification_contract_guard_test.go`（新規）、
+`internal/testutil/identitymutationguard/helpers.go`、
+`internal/testutil/synccensus/census_guard_test.go`、`internal/runner/runner_test.go`、
+`internal/runner/base/audit/logger_test.go`、`sample/*.toml`
 
 #### 4.0 表示安全な補間契約
 
@@ -533,9 +536,40 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `exit_code` は成功経路と共有する `baseAttrs` にあるため、成功経路も同じ定数を使う。
       片側だけリテラルを残すと、キー名を変えたときに読み側がコマンド名を取り落とす場合がある。
       しかし記録側のコードは変更なしにテストを通ってしまうため、AC-23 がサイレントに壊れる。
+- [ ] `internal/runner/runner_test.go` の `TestLogGroupExecutionSummary_LogLevel`
+      （`tu.NewCallbackHandler` で `logGroupExecutionSummary` の出力を集める既存テスト）を
+      拡張し、グループ集計のレコードにグループスコープの通知コンテキスト属性が載ることを
+      検証する。`TestSlackNotification` は拡張先にしない（理由は §1.3）。
+- [ ] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` を
+      拡張し、失敗経路のレコードがコマンドスコープの通知コンテキストを持つことを検証する。
+直上 2 件のテスト拡張を Phase 5 ではなく Phase 4 に置くのは、属性を載せるのが本節の
+`logGroupExecutionSummary` と `LogUserGroupExecution` のタスクだからである。本 Phase の構文木
+ガードは `PreExecutionError` リテラルしか見ないため、この 2 発火元から通知コンテキスト属性を
+落としても Phase 4 は緑のままになる。AC-11 は「存続する 3 種別の全発火点が通知コンテキストを
+持つ」であり、3 発火元のうち 2 つの検証を Phase 5 へ送ると、Phase 4 の完了条件が実際には
+確かめていないものを緑と称することになる。
+
+- [ ] **リポジトリ全体を歩く走査を `internal/testutil/identitymutationguard/helpers.go` へ
+      括り出す。** `internal` と `cmd` の本番 Go ファイルをリポジトリ全体から列挙する関数を
+      追加する。中身は `internal/testutil/synccensus/census_guard_test.go` にある走査
+      （`filepath.WalkDir`、`testdata` の `fs.SkipDir`、ディレクトリごとの
+      `ProductionGoFiles`）を移したものとし、`synccensus` 側はその関数を呼ぶ形へ書き換える。
+      走査の定義を 2 本にしないためである。**走査の起点は移植元をそのまま持ち込まない。**
+      `census_guard_test.go` の `scanRoots = []string{"../../../internal", "../../../cmd"}` と
+      `repoRootPrefix = "../../../"` は、その 1 ファイルの位置（`internal/testutil/synccensus`、
+      リポジトリ root から 3 階層）に固定された相対パスである。新しい呼び出し元は
+      `internal/logging`（2 階層）にあり、同じ literal では存在しないディレクトリを歩いて
+      `WalkDir` がエラーで落ちる。関数は呼び出し元の深さに依らず root を自分で解決し
+      （`go.mod` を上へ辿るなどして）、返すパスを root からの相対に正規化する形にする。
+      `synccensus` の期待表は root 相対のパスで書かれているため、正規化の結果が
+      `repoRootPrefix` を剥がした現在の表記と一致することを、書き換え後に既存の census
+      テストが緑であることで確認する。**この括り出しを Phase 5 ではなく Phase 4 に置くのは、
+      直下の構文木ガードが本 Phase で入り、その走査がこの関数を呼ぶためである。** Phase 5 に
+      残すと Phase 4 のガードが存在しない API を参照し、Phase 4 の `make test`／AC-30 が
+      通らない（複製して回避することは §1.2 の 5 が禁じている）。
 - [ ] `internal/logging/notification_contract_guard_test.go` を新規作成し（`//go:build test`）、
       本番コードの `PreExecutionError` 複合リテラルが `NotificationContext` を省略していない
-      ことを検証する。走査は §5.5 で括り出すヘルパーを使う。この半分を Phase 4 に置くのは、
+      ことを検証する。走査は直上で括り出したヘルパーを使う。この半分を Phase 4 に置くのは、
       検査対象が Phase 4 の構造体変更だけに依存し、Phase 4 の完了条件（AC-11）を Phase 5 の
       成果物に依存させないためである。残る半分（`slack_notify`／`message_type` の直接構築の
       禁止と `NotificationAttrs` の引数制限）は Phase 5 で足す。
@@ -548,16 +582,30 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.4 識別子の設定検証
 
-- [ ] `internal/runner/config/errors.go` へ、`ErrEmptyGroupName` に並べて 5 個のセンチネル
-      エラーを追加する。検査ごとに独立させ、対応は次のとおりとする。
-      (a) 空のコマンド名、(b) 制御文字または書式制御文字を含む識別子、(c) 補間契約を通すと
-      表示できる文字が残らない識別子、(d) 長さ上限を超える識別子、(e) redaction の変換が
-      書き換える識別子。02_architecture.md §3.1 の表は (b) と (c) を 1 行にまとめて「4 個」と
-      数えているが、本書は下の理由で 2 個の独立した検査に分ける。したがってセンチネルは 5 個
-      であり、§8 の名前衝突チェックも 5 個を対象とする。この数え方の差は Phase 6 の
-      02_architecture.md 追補で表へ反映する。名前は `internal/runner/resource/manager.go:24` の既存
-      `ErrEmptyCommandName` と衝突しないものにする（既存は実行境界で空のコマンド名を弾く
-      別物であり、本タスクのものは設定境界の検査である）。
+- [ ] **【ブロッキング】センチネルの個数と検査対象を 02_architecture.md §3.1 で先に決める。**
+      本書は当初、(b) 制御文字・書式制御文字と (c) 補間契約後に表示できる文字が残らないこと
+      を 2 個の独立した検査に分け、センチネルを 5 個とし、かつ (b)(c) を group 名にも当てる
+      前提で以下を書いていた。これは 02_architecture.md §3.1 に対する**設計変更**であり、
+      計画側で決めてよいものではない。§3.1 の表は 2 点で本書と異なる。
+      - **個数**: §3.1 の表は (b) と (c) を 1 行にまとめ、本文（「センチネルエラーは 4 個とも
+        `internal/runner/config/errors.go` に置いたままでよい」）も 4 個と書いている。
+      - **検査対象**: §3.1 の表は (b)(c) の対象を **command 名だけ**とし、group 名は「既存の
+        文字種検証で担保済み」としている。本書の (b)(c) は group 名にも当たる。
+        `GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）が制御文字も空白も既に弾くため、
+        group 名へ広げる実装は到達しない検査になりうる。逆に §3.1 の「担保済み」が
+        `ErrInvalidGroupName` として返ることを指すなら、group 名と command 名で同じ入力に
+        対して別のセンチネルが返る。どちらが利用者にとっての契約かは設計判断である。
+      §1.2 の 1 に従い、**02_architecture.md §3.1 を先に改訂して 4 個か 5 個か、(b)(c) の対象を
+      command 名だけとするか group 名も含めるかを確定させる**。確定するまでこのタスクと、
+      下の `validation.go`・`validation_test.go`・§8 の名前衝突チェックの各タスクには
+      着手しない。Phase 6 の文書追補で後から辻褄を合わせる形にはしない。実装コミットが承認済み
+      設計と異なる契約を持つ状態を作らないためである（下の検査用 `redaction.Config` の項と
+      同じ §3.1 の改訂であり、1 回の再レビューにまとめられる）。
+- [ ] 上の確定後、`internal/runner/config/errors.go` へ `ErrEmptyGroupName` に並べてセンチネル
+      エラーを追加する。検査ごとに独立させる。名前は
+      `internal/runner/resource/manager.go:24` の既存 `ErrEmptyCommandName` と衝突しないものに
+      する（既存は実行境界で空のコマンド名を弾く別物であり、本タスクのものは設定境界の検査で
+      ある）。§8 の名前衝突チェックの対象個数も確定した個数に合わせる。
 - [ ] `internal/redaction/redactor.go` へ、`RedactLogAttribute` が文字列値に施す変換
       （`RedactText` と `IsSensitiveValue` の両方）が値を書き換えるかを返す述語を公開する。
       既存の変換を読み取るだけで、redaction の適用範囲は変えない。
@@ -568,12 +616,14 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       無いと、述語が `ValueDetector` まで含んだ経路を通っているのか語一致だけなのかを行が
       区別できず、`IsSensitiveValue` だけの実装へ戻しても緑のままになる。既存テストは変更
       しない。
-- [ ] `internal/runner/config/validation.go` へ、上の**5 個の検査のうち外部依存を持たない
-      4 個**を追加する。すなわち (a) コマンド名が空でないこと、
-      (b) group 名・command 名が制御文字（一般カテゴリ Cc）と書式制御文字（同 Cf）を含まない
-      こと、(c) 補間契約を通した後に White_Space 以外の rune が 1 個以上残ること、および
-      (d) 長さが上限を超えないこと。(b) と (c) は別の検査である。制御文字を含みつつ表示できる
-      文字も残す名前は (c) を通ってしまい、半角空白だけの名前は (b) を通ってしまう。
+- [ ] `internal/runner/config/validation.go` へ、確定した検査のうち外部依存を持たないもの
+      （redaction 検査以外のすべて）を追加する。すなわち (a) コマンド名が空でないこと、
+      (b) 制御文字（一般カテゴリ Cc）と書式制御文字（同 Cf）を含まないこと、(c) 補間契約を
+      通した後に White_Space 以外の rune が 1 個以上残ること、および (d) 長さが上限を超えない
+      こと。(b)(c) の対象を command 名だけとするか group 名も含めるかは、上のブロッキング
+      タスクで §3.1 が確定させたものに従う。(b) と (c) を独立させる場合、両者が別の検査である
+      根拠は次のとおりである。制御文字を含みつつ表示できる文字も残す名前は (c) を通ってしまい、
+      半角空白だけの名前は (b) を通ってしまう。
 - [ ] 検査を足すにあたり、`ValidateGroupNames` の扱いを決める。現在この関数は group だけを
       走査し、関数名・doc コメント（英語）・テスト名も group 名専用である。呼び出し元は
       `internal/runner/config/loader.go:236` の 1 箇所だけなので、**`ValidateIdentifiers` へ
@@ -633,8 +683,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       あり、これが無いと検査は「なぜ拒否するのか」を根拠づけられない。
 
 **完了条件**:
-- AC-09、AC-10、AC-11、AC-16 の検証が緑である（AC-11 の構文木ガードのうち
-  `PreExecutionError` リテラルを見る半分は本 Phase で入る）。
+- AC-09、AC-10、AC-11、AC-16 の検証が緑である。AC-11 については、構文木ガードのうち
+  `PreExecutionError` リテラルを見る半分と、残る 2 発火元（グループ集計、ユーザー／グループ
+  指定コマンドの失敗）が正しいスコープを載せることの実行テストが、いずれも本 Phase で入る。
+  グループ検証エラー経路の新規テスト（AC-13・AC-14）だけは、本文からの `Group: %s, ` 除去が
+  Phase 5 のため Phase 5 に残る。
 - 同梱 TOML の改名とハッシュ再記録が済み、`make test`・`make integration-test` が通る。
 - 追加した各テストについて、対象の実装を一時的に壊すと失敗することを確認し、その旨を
   コミットメッセージへ記す（AC-32）。
@@ -645,8 +698,6 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 **対象ファイル**: `internal/logging/notification.go`（新規）、
 `internal/logging/notification_test.go`（新規）、
 `internal/logging/notification_contract_guard_test.go`、
-`internal/testutil/identitymutationguard/helpers.go`、
-`internal/testutil/synccensus/census_guard_test.go`、
 `internal/logging/slack_handler.go`、`internal/logging/slack_handler_test.go`、
 `internal/logging/slack_sender.go`、`internal/logging/slack_sender_test.go`、
 `internal/logging/pre_execution_error.go`、`internal/runner/runner.go`、
@@ -752,26 +803,22 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 5.5 テスト
 
-- [ ] `internal/testutil/identitymutationguard/helpers.go` へ、`internal` と `cmd` の本番
-      Go ファイルをリポジトリ全体から列挙する関数を追加する。中身は
-      `internal/testutil/synccensus/census_guard_test.go` にある走査（`filepath.WalkDir`、
-      `testdata` の `fs.SkipDir`、ディレクトリごとの `ProductionGoFiles`）を移したものとし、
-      `synccensus` 側はその関数を呼ぶ形へ書き換える。走査の定義を 2 本にしないためである。
-      **走査の起点は移植元をそのまま持ち込まない。** `census_guard_test.go` の
-      `scanRoots = []string{"../../../internal", "../../../cmd"}` と
-      `repoRootPrefix = "../../../"` は、その 1 ファイルの位置（`internal/testutil/synccensus`、
-      リポジトリ root から 3 階層）に固定された相対パスである。新しい呼び出し元は
-      `internal/logging`（2 階層）にあり、同じ literal では存在しないディレクトリを歩いて
-      `WalkDir` がエラーで落ちる。関数は呼び出し元の深さに依らず root を自分で解決し
-      （`go.mod` を上へ辿るなどして）、返すパスを root からの相対に正規化する形にする。
-      `synccensus` の期待表は root 相対のパスで書かれているため、正規化の結果が
-      `repoRootPrefix` を剥がした現在の表記と一致することを、書き換え後に既存の census
-      テストが緑であることで確認する。
+- [ ] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
+      は Phase 4 で括り出し済みである（§4.3）。本 Phase では追加せず、そのまま呼ぶ。
 - [ ] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
       `PreExecutionError` リテラルの検査に加えて、(a) `internal/logging` 以外のパッケージが
       `slack_notify` または `message_type` の文字列リテラルを直接構築していないこと、
       (b) `NotificationAttrs` の第 1 引数が登録済み token を返す公開アクセサの呼び出しだけで
-      あることを追加する。走査は上のヘルパーを使い、対象ディレクトリを書き並べない。
+      あること、(c) **登録済み種別名と同じ文字列リテラルが、`internal/logging/notification.go`
+      の登録以外のどの本番ファイルにも現れないこと**を追加する。(c) の期待値は
+      `notificationDefinitions` を range して実行時に集め、種別名を検査側へ書き写さない。
+      (c) が AC-27 の「単一定義」を旧名の残骸ではなく**構造**で見る行である。並行する
+      `switch` や map は、別名で別ファイルに置いても種別名の文字列そのものは持たざるを
+      得ないため、この 1 本で捕まる（§7 の AC-27 の項を参照）。ただし
+      `slack_sender.go` が集計・送信失敗ログで書く `slog.String("message_type", req.messageType)`
+      のように、**属性キー `message_type` と、変数から読んだ種別名**は対象外である。禁じるのは
+      種別名の**リテラル**であって、属性キーの使用ではない。走査は Phase 4 のヘルパーを使い、
+      対象ディレクトリを書き並べない。
       このファイルを `notification_test.go` と分けるのは、`cmd/runner/startup_order_guard_test.go`
       と同じく、構文木ガードを独立したファイルに置く既存の慣行に合わせるためである。
 - [ ] `internal/logging/notification_test.go` を新規作成する。まず、登録済みの各種別について
@@ -818,10 +865,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] `internal/logging/slack_sender_test.go` の高優先度・キュー溢れ・種別別集計のテストを、
       確定済み優先度を持つ `slackRequest` の形に合わせて更新する。優先度を通常へ倒すと
       `TestSlackSender_HighPriorityBypassesFullNormalQueue` が失敗することを確認する。
-- [ ] `internal/runner/runner_test.go` の**グループ集計**については、既にレコードを捕捉して
-      いる `TestLogGroupExecutionSummary_LogLevel`（`tu.NewCallbackHandler` で
-      `logGroupExecutionSummary` の出力を集める）を拡張し、通知コンテキスト属性が載ることを
-      検証する。`TestSlackNotification` は拡張先にしない。同テストは名前に反して
+- [ ] `internal/runner/runner_test.go` の**グループ集計**については、通知コンテキスト属性が
+      載ることの検証は Phase 4（§4.3）で済んでいる。本 Phase では
+      `TestLogGroupExecutionSummary_LogLevel` が `NotificationAttrs` 経由へ移した後も同じ属性
+      を出し続けることを確認するだけでよく、新しい assert は要らない。
+      `TestSlackNotification` は拡張先にしない。同テストは名前に反して
       `runner.runID` が設定されていることしか assert しておらず、宣言だけされて未使用の
       `expectedStatus`／`expectedCalls` フィールドが残っている。通知レコードを一切見ないため、
       拡張は実質的な新規作成になる。
@@ -831,8 +879,9 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       到達しない。`verification.Error` を返す検証マネージャを与えて `Execute` を通し、Scope に
       group 名が一度だけ現れること、Error Message から `Group: <name>, ` が消えていることを
       検証するテストを追加する。既存テストの表に行を足す形では到達経路が変わらない。
-- [ ] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` を
-      拡張し、失敗経路のレコードがコマンドスコープの通知コンテキストを持つことを検証する。
+- [ ] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` は、
+      コマンドスコープの通知コンテキストを持つことの検証を Phase 4（§4.3）で済ませてある。
+      本 Phase では `NotificationAttrs` 経由への移行後も同じ属性が載ることを確認する。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` へ、SlackHandler の登録後に起きる
       グローバルな起動前エラー（グローバル対象ファイルの検証失敗）で Scope が `(global)` に
       なることを検証するケースを追加する。設定ファイルの読み込み・解析の失敗は登録前に起きて
@@ -917,8 +966,16 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
       `—` と `[...]` がそのまま表示されること、プッシュ通知で製品名が読めること、添付の色、
       末尾 3 フィールドの順序）を確認する。
-- [ ] 強調が期待どおり表示されない場合は、02_architecture.md §5.3 の代替（強調記法を外して
-      素の文字列にする）を適用する。Text 行の構造は強調記法に依存しないため、要件は満たせる。
+- [ ] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
+      文字列にする）は**そのままでは適用できない**。AC-18 は Text 行が
+      `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形であることを
+      `*<STATUS>*` の `*` ごと字面で要求しており（01_requirements.md の F-004）、
+      `TestNotificationDefinitions_TextLineFormat` もその形を assert する。`*` を落とすと、
+      受け入れテストを落としたまま出すか、承認済みの要件から離れる向きにテストを弱めるかの
+      どちらかになる。したがって代替を採るときは、**先に 01_requirements.md の AC-18 を改訂
+      して強調記法を要求から外し、02_architecture.md §5.3 と本書 §7 の AC-18 の行、および
+      `TestNotificationDefinitions_TextLineFormat` の期待値を同時に更新する**。表示を直す前に
+      要件を直す。§1.2 の 1 と同じ理由であり、実装の都合で受け入れ基準を後から緩めない。
 - [ ] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
       検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
 - [ ] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
@@ -1004,7 +1061,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | リスク | 影響 | 対応 |
 |---|---|---|
 | 同梱 TOML が新しい識別子検証に抵触する（確認済み、6 個） | リポジトリ自身のテストと e2e が読み込み失敗する | Phase 4 で改名・ハッシュ再記録・検査の有効化を 1 コミットで行い、`sample/*.toml` を range するメタテストで再発を防ぐ |
-| 実 Slack で `*STATUS*` の強調が期待どおり表示されない | Text 行が読みにくくなる | Phase 7 で実機確認する。表示されない場合は強調記法を外す。Text 行の構造は強調記法に依存しないため要件は満たせる |
+| 実 Slack で `*STATUS*` の強調が期待どおり表示されない | Text 行が読みにくくなる。AC-18 が `*<STATUS>*` を字面で要求しているため、強調記法を外すと受け入れ基準から外れる | Phase 7 で実機確認する。外す場合は先に 01_requirements.md の AC-18 を改訂し、02_architecture.md §5.3・本書 §7 の AC-18 の行・`TestNotificationDefinitions_TextLineFormat` の期待値を同時に更新する（§Phase 7）。実装の都合で受け入れ基準を後から緩めない |
 | Phase 5 が 1 コミットに集約されるため差分が大きい | レビューの負荷と回帰の切り分けが難しい | Phase 4 までで型と伝搬を終え、Phase 5 の差分を表示の変更だけに絞る。問題があれば Phase 5 の単一コミットを取り消す |
 | 統一書式が Slack ワークフローや監視ルールを壊す | 外部の運用が止まる | リポジトリ内の利用箇所と文書を先に検索する。外部利用者にはリリースノートで新旧のペイロード例を示す。テスト用チャンネルで先に検証する |
 | 識別子の設定検証が利用者の既存 TOML を拒否する | 既存利用者の設定が読み込めなくなる | センチネルを検査ごとに独立させ、直す箇所と直し方が分かるメッセージにする。リリースノートに拒否される名前の条件（機密語を含む名前を含む）を明記する |
@@ -1051,7 +1108,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-08 | static | Phase 3 の完了時と Phase 7 で `make deadcode` を実行し、新たな到達不能コードの報告が無い |
 | AC-09 | test + static | test: `internal/common/notification_context_test.go::TestNotificationContext_ZeroValueIsGlobalScope` と `::TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary`（`GroupScope("")` が構築でき、`scope=group`・`group=""` としてエンコードされ、判定が `invalid_notification_context` を返すこと）。static: `rg -n -F "common.NotificationContext{" --type go cmd internal` の非テスト結果が一致なし（`-F` は `{` を正規表現の量指定子として解釈させないため必須。付け忘れると `regex parse error` で落ちる）（本番コードがコンストラクタを迂回して複合リテラルを書いていないこと） |
 | AC-10 | test | `internal/common/notification_context_test.go::TestNotificationContext_LogValueEncoding`。`scope` と `group` が常に出力され、command 名が無い場合に `command` が出ないことを検証する |
-| AC-11 | test + static | static: `internal/logging/notification_contract_guard_test.go`（本番コードの `PreExecutionError` リテラルが `NotificationContext` を省略していないこと。省略したリテラルを 1 個足すと失敗する）。test: `internal/runner/runner_test.go::TestLogGroupExecutionSummary_LogLevel`（グループ集計が通知コンテキストを持つこと）とグループ検証エラー経路の新規テスト（§5.5）、および `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution`（失敗経路がコマンドスコープを持つこと）。構文木ガードは引数 1 個の形しか見ないため、残る 2 発火元が実際に正しいスコープを載せることは実行テストで確かめる |
+| AC-11 | test + static | static: `internal/logging/notification_contract_guard_test.go`（本番コードの `PreExecutionError` リテラルが `NotificationContext` を省略していないこと。省略したリテラルを 1 個足すと失敗する）。test: `internal/runner/runner_test.go::TestLogGroupExecutionSummary_LogLevel`（グループ集計が通知コンテキストを持つこと）とグループ検証エラー経路の新規テスト（§5.5）、および `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution`（失敗経路がコマンドスコープを持つこと）。構文木ガードは引数 1 個の形しか見ないため、残る 2 発火元が実際に正しいスコープを載せることは実行テストで確かめる。**この 2 件の実行テストは、属性を載せるコード変更と同じ Phase 4 に置く**（§4.3）。Phase 5 へ送ると、2 発火元から属性を落としても Phase 4 が緑のままになり、Phase 4 の完了条件が確かめていないものを緑と称することになる |
 | AC-12 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`。02_architecture.md §3.1 の判定表と §3.6 の理由コードを行として持ち、`(scope: invalid)` の表示と送信失敗ロガーへの WARN を検証する。表示できる文字を残さない名前の行も含む |
 | AC-13 | test | `internal/runner/runner_test.go` に新規追加するグループ検証エラーのテスト（`Execute` 経由で `executeGroups` の検証エラー分岐へ到達させる。Scope に group 名が現れること）。既存の `TestSlackNotification` は `ExecuteGroup` しか呼ばずこの分岐に到達しないため使わない（§5.5） |
 | AC-14 | test | 同上。Error Message に `Group: ` が現れないことを assert する |
@@ -1067,7 +1124,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-24 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UnknownMessageType`（汎用メッセージの送信、`unknown_message_type` の WARN、WARN 以上は通常キュー満杯でも高優先度で送られること）、`::TestSlackHandler_SchemaViolationWarnIsSingle`（未知種別と不正な通知コンテキストが同時に成立しても WARN が 1 件で、`reasons` が規定の順に並ぶ）、`::TestSlackHandler_SchemaViolationWarnDoesNotRecurse`（WARN が送信失敗ロガーだけへ届き Slack 通知を再発しない）、`::TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues`（WARN に通知本文・group 名・command 名・Webhook URL が含まれない） |
 | AC-25 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope` |
 | AC-26 | test | `internal/logging/notification_test.go` の各テストが `notificationDefinitions` を range して書かれていること。エンベロープを満たさない種別を 1 個登録すると失敗することを確認する |
-| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go`。static: `rg -n "messageType[A-Z]" internal/logging/slack_sender.go` が一致なし（種別定数の並行リストが消えていること）、かつ `rg -n "func isHighPriority" internal/logging/` が一致なし |
+| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと。期待値は `notificationDefinitions` を range して実行時に集める）。**AC-27 の主たる検証はこの (c) である。** static: `rg -n "messageType[A-Z]" internal/logging/` の非テスト結果が一致なし、かつ `rg -n "func isHighPriority" internal/logging/` が一致なし。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
 | AC-28 | static + test | static: `rg -n -F -e "[go-safe-cmd-runner]" -e "(global)" -e command_group_summary -e pre_execution_error -e user_group_command_failure docs/user/runner_command.ja.md` が 5 個の語すべてについて 1 件以上。**`-F` は必須**である。付け忘れると `(global)` は捕捉グループとして解釈され、括弧の無い裸の `global` にも一致するため、Scope の表記が書かれていなくても緑になる。test: 文書に載せた Text 行の例が `internal/logging/notification_test.go` の期待値と一字一句一致することを、Phase 6 の突き合わせタスクで確認する（presence だけでは書式の誤記を検出できない） |
 | AC-29 | static | AC-28 と同じ 5 語の検索を `docs/user/runner_command.md` に対して実行し、それぞれ 1 件以上。加えて `### 4.2 Notification Configuration` の節が Scope の 4 形（`(global)`、`group=`、`command=`、`(scope: invalid)`）を英語で説明していることを目視で確認する（日本語をそのまま貼り付けただけの状態を通さないため） |
 | AC-30 | static | Phase 1〜7 の各コミット sha について、作業ツリーが clean な状態で `git checkout <sha> && make test && make lint` を実行し、いずれも終了コード 0。確認後 `git checkout -` で戻る |
@@ -1087,10 +1144,22 @@ git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>
 #     正しいコミットでも一致してしまうためである。
 git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の message_type>
 
-# (3) 各コミットが単独で revert 可能であること（終了コード 0 を期待）
-#     --check なので作業ツリーは変更されない。
-git show <sha> | git apply -R --check -
+# (3) 各コミットが、統合後の枝から単独で revert 可能であること（終了コード 0 を期待）
+#     Git の 3-way revert そのもので確かめる。作業ツリーは毎回元へ戻す。
+#     <base> は revert を実際に行う想定の枝、すなわち Phase 3 完了時点（削除 3 コミットが
+#     揃った状態）とする。1 コミットずつ、毎回 <base> から始めて試す。
+for sha in <Phase 1 の sha> <Phase 2 の sha> <Phase 3 の sha>; do
+  git checkout --detach <base> &&
+  git revert --no-commit "$sha" || echo "REVERT FAILED: $sha"
+  git revert --quit 2>/dev/null; git reset --hard <base>
+done
 ```
+
+`git apply -R --check` は使わない。`--check` が見るのは逆パッチが**その時点の作業ツリー**へ
+文字どおり当たるかだけで、3-way マージを行わない。コミット自身の上で走らせれば当たるのが
+当たり前（ほぼ恒真）であり、後続 Phase を積んだ枝の上で走らせると、Git の revert なら解決
+できる無害なコンテキスト差でも落ちる。AC-04 が主張するのは「統合された枝から 1 件ずつ
+取り消せること」であり、それを確かめられるのは 3-way マージを行う `git revert` だけである。
 
 ## 8. 横断検索チェックリスト
 
@@ -1114,7 +1183,8 @@ git show <sha> | git apply -R --check -
       コンパイルエラーにならないため、この検索でしか捕まらない。
 - [ ] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
       `GroupScope`、`CommandScope`、`Notification`、`NotificationAttrs`、および §4.4 で新設する
-      5 個のセンチネル名の各々について `rg -n --type go cmd internal` を実行し、本タスクが
+      センチネル名（個数は §4.4 のブロッキングタスクで 02_architecture.md §3.1 が確定させた
+      ものに従う）の各々について `rg -n --type go cmd internal` を実行し、本タスクが
       定義した箇所とその利用箇所以外に同名の別物が無いことを確認する。とくにセンチネルは
       `internal/runner/resource/manager.go:24` の既存 `ErrEmptyCommandName` と衝突しやすい。
 - [ ] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
