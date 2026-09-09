@@ -161,10 +161,23 @@ HEAD で `slack_notify` を書く本番コードは 5 箇所ある。うち 2 �
   - command 名でしか書けない値形式: `jwt`（`.` を含む）と Webhook ホストを含む URL 形
     （`:` と `/` を含む）。どちらも `GroupNamePattern` に反するため、group 名では
     `ErrInvalidGroupName` が先に返り redaction 用のセンチネルへ届かない。
-- `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` は、`cfgLoader.LoadConfig`
-  の後に `normalizeSlackAllowedHost` を呼び、`cfg.Global.SlackAllowedHost` へ書き戻している。
-  識別子の redaction 検査はこの書き戻しの直後に置ける。同パッケージの既存テストは
-  `internal/runner/bootstrap/config_test.go` である。
+- 識別子の redaction 検査が使う `*redaction.Config` の入手経路を HEAD で確認した。
+  `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` は `cfgLoader.LoadConfig`
+  の後に `normalizeSlackAllowedHost` を呼び、`cfg.Global.SlackAllowedHost` へ書き戻す
+  （`config.go:101-112`）。本番の `redaction.Config` を組み立てるのはその後に走る
+  `AddSlackHandlers`（`internal/runner/bootstrap/logger.go:405`）であり、
+  `SetupSlackLogging` がその値を戻り値として返している（`environment.go`。doc コメントが
+  「callers can share the same webhook-host masking ... instead of each rebuilding it」と
+  目的を明示している）。`cmd/runner/main.go` は `:320` で `LoadAndPrepareConfig`、`:326` で
+  `SetupSlackLogging` を呼び、受け取った `redactionConfig` を `:386` の `executeRunner` を
+  経て `runner.WithRedactionConfig`（`:547`）へ渡している。したがって 02_architecture.md
+  §3.1 が定める検査の位置は `:326` の直後、`slog.Info("Verification and configuration
+  completed")` の前であり、そこまでに識別子を載せた通知は 1 件も出ない。
+- `SetupSlackLogging` は Slack 未設定（`slackConfig == nil`、または成功用・エラー用 URL が
+  ともに空）で `nil` を返す。その場合も Phase 1 の `RedactingHandler` は動いており、
+  `NewRedactingHandler` は `config == nil` のとき `DefaultConfig()` を使う
+  （`internal/redaction/redactor.go:663-666`）。すなわち Slack 未設定でも識別子は既定の
+  変換で `[REDACTED]` になりうるため、`nil` を「検査しない」と読んではならない。
 
 #### リポジトリ同梱の TOML が新しい識別子検証に抵触する
 
@@ -428,6 +441,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/logging/pre_execution_error.go`、`internal/logging/pre_execution_error_test.go`、
 `cmd/runner/main.go`、`internal/runner/bootstrap/config.go`、
 `internal/runner/bootstrap/config_test.go`、`internal/runner/bootstrap/environment.go`、
+`internal/runner/bootstrap/identifier_redaction.go`（新規）、
+`internal/runner/bootstrap/identifier_redaction_test.go`（新規）、
 `internal/runner/runner.go`、`internal/runner/base/audit/logger.go`、
 `internal/runner/config/validation.go`、`internal/runner/config/errors.go`、
 `internal/runner/config/validation_test.go`、`internal/runner/config/loader.go`、
@@ -582,30 +597,15 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.4 識別子の設定検証
 
-- [ ] **【ブロッキング】センチネルの個数と検査対象を 02_architecture.md §3.1 で先に決める。**
-      本書は当初、(b) 制御文字・書式制御文字と (c) 補間契約後に表示できる文字が残らないこと
-      を 2 個の独立した検査に分け、センチネルを 5 個とし、かつ (b)(c) を group 名にも当てる
-      前提で以下を書いていた。これは 02_architecture.md §3.1 に対する**設計変更**であり、
-      計画側で決めてよいものではない。§3.1 の表は 2 点で本書と異なる。
-      - **個数**: §3.1 の表は (b) と (c) を 1 行にまとめ、本文（「センチネルエラーは 4 個とも
-        `internal/runner/config/errors.go` に置いたままでよい」）も 4 個と書いている。
-      - **検査対象**: §3.1 の表は (b)(c) の対象を **command 名だけ**とし、group 名は「既存の
-        文字種検証で担保済み」としている。本書の (b)(c) は group 名にも当たる。
-        `GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）が制御文字も空白も既に弾くため、
-        group 名へ広げる実装は到達しない検査になりうる。逆に §3.1 の「担保済み」が
-        `ErrInvalidGroupName` として返ることを指すなら、group 名と command 名で同じ入力に
-        対して別のセンチネルが返る。どちらが利用者にとっての契約かは設計判断である。
-      §1.2 の 1 に従い、**02_architecture.md §3.1 を先に改訂して 4 個か 5 個か、(b)(c) の対象を
-      command 名だけとするか group 名も含めるかを確定させる**。確定するまでこのタスクと、
-      下の `validation.go`・`validation_test.go`・§8 の名前衝突チェックの各タスクには
-      着手しない。Phase 6 の文書追補で後から辻褄を合わせる形にはしない。実装コミットが承認済み
-      設計と異なる契約を持つ状態を作らないためである（下の検査用 `redaction.Config` の項と
-      同じ §3.1 の改訂であり、1 回の再レビューにまとめられる）。
-- [ ] 上の確定後、`internal/runner/config/errors.go` へ `ErrEmptyGroupName` に並べてセンチネル
-      エラーを追加する。検査ごとに独立させる。名前は
-      `internal/runner/resource/manager.go:24` の既存 `ErrEmptyCommandName` と衝突しないものに
-      する（既存は実行境界で空のコマンド名を弾く別物であり、本タスクのものは設定境界の検査で
-      ある）。§8 の名前衝突チェックの対象個数も確定した個数に合わせる。
+- [ ] `internal/runner/config/errors.go` へ、`ErrEmptyGroupName` に並べて 5 個のセンチネル
+      エラーを追加する。検査ごとに独立させ、対応は次のとおりとする。
+      (a) 空のコマンド名、(b) 制御文字または書式制御文字を含む識別子、(c) 補間契約を通すと
+      表示できる文字が残らない識別子、(d) 長さ上限を超える識別子、(e) redaction の変換が
+      書き換える識別子。(b) と (c) は独立した検査であり、02_architecture.md §3.1 の表も
+      5 行に分けてある。§8 の名前衝突チェックも 5 個を対象とする。
+      名前は `internal/runner/resource/manager.go:24` の既存
+      `ErrEmptyCommandName` と衝突しないものにする（既存は実行境界で空のコマンド名を弾く
+      別物であり、本タスクのものは設定境界の検査である）。
 - [ ] `internal/redaction/redactor.go` へ、`RedactLogAttribute` が文字列値に施す変換
       （`RedactText` と `IsSensitiveValue` の両方）が値を書き換えるかを返す述語を公開する。
       既存の変換を読み取るだけで、redaction の適用範囲は変えない。
@@ -620,10 +620,13 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       （redaction 検査以外のすべて）を追加する。すなわち (a) コマンド名が空でないこと、
       (b) 制御文字（一般カテゴリ Cc）と書式制御文字（同 Cf）を含まないこと、(c) 補間契約を
       通した後に White_Space 以外の rune が 1 個以上残ること、および (d) 長さが上限を超えない
-      こと。(b)(c) の対象を command 名だけとするか group 名も含めるかは、上のブロッキング
-      タスクで §3.1 が確定させたものに従う。(b) と (c) を独立させる場合、両者が別の検査である
-      根拠は次のとおりである。制御文字を含みつつ表示できる文字も残す名前は (c) を通ってしまい、
-      半角空白だけの名前は (b) を通ってしまう。
+      こと。**検査ごとの対象は 02_architecture.md §3.1 の表に従う。** (a)(b)(c) は
+      **command 名だけ**を対象とする。group 名は既存の `ErrEmptyGroupName` と
+      `GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）で空も制御文字も空白も既に拒否済みで
+      あり、group 名へ広げると到達しない検査になる。(d) だけが group 名と command 名の双方を
+      対象とする。長さの上限は既存のどの検証も持たないためである。
+      (b) と (c) を独立させる根拠は次のとおりである。制御文字を含みつつ表示できる
+      文字も残す名前は (c) を通ってしまい、半角空白だけの名前は (b) を通ってしまう。
 - [ ] 検査を足すにあたり、`ValidateGroupNames` の扱いを決める。現在この関数は group だけを
       走査し、関数名・doc コメント（英語）・テスト名も group 名専用である。呼び出し元は
       `internal/runner/config/loader.go:236` の 1 箇所だけなので、**`ValidateIdentifiers` へ
@@ -633,22 +636,25 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       旧名を doc コメントで参照している `internal/runner/cli/filter.go:44` と同 `:93` も同じ
       コミットで直す。後者はコンパイルエラーにならないため、放っておくと存在しない関数を指す
       コメントが残る。
-- [ ] `internal/runner/bootstrap/config.go` の `LoadAndPrepareConfig` で、
-      `cfg.Global.SlackAllowedHost` へ正規化済みホストを書き戻した直後に、識別子の redaction
-      検査（5 個目の検査）を置く。返すエラーは `internal/runner/config` のセンチネルを包んだ
-      `PreExecutionError` とする。
-- [ ] **検査用 `redaction.Config` の入手先を 02_architecture.md へ確認してから実装する。**
-      §3.1 は `AddSlackHandlers` と同じ `redaction.NewConfig(redaction.WithWebhookHost(...))`
-      を検査側でも組み立てる形を記しているが、同じ入力から 2 個の `Config` を作るのは
-      「同じ変換を使う」ことの保証にはならない。HEAD には既に共有の継ぎ目がある。
-      `bootstrap.SetupSlackLogging` は `AddSlackHandlers` が組み立てた `*redaction.Config` を
-      戻り値として返しており（`internal/runner/bootstrap/environment.go` の doc コメントが
-      「callers can share the same webhook-host masking ... instead of each rebuilding it」と
-      明示している）、`cmd/runner/main.go:326` はその値を runner まで引き回している。
-      ただし `SetupSlackLogging` は `LoadAndPrepareConfig` の**後**に走り、Slack 未設定では
-      `nil` を返すため、検査位置を動かすかどうかは設計判断である。§1.2 の 1 に従い、実装前に
-      02_architecture.md §3.1 を改訂して、(i) 既存の戻り値を共有する形へ寄せるか、
-      (ii) 再構築のままとしその理由を記すか、を先に決める。決まるまでこのタスクは着手しない。
+- [ ] `internal/runner/bootstrap/identifier_redaction.go` を新規作成し、5 個目の検査
+      （redaction の変換が識別子を書き換えないこと）をここに置く。読み込み済みの
+      `*runnertypes.ConfigSpec`、`SetupSlackLogging` が返した `*redaction.Config`、および
+      Run ID を受け取り、全 group 名と全 command 名を §4.4 の述語へ通す。`Config` を
+      **この関数の中で組み立てない**（02_architecture.md §3.1、付録 B.11）。返すエラーは
+      `internal/runner/config` のセンチネルを包んだ `PreExecutionError` とし、
+      `NotificationContext` は `GlobalScope()`、本文には識別子の値に加えて設定内の位置
+      （何番目の group、その中の何番目の command）を含める。値は Slack と JSON ログでは
+      `[REDACTED]` になりうるため、位置が無いと通知から対象を特定できない。
+- [ ] 同ファイルで、受け取った `*redaction.Config` が `nil`（Slack 未設定）のときは
+      `redaction.DefaultConfig()` を使う。`nil` は「検査しない」ではない。Phase 1 の
+      `RedactingHandler` が既定の `Config` で動き続けており（§1.3）、Slack が無効でも
+      識別子は JSON ログで潰れうるためである。この分岐は `NewRedactingHandler` の
+      `nil` 扱いと同じ意味であることをコメントに記す。
+- [ ] `cmd/runner/main.go` で、`bootstrap.SetupSlackLogging` の戻り値検査の直後、
+      `slog.Info("Verification and configuration completed", ...)` の前に上の関数を呼び、
+      `SetupSlackLogging` が返した `redactionConfig` をそのまま渡す。`LoadAndPrepareConfig`
+      の中へは置かない。本番と同じ変換を体現する `Config` は `AddSlackHandlers` が組み立てる
+      まで存在せず、そこは `LoadAndPrepareConfig` より後だからである。
 - [ ] **同梱 TOML の改名とハッシュ再記録。** 検査を有効にする前に、`sample/` 配下と
       テストデータの全 TOML の group 名・command 名を新しい述語へ通し、抵触するものを列挙
       する。§1.3 で確認済みの 6 個（`basic_tests`、`cmd_expansion_basic`、
@@ -671,13 +677,20 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       文字を含む command 名で 128 byte 境界をまたぐもの**を必ず入れる。group 名は
       `[A-Za-z0-9_]` に限られ byte 数と rune 数を区別できないため、rune 単位で数える実装を
       落とせるのは command 名の行だけである。判定は `errors.Is` で行う。
-- [ ] `internal/runner/bootstrap/config_test.go` へ、02_architecture.md §7.1 の
-      「識別子と redaction」の観点の行を追加する。語の一致で潰れる名前（`monkey`、`keyring`、
+- [ ] `internal/runner/bootstrap/identifier_redaction_test.go` を新規作成し、
+      02_architecture.md §7.1 の「識別子と redaction」の観点の行を書く。テストは
+      読み込み済みの設定と `*redaction.Config` を渡して検査関数を直接呼ぶ。`LoadConfig`
+      だけを呼ぶ形では redaction のセンチネルは出ない。語の一致で潰れる名前（`monkey`、`keyring`、
       `rotate_api_key`）は group 名・command 名の双方で、`AKIA` 形と `ghp_` 形も双方で、
       JWT 形と URL 形は command 名の行としてのみ書く（group 名では `ErrInvalidGroupName` が
       先に返るため）。`slack_allowed_host` を設定した場合と未設定の場合を 1 組の行として持ち、
       TOML の許可ホストを大文字で書いた行も持つ。どれにも当たらない名前が通ることも同じ表で
-      確認する。
+      確認する。許可ホスト依存の 1 組は、本番と同じ `Config` を受け取っていることの唯一の
+      担保である。`redaction.DefaultConfig()` を直接使う実装、`NewConfig(WithWebhookHost(...))`
+      で組み直す実装、正規化前の値を使う実装のいずれへ変えてもこの組が落ちることを確認する。
+- [ ] 同ファイルへ、`*redaction.Config` に `nil` を渡す行を持つ。既定の変換による語一致
+      （`monkey` など）と値形式（`AKIA` 形）が依然として拒否され、許可ホストを含む URL 形
+      だけが通ることを確認する。`nil` を受けて検査を飛ばす実装を落とすためである。
 - [ ] 同ファイルへ、拒否した名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` に
       なることを確認するケースを追加する。設定境界で拒否する理由が実在することを示すためで
       あり、これが無いと検査は「なぜ拒否するのか」を根拠づけられない。
@@ -775,11 +788,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       だけとする。WARN は受付停止判定より前に出すため、`SlackHandler` からその出力先へ届く
       経路を用意する（現在 `failureLogger` は `slackSender` が持つ）。
 - [ ] `slackRequest` へ確定済みの優先度を持たせ、`queueFor` がそれを読む形へ変える。
-      未知種別の優先度はログレベルの全域に対して定める。`level >= slog.LevelWarn` を高優先度
-      とし、**それ未満（INFO と、§3.5 の対応表が WARNING へ倒す INFO 未満の値）はすべて通常
-      優先度**とする。02_architecture.md §3.6 は「WARN または ERROR は高優先度、INFO は通常
-      優先度」と書いており、DEBUG など INFO 未満に触れていない。レベル表示の対応表が全域
-      関数として定められているのと同じ理由で、優先度の写像にも未定義の入力を残さない。
+      未知種別の優先度は 02_architecture.md §3.6 の表に従い、`level >= slog.LevelWarn` を
+      高優先度、**それ未満（INFO と、§3.5 の対応表が WARNING へ倒す INFO 未満の値）はすべて
+      通常優先度**とする。閾値で書き、`level == slog.LevelInfo` を通常・それ以外を高とする
+      書き方はしない。後者は DEBUG の未知種別を予約レーンへ入れる（§3.6 の理由）。
+      既知の 3 種別はレベルを見ず、通知種別定義の確定値をそのまま使う。
 - [ ] `internal/logging/slack_sender.go` から `isHighPriority` と、種別定数
       `messageTypeCommandGroupSummary`・`messageTypePreExecutionError` を削除する。種別名は
       通知種別定義だけが持つ。定数を参照している既存テストは通知種別定義の公開アクセサ経由
@@ -865,6 +878,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] `internal/logging/slack_sender_test.go` の高優先度・キュー溢れ・種別別集計のテストを、
       確定済み優先度を持つ `slackRequest` の形に合わせて更新する。優先度を通常へ倒すと
       `TestSlackSender_HighPriorityBypassesFullNormalQueue` が失敗することを確認する。
+- [ ] `internal/logging/slack_handler_test.go` へ、未知種別の優先度が全域であることを
+      検証する行を追加する（02_architecture.md §7.1）。ERROR、WARN、INFO、DEBUG、および
+      INFO と WARN の中間値を持ち、DEBUG の行では通常キューへ入ることと表示が `WARNING`
+      であることを同時に assert する。`level == slog.LevelInfo` だけを通常とする実装へ
+      変えるとこの行が失敗することを確認する。
 - [ ] `internal/runner/runner_test.go` の**グループ集計**については、通知コンテキスト属性が
       載ることの検証は Phase 4（§4.3）で済んでいる。本 Phase では
       `TestLogGroupExecutionSummary_LogLevel` が `NotificationAttrs` 経由へ移した後も同じ属性
@@ -1008,11 +1026,11 @@ M2 の時点では Slack の表示は変わらない。AC-12〜AC-15 と AC-17 �
   `internal/common/notification_context_test.go`（通知コンテキストの型、エンコード往復、
   妥当性判定の全行、下位キーの重複）、`internal/logging/notification_test.go`
   （通知種別定義の集合を range する共通契約とフィールド一覧の対応）、
-  `internal/logging/notification_contract_guard_test.go`（構文木の静的契約）。
+  `internal/logging/notification_contract_guard_test.go`（構文木の静的契約）、
+  `internal/runner/bootstrap/identifier_redaction_test.go`（識別子の redaction 検査）。
 - **拡張**: `internal/logging/slack_handler_test.go`（レベル表示、共通エンベロープ、未知種別、
   WARN の件数と内容、識別子を載せるフィールド、切り詰めないこと、`RedactingHandler` を挟んだ
   経路）、`internal/runner/config/validation_test.go`（識別子の設定検証）、
-  `internal/runner/bootstrap/config_test.go`（redaction 検査）、
   `internal/redaction/redactor_test.go`（新しい述語と層の切り分け）、
   `internal/runner/base/runnertypes/runtime_test.go`（`GroupName`）、
   `internal/runner/base/privilege/unix_privilege_test.go`（特権昇格結果ログ）。
@@ -1181,10 +1199,13 @@ done
 - [ ] 改名した検証関数の旧名が残っていないこと: `rg -n ValidateGroupNames --type go cmd internal`
       が一致なし。コメントの中の参照（HEAD では `internal/runner/cli/filter.go:44` と同 `:93`）は
       コンパイルエラーにならないため、この検索でしか捕まらない。
+- [ ] 識別子の redaction 検査が `redaction.Config` を組み直していないこと:
+      `rg -n "redaction\.(NewConfig|DefaultConfig)" internal/runner/bootstrap/identifier_redaction.go`
+      の結果が、`nil` を受けたときの `DefaultConfig()` の 1 件だけであること。`NewConfig` が
+      現れたら、02_architecture.md 付録 B.11 が退けた「同じ式で組み直す」形へ戻っている。
 - [ ] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
       `GroupScope`、`CommandScope`、`Notification`、`NotificationAttrs`、および §4.4 で新設する
-      センチネル名（個数は §4.4 のブロッキングタスクで 02_architecture.md §3.1 が確定させた
-      ものに従う）の各々について `rg -n --type go cmd internal` を実行し、本タスクが
+      5 個のセンチネル名の各々について `rg -n --type go cmd internal` を実行し、本タスクが
       定義した箇所とその利用箇所以外に同名の別物が無いことを確認する。とくにセンチネルは
       `internal/runner/resource/manager.go:24` の既存 `ErrEmptyCommandName` と衝突しやすい。
 - [ ] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
