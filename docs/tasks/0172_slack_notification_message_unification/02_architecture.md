@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `review` |
 | Created | 2026-09-08 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 比較レビューの指摘を反映中。ゼロ値、単一定義、ログ互換性、Run ID、表示境界を再設計したため再レビューが必要 |
+| Comments | PR #1108 との比較レビューを経て、本設計を採用ブランチとした。#1108 から Text 行の補間規則（§3.5）、空のコマンド名の設定境界での拒否（§3.1）、過剰なスコープ情報の拒否（§3.1）、利用者向け文書 2 件の更新対象への追加（§2.2）、実機確認の代替（§5.3）を移植し、`audit` → `logging` 依存の根拠（§2.1）と Mermaid 凡例の規約適合を加えた。レビュー観点は移植部分と依存判断 |
 
 ## 関連文書
 
@@ -629,7 +629,19 @@ flowchart LR
 - [Sending messages using incoming webhooks](https://api.slack.com/messaging/webhooks)
 - [Formatting message text](https://docs.slack.dev/messaging/formatting-message-text/)
 
-対象クライアント環境は Slack のみである。実装時には `make slack-notify-test` と `make slack-group-notification-test` で、Text 行、添付色、フィールド順、プッシュ通知での製品名と Scope の表示を確認する。実サービスの検証を実行できない環境では、モックサーバーによるペイロード検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
+対象クライアント環境は Slack のみである。実装時には `make slack-notify-test` と `make slack-group-notification-test` で、次の項目を確認する。
+
+| 確認項目 | 期待 |
+|---|---|
+| Text 行の `*SUCCESS*` などの強調 | 太字として表示される |
+| Text 行の `—`（em dash）と `[...]` | そのまま表示され、書式指定として解釈されない |
+| プッシュ通知の表示 | Text 行が先頭から表示され、製品名が読み取れる |
+| 添付の色 | `good` / `warning` / `danger` が従来どおり反映される |
+| 添付フィールドの並び | 末尾 3 件が Scope、Hostname、Run ID の順である |
+
+**設計時点ではこの実機確認は未実施である**。`###` が Slack の mrkdwn で見出しにならないことは要件定義の調査で確認済みであり、`*...*` は mrkdwn の基本記法であるため機能しない可能性は低いと判断しているが、判断であって確認ではない。上記を実装フェーズの完了条件に含める（§8.1 の Phase 7）。
+
+強調が期待どおり表示されない環境があった場合の代替は、強調記法を外して素の文字列にすることである。Text 行の構造（製品名・絵文字・STATUS・Scope・要約の並び）は強調記法に依存しないため、この代替でも要件は満たせる。実サービスの検証を実行できない環境では、モックサーバーによるペイロード検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
 
 ### 5.4 他の設計文書のポリシーとの関係
 
