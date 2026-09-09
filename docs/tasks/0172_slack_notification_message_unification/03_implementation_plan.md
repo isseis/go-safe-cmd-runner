@@ -748,11 +748,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       だけとする。WARN は受付停止判定より前に出すため、`SlackHandler` からその出力先へ届く
       経路を用意する（現在 `failureLogger` は `slackSender` が持つ）。
 - [ ] `slackRequest` へ確定済みの優先度を持たせ、`queueFor` がそれを読む形へ変える。
-      未知種別の優先度はログレベルの全域に対して定める。`level >= slog.LevelWarn` を高優先度
-      とし、**それ未満（INFO と、§3.5 の対応表が WARNING へ倒す INFO 未満の値）はすべて通常
-      優先度**とする。02_architecture.md §3.6 は「WARN または ERROR は高優先度、INFO は通常
-      優先度」と書いており、DEBUG など INFO 未満に触れていない。レベル表示の対応表が全域
-      関数として定められているのと同じ理由で、優先度の写像にも未定義の入力を残さない。
+      未知種別の優先度は 02_architecture.md §3.6 の表に従い、`level >= slog.LevelWarn` を
+      高優先度、**それ未満（INFO と、§3.5 の対応表が WARNING へ倒す INFO 未満の値）はすべて
+      通常優先度**とする。閾値で書き、`level == slog.LevelInfo` を通常・それ以外を高とする
+      書き方はしない。後者は DEBUG の未知種別を予約レーンへ入れる（§3.6 の理由）。
+      既知の 3 種別はレベルを見ず、通知種別定義の確定値をそのまま使う。
 - [ ] `internal/logging/slack_sender.go` から `isHighPriority` と、種別定数
       `messageTypeCommandGroupSummary`・`messageTypePreExecutionError` を削除する。種別名は
       通知種別定義だけが持つ。定数を参照している既存テストは通知種別定義の公開アクセサ経由
@@ -842,6 +842,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] `internal/logging/slack_sender_test.go` の高優先度・キュー溢れ・種別別集計のテストを、
       確定済み優先度を持つ `slackRequest` の形に合わせて更新する。優先度を通常へ倒すと
       `TestSlackSender_HighPriorityBypassesFullNormalQueue` が失敗することを確認する。
+- [ ] `internal/logging/slack_handler_test.go` へ、未知種別の優先度が全域であることを
+      検証する行を追加する（02_architecture.md §7.1）。ERROR、WARN、INFO、DEBUG、および
+      INFO と WARN の中間値を持ち、DEBUG の行では通常キューへ入ることと表示が `WARNING`
+      であることを同時に assert する。`level == slog.LevelInfo` だけを通常とする実装へ
+      変えるとこの行が失敗することを確認する。
 - [ ] `internal/runner/runner_test.go` の**グループ集計**については、既にレコードを捕捉して
       いる `TestLogGroupExecutionSummary_LogLevel`（`tu.NewCallbackHandler` で
       `logGroupExecutionSummary` の出力を集める）を拡張し、通知コンテキスト属性が載ることを
