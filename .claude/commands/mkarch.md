@@ -44,6 +44,7 @@ Work in the following order.
 - Use Mermaid diagrams for the concept model, system structure, key processing flows, and a threat model when applicable.
 - Restrict code examples to high-level interfaces, type definitions, and error type definitions only.
 - Do not include implementation details, pseudocode, step-by-step algorithms, or low-level code.
+- **Claims about existing behavior carry their evidence.** Statements that a code path is unreachable, that a construction is unique, or that two paths produce the same value must cite `file:line` and the commit read, or be written as a requirement the design imposes rather than as an observed fact. Such statements are the ones a reader will trust without rechecking, and on task 0172 the same reachability claim was wrong twice in a row.
 - Write the body for an engineer meeting the current system for the first time: describe how it works now. Confine the rationale for removed or superseded designs, and cross-task decision history, to a bounded "decision history" appendix or a short blockquote pointing to git history — do not interleave it with current-state description. When editing a design document that earlier tasks have appended to, preserve this separation so the body does not become a changelog.
 
 8. Run the critical-review procedure in `.claude/commands/_lib/review-subagent-pattern.md` in **panel mode** (an architecture document is a high-stakes artifact; a single combined "architect + SRE" reviewer tends to satisfice and under-weight the operational lens). Supply these inputs:
@@ -79,6 +80,7 @@ Work in the following order.
 - [ ] The design does not overlap with existing packages or re-implement existing responsibilities.
 - [ ] Any new external-service feature the design relies on (Slack API, IMAP capability, etc.) is verified to behave correctly on all target client environments listed in `_context.md`; the verification result is stated inline, or the unverified risk is explicitly documented.
 - [ ] When the design replaces existing behavior with a new approach, a "why not the existing approach?" justification is present and names the specific requirement the simpler approach cannot satisfy.
+- [ ] Every claim about existing behavior (a path is unreachable, a value is the only one, two constructions are equivalent) cites `file:line` and the commit verified against, or is phrased as a requirement rather than a fact.
 
 **Readability and consistency checklist (use verbatim as evaluation criteria in the subagent prompt above):**
 - [ ] The arrow semantics used in each diagram are stated explicitly in a caption or note (e.g., "矢印 A → B は…を表す"), and are applied consistently within that diagram.
