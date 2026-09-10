@@ -616,8 +616,14 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       禁止と `NotificationAttrs` の引数制限）は Phase 5 で足す。
 - [ ] 同ファイルへ、**AC-09 のコンストラクタ検査**も本 Phase で入れる。`internal/common` を
       import する本番ファイルごとに `ResolveLocalImports` で実際の import 名を解決し、
-      解決結果が `internal/common` を指す `NotificationContext` の
-      **(i) 複合リテラル・(ii) `var` 宣言・(iii) `new` 呼び出し**をいずれも拒否する。
+      解決結果が `internal/common` を指す `NotificationContext` について、**コンストラクタ
+      呼び出し以外でゼロ値を生じさせる構文をすべて拒否する**。既知の形は
+      **(i) 複合リテラル・(ii) 初期化式の無い `var` 宣言・(iii) `new` 呼び出し・(iv) その型の
+      名前付き戻り値**（`func global() (ctx common.NotificationContext) { return }` は
+      (i)〜(iii) のどれでもないまま暗黙にゼロ値を返す）である。**この 4 つは網羅ではなく
+      既知の例として書いてある。** 検査は「ゼロ値の生成」という性質に対して書き、形を 1 つずつ
+      足していく作りにしない。既存の値を読むだけの経路（構造体フィールド、引数、
+      コンストラクタの戻り値を受けた変数）は対象にしない。禁じるのは**生成**である。
       **`internal/common` 自身の本番ファイルも走査対象に含める。** パッケージは自分自身を
       import しないため、import の有無で対象を決めると `common` の中だけが素通りし、そこへ
       足したヘルパーがコンストラクタを迂回できてしまう。同パッケージ内では修飾子が付かない
@@ -625,13 +631,20 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `notification_context.go` の 3 コンストラクタ（`GlobalScope`・`GroupScope`・
       `CommandScope`）の本体だけであり、これらは非公開フィールドを初期化する正規の実装で
       ある。除外はファイル単位ではなく関数単位にする。ファイルごと除外すると、同じファイルへ
-      足した別の関数が迂回できる。3 形とも
+      足した別の関数が迂回できる。上の各形はいずれも
       コンストラクタを迂回してゼロ値を作る経路であり、AC-09 は「値はコンストラクタでのみ
       構築する」だけでなく「グローバルな場合も `GlobalScope()` で明示的に」付与することを
       要求している（§7 の AC-09 の行）。検査対象は Phase 4 の構造体変更だけに依存するため、
-      Phase 5 へ送らない。**3 形それぞれについて、本番ファイルへ 1 個足すと落ちることを
+      Phase 5 へ送らない。**(i)〜(iv) それぞれについて、本番ファイルへ 1 個足すと落ちることを
       確認する**（1 形でも見落とす実装が緑のまま残らないようにする）。別名 import
       （`import c ".../internal/common"`）の行も含める。
+- [ ] **この検査は完全にはできない。その前提で書く。** AC-09 はゼロ値を `ScopeGlobal` と
+      定めており（`TestNotificationContext_ZeroValueIsGlobalScope` が固定している）、Go で
+      ゼロ値を得る書き方は構文として列挙しきれない。したがってこの検査が防ぐのは、
+      **事故でコンストラクタを迂回すること**であって、意図した迂回のすべてではない。
+      発火元が実際に正しいスコープを載せていることは、§5.5 の 3 発火元のスコープ assert が
+      実行時に確かめる。構文木ガードと実行テストのどちらか一方に寄せず、両方を持つ理由が
+      ここにある。AC-27 の (d) に同じ断りを書いてあるのと同じ立場である。
 - [ ] `cmd/runner/startup_privilege_test.go` の `TestReportStartupPrivilegeFailure_UsesValidRunID`
       を、新しい引数形（構造体）に合わせて更新する。
 - [ ] `internal/logging/pre_execution_error_test.go` の `TestHandlePreExecutionError_AllTypes`
@@ -781,10 +794,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       順序と引数の検査を足す。すなわち、検査の呼び出しが `SetupSlackLogging` の**後**に
       あること、および渡している値が `SetupSlackLogging` の戻り値であって
       `redaction.DefaultConfig()` や新規に組み立てた `Config` ではないことを構文木で確かめる。
-      統合テストは「拒否されること」を示すが、**どの `Config` で**拒否したかは示さない
-      （既定の `Config` でも `AKIA` 形は拒否されるため）。02_architecture.md 付録 B.11 が
-      共有を要求している以上、共有そのものを見る検査が要る。新規ファイルを作らず既存の
-      起動順ガードへ足すのは、そこが起動経路の構造を見る既存の置き場だからである。
+      **戻り値を受けた変数が、受け取りから検査呼び出しまでの間に再代入・再宣言されていない
+      ことも同時に確かめる。** 順序と識別子だけを見ると、
+      `redactionConfig, err := SetupSlackLogging(...)` の後に
+      `redactionConfig = redaction.DefaultConfig()` を挟んでから渡す形が、同じ識別子・同じ
+      順序のまま通ってしまう。同一ブロック内の代入と、内側スコープでの同名再宣言の双方を
+      対象にする。新規ファイルを作らず既存の起動順ガードへ足すのは、そこが起動経路の構造を
+      見る既存の置き場だからである。
+- [ ] **許可ホスト依存の起動経路テストを `cmd/runner/integration_pre_execution_error_test.go`
+      へ追加する。** 上の `AKIA` 形の統合テストは「拒否されること」を示すが、**どの `Config`
+      で**拒否したかは示さない（既定の `Config` でも `AKIA` 形は拒否されるため）。そこで、
+      `slack_allowed_host` を設定した TOML と、**その許可ホストを含む URL 形の command 名**で
+      runner を起動し、起動前エラーで終わることを検証する行を持つ。この形は
+      `WithWebhookHost(<設定した許可ホスト>)` を持つ `Config` でしか拒否されないため、
+      `main.go` が `redaction.DefaultConfig()` や新規に組み立てた `Config` を渡す実装、
+      および上の再代入を挟む実装では**この行だけが落ちる**。構文木ガードが構造として見る
+      ものを、実行時の挙動として裏づける対になる。02_architecture.md 付録 B.11 が共有を
+      要求している以上、共有を見る検査は構造と挙動の両方から持つ。
 
 **完了条件**:
 - AC-09、AC-10、AC-11、AC-16 の検証が緑である。AC-11 については、構文木ガードのうち

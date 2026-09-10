@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-10 |
 | Reviewer | isseis |
-| Comments | 2026-09-10 の承認後、レビュー指摘により 3 箇所を追随修正したため再承認待ち。(A) §2.2: `ValidateGroupNames` の改名を反映（Phase 4 で `ValidateIdentifiers` になる）。(B) §2.2: テスト欄を `TestValidateIdentifiers` へ。(C) §8.1 の Phase 4 行: redaction 検査だけ検査位置が違うことを反映（§3.1 の改訂の取りこぼし）。以下は 2026-09-10 の承認時の記録である。改訂点は次の 4 箇所であった。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
+| Comments | 2026-09-10 の承認後、レビュー指摘により 4 箇所を追随修正したため再承認待ち。(D) §2.2: 静的契約の置き場である `internal/logging/notification_contract_guard_test.go` の行を追加し、`notification_test.go` の行から発火元の静的検査を外した（表がガードファイルを持たず、AC-09・AC-11・AC-27 の唯一の強制箇所が設計側から抜けていた）。(A) §2.2: `ValidateGroupNames` の改名を反映（Phase 4 で `ValidateIdentifiers` になる）。(B) §2.2: テスト欄を `TestValidateIdentifiers` へ。(C) §8.1 の Phase 4 行: redaction 検査だけ検査位置が違うことを反映（§3.1 の改訂の取りこぼし）。以下は 2026-09-10 の承認時の記録である。改訂点は次の 4 箇所であった。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
 
 ## 関連文書
 
@@ -185,7 +185,8 @@ flowchart LR
 | `internal/common/notification_context_test.go` | 新規 | F-002 の型とログ表現を検証する | - |
 | `internal/common/logschema.go` | 変更 | 削除する 3 種別の属性定義と重大度定数を除き、`UserGroupCommandFailureAttrs` を含む存続する通知の共有属性名と型を定義する。既存の `GroupSummaryAttrs.Group` を維持し、通知コンテキストのキー名とスコープ名の対応表を加える | 該当定義を直接使う各パッケージのテスト。通知コンテキストを追加する各パッケージのテスト |
 | `internal/logging/notification.go` | 新規 | 存続する通知種別の唯一の定義、発火元用の属性生成関数、確定済み優先度、種別固有部分の契約を定義する | 新規 `internal/logging/notification_test.go` で通知種別定義の集合と発火元の静的契約を検証する |
-| `internal/logging/notification_test.go` | 新規 | 全定義の共通契約と、本番コードの発火元が属性生成関数を迂回しないことを検証する | - |
+| `internal/logging/notification_test.go` | 新規 | 全定義の共通契約（種別名の一意性、公開アクセサと定義の同一性、共通エンベロープ、予約フィールド見出し、Text 行の書式、§3.5 の動的な値の一覧との対応）を検証する | - |
+| `internal/logging/notification_contract_guard_test.go` | 新規（`//go:build test`） | 構文木でリポジトリ全体を走査する静的契約の唯一の置き場。本番コードの発火元が属性生成関数を迂回しないこと（AC-27）、`PreExecutionError` リテラルが通知コンテキストを省略しないこと（AC-11）、`NotificationContext` がコンストラクタ以外で構築されないこと（AC-09）を検証する。Phase 4 で作成し、Phase 5 で `slack_notify` の構築制限と `NotificationAttrs` の引数制限を足す | - |
 | `internal/logging/slack_handler.go` | 変更 | 通知種別定義の参照、種別固有部分の生成、共通エンベロープ、未知種別と不正スコープの WARN を担う。削除対象の 3 ビルダーを削除する。ホスト名取得を指す非公開のパッケージ変数（初期値は `common.GetHostname`）を置き、共通エンベロープの Hostname をこれだけに経由させる（§3.5） | `TestSlackHandler_Handle_WithMockServer` と同ファイルのメッセージ構築、切り詰め、属性抽出のテスト |
 | `internal/logging/slack_handler_test.go` | 変更 | 存続する全種別と汎用メッセージの書式、Scope、フィールド順、未知種別、不正スコープを検証する。ホスト名の継ぎ目を差し替えてエンベロープ値の「出力の性質」も検証する（§7.1） | 削除対象 3 種別のケースを除く |
 | `internal/logging/slack_sender.go` | 変更 | 独立した種別定数一覧と `isHighPriority` を削除し、確定済みの優先度で既存キューを選ぶ | `TestSlackSender_HighPriorityBypassesFullNormalQueue`、`TestSlackSender_QueueOverflowDropsAndRecords`、`TestSlackSender_FlushLogsMessageTypeBreakdown` |
