@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-08 |
-| Review date | 2026-09-10 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | §3.1 の 2 段落を修正したため再レビュー待ち。(1) 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。 |
 
 ## 関連文書
 
@@ -406,7 +406,7 @@ Webhook ホストの変換も対象に含める。許可ホストは TOML の `s
 
 Slack 未設定のとき `SetupSlackLogging` は `nil` を返すが、これを「検査しない」の意味にはしない。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包んでおり、Slack が無効でも Phase 1 が組み立てた `RedactingHandler` が既定の `Config` で走り続けるためである（`NewRedactingHandler` は `config` が `nil` のとき `DefaultConfig()` を使う）。したがって `nil` を受け取った検査は `redaction.DefaultConfig()` を使う。この規則の下では、検査に使う `Config` は Slack の有無にかかわらず、その時点で `slog.Default()` が現に使っている `Config` と同じ値になる。
 
-共有していることは静的には保証できないため、テストで固定する。§7.1 の「`slack_allowed_host` を設定した状態でそのホストを含む URL 形の command 名が拒否され、同じ名前が許可ホスト未設定なら通る」という 1 組が、既定 `Config` へ差し替えた実装でも、式を組み直す実装でも、正規化前の値を使う実装でも失敗する。
+共有していることは型では保証できないため、2 つの検査で固定する。第 1 に §7.1 の「`slack_allowed_host` を設定した状態でそのホストを含む URL 形の command 名が拒否され、同じ名前が許可ホスト未設定なら通る」という 1 組。これは既定 `Config` へ差し替えた実装、`nil` を「検査しない」と読む実装、正規化前の値を使う実装のいずれでも失敗する。**ただし `NewConfig(WithWebhookHost(...))` で組み直す実装は落とせない。** `AddSlackHandlers` が渡すオプションはこの 1 個だけであり、正規化済みホストは `cfg.Global` へ書き戻されているため、組み直した `Config` は今日の本番と同一の挙動を示す（付録 B.11 もこの点は認めている）。第 2 に、その組み直しを落とせるのは起動経路の構文木検査だけである。`cmd/runner/startup_order_guard_test.go` が、検査の呼び出しが `SetupSlackLogging` の後にあること、および渡している値がその戻り値であって `DefaultConfig()` でも新規に組み立てた `Config` でもないことを確かめる。**共有そのものを見るのはこちらであり、上の 1 組ではない。**
 
 空・制御文字・表示できる内容を持たない・長すぎるの 4 検査は外部への依存を持たないため `ValidateGroupNames` に残す。センチネルエラーは 5 個とも `internal/runner/config/errors.go` に置いたままでよい。`bootstrap` は `config` に依存しており、そこから返せる。この配置では `internal/runner/config` から `internal/redaction` への新しい辺は生じない。redaction の述語を呼ぶのは `bootstrap` であり、`bootstrap` は既に `internal/redaction` に依存している。
 
@@ -416,7 +416,7 @@ Slack 未設定のとき `SetupSlackLogging` は `nil` を返すが、これを�
 
 第 1 に、この `PreExecutionError` のスコープは `GlobalScope()` とする。拒否した識別子を `GroupScope` や `CommandScope` に載せると、指し示せない名前や `[REDACTED]` に潰れる名前を Scope に置くことになり、この検査が防ごうとしている状態を通知自身が体現する。設定全体の不備としてグローバルで報告する。
 
-第 2 に、本文には識別子の値だけでなく、設定内の位置（何番目の group、その中の何番目の command）を必ず含める。値は `RedactingHandler` を通る Slack と JSON ログでは `[REDACTED]` になりうる。`HandlePreExecutionError` の stderr 出力は redaction を経由しないため手元では値を読めるが、Slack だけを見ている運用者には位置しか残らない。位置が無いと「識別子が拒否された」としか読めない通知になる。
+第 2 に、本文には設定内の位置（何番目の group、その中の何番目の command）と、どの検査に掛かったかを含め、**識別子の値そのものは含めない**。この検査が拒否する識別子は、定義上 redaction の変換が書き換える値であり、実際の AWS キー ID・GitHub トークン・JWT・Webhook 認証情報が group 名や command 名にそのまま書かれている場合を含む。ところが `HandlePreExecutionError` の stderr 出力は `RedactingHandler` を経由しない。`internal/logging/pre_execution_error.go` は本文を組み立てて `fmt.Fprint(os.Stderr, ...)` へ直接書く。したがって本文へ値を入れると、**redaction が潰すはずの秘匿値を、まさにそれを理由に拒否した経路が端末とプロセスログへ平文で出す**ことになる。位置と検査名があれば利用者は自分の TOML の該当箇所を特定でき、値の再掲は要らない。Slack と JSON ログでは値は `[REDACTED]` になりうるため、位置の無い通知はいずれにせよ「識別子が拒否された」としか読めない。
 
 コンストラクタ側は前段落までのとおり全域関数のままとし、事前条件違反で panic させることはしない。通知コンテキストの構築はログ出力の途中に置かれるため、ここで panic するとエラー報告の最中にプロセスを落とす。拒否は設定境界に、検知は表示境界に置き、その中間にあるログ経路は決して停止させない。
 

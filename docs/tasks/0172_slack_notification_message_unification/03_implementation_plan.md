@@ -913,7 +913,17 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       個別の抜け道を 1 つずつ塞ぐ形にせず、**値の入手経路を 1 本に限る**書き方にしてある。
       この検査はここまでに 3 通りの迂回（種別名の文字列、公開アクセサの列挙、非公開変数の
       列挙）が見つかっており、列挙を足していく形では次の抜け道で同じことを繰り返す。
-      拒否する対象の名前も `notificationDefinitions` から実行時に得て、検査側へ書き写さない。
+      **拒否する対象の名前は構文木から導く。`notificationDefinitions` からは得られない。**
+      同スライスが持つのは `*messageTypeDefinition`（種別名・優先度・ビルダー）だけであり、
+      非公開 token 変数の**識別子名**も公開アクセサの**関数名**も入っていない。Go は識別子名を
+      実行時に保持しないため、`notificationDefinitions` を range しても (d-1)(d-2) が拒否
+      すべき名前は分からない。代わりに `notification.go` の構文木を読み、
+      (i) 初期化式が `registerNotification(...)` の呼び出しであるパッケージレベルの `var` 宣言
+      からその変数名を、(ii) 同ファイルでそれらの変数を返す関数の宣言からアクセサ名を、
+      それぞれ集める。名前を検査側へ書き写さないという意図は変わらず、出どころが実行時の値
+      ではなく構文木になる。名前の綴りに依存した推測（`*Notification` で終わる、など）は
+      使わない。登録の形が変われば (i) が空を返し、そのとき検査は緑ではなく失敗させる
+      （集めた名前が 0 個なら fail する assert を置く）。
       呼び出しの**位置**を縛るのであって、ファイルあたりの個数を数えるのではない。
       (c) は文字列リテラルを見るが、`Notification` は登録値を保持する比較可能な構造体であり、
       公開アクセサがその値を返す。したがって
@@ -1021,7 +1031,12 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 **完了条件**:
 - AC-12〜AC-15、AC-17〜AC-27、AC-31〜AC-33 の検証が緑である。
 - `make fmt`、`make test`、`make lint` が通り、この Phase が 1 コミットになっている。
-- **`make slack-e2e-test` が通る。** 本 Phase が変更する
+- **`make slack-e2e-test` が Linux で通る。macOS の結果はこのゲートを満たさない。**
+  同 target は `uname -s` が `Darwin` のとき**テストを実行せず** `go vet -tags e2e,test` だけを
+  走らせる（Makefile の Darwin 分岐。3 テストが `/usr/bin/echo` を要求し macOS に無いため）。
+  したがって macOS だけで確認すると、宛先分離やペイロードの assert が実行時に落ちる状態でも
+  AC-31 を緑にできる。macOS で作業する場合は、コンパイルと vet が通ることをローカルの確認と
+  し、**ゲートの判定は Linux（CI もしくは開発コンテナ）の実行結果で行う**。本 Phase が変更する
   `internal/runner/e2e_slack_webhook_separation_test.go` と
   `internal/runner/e2e_slack_webhook_test.go` は `//go:build e2e && test` を持ち、
   `make test`・`make lint`・`go test -race -tags test ./internal/logging/...` のいずれも
@@ -1079,9 +1094,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 - [ ] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
 - [ ] `go test -race -tags test ./...` を実行する。
-- [ ] `make slack-e2e-test` を実行する。上の `-tags test` は `e2e` を含まないため、
+- [ ] `make slack-e2e-test` を **Linux で**実行する。上の `-tags test` は `e2e` を含まないため、
       `e2e && test` タグを持つ Slack の e2e テスト 2 ファイルはここまでのどのコマンドでも
-      ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。
+      ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。**macOS で回しても
+      テストは走らない**（Darwin 分岐が `go vet` だけを実行する）ため、macOS の結果を
+      本 Phase の確認としない。
 - [ ] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する。
 - [ ] 本書 §8 の横断検索チェックリストを実行する。
 - [ ] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
@@ -1240,7 +1257,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-06 | static | Phase 1〜3 の各コミットの直前と直後に `go test -tags test -coverprofile=<file> ./internal/logging/... ./internal/runner/base/audit/... ./internal/common/...` を実行し、`go tool cover -func=<file>` を関数ごとに比較する。検証は `git log -1 --format=%B <sha>` に比較結果が含まれることで行う |
 | AC-07 | test | `internal/logging/slack_sender_test.go::TestSlackSender_HighPriorityBypassesFullNormalQueue`（`pre_execution_error` へ移行済み）。優先度判定を常に通常へ倒すと失敗する |
 | AC-08 | static | Phase 3 の完了時と Phase 7 で `make deadcode` を実行し、新たな到達不能コードの報告が無い |
-| AC-09 | test + static | test: `internal/common/notification_context_test.go::TestNotificationContext_ZeroValueIsGlobalScope` と `::TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary`（`GroupScope("")` が構築でき、`scope=group`・`group=""` としてエンコードされ、判定が `invalid_notification_context` を返すこと）。static + test: 本番コードが**非グローバルなスコープを**コンストラクタを迂回して組み立てていないこと。**この主張は「コンストラクタ以外で値を作らせない」ではない。** `NotificationContext` のフィールドはすべて非公開であり（§4.1）、`internal/common` の外から書けるリテラルは空の `NotificationContext{}` だけである。その値はゼロ値であり、§4.1 が `TestNotificationContext_ZeroValueIsGlobalScope` で `GlobalScope()` と同一のエンコードになることを**設計として固定している**。したがって `var ctx common.NotificationContext` も `new(common.NotificationContext)` も、正しく定義されたグローバルスコープを作るだけで、不正な値は作れない。これらを禁じる検査は追加しない（禁じる理由が無く、`GlobalScope()` と等価であることは AC-09 自身が要求している）。検査が防ぐのは、`group`／`command` スコープを**リテラルで組んだつもりになって**グローバルが出来てしまう取り違えである。**判定は `internal/logging/notification_contract_guard_test.go` の構文木検査で行う。** `internal/common` を import するファイルごとに、Phase 4 で括り出した走査と `ResolveLocalImports` で**その file の実際の import 名を解決**し、解決結果が `internal/common` を指す修飾子つきの `NotificationContext` 複合リテラルを拒否する。補助として `rg -n -g '!*_test.go' -F "common.NotificationContext{" --type go cmd internal` が一致なし（`-F` は `{` を量指定子として解釈させないため必須。付け忘れると `regex parse error` で落ちる。`--type go` は `*.go` で `_test.go` を含むため、本番だけを見るには `-g '!*_test.go'` が要る。テストは複合リテラルを正当に書く）。**この `rg` は補助でしかない。** 既定の import 名を literal で探すため、`import c ".../internal/common"` と別名を付けて `c.NotificationContext{}` と書けば素通りする。これは正規の Go であり、`GlobalScope()` を呼ばずにゼロ値を構築できてしまう。別名に強い判定は AST 側だけが持つ |
+| AC-09 | test + static | test: `internal/common/notification_context_test.go::TestNotificationContext_ZeroValueIsGlobalScope` と `::TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary`（`GroupScope("")` が構築でき、`scope=group`・`group=""` としてエンコードされ、判定が `invalid_notification_context` を返すこと）。static + test: 本番コードがコンストラクタを迂回して `NotificationContext` の値を作っていないこと。**複合リテラルだけでなく、`var ctx common.NotificationContext` と `new(common.NotificationContext)` も拒否する。** 01_requirements.md の AC-09 は「値はコンストラクタでのみ構築する」に加えて「**発火元はグローバルな場合も `GlobalScope()` で明示的に**通知コンテキスト属性を付与する」と定めている。ゼロ値がグローバルスコープとして正しいことは、この要求を満たす理由にならない。AC-09 が求めているのは値の妥当性ではなく発火元での**明示性**であり、`var` 宣言で暗黙にグローバルになる書き方はまさにそれが禁じる形である（グローバルであることが、書いてあることではなく書いていないことから決まる）。**判定は `internal/logging/notification_contract_guard_test.go` の構文木検査で行う。** `internal/common` を import するファイルごとに、Phase 4 で括り出した走査と `ResolveLocalImports` で**その file の実際の import 名を解決**し、解決結果が `internal/common` を指す修飾子つきの `NotificationContext` について、**複合リテラル・`var` 宣言・`new` 呼び出しのいずれも**拒否する（3 形すべてがコンストラクタを迂回してゼロ値を作る経路である）。補助として `rg -n -g '!*_test.go' -F "common.NotificationContext{" --type go cmd internal` が一致なし（`-F` は `{` を量指定子として解釈させないため必須。付け忘れると `regex parse error` で落ちる。`--type go` は `*.go` で `_test.go` を含むため、本番だけを見るには `-g '!*_test.go'` が要る。テストは複合リテラルを正当に書く）。**この `rg` は補助でしかない。** 既定の import 名を literal で探すため、`import c ".../internal/common"` と別名を付けて `c.NotificationContext{}` と書けば素通りする。これは正規の Go であり、`GlobalScope()` を呼ばずにゼロ値を構築できてしまう。別名に強い判定は AST 側だけが持つ |
 | AC-10 | test | `internal/common/notification_context_test.go::TestNotificationContext_LogValueEncoding`。`scope` と `group` が常に出力され、command 名が無い場合に `command` が出ないことを検証する |
 | AC-11 | test + static | static: `internal/logging/notification_contract_guard_test.go`（本番コードの `PreExecutionError` リテラルが `NotificationContext` を省略していないこと。省略したリテラルを 1 個足すと失敗する）。test: `internal/runner/runner_test.go::TestLogGroupExecutionSummary_LogLevel`（グループ集計が通知コンテキストを持つこと）とグループ検証エラー経路の新規テスト（§5.5）、および `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution`（失敗経路がコマンドスコープを持つこと）。構文木ガードは引数 1 個の形しか見ないため、残る 2 発火元が実際に正しいスコープを載せることは実行テストで確かめる。**この 2 件の実行テストは、属性を載せるコード変更と同じ Phase 4 に置く**（§4.3）。Phase 5 へ送ると、2 発火元から属性を落としても Phase 4 が緑のままになり、Phase 4 の完了条件が確かめていないものを緑と称することになる |
 | AC-12 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`。02_architecture.md §3.1 の判定表と §3.6 の理由コードを行として持ち、`(scope: invalid)` の表示と送信失敗ロガーへの WARN を検証する。表示できる文字を残さない名前の行も含む |
@@ -1258,11 +1275,11 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-24 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UnknownMessageType`（汎用メッセージの送信、`unknown_message_type` の WARN、WARN 以上は通常キュー満杯でも高優先度で送られること）、`::TestSlackHandler_SchemaViolationWarnIsSingle`（未知種別と不正な通知コンテキストが同時に成立しても WARN が 1 件で、`reasons` が規定の順に並ぶ）、`::TestSlackHandler_SchemaViolationWarnDoesNotRecurse`（WARN が送信失敗ロガーだけへ届き Slack 通知を再発しない）、`::TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues`（WARN に通知本文・group 名・command 名・Webhook URL が含まれない） |
 | AC-25 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope` |
 | AC-26 | test | `internal/logging/notification_test.go` の各テストが `notificationDefinitions` を range して書かれていること。エンベロープを満たさない種別を 1 個登録すると失敗することを確認する |
-| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。どちらも期待値は `notificationDefinitions` を range して実行時に集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/` が一致なし、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
+| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。(c) の期待値は `notificationDefinitions` を range して実行時に集める。(d) が拒否する識別子名は実行時には得られない（同スライスは種別名・優先度・ビルダーしか持たず、Go は変数名も関数名も実行時に保持しない）ため、`notification.go` の構文木から、`registerNotification(...)` で初期化されるパッケージレベル `var` とそれを返す関数の宣言として集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/` が一致なし、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
 | AC-28 | static + test | static: **5 語を 1 本の `rg` にまとめてはならない。1 語につき 1 本ずつ、5 本を個別に実行し、それぞれの終了コードが 0 であることを見る**（注 2 のループを使う）。`-e` を並べた 1 本は「いずれか 1 つでも一致した行」を出し、1 語でも当たれば終了コード 0 になるため、残る 4 語が文書から抜けていても緑になる。各語は `rg -n -F -e "<語>" docs/user/runner_command.ja.md` の形で、**`-F` は必須**である。付け忘れると `(global)` は捕捉グループとして解釈され、括弧の無い裸の `global` にも一致するため、Scope の表記が書かれていなくても緑になる。対象 5 語は `[go-safe-cmd-runner]`、`(global)`、`command_group_summary`、`pre_execution_error`、`user_group_command_failure`。test: 文書に載せた Text 行の例が `internal/logging/notification_test.go` の期待値と一字一句一致することを、Phase 6 の突き合わせタスクで確認する（presence だけでは書式の誤記を検出できない） |
 | AC-29 | static | AC-28 と同じ 5 語を、同じく**1 語 1 本ずつ**（注 2 のループ）`docs/user/runner_command.md` に対して実行し、それぞれ終了コード 0。まとめた 1 本では 1 語の一致で 5 語すべてを満たしたことになってしまう。加えて `### 4.2 Notification Configuration` の節が Scope の 4 形（`(global)`、`group=`、`command=`、`(scope: invalid)`）を英語で説明していることを目視で確認する（日本語をそのまま貼り付けただけの状態を通さないため） |
 | AC-30 | static | Phase 1〜7 の各コミット sha について、作業ツリーが clean な状態で `git checkout <sha> && make test && make lint` を実行し、いずれも終了コード 0。確認後 `git checkout -` で戻る |
-| AC-31 | test | `internal/runner/e2e_slack_webhook_separation_test.go::TestE2E_SlackWebhookSeparation_MessageFormat` ほか同ファイルの分離テスト。INFO が成功用、WARN 以上がエラー用のハンドラだけで有効になることを検証する。**実行は `make slack-e2e-test` で行う。** 同ファイルは `//go:build e2e && test` を持ち、`make test` も `make lint` も `go test -tags test ./...` も `e2e` タグを付けないためビルドされない。この target を回さないと、AC-31 は「実行されていない」を「緑」と取り違える |
+| AC-31 | test | `internal/runner/e2e_slack_webhook_separation_test.go::TestE2E_SlackWebhookSeparation_MessageFormat` ほか同ファイルの分離テスト。INFO が成功用、WARN 以上がエラー用のハンドラだけで有効になることを検証する。**実行は `make slack-e2e-test` を Linux で行う。** 同ファイルは `//go:build e2e && test` を持ち、`make test` も `make lint` も `go test -tags test ./...` も `e2e` タグを付けないためビルドされない。この target を回さないと、AC-31 は「実行されていない」を「緑」と取り違える。**macOS の実行結果はこの行を満たさない。** 同 target は Darwin では `go vet` だけを走らせテストを実行しないため（Makefile の Darwin 分岐）、macOS だけの確認は「ビルドが通った」以上を意味しない |
 | AC-32 | static | Phase 3〜5 の各コミットについて `git log -1 --format=%B <sha>` に、壊した対象と失敗を確認したテスト名の記述が含まれること。対応するテストは AC-05、AC-09〜AC-27 の各行が指す |
 | AC-33 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_TextLineFormat`（登録済み種別）と `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope`（汎用メッセージ）。どちらも Text 行が製品名で始まることを assert する。static: `rg -n -g '!*_test.go' '"go-safe-cmd-runner"' --type go cmd internal` がちょうど 1 件（本番コードでの定義が 1 箇所。import パス `github.com/isseis/go-safe-cmd-runner/...` はこの引用符付きパターンに一致しないことを HEAD で確認済み）。**`-g '!*_test.go'` は必須**である。`rg --type-list` が示すとおり `--type go` は `*.go` であり、`_test.go` を含む。除外しないと、製品名の接頭辞を assert するテスト（AC-18・AC-33 の `notification_test.go`）が持つリテラルを本番の定義と一緒に数え、**正しい実装を「定義が複数ある」として落とす** |
 
@@ -1377,7 +1394,8 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
 
 - `make test`、`make lint`、`make deadcode` が通る。
 - `go test -race -tags test ./...` が通る。
-- `make slack-e2e-test` が通る（`e2e && test` タグのファイルは上のどれもビルドしない）。
+- `make slack-e2e-test` が Linux で通る（`e2e && test` タグのファイルは上のどれもビルドせず、
+  macOS ではこの target 自体がテストを実行しない）。
 - 削除の前後で、存続する関数のカバレッジが下がっていない。
 - 各テストが、対象の挙動を壊すと失敗することを確認済みである。
 
