@@ -520,9 +520,9 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `cmd/runner/integration_pre_execution_error_test.go`、
 `cmd/runner/startup_order_guard_test.go`、`sample/*.toml`
 
-この一覧は本 Phase 全体（PR-4／PR-5／PR-6 の 3 コミットの和）が触るファイルの範囲であり、
+この一覧は本 Phase 全体（PR-4／PR-5／PR-6 の 3 PR の和）が触るファイルの範囲であり、
 下のタスクが触るファイルはすべてここに現れる。PR 境界は §4.0〜§4.2（PR-4）・§4.3（PR-5）・
-§4.4（PR-6）で切られており、各コミットが実際に変更するのはこの一覧の部分集合である。とくに
+§4.4（PR-6）で切られており、各 PR が実際に変更するのはこの一覧の部分集合である。とくに
 `cmd/runner` の 2 本は、起動経路で検査が呼ばれていることと、渡している `*redaction.Config` が
 `SetupSlackLogging` の戻り値であることを見る唯一の検証であり（§4.4、PR-6 に属する）、一覧から
 漏らすと AC-32 の確認がこの一覧の外へ散る。
@@ -596,7 +596,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **推奨タイトル**: `feat(0172): add interpolation contract and notification context type`
 
-**レビュー観点**: 補間契約の変換規則・役割ごとの切り詰め有無が 02_architecture.md §3.5 と一致すること／`NotificationContext` のフィールドが非公開でコンストラクタ 3 個経由でのみ構築できる設計であること／エンコード往復・妥当性判定の全行・下位キー重複のテスト網羅性（02_architecture.md §7.1）
+**レビュー観点**: 補間契約の変換規則・役割ごとの切り詰め有無が 02_architecture.md §3.5 と一致すること／`NotificationContext` のフィールドが非公開でコンストラクタ 3 個経由でのみ構築できる設計であること／エンコード往復・妥当性判定の全行・下位キー重複のテスト網羅性（02_architecture.md §7.1）／RuntimeCommand.GroupName が正しくグループ名を返し、既存のテストケースで TimeoutResolution が明示されていること
 
 **実装モデル要件**: frontier-recommended
 
