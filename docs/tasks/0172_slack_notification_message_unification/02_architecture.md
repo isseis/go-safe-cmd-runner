@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-08 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-10 の再承認後、レビュー指摘により 2 箇所を追随修正したため再承認待ち。(E) §3.5・§3.6・§7.1: レベルの到達性の記述を訂正した（本番が構築するのは `LevelModeExactInfo` と `LevelModeWarnAndAbove` だけなので、INFO 未満だけでなく INFO と WARN の中間値も `Handle` へ届かない。写像を全域にする判断は変えず、テストの書き分けの根拠を「写像そのものを呼ぶ」へ改めた）。(F) §3.1: 改名後に存在しなくなる `ValidateGroupNames` の参照を `ValidateIdentifiers` に合わせた。以下は同日の再承認時の記録である。同日の最初の承認後、レビュー指摘により次の 4 箇所を追随修正し、それを含めて承認した。(D) §2.2: 静的契約の置き場である `internal/logging/notification_contract_guard_test.go` の行を追加し、`notification_test.go` の行から発火元の静的検査を外した（表がガードファイルを持たず、AC-09・AC-11・AC-27 の唯一の強制箇所が設計側から抜けていた）。(A) §2.2: `ValidateGroupNames` の改名を反映（Phase 4 で `ValidateIdentifiers` になる）。(B) §2.2: テスト欄を `TestValidateIdentifiers` へ。(C) §8.1 の Phase 4 行: redaction 検査だけ検査位置が違うことを反映（§3.1 の改訂の取りこぼし）。以下は 2026-09-10 の承認時の記録である。改訂点は次の 4 箇所であった。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
+| Review date | 2026-09-11 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
