@@ -385,7 +385,12 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       を実行し、`go tool cover -func=<file>` を比較して結果をコミットメッセージへ記す。
 
 **完了条件**:
-- `rg -n -e security_alert -e SecurityAlertAttrs -e buildSecurityAlert -e LogSecurityEvent -e messageTypeSecurityAlert -e sensitiveLogValuer --type go cmd internal` が一致なし。
+- `rg -n -e security_alert -e SecurityAlertAttrs -e buildSecurityAlert -e LogSecurityEvent -e messageTypeSecurityAlert --type go cmd internal` が一致なし。
+  **`sensitiveLogValuer` はこの検索に入れない。** 同名の別物が
+  `internal/redaction/redactor_test.go` にあり（本タスクは触らない）、`audit` 側を正しく
+  削除しても一致が残るため、入れるとゲートが永久に赤になる。削除の確認は
+  `rg -n sensitiveLogValuer internal/runner/base/audit/` が一致なし、で行う。§7 の AC-02 の
+  行もこの形である。
 - `rg -n -e common.SeverityCritical -e common.SeverityHigh --type go cmd internal` が一致なし、
   かつ `rg -n -e SeverityCritical -e SeverityHigh internal/common/` が一致なし
   （`runerrors` の同名定数は対象外なので、この 2 つの検索で切り分ける）。
@@ -734,9 +739,12 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       テストデータの全 TOML の group 名・command 名を新しい述語へ通し、抵触するものを列挙
       する。§1.3 で確認済みの 6 個（`basic_tests`、`cmd_expansion_basic`、
       `args_expansion_basic`、`basic_output_examples`、`basic_auto_env`、
-      `api_call_with_token`）を改名し、これらを読む後方互換テスト
-      （`internal/runner/config` の `loader_compatibility_test.go`、`backward_compat_test.go`、
-      `template_backward_compat_test.go`）の期待値も同じコミットで更新する。
+      `api_call_with_token`）を改名する。**改名の影響範囲は実測した。** 6 個の名前を
+      `rg` で追うと、現れるのは `sample/*.toml` と本書だけである。`internal/runner/config` の
+      後方互換テスト（`loader_compatibility_test.go`、`backward_compat_test.go`、
+      `template_backward_compat_test.go`）は識別子を名前で参照しておらず、ファイル名と
+      `cfg.Groups[0].Commands[0]` のような位置で参照しているため、期待値の更新は不要である。
+      改名後に同じ `rg` を流し、`sample/*.toml` と本書以外に残っていないことを確認する。
       `sample/comprehensive.toml` はハッシュ記録の対象なので、`make hash`・
       `hash-integration-test`・`hash-e2e-test` で記録を取り直す。改名・記録・検査の有効化は
       1 コミットにまとめ、中間状態でテストが落ちないようにする。
@@ -805,7 +813,14 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       へ追加する。** 上の `AKIA` 形の統合テストは「拒否されること」を示すが、**どの `Config`
       で**拒否したかは示さない（既定の `Config` でも `AKIA` 形は拒否されるため）。そこで、
       `slack_allowed_host` を設定した TOML と、**その許可ホストを含む URL 形の command 名**で
-      runner を起動し、起動前エラーで終わることを検証する行を持つ。この形は
+      runner を起動し、起動前エラーで終わることを検証する行を持つ。**この行は Webhook の
+      環境変数を設定しないと成立しない。** `SetupSlackLogging` は
+      `bootstrap.ValidateSlackWebhookEnv()` が `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と
+      `GSCR_SLACK_WEBHOOK_URL_ERROR` から設定を作れなければ `nil` を返し、検査は
+      `redaction.DefaultConfig()` へ倒れる。既定の `Config` は許可ホストを知らないので URL 形の
+      command 名を拒否せず、テストが落ちる。したがって両方の環境変数を**許可ホスト上の URL**
+      に設定したうえで起動する（同種の設定は
+      `cmd/runner/integration_pre_execution_error_test.go:173` に既存の書き方がある）。この形は
       `WithWebhookHost(<設定した許可ホスト>)` を持つ `Config` でしか拒否されないため、
       `main.go` が `redaction.DefaultConfig()` や新規に組み立てた `Config` を渡す実装、
       および上の再代入を挟む実装では**この行だけが落ちる**。構文木ガードが構造として見る
@@ -1059,13 +1074,14 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       確定済み優先度を持つ `slackRequest` の形に合わせて更新する。優先度を通常へ倒すと
       `TestSlackSender_HighPriorityBypassesFullNormalQueue` が失敗することを確認する。
 - [ ] `internal/logging/slack_handler_test.go` へ、未知種別の優先度が全域であることを
-      検証する行を追加する（02_architecture.md §7.1）。ERROR、WARN、INFO、および INFO と
-      WARN の中間値（`slog.LevelInfo + 2`）を持ち、中間値の行では通常キューへ入ることと
-      表示が `SUCCESS` であることを同時に assert する。`level == slog.LevelInfo` だけを
-      通常とする実装へ変えるとこの行が失敗することを確認する。**INFO 未満の行は作らない。**
-      `NewSlackHandler` が `level` を `slog.LevelInfo` に固定しているため（`slack_handler.go:238`）
-      `Enabled` を通らず、`Handle` を直接叩かないと緑にできない。それは
-      02_architecture.md §3.2 が禁じる形である。
+      検証する行を追加する（02_architecture.md §7.1）。**レベルから優先度を返す写像を関数
+      として直接呼ぶ表**とし、ERROR・WARN・INFO に加えて INFO と WARN の中間値
+      （`slog.LevelInfo + 2`）と DEBUG の行を持つ。`level == slog.LevelInfo` だけを通常と
+      する実装へ変えると中間値の行が失敗することを確認する。**`Handle` を通す形でこの表を
+      書かない。** 本番が構築するのは `LevelModeExactInfo`（`bootstrap/logger.go:355`）と
+      `LevelModeWarnAndAbove`（同 `:379`）だけで、どちらも中間値と INFO 未満を弾くため、
+      `Handle` 経由で緑にすると 02_architecture.md §3.2 が禁じる形になる。`Handle` を通す
+      行は本番に到達する INFO・WARN・ERROR だけとする。
 - [ ] `internal/runner/runner_test.go` の**グループ集計**については、通知コンテキスト属性が
       載ることの検証は Phase 4（§4.3）で済んでいる。本 Phase では
       `TestLogGroupExecutionSummary_LogLevel` が `NotificationAttrs` 経由へ移した後も同じ属性
@@ -1339,7 +1355,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-16 | test | `internal/runner/base/runnertypes/runtime_test.go::TestRuntimeCommand_GroupName` |
 | AC-17 | test | `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution`（コマンドスコープの属性）と `internal/logging/slack_handler_test.go::TestSlackHandler_UserGroupCommandFailure`（Scope に group 名と command 名の双方が表示されること） |
 | AC-18 | test | `internal/logging/notification_test.go::TestNotificationDefinitions_TextLineFormat`。フィクスチャ表から各種別のレコードを取り、`notificationDefinitions` を range して Text 行が `[<製品名>] <絵文字> *<STATUS>* — <Scope> : <要約>` の形であることを検証する |
-| AC-19 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_LevelDeterminesDisplay`。INFO・WARN・ERROR と、INFO と WARN の中間値（`slog.LevelInfo + 2`）について、絵文字・STATUS・色が全種別で同じになることを検証する。INFO 未満は `Handle` へ到達しないため行を作らない（02_architecture.md §3.5） |
+| AC-19 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_LevelDeterminesDisplay`。`Handle` を通す行は本番に到達する INFO・WARN・ERROR だけとし、絵文字・STATUS・色が全種別で同じになることを検証する。中間値（`slog.LevelInfo + 2`）と INFO 未満は、レベルから表示を返す写像を関数として直接呼ぶ形で全域性だけを確認する。本番が構築する 2 モードはどちらもこの 2 種類を `Enabled` で弾くため、`Handle` 経由の行は作らない（02_architecture.md §3.5） |
 | AC-20 | test | `internal/logging/notification_test.go::TestNotificationDefinitions_EnvelopeHasNoHeadingMarkup`（静的な部分に `###` が無い）と `internal/logging/slack_handler_test.go::TestSlackHandler_EnvelopeValueProperties`（ホスト名の継ぎ目を差し替え、Hostname フィールドの値が §3.5 の出力の性質 5 項目を満たすこと） |
 | AC-21 | test | `internal/logging/notification_test.go::TestNotificationDefinitions_TrailingFieldsOrder`（末尾 3 件の順序）と `::TestNotificationDefinitions_BuildersAvoidReservedFieldTitles`（ビルダーが予約見出しを使わない）。どちらも `notificationDefinitions` を range する |
 | AC-22 | test + static | test: 上記 2 テストと `::TestNotificationDefinitions_FieldsAreDeclaredInInventory`（各ビルダーの返すフィールドが §3.5 の一覧のいずれかに対応すること）。static: `rg -n "type messageBuilder" internal/logging/notification.go` の結果が `func(slog.Record) messageDetails` であること（`*SlackHandler` を取らないため、ビルダーはエンベロープを組み立てる手段を持たない） |
@@ -1347,7 +1363,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-24 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UnknownMessageType`（汎用メッセージの送信、`unknown_message_type` の WARN、WARN 以上は通常キュー満杯でも高優先度で送られること）、`::TestSlackHandler_SchemaViolationWarnIsSingle`（未知種別と不正な通知コンテキストが同時に成立しても WARN が 1 件で、`reasons` が規定の順に並ぶ）、`::TestSlackHandler_SchemaViolationWarnDoesNotRecurse`（WARN が送信失敗ロガーだけへ届き Slack 通知を再発しない）、`::TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues`（WARN に通知本文・group 名・command 名・Webhook URL が含まれない） |
 | AC-25 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope` |
 | AC-26 | test | `internal/logging/notification_test.go` の各テストが `notificationDefinitions` を range して書かれていること。エンベロープを満たさない種別を 1 個登録すると失敗することを確認する |
-| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。(c) の期待値は `notificationDefinitions` を range して実行時に集める。(d) が拒否する識別子名は実行時には得られない（同スライスは種別名・優先度・ビルダーしか持たず、Go は変数名も関数名も実行時に保持しない）ため、`notification.go` の構文木から、`registerNotification(...)` で初期化されるパッケージレベル `var` とそれを返す関数の宣言として集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/` が一致なし、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
+| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。(c) の期待値は `notificationDefinitions` を range して実行時に集める。(d) が拒否する識別子名は実行時には得られない（同スライスは種別名・優先度・ビルダーしか持たず、Go は変数名も関数名も実行時に保持しない）ため、`notification.go` の構文木から、`registerNotification(...)` で初期化されるパッケージレベル `var` とそれを返す関数の宣言として集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/ | rg -v messageTypeDefinition` が一致なし、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる。`messageTypeDefinition` を除くのは、§5.1 が定義する**新しい型名**がこのパターンに一致するためで、除かないと Phase 5 を設計どおり実装した時点でゲートが赤になる。狙いは旧い種別定数（`messageTypeSecurityAlert` など）だけである）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
 | AC-28 | static + test | static: **5 語を 1 本の `rg` にまとめてはならない。1 語につき 1 本ずつ、5 本を個別に実行し、それぞれの終了コードが 0 であることを見る**（注 2 のループを使う）。`-e` を並べた 1 本は「いずれか 1 つでも一致した行」を出し、1 語でも当たれば終了コード 0 になるため、残る 4 語が文書から抜けていても緑になる。各語は `rg -n -F -e "<語>" docs/user/runner_command.ja.md` の形で、**`-F` は必須**である。付け忘れると `(global)` は捕捉グループとして解釈され、括弧の無い裸の `global` にも一致するため、Scope の表記が書かれていなくても緑になる。対象 5 語は `[go-safe-cmd-runner]`、`(global)`、`command_group_summary`、`pre_execution_error`、`user_group_command_failure`。test: 文書に載せた Text 行の例が `internal/logging/notification_test.go` の期待値と一字一句一致することを、Phase 6 の突き合わせタスクで確認する（presence だけでは書式の誤記を検出できない） |
 | AC-29 | static | AC-28 と同じ 5 語を、同じく**1 語 1 本ずつ**（注 2 のループ）`docs/user/runner_command.md` に対して実行し、それぞれ終了コード 0。まとめた 1 本では 1 語の一致で 5 語すべてを満たしたことになってしまう。加えて `### 4.2 Notification Configuration` の節が Scope の 4 形（`(global)`、`group=`、`command=`、`(scope: invalid)`）を英語で説明していることを目視で確認する（日本語をそのまま貼り付けただけの状態を通さないため） |
 | AC-30 | static | Phase 1〜7 の各コミット sha について、作業ツリーが clean な状態で `git checkout <sha> && make test && make lint` を実行し、いずれも終了コード 0。確認後 `git checkout -` で戻る |
