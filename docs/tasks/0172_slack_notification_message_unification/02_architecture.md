@@ -394,7 +394,7 @@ Webhook ホストの変換も対象に含める。許可ホストは TOML の `s
 
 ただし redaction の検査だけは `ValidateGroupNames` の中に置けない。理由は 2 つある。
 
-1 つは許可ホストの正規化である。本番が `redaction.WithWebhookHost` へ渡すのは生の TOML 値ではなく `normalizeSlackAllowedHost` が小文字化と括弧除去を施した値であり（`bootstrap/config.go`）、この正規化は `LoadConfig` が返った**後**に走る。生の値で検査すると、TOML が大文字を含むときに検査と本番で別のパターンを使うことになり、検査を通った名前が本番で潰れる。正規化関数は `internal/runner/bootstrap` にあり、`bootstrap` は既に `internal/runner/config` へ依存しているため、逆向きの import は循環になる。
+1 つは許可ホストの正規化である。本番が `redaction.WithWebhookHost` へ渡すのは生の TOML 値ではなく `normalizeSlackAllowedHost` が小文字化と括弧除去を施した値であり（`bootstrap/config.go`）、この正規化は `LoadConfig` が返った**後**に走る。差が出るのは IPv6 リテラルである。TOML は `[2001:db8::1]` と書き、`redaction.ValidateWebhookHost` は括弧付きの値を拒否するため、生の値のままでは検査用の `Config` を組むことすらできない。大文字小文字については差が出ない。`compileWebhookHostPattern` は `(?i)` で組み（`internal/redaction/value_detector.go:118`）、`validateWebhookURL` も小文字化を通す（`internal/logging/slack_handler.go:192`）。正規化関数は `internal/runner/bootstrap` にあり、`bootstrap` は既に `internal/runner/config` へ依存しているため、逆向きの import は循環になる。
 
 もう 1 つは決定的な理由である。この検査は**本番と同じ変換**を適用してはじめて意味を持つが、その変換を体現する `*redaction.Config` は `AddSlackHandlers` が組み立てるまで存在しない。`AddSlackHandlers` は正規化済みホストを必要とするため、設定の読み込みより後にしか走れない。したがって設定の読み込み時点では、比較すべき相手がまだ無い。
 
@@ -557,7 +557,7 @@ func NotificationAttrs(notification Notification, notificationContext common.Not
 
 共通エンベロープ生成はログレベル、通知コンテキスト、種別固有部分から 1 個の `SlackMessage` を作る。本番コードでは、製品名 `go-safe-cmd-runner` を一つの定数としてのみ定義する。
 
-対応表はログレベルの全域に対して定義する。`LevelModeDefault` は公開されており `level >= s.level` で通過するため、本番の 2 モード以外では DEBUG など INFO 未満のレコードや、INFO と WARN の中間の値も `SlackHandler` へ届きうる。上から順に最初に一致した行を使い、どのレベルも必ずいずれかの行に一致する。
+対応表はログレベルの全域に対して定義する。`LevelModeDefault` は公開されたゼロ値であり `level >= s.level` で通過するため、INFO と WARN の中間の値（`slog.LevelInfo + 2` など）は `SlackHandler` へ届きうる。一方、INFO 未満は届かない。`NewSlackHandler` が `level` を `slog.LevelInfo` に固定しており（`internal/logging/slack_handler.go:238`）、`SlackHandlerOptions` にこれを下げる項目が無いためである。上から順に最初に一致した行を使い、どのレベルも必ずいずれかの行に一致する。
 
 | 条件 | 絵文字 | STATUS | 添付色 |
 |---|---|---|---|
@@ -566,7 +566,7 @@ func NotificationAttrs(notification Notification, notificationContext common.Not
 | `level >= slog.LevelInfo` かつ WARN 未満 | ✅ | `SUCCESS` | `good` |
 | INFO 未満 | ⚠️ | `WARNING` | `warning` |
 
-閾値による範囲判定にするのは、AC-19 が求める「ログレベルだけで決まる」写像を全域関数にするためである。本番の成功用・エラー用ハンドラでは INFO 未満は到達しないが、公開された既定モードから想定外レベルが届いても成功と誤表示しないよう WARNING へ倒す。
+閾値による範囲判定にするのは、AC-19 が求める「ログレベルだけで決まる」写像を全域関数にするためである。中間値は実際に届くため行が要る。INFO 未満はどの構成でも届かないが、写像に穴を残さないよう WARNING へ倒す行を置く。ただしテストで固定するのは届く側だけであり、INFO 未満のレコードで `Handle` を直接叩く行は作らない。§3.2 の「production では届かない経路を handler 単体テストだけで緑にしない」に従う。
 
 Text 行は常に次の形とする。
 
@@ -685,7 +685,7 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 | `level >= slog.LevelWarn` | 高優先度 |
 | それ未満（INFO、および §3.5 の対応表が WARNING へ倒す INFO 未満の値） | 通常 |
 
-`LevelModeDefault` が公開されている以上、DEBUG など INFO 未満のレコードや INFO と WARN の中間値も `SlackHandler` へ届きうる（§3.5）。レベル表示だけを全域関数にして優先度の写像に未定義の入力を残すと、同じレコードについて表示は決まるのにキューが決まらない状態になり、実装が「INFO 以外は高優先度」と読むか「WARN 以上が高優先度」と読むかで挙動が割れる。
+`LevelModeDefault` が公開されている以上、INFO と WARN の中間値は `SlackHandler` へ届きうる（§3.5。INFO 未満は `level` が `slog.LevelInfo` に固定されているため届かないが、写像に穴を残さないため行としては定める）。レベル表示だけを全域関数にして優先度の写像に未定義の入力を残すと、同じレコードについて表示は決まるのにキューが決まらない状態になり、実装が「INFO 以外は高優先度」と読むか「WARN 以上が高優先度」と読むかで挙動が割れる。
 
 境界を WARN に置き、INFO 未満を通常へ倒すのは、2 つの機構で安全側が逆を向くためである。表示側は、想定外のレベルを成功と誤表示しないよう WARNING へ倒す（§3.5）。キュー側は、種別も名乗らない低レベルのレコードを予約レーンへ入れないよう通常へ倒す。高優先度キューは、実行前エラーのような通知が通常通知の洪水に押し出されないための予約であり（`slack_sender.go` の該当コメント）、未知かつ INFO 未満のレコードを昇格させるとその目的を損なう。表示が `WARNING` であることを理由に優先度を高へ揃えてはならない。
 
@@ -935,7 +935,7 @@ flowchart LR
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
 | 設定の検証 | コマンド名が空の設定、制御文字や書式制御文字だけで表示できる文字を持たない設定、および長さ上限を 1 byte 超える group 名・command 名を持つ設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。上限ちょうどの名前は通ることも同じ表で確認する。制御文字・書式制御文字の検査には、表示できる文字を**残す**入力（`backup\nother`、`backup` + U+202E + `evil`）を必ず含める。制御文字だけの名前は「表示できる内容を持たない」検査でも拒否されるため、それだけでは 2 つの検査を区別できず、無条件の制御文字拒否を外しても行が緑のままになる。逆向きの区別として、半角空白だけの名前（`"   "`）の行も持つ。これは制御文字も書式制御文字も含まないため文字種の検査には掛からず、White_Space 以外の rune を求める述語だけが拒否できる。この行があると、空でないことと禁止文字の不在だけを見る実装が落ちる。各検査を外すと対応する行が失敗する | AC-17 |
 | 識別子を切り詰めない | 長さ上限ちょうどまでの group 名が Scope フィールドと Text 行に接頭辞ではなく全体として現れることを検証する。先頭が長く一致する 2 つの group 名が異なる Scope として表示されることも確認し、識別子へ切り詰めを入れると失敗する形にする | AC-13, AC-18 |
-| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）を持つ設定が、redaction 用のセンチネルエラーで拒否されることを `errors.Is` で検証する。この検査は `config.Loader` ではなく `bootstrap` の識別子検査関数にあるため（§3.1）、テストは読み込み済みの設定と `*redaction.Config` を渡してその関数を直接呼ぶ。`LoadConfig` だけを呼ぶ形では redaction のセンチネルは出ない。ただし各行が使える識別子の種類は group 名の文法で決まる。`GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）は `.`、`:`、`/` を許さず、しかも `ValidateGroupNames` は `loadConfigInternal` の中、すなわち `bootstrap` の redaction 検査より前に走る。したがって JWT 形と URL 形は group 名では `ErrInvalidGroupName` で落ち、redaction のセンチネルには届かないため、この 2 形は command 名の行としてのみ書く。group 名と command 名の双方で使えるのは、語の一致で潰れる名前と、`AKIA` 形・`ghp_` 形のように英数字と下線だけで綴れる値形式に限る。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。さらに `slack_allowed_host` を設定した状態で、そのホストを含む URL 形の command 名が拒否されることと、同じ名前が許可ホスト未設定なら通ることを 1 組の行として持つ。この組は本番と同じ `Config` を受け取っていることの唯一の担保であり、`SetupSlackLogging` の戻り値を使わず既定の `Config` で検査する実装、同じ式で `Config` を組み直す実装、正規化前の値で検査する実装のいずれへ戻しても失敗する。TOML の許可ホストを大文字で書いた行も持ち、正規化前の値で検査する実装を落とす。Slack 未設定（戻り値が `nil`）の行では、既定の `Config` で語の一致と値形式の検査が依然として働くことを確認し、`nil` を「検査しない」と読む実装を落とす。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
+| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）を持つ設定が、redaction 用のセンチネルエラーで拒否されることを `errors.Is` で検証する。この検査は `config.Loader` ではなく `bootstrap` の識別子検査関数にあるため（§3.1）、テストは読み込み済みの設定と `*redaction.Config` を渡してその関数を直接呼ぶ。`LoadConfig` だけを呼ぶ形では redaction のセンチネルは出ない。ただし各行が使える識別子の種類は group 名の文法で決まる。`GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）は `.`、`:`、`/` を許さず、しかも `ValidateGroupNames` は `loadConfigInternal` の中、すなわち `bootstrap` の redaction 検査より前に走る。したがって本番経路では JWT 形と URL 形の group 名が redaction 検査へ到達しないため、この 2 形は command 名の行としてのみ書く。直接呼び出しなら到達させられるが、それは本番に無い入力を固定することであり §3.2 に反する。group 名と command 名の双方で使えるのは、語の一致で潰れる名前と、`AKIA` 形・`ghp_` 形のように英数字と下線だけで綴れる値形式に限る。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。さらに `slack_allowed_host` を設定した状態で、そのホストを含む URL 形の command 名が拒否されることと、同じ名前が許可ホスト未設定なら通ることを 1 組の行として持つ。この組が落とすのは、`SetupSlackLogging` の戻り値を使わず既定の `Config` で検査する実装と、`nil` を渡す実装である。同じ式で `Config` を組み直す実装は落とせない。本番のオプションが `WithWebhookHost` 1 個だけである以上、組み直した `Config` は本番と同一に振る舞うためである（付録 B.11）。組み直しは §8 の検索で、呼び出し側の配線は `cmd/runner` の統合テストと `startup_order_guard_test.go` の構文木ガードで固定する。統合テストは「拒否されること」しか示さず、どの `Config` で拒否したかは示さないため、共有そのものは構文木で見る。許可ホストを大文字で書いた行は作らない。`compileWebhookHostPattern` が `(?i)` で組み、`validateWebhookURL` も小文字化するため、大文字小文字はどの実装でも差を生まないからである。Slack 未設定（戻り値が `nil`）の行では、既定の `Config` で語の一致と値形式の検査が依然として働くことを確認し、`nil` を「検査しない」と読む実装を落とす。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
 | エンベロープ値の出力の性質 | §3.5 の継ぎ目（`internal/logging` の非公開パッケージ変数）を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
@@ -943,7 +943,7 @@ flowchart LR
 | 製品名 | 登録済み種別と汎用メッセージが同じ製品名で始まり、本番コード内の定義箇所が 1 つである | AC-33 |
 | ユーザー／グループ指定コマンドの失敗 | 固有ビルダーが command 名、終了コード、Scope を表示する | AC-17, AC-23 |
 | 識別子を載せる他フィールド | `user_group_command_failure` の `Command` フィールドと、`command_group_summary` がコマンド結果ごとに出す `Command` フィールドの**双方**について、`Scope: (global)` に相当する行を作る改行入りの command 名、`<!channel>` を含む command 名、双方向表示制御を含む command 名が、1 行化・書式制御文字の除去・実体参照化を経て、偽の行もメンションも表示順の反転も作らないことを検証する。どちらか一方だけを契約の対象にすると、対象外にした側の行が失敗する。group 集計側は合成値のため、`cmd.Name` の部分だけが識別子として処理され、終了コードと骨格が壊れないことも同じ行で確認する | AC-17, AC-20, AC-23 |
-| 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる。優先度の写像は §3.6 の表のとおり全域であることを、ERROR、WARN、INFO、DEBUG、および INFO と WARN の中間値の行で確認する。DEBUG の行は通常キューへ入り、表示が `WARNING` であることと同時に assert する。「INFO 以外は高優先度」と実装するとこの行が失敗する | AC-24, AC-25 |
+| 未知種別 | 空文字と未知文字列が汎用メッセージとして送られ、共通エンベロープと固定理由コードの WARN を持つ。WARN 以上は通常キューが満杯でも高優先度で送られる。優先度の写像は §3.6 の表のとおり全域であることを、ERROR、WARN、INFO、および INFO と WARN の中間値（`slog.LevelInfo + 2`）の行で確認する。中間値の行は通常キューへ入り、表示が `SUCCESS` になることを同時に assert する。`level == slog.LevelInfo` だけを通常とする実装はこの行で落ちる。INFO 未満の行は作らない。`Handle` へ到達しないため、行を作れば §3.2 が禁じる形になる | AC-24, AC-25 |
 | WARN の件数 | 未知種別と不正な通知コンテキストが同時に成立するレコードで WARN が 1 件だけ記録され、`reasons` に両方の理由コードが規定の順で並ぶ | AC-24 |
 | 単一定義 | 登録関数が返すトークンと、そのトークンが参照する定義に、種別名、ビルダー、優先度がまとめて保持されることを検証する。`notificationDefinitions` を走査して種別名が一意であることも確かめる。構文木の静的契約テストで本番コードによる直接の `slack_notify=true` と `message_type` の構築、および登録済み token を返す公開アクセサ以外の引数を禁止する。同じ静的テストで `PreExecutionError` のリテラルが `NotificationContext` を省略していないことも検証する | AC-26, AC-27 |
 | 優先度 | 通常キューを満たしても `pre_execution_error` が高優先度キューへ入り、先に送られる。優先度を通常へ変えると失敗する | AC-07, AC-27 |
@@ -1084,4 +1084,4 @@ AC-09 に従い `NotificationContext` のゼロ値はグローバルとする。
 
 2 つ目は、`LoadAndPrepareConfig` の中に置いたまま `Config` だけを組み直す案、すなわち初版の形である。上のとおり保証にならないため採らない。
 
-3 つ目が本文の形である。`SetupSlackLogging` が既に返している `*redaction.Config` を検査へ渡す。値が 1 個しか無ければ分岐しようがない。引き換えに、検査が SlackHandler 登録後に動くこと（拒否が Slack へ届く）と、`nil` の扱いを設計として決める必要が生じる。前者は §3.1 と §3.2 で、後者は「`nil` は Slack 未設定を意味し、そのとき本番が使っているのは Phase 1 の既定 `Config` であるから検査も `DefaultConfig()` を使う」として決めた。渡し忘れや別の値の混入は型では防げないため、許可ホスト依存の 1 組（§7.1）で固定する。
+3 つ目が本文の形である。`SetupSlackLogging` が既に返している `*redaction.Config` を検査へ渡す。値が 1 個しか無ければ分岐しようがない。引き換えに、検査が SlackHandler 登録後に動くこと（拒否が Slack へ届く）と、`nil` の扱いを設計として決める必要が生じる。前者は §3.1 と §3.2 で、後者は「`nil` は Slack 未設定を意味し、そのとき本番が使っているのは Phase 1 の既定 `Config` であるから検査も `DefaultConfig()` を使う」として決めた。渡し忘れや別の値の混入は型では防げない。許可ホスト依存の 1 組（§7.1）が落とせるのは、既定の `Config` を使う実装と `nil` を渡す実装までである。同じ式で組み直す実装は、本番のオプションが `WithWebhookHost` 1 個だけである以上まったく同じ振る舞いになり、いかなる入出力テストでも区別できない。したがって組み直しは §8 の検索で禁じ、呼び出し側が戻り値を渡していることは `cmd/runner` の統合テスト（実バイナリの起動が失敗すること）と `startup_order_guard_test.go` の構文木ガード（渡している値が `SetupSlackLogging` の戻り値であること）で固定する。
