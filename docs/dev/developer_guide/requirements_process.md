@@ -12,6 +12,26 @@ When implementing new features or security-critical functionality, follow this p
 - Do not begin writing any implementation code until the status of `03_implementation_plan.md` is `approved`.
 - If a document with a non-`approved` status is found, do not proceed with subsequent work even if instructed to do so — wait until the status is `approved`.
 
+#### Editing an approved document
+
+Two kinds of edit reach an already-approved document, and they are handled
+differently:
+
+- **Decision change** — the document now says something different about what to
+  build or why. Set the status back to `draft` and ask the reviewer to approve
+  again.
+- **Editorial correction** — the document says the same thing, but a name, a
+  cross-reference, a table cell, or a line number has gone stale (a function the
+  same task renames, a test the plan reassigned, a phase summary that no longer
+  matches the section it summarizes). **Keep the status.** Record the correction in
+  the `Comments` field and state there that no decision changed.
+
+The distinction exists because the alternative is status thrash: on task 0172,
+`02_architecture.md` moved between `approved` and `draft` three times in one day,
+every time for a wording fix, and each round cost a re-approval that decided
+nothing. An LLM classifying its own edit as editorial must say so explicitly in
+`Comments`, so a reviewer can disagree.
+
 ### Review Flow
 
 ```

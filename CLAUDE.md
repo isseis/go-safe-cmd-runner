@@ -117,7 +117,10 @@ command output.
 - **Every test must be able to fail for its stated reason.** Before committing a
   test, disable the thing it claims to cover — nil the collaborator, revert the
   branch, break the default — and confirm it fails. Say in the commit message that
-  you did.
+  you did. This is checked by breaking the code, never by arguing it in prose: a
+  design or planning document must not claim that a test "would fail if the
+  implementation were X", because that is a statement about code nobody has written
+  and no reviewer can check.
 - **A layered path needs inputs only one layer can handle.** Where two mechanisms
   can produce the same output (e.g. key-name redaction and value-format detection),
   an input both layers match proves nothing about either: assertions like "output

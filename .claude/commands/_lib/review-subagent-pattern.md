@@ -61,6 +61,24 @@ After receiving findings:
   the scope. Otherwise, stop and report the remaining issues instead of
   continuing automatically.
 
+### Convergence
+
+A review returns findings whenever it is asked, so "the reviewer found something"
+is not by itself a reason for another round. Two rules keep the loop from running
+on its own momentum:
+
+- **Prefer deletion to addition when closing a finding.** A fix that adds
+  explanatory prose adds new claims, and those claims are reviewed next round. On
+  task 0172 a single finding produced a chain of three: the justification written
+  to close it was wrong, its replacement was wrong, and only the third was right.
+  Cutting the sentence that cannot be verified is usually the better fix.
+- **Stop at the severity floor, not at zero findings.** Past the second pass, a
+  Minor or purely editorial finding is recorded (an issue, a TODO in the artifact)
+  rather than fixed in place. Approval waits on Critical and Major only. An
+  artifact where the remaining findings are about wording, formatting, or
+  bookkeeping is finished; continuing to edit it mostly generates the next round's
+  findings.
+
 The calling command may add an extra rule after this procedure (e.g. "commit
 only after all review passes are complete"). Follow any such rule.
 
