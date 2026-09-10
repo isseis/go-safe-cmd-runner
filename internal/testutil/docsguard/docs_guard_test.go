@@ -95,7 +95,7 @@ func TestTaskDocs_StatusHeaderMatchesStatus(t *testing.T) {
 				problem = "status is " + status + ", so Review date and Reviewer must both be filled in"
 			}
 		default:
-			problem = "status must be draft, approved or completed, got " + status
+			problem = "the Status cell must hold only the status value (draft, approved or completed), got " + status
 		}
 		if problem == "" {
 			continue
@@ -252,11 +252,9 @@ func statusHeader(body string) (status, reviewDate, reviewer string) {
 	}
 
 	for _, m := range statusCellRE.FindAllStringSubmatch(section, -1) {
-		value := strings.Trim(m[2], "`")
-		// A value may carry a parenthetical note; the status itself is what precedes it.
-		if before, _, ok := strings.Cut(value, "（"); ok {
-			value = strings.TrimSpace(before)
-		}
+		// Only the backticks of the code span are stripped: the cell holds the value
+		// alone, so anything left over is a real defect the switch below reports.
+		value := strings.TrimSpace(strings.Trim(m[2], "`"))
 		switch m[1] {
 		case "Status":
 			status = value
