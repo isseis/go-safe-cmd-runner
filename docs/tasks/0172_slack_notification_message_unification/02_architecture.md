@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | - |
 | Reviewer | - |
-| Comments | §3.1 の 2 段落を修正したため再レビュー待ち。(1) 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。 |
+| Comments | 4 箇所を修正したため再レビュー待ち。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
 
 ## 関連文書
 
@@ -200,8 +200,8 @@ flowchart LR
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
-| `internal/runner/runner.go` | 変更 | グループ検証エラーを `GroupScope` と構造化された本文で通知し、グループ集計へ通知コンテキストを付ける | `TestSlackNotification` と検証エラー経路のテスト |
-| `internal/runner/runner_test.go` | 変更 | グループ集計とグループ検証エラーの通知コンテキストを検証する | `TestSlackNotification` を拡張する |
+| `internal/runner/runner.go` | 変更 | グループ検証エラーを `GroupScope` と構造化された本文で通知し、グループ集計へ通知コンテキストを付ける | `TestLogGroupExecutionSummary_LogLevel` と、`Execute` 経由で検証エラー分岐へ到達する新規テスト |
+| `internal/runner/runner_test.go` | 変更 | グループ集計とグループ検証エラーの通知コンテキストを検証する | グループ集計は `TestLogGroupExecutionSummary_LogLevel` を拡張し、検証エラー経路は新規に書く。**`TestSlackNotification` は使わない**（名前に反して通知レコードを捕捉せず、`Group: %s, ` の分岐を持つ `executeGroups` ではなく `ExecuteGroup` を呼ぶため、AC-13・AC-14 に到達しない） |
 | `cmd/runner/main.go` | 変更 | 11 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加え、報告境界で Run ID を代入してから構造体を渡す。あわせて `SetupSlackLogging` の直後、グローバル展開より前に識別子の redaction 検査を呼び、その戻り値の `*redaction.Config` をそのまま渡す | 起動前エラーの統合テスト群 |
 | `internal/runner/bootstrap/config.go` | 変更 | 4 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。ここで構築される設定読み込み失敗は SlackHandler の登録前に起きるため Slack へは届かず、AC-15 の検証対象ではない | 同パッケージの設定読み込みエラーのテスト |
 | `internal/runner/bootstrap/environment.go` | 変更 | 2 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。`SetupSlackLogging` の戻り値と引数は変更しない | 同パッケージの環境準備エラーのテスト |
@@ -814,7 +814,7 @@ flowchart LR
 
 **設計時点ではこの実機確認は未実施である**。`###` が Slack の mrkdwn で見出しにならないことは要件定義の調査で確認済みであり、`*...*` は mrkdwn の基本記法であるため機能しない可能性は低いと判断しているが、判断であって確認ではない。上記を実装フェーズの完了条件に含める（§8.1 の Phase 7）。
 
-強調が期待どおり表示されない環境があった場合の代替は、強調記法を外して素の文字列にすることである。Text 行の構造（製品名・絵文字・STATUS・Scope・要約の並び）は強調記法に依存しないため、この代替でも要件は満たせる。実サービスの検証を実行できない環境では、モックサーバーによるペイロード検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
+強調が期待どおり表示されない環境があった場合の代替は、強調記法を外して素の文字列にすることである。Text 行の構造（製品名・絵文字・STATUS・Scope・要約の並び）は強調記法に依存しないため、構造としてはこの代替でも成り立つ。**ただしこれをそのまま適用してはならない。** 01_requirements.md の AC-18 は Text 行を `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` と、`*<STATUS>*` の `*` ごと字面で要求しており、`TestNotificationDefinitions_TextLineFormat` もその形を assert する。`*` を落とすと、受け入れテストを落としたまま出すか、承認済みの要件から離れる向きにテストを弱めるかのどちらかになる。したがってこの代替を採るときは、**先に 01_requirements.md の AC-18 を改訂して強調記法を要求から外し、本節と 03_implementation_plan.md §7 の AC-18 の行、および上記テストの期待値を同じ変更で更新する**。表示を直す前に要件を直す。実サービスの検証を実行できない環境では、モックサーバーによるペイロード検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
 
 ### 5.4 他の設計文書のポリシーとの関係
 

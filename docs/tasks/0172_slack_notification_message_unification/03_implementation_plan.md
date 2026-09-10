@@ -604,6 +604,16 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       検査対象が Phase 4 の構造体変更だけに依存し、Phase 4 の完了条件（AC-11）を Phase 5 の
       成果物に依存させないためである。残る半分（`slack_notify`／`message_type` の直接構築の
       禁止と `NotificationAttrs` の引数制限）は Phase 5 で足す。
+- [ ] 同ファイルへ、**AC-09 のコンストラクタ検査**も本 Phase で入れる。`internal/common` を
+      import する本番ファイルごとに `ResolveLocalImports` で実際の import 名を解決し、
+      解決結果が `internal/common` を指す `NotificationContext` の
+      **(i) 複合リテラル・(ii) `var` 宣言・(iii) `new` 呼び出し**をいずれも拒否する。3 形とも
+      コンストラクタを迂回してゼロ値を作る経路であり、AC-09 は「値はコンストラクタでのみ
+      構築する」だけでなく「グローバルな場合も `GlobalScope()` で明示的に」付与することを
+      要求している（§7 の AC-09 の行）。検査対象は Phase 4 の構造体変更だけに依存するため、
+      Phase 5 へ送らない。**3 形それぞれについて、本番ファイルへ 1 個足すと落ちることを
+      確認する**（1 形でも見落とす実装が緑のまま残らないようにする）。別名 import
+      （`import c ".../internal/common"`）の行も含める。
 - [ ] `cmd/runner/startup_privilege_test.go` の `TestReportStartupPrivilegeFailure_UsesValidRunID`
       を、新しい引数形（構造体）に合わせて更新する。
 - [ ] `internal/logging/pre_execution_error_test.go` の `TestHandlePreExecutionError_AllTypes`
@@ -879,6 +889,18 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 5.5 テスト
 
+- [ ] **発火元が「正しい」token を選んでいることを、発火元ごとに assert する。** 構文木ガードの
+      (b) が見るのは第 1 引数が**登録済みアクセサのいずれか**であることだけで、どの発火元が
+      どの token を渡すかは見ない。したがって `LogUserGroupExecution` が
+      `UserGroupCommandFailureNotification()` の代わりに
+      `CommandGroupSummaryNotification()` を渡しても、(b) は通り、コマンドスコープだけを見る
+      `TestLogger_LogUserGroupExecution` も通り、別に組み立てた SlackHandler のテストも通る。
+      それでいて本番の失敗通知はグループ集計のビルダーへ回り、AC-23 のメッセージにならない。
+      3 発火元の各テスト（`TestLogger_LogUserGroupExecution`、
+      `TestLogGroupExecutionSummary_LogLevel`、`TestHandlePreExecutionError_*`）で、
+      **捕捉したレコードの `message_type` 属性が期待する種別名であること**を assert する。
+      期待値は公開アクセサ経由で引き、文字列リテラルを書かない。token を取り違える変更を
+      入れると、その発火元のテストだけが落ちる形にする。
 - [ ] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
       は Phase 4 で括り出し済みである（§4.3）。本 Phase では追加せず、そのまま呼ぶ。
 - [ ] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
@@ -937,8 +959,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       現れた時点で落ちる。§5.4 の発火元 3 箇所はいずれも
       `NotificationAttrs(<アクセサ>(), <ctx>)` と第 1 引数へ直接書くため、そのまま通る。
       アクセサをいったん変数へ受けてから渡す書き方も落ちるが、これは意図した制約である
-      （分散した登録簿はまさにその形を取る）。アクセサの集合は `notificationDefinitions` から
-      実行時に得て、検査側へ名前を書き写さない。
+      （分散した登録簿はまさにその形を取る）。アクセサの集合の**出どころは上と同じく構文木**で
+      あり、`notificationDefinitions` からは得られない（実行時に関数名は残らない）。
       走査は Phase 4 のヘルパーを使い、対象ディレクトリを書き並べない。
       このファイルを `notification_test.go` と分けるのは、`cmd/runner/startup_order_guard_test.go`
       と同じく、構文木ガードを独立したファイルに置く既存の慣行に合わせるためである。
@@ -1271,7 +1293,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-20 | test | `internal/logging/notification_test.go::TestNotificationDefinitions_EnvelopeHasNoHeadingMarkup`（静的な部分に `###` が無い）と `internal/logging/slack_handler_test.go::TestSlackHandler_EnvelopeValueProperties`（ホスト名の継ぎ目を差し替え、Hostname フィールドの値が §3.5 の出力の性質 5 項目を満たすこと） |
 | AC-21 | test | `internal/logging/notification_test.go::TestNotificationDefinitions_TrailingFieldsOrder`（末尾 3 件の順序）と `::TestNotificationDefinitions_BuildersAvoidReservedFieldTitles`（ビルダーが予約見出しを使わない）。どちらも `notificationDefinitions` を range する |
 | AC-22 | test + static | test: 上記 2 テストと `::TestNotificationDefinitions_FieldsAreDeclaredInInventory`（各ビルダーの返すフィールドが §3.5 の一覧のいずれかに対応すること）。static: `rg -n "type messageBuilder" internal/logging/notification.go` の結果が `func(slog.Record) messageDetails` であること（`*SlackHandler` を取らないため、ビルダーはエンベロープを組み立てる手段を持たない） |
-| AC-23 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UserGroupCommandFailure`。固有メッセージとして組み立てられ、コマンド名と終了コードが含まれることを検証する |
+| AC-23 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UserGroupCommandFailure`。固有メッセージとして組み立てられ、コマンド名と終了コードが含まれることを検証する。加えて `internal/runner/base/audit/logger_test.go::TestLogger_LogUserGroupExecution` が、**捕捉したレコードの `message_type` が `user_group_command_failure` であること**を assert する（§5.5）。前者はハンドラへ正しい種別が渡った場合の組み立てを見るだけで、発火元がその種別を選んだかは見ない。構文木ガードの (b) も第 1 引数が登録済みアクセサのいずれかであることしか見ないため、発火元が別の token を渡す取り違えはこの assert だけが捕まえる |
 | AC-24 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UnknownMessageType`（汎用メッセージの送信、`unknown_message_type` の WARN、WARN 以上は通常キュー満杯でも高優先度で送られること）、`::TestSlackHandler_SchemaViolationWarnIsSingle`（未知種別と不正な通知コンテキストが同時に成立しても WARN が 1 件で、`reasons` が規定の順に並ぶ）、`::TestSlackHandler_SchemaViolationWarnDoesNotRecurse`（WARN が送信失敗ロガーだけへ届き Slack 通知を再発しない）、`::TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues`（WARN に通知本文・group 名・command 名・Webhook URL が含まれない） |
 | AC-25 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope` |
 | AC-26 | test | `internal/logging/notification_test.go` の各テストが `notificationDefinitions` を range して書かれていること。エンベロープを満たさない種別を 1 個登録すると失敗することを確認する |
