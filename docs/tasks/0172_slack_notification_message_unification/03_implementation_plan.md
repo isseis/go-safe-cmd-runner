@@ -203,8 +203,10 @@ HEAD で `slack_notify` を書く本番コードは 5 箇所ある。うち 2 �
 `internal/runner/config` の後方互換テスト群（`loader_compatibility_test.go`、
 `backward_compat_test.go`、`template_backward_compat_test.go`）は `LoadConfig` しか呼ばず、
 redaction 検査を通らない。それでも 6 個すべてを改名する。`sample/` は利用者が実行できる例と
-して置いてあり、起動できない例を残す意味が無いためである。後方互換テストの期待値更新は、
-検査に落ちるからではなく改名の随伴作業である。Phase 4 で改名と再記録を同じコミットで行い、
+して置いてあり、起動できない例を残す意味が無いためである。**この後方互換テスト群の期待値は
+改名しても更新が要らない。** 6 個の名前を `rg` で追うと現れるのは `sample/*.toml` と本書だけ
+であり、同テスト群は識別子を名前ではなくファイル名と `cfg.Groups[0].Commands[0]` のような位置
+で参照しているためである（実測結果は §4.4）。Phase 4 で改名と再記録を同じコミットで行い、
 再発を防ぐメタテストを置く（§4.4）。
 
 なお `backup` や `pg_dump` のような通常の名前は偽陽性にならないことも同じ確認で見ている。
@@ -465,10 +467,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/testutil/synccensus/census_guard_test.go`、`internal/runner/runner_test.go`、
 `internal/runner/base/audit/logger_test.go`、
 `cmd/runner/integration_pre_execution_error_test.go`、
-`cmd/runner/startup_order_guard_test.go`、
-`internal/runner/config/loader_compatibility_test.go`、
-`internal/runner/config/backward_compat_test.go`、
-`internal/runner/config/template_backward_compat_test.go`、`sample/*.toml`
+`cmd/runner/startup_order_guard_test.go`、`sample/*.toml`
 
 この一覧は本 Phase のコミット範囲そのものである。下のタスクが触るファイルはすべてここに
 現れる。とくに `cmd/runner` の 2 本は、起動経路で検査が呼ばれていることと、渡している
@@ -725,7 +724,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       させ、**返った `PreExecutionError` の本文とその stderr 表現のどちらにも、その値が部分文字列
       として現れないこと**、および位置と検査名は現れることを assert する。本文へ値を戻す変更を
       入れるとこのテストが落ちる。
-- [ ] 同ファイルで、受け取った `*redaction.Config` が `nil`（Slack 未設定）のときは
+- [ ] **本番側の実装に戻って**、`internal/runner/bootstrap/identifier_redaction.go` で、
+      受け取った `*redaction.Config` が `nil`（Slack 未設定）のときは
       `redaction.DefaultConfig()` を使う。`nil` は「検査しない」ではない。Phase 1 の
       `RedactingHandler` が既定の `Config` で動き続けており（§1.3）、Slack が無効でも
       識別子は JSON ログで潰れうるためである。この分岐は `NewRedactingHandler` の
@@ -749,9 +749,13 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `hash-integration-test`・`hash-e2e-test` で記録を取り直す。改名・記録・検査の有効化は
       1 コミットにまとめ、中間状態でテストが落ちないようにする。
 - [ ] 再発防止として、`sample/*.toml` を range し、すべての group 名・command 名が新しい
-      検査を通ることを assert するメタテストを置く。これにより、将来 `key`・`token`・`basic`
-      を含む名前のサンプルが増えても `make test` の段階で検出でき、発覚が e2e ターゲットまで
-      遅れることを防げる。
+      検査を通ることを assert するメタテストを `internal/runner/bootstrap/identifier_redaction_test.go`
+      へ置く。5 個目の検査は `*redaction.Config` を要し、それを受け取る関数がこのパッケージに
+      あるためである（Slack 未設定に相当する既定の `Config` で通す）。**`sample/` の位置は
+      `../../../sample` のように呼び出し元の深さへ固定した相対パスで書かない。** §4.3 の走査
+      ヘルパーと同じ手段でリポジトリ root を解決し、そこからの相対で辿る。これにより、将来
+      `key`・`token`・`basic` を含む名前のサンプルが増えても `make test` の段階で検出でき、
+      発覚が e2e ターゲットまで遅れることを防げる。
 - [ ] `internal/runner/config/validation_test.go` の検証テーブルへ、02_architecture.md §7.1 の
       「設定の検証」の観点の行を追加する。空のコマンド名、制御文字だけの名前、書式制御文字を
       含みつつ表示できる文字も残す名前（`backup` + U+202E + `evil`）、改行を含みつつ表示できる
@@ -1363,7 +1367,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | AC-24 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_UnknownMessageType`（汎用メッセージの送信、`unknown_message_type` の WARN、WARN 以上は通常キュー満杯でも高優先度で送られること）、`::TestSlackHandler_SchemaViolationWarnIsSingle`（未知種別と不正な通知コンテキストが同時に成立しても WARN が 1 件で、`reasons` が規定の順に並ぶ）、`::TestSlackHandler_SchemaViolationWarnDoesNotRecurse`（WARN が送信失敗ロガーだけへ届き Slack 通知を再発しない）、`::TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues`（WARN に通知本文・group 名・command 名・Webhook URL が含まれない） |
 | AC-25 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_GenericMessageHasEnvelope` |
 | AC-26 | test | `internal/logging/notification_test.go` の各テストが `notificationDefinitions` を range して書かれていること。エンベロープを満たさない種別を 1 個登録すると失敗することを確認する |
-| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。(c) の期待値は `notificationDefinitions` を range して実行時に集める。(d) が拒否する識別子名は実行時には得られない（同スライスは種別名・優先度・ビルダーしか持たず、Go は変数名も関数名も実行時に保持しない）ため、`notification.go` の構文木から、`registerNotification(...)` で初期化されるパッケージレベル `var` とそれを返す関数の宣言として集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/ | rg -v messageTypeDefinition` が一致なし、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる。`messageTypeDefinition` を除くのは、§5.1 が定義する**新しい型名**がこのパターンに一致するためで、除かないと Phase 5 を設計どおり実装した時点でゲートが赤になる。狙いは旧い種別定数（`messageTypeSecurityAlert` など）だけである）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
+| AC-27 | test + static | test: `internal/logging/notification_test.go::TestNotificationDefinitions_UniqueTypesAndTokens` と `internal/logging/notification_contract_guard_test.go` の (c)（登録済み種別名と同じ文字列リテラルが `notification.go` の登録以外のどの本番ファイルにも現れないこと）と (d)（`notification.go` 以外の本番コードが `Notification` 値を得る経路は `NotificationAttrs` の第 1 引数位置での公開アクセサ呼び出しだけであること。公開アクセサのそれ以外の位置での呼び出し、非公開 token 変数への参照、`notificationDefinitions` への参照をすべて拒否する）。(c) の期待値は `notificationDefinitions` を range して実行時に集める。(d) が拒否する識別子名は実行時には得られない（同スライスは種別名・優先度・ビルダーしか持たず、Go は変数名も関数名も実行時に保持しない）ため、`notification.go` の構文木から、`registerNotification(...)` で初期化されるパッケージレベル `var` とそれを返す関数の宣言として集める。**AC-27 の主たる検証はこの (c) と (d) である。** (c) だけでは不足する。`Notification` は登録値を持つ比較可能な構造体なので、token をキーにした 2 本目の dispatch／優先度表は種別名の文字列を 1 つも含まずに書け、(c) を素通りする。(d) を「値の入手経路を 1 本に限る」形で書くのは、迂回を 1 つずつ塞ぐ形が続かないためである。個数制限は分散した `init` 登録を通し、公開アクセサだけの制限は非公開 token 変数を通した。発火元 3 箇所は `NotificationAttrs(<アクセサ>(), <ctx>)` の形で書くため通る。**ただしこの検査は、事故で 2 本目の登録簿ができることを防ぐものであって、意図的な迂回を全て塞ぐものではない**（同一パッケージ内では最終的に何でも書ける）。完全性を追うより、経路を 1 本に保つことを設計側で維持する。 static: `rg -n -g '!*_test.go' "messageType[A-Z]" internal/logging/` の一致が `messageTypeDefinition` の行だけであること、かつ `rg -n -g '!*_test.go' "func isHighPriority" internal/logging/` が一致なし（`-g` を付けないとテストが持つ参照まで数え、削除済みでも赤くなる。`messageTypeDefinition` を残る一致として許すのは、§5.1 が定義する**新しい型名**がこのパターンに一致するためで、除かないと Phase 5 を設計どおり実装した時点でゲートが赤になる。狙いは旧い種別定数（`messageTypeSecurityAlert` など）だけである。1 本目の結果を 2 本目の `rg -v` へパイプで渡す書き方はしない。本節冒頭のとおり、表セル内のパイプはエスケープが要り、そのまま写すと壊れた検索になる）。**この 2 本の `rg` は補助でしかない。** どちらも HEAD の**旧名**（`messageTypeX` という綴りと `isHighPriority` という関数名）だけを探すため、別名で書かれた 2 本目の登録簿は素通りする。実際 HEAD では種別定数が `slack_sender.go` にあるのに種別の `switch` は `slack_handler.go:344` にあり、ファイルを限定した検索では種別の分岐そのものを取り逃す。ゆえに検索対象はファイルではなくパッケージ全体とし、「並行する登録簿が無いこと」自体は (c) の構造検査で見る |
 | AC-28 | static + test | static: **5 語を 1 本の `rg` にまとめてはならない。1 語につき 1 本ずつ、5 本を個別に実行し、それぞれの終了コードが 0 であることを見る**（注 2 のループを使う）。`-e` を並べた 1 本は「いずれか 1 つでも一致した行」を出し、1 語でも当たれば終了コード 0 になるため、残る 4 語が文書から抜けていても緑になる。各語は `rg -n -F -e "<語>" docs/user/runner_command.ja.md` の形で、**`-F` は必須**である。付け忘れると `(global)` は捕捉グループとして解釈され、括弧の無い裸の `global` にも一致するため、Scope の表記が書かれていなくても緑になる。対象 5 語は `[go-safe-cmd-runner]`、`(global)`、`command_group_summary`、`pre_execution_error`、`user_group_command_failure`。test: 文書に載せた Text 行の例が `internal/logging/notification_test.go` の期待値と一字一句一致することを、Phase 6 の突き合わせタスクで確認する（presence だけでは書式の誤記を検出できない） |
 | AC-29 | static | AC-28 と同じ 5 語を、同じく**1 語 1 本ずつ**（注 2 のループ）`docs/user/runner_command.md` に対して実行し、それぞれ終了コード 0。まとめた 1 本では 1 語の一致で 5 語すべてを満たしたことになってしまう。加えて `### 4.2 Notification Configuration` の節が Scope の 4 形（`(global)`、`group=`、`command=`、`(scope: invalid)`）を英語で説明していることを目視で確認する（日本語をそのまま貼り付けただけの状態を通さないため） |
 | AC-30 | static | Phase 1〜7 の各コミット sha について、作業ツリーが clean な状態で `git checkout <sha> && make test && make lint` を実行し、いずれも終了コード 0。確認後 `git checkout -` で戻る |
@@ -1390,6 +1394,10 @@ git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の messa
 #     揃った状態）とする。1 コミットずつ、毎回 <base> から始めて試す。
 #     失敗は status へ溜め、後片付けの後にそれで抜ける。`|| echo` だけで
 #     済ませると echo と後続の reset が成功するため、衝突しても 0 で終わる。
+#     `git reset --hard <base>` は内容を戻すだけで detached HEAD のままなので、
+#     最後に元のブランチへ必ず戻す。戻し忘れると以降のコミットが
+#     detached HEAD に積まれて失われる。
+orig=$(git rev-parse --abbrev-ref HEAD)
 rc=0
 for sha in <Phase 1 の sha> <Phase 2 の sha> <Phase 3 の sha>; do
   if ! git checkout --detach <base> >/dev/null 2>&1; then
@@ -1401,6 +1409,7 @@ for sha in <Phase 1 の sha> <Phase 2 の sha> <Phase 3 の sha>; do
   git revert --quit 2>/dev/null || true
   git reset --hard <base> >/dev/null
 done
+git checkout "$orig" >/dev/null || rc=1
 exit "$rc"
 ```
 
