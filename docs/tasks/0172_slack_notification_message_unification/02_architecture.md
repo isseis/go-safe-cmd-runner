@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-08 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 4 箇所を修正したため再レビュー待ち。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
+| Review date | 2026-09-10 |
+| Reviewer | isseis |
+| Comments | 2026-09-10 の再レビューで承認。改訂点は次の 4 箇所である。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
 
 ## 関連文書
 
