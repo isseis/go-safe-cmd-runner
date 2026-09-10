@@ -458,7 +458,17 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/logging/notification_contract_guard_test.go`（新規）、
 `internal/testutil/identitymutationguard/helpers.go`、
 `internal/testutil/synccensus/census_guard_test.go`、`internal/runner/runner_test.go`、
-`internal/runner/base/audit/logger_test.go`、`sample/*.toml`
+`internal/runner/base/audit/logger_test.go`、
+`cmd/runner/integration_pre_execution_error_test.go`、
+`cmd/runner/startup_order_guard_test.go`、
+`internal/runner/config/loader_compatibility_test.go`、
+`internal/runner/config/backward_compat_test.go`、
+`internal/runner/config/template_backward_compat_test.go`、`sample/*.toml`
+
+この一覧は本 Phase のコミット範囲そのものである。下のタスクが触るファイルはすべてここに
+現れる。とくに `cmd/runner` の 2 本は、起動経路で検査が呼ばれていることと、渡している
+`*redaction.Config` が `SetupSlackLogging` の戻り値であることを見る唯一の検証であり
+（§4.4）、一覧から漏らすと AC-32 の確認が別のコミットへ散る。
 
 #### 4.0 表示安全な補間契約
 
@@ -607,7 +617,15 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] 同ファイルへ、**AC-09 のコンストラクタ検査**も本 Phase で入れる。`internal/common` を
       import する本番ファイルごとに `ResolveLocalImports` で実際の import 名を解決し、
       解決結果が `internal/common` を指す `NotificationContext` の
-      **(i) 複合リテラル・(ii) `var` 宣言・(iii) `new` 呼び出し**をいずれも拒否する。3 形とも
+      **(i) 複合リテラル・(ii) `var` 宣言・(iii) `new` 呼び出し**をいずれも拒否する。
+      **`internal/common` 自身の本番ファイルも走査対象に含める。** パッケージは自分自身を
+      import しないため、import の有無で対象を決めると `common` の中だけが素通りし、そこへ
+      足したヘルパーがコンストラクタを迂回できてしまう。同パッケージ内では修飾子が付かない
+      ため、構文木の照合は修飾子つきと修飾子なしの双方を見る。除外するのは
+      `notification_context.go` の 3 コンストラクタ（`GlobalScope`・`GroupScope`・
+      `CommandScope`）の本体だけであり、これらは非公開フィールドを初期化する正規の実装で
+      ある。除外はファイル単位ではなく関数単位にする。ファイルごと除外すると、同じファイルへ
+      足した別の関数が迂回できる。3 形とも
       コンストラクタを迂回してゼロ値を作る経路であり、AC-09 は「値はコンストラクタでのみ
       構築する」だけでなく「グローバルな場合も `GlobalScope()` で明示的に」付与することを
       要求している（§7 の AC-09 の行）。検査対象は Phase 4 の構造体変更だけに依存するため、
@@ -904,9 +922,15 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
       は Phase 4 で括り出し済みである（§4.3）。本 Phase では追加せず、そのまま呼ぶ。
 - [ ] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
-      `PreExecutionError` リテラルの検査に加えて、(a) **`slack_notify` の属性を構築してよいのは
-      `notification.go` の `NotificationAttrs` だけであること**（`internal/logging` を含む
-      すべての本番ファイルが対象。パッケージ単位の除外にしない）、および `message_type` の
+      `PreExecutionError` リテラルの検査に加えて、(a) **`slack_notify` を `true` で構築して
+      よいのは `notification.go` の `NotificationAttrs` だけであること**（`internal/logging` を
+      含むすべての本番ファイルが対象。パッケージ単位の除外にしない）。**値が `false` の構築は
+      拒否しない。** Slack へ送るかどうかを決めるのは `true` だけであり、この検査の目的は
+      通知の**発火**を `NotificationAttrs` の 1 本に束ねることだからである。`false` まで
+      拒否すると、§4.3 で Phase 4 が意図的に残す `HandleExecutionError` の
+      `slack_notify=false`（通知を送らない実行時エラーの経路）が落ち、Phase 5 が緑にならない。
+      判定はリテラルの値で行い、変数経由の値は `true` とみなして拒否する（`false` と静的に
+      分かる形だけを通す）。および `message_type` の
       文字列リテラルを `internal/logging` 以外のパッケージが直接構築していないこと、
       (b) `NotificationAttrs` の第 1 引数が登録済み token を返す公開アクセサの呼び出しだけで
       あること、(c) **登録済み種別名と同じ文字列リテラルが、`internal/logging/notification.go`
@@ -1308,8 +1332,9 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 **注 1: AC-04 の検証コマンド**
 
 ```sh
-# (1) Phase 1〜3 がちょうど 3 コミットであること
-git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>
+# (1) Phase 1〜3 がちょうど 3 コミットであること（3 以外なら非 0 で落ちる）
+test "$(git rev-list --count <Phase 1 の親>..<Phase 3 の HEAD>)" -eq 3
+git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>   # 内訳の目視用
 
 # (2) 各コミットが他の 2 種別に触れていないこと（一致なし = 終了コード 1 を期待）
 #     --unified=0 と '^[+-]' で変更行だけに絞る。3 個の種別定数は

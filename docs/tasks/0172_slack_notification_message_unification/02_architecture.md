@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-08 |
 | Review date | 2026-09-10 |
 | Reviewer | isseis |
-| Comments | 2026-09-10 の再レビューで承認。改訂点は次の 4 箇所である。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
+| Comments | 2026-09-10 の承認後、レビュー指摘により 3 箇所を追随修正したため再承認待ち。(A) §2.2: `ValidateGroupNames` の改名を反映（Phase 4 で `ValidateIdentifiers` になる）。(B) §2.2: テスト欄を `TestValidateIdentifiers` へ。(C) §8.1 の Phase 4 行: redaction 検査だけ検査位置が違うことを反映（§3.1 の改訂の取りこぼし）。以下は 2026-09-10 の承認時の記録である。改訂点は次の 4 箇所であった。(1) §3.1: 識別子 redaction 検査の `PreExecutionError` 本文から識別子の値を外した（stderr は redaction を経由しないため、拒否した秘匿値を平文で出す設計になっていた）。(2) §3.1: 許可ホストの 1 組が `Config` の組み直しを落とせるという主張を撤回し、共有の担保を起動経路の構文木検査へ移した。(3) §5.3: 強調記法を外す代替を、AC-18 の改訂を先に行うことを条件とした（従来は「代替でも要件は満たせる」と書いており、`*<STATUS>*` を字面で要求する AC-18 と矛盾していた）。(4) §2.2: runner のテスト割り当てを `TestSlackNotification` から `TestLogGroupExecutionSummary_LogLevel` と新規テストへ改めた（同テストは通知レコードを捕捉せず AC-13・AC-14 に到達しない）。 |
 
 ## 関連文書
 
@@ -194,7 +194,7 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
-| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加する。5 個目である redaction の検査だけは、本番と同じ `redaction.Config` が Slack ハンドラの登録まで存在しないため `bootstrap` 側に置く（§3.1） | `TestValidateGroupNames` と同ファイルの検証テーブル |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加し、同関数を `ValidateIdentifiers` へ改名する（group 名専用ではなくなるため。03_implementation_plan.md §4.4）。5 個目である redaction の検査だけは、本番と同じ `redaction.Config` が Slack ハンドラの登録まで存在しないため `bootstrap` 側に置く（§3.1） | 改名後の `TestValidateIdentifiers` と同ファイルの検証テーブル |
 | `internal/runner/config/errors.go` | 変更 | 空のコマンド名、制御文字・書式制御文字を含む識別子、表示できる文字を持たない識別子、長さ上限を超える識別子、redaction の変換が書き換える識別子に対する 5 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
 | `internal/redaction/redactor.go` | 変更 | `RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue`）が値を書き換えるかを返す述語を公開する。既存の変換を読み取るだけで、redaction の適用範囲は変えない（§3.1） | 既存テストは変更しない。述語が `ValueDetector` の検出にも及ぶことを新規ケースで検証する |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
@@ -984,7 +984,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる・redaction の変換が書き換える識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-11、AC-16、AC-30、AC-32 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる識別子を設定の読み込みで、redaction の変換が書き換える識別子を Slack ハンドラ登録の直後に、それぞれ拒否する（§3.1。後者だけ位置が違うのは、本番と同じ `redaction.Config` がハンドラ登録まで存在しないためである） | AC-09〜AC-11、AC-16、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、役割ごとの補間契約、WARN を 1 個の取り消し可能なコミットで導入する。あわせてグループ検証エラー本文からの `Group: <name>, ` 除去も行う | AC-12〜AC-15、AC-17、AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
