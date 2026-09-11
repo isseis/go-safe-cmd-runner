@@ -341,28 +341,6 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	return attr
 }
 
-// RewritesValue reports whether the transformations RedactLogAttribute applies
-// to a string value would rewrite it: either the text-based transformation
-// changes it, or the whole value is classified as sensitive. It takes no key
-// because callers use it for values whose key (group, command) is not itself
-// sensitive.
-//
-// Configuration validation uses it to reject identifiers whose redacted form
-// could no longer name the notification scope. It routes through the same
-// RedactText and IsSensitiveValue calls as RedactLogAttribute so a new value
-// detector or pattern is reflected in the check automatically.
-func (c *Config) RewritesValue(value string) bool {
-	if !c.validated {
-		// RedactLogAttribute replaces the value outright for a Config that
-		// skipped NewConfig, so every value counts as rewritten.
-		return true
-	}
-	if c.RedactText(value) != value {
-		return true
-	}
-	return c.patterns.IsSensitiveValue(value)
-}
-
 // escapeReplacementDollars makes a placeholder safe to embed in a
 // Regexp.ReplaceAllString replacement, where "$0"/"$1"/etc. expand to the match
 // and its capture groups. Without this, a placeholder configured with "$1"-like

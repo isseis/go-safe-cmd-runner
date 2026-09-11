@@ -761,23 +761,23 @@ PR-6 は 02_architecture.md の旧設計どおりに 5 個目の検査（redacti
 書き換えないこと）を着地させた。02_architecture.md §3.1 の再承認でこの検査は撤去されたため、
 PR-6 はマージ前に同 PR 内で次を撤去する。以下は未完了である。
 
-- [ ] `internal/runner/bootstrap/identifier_redaction.go` と
+- [x] `internal/runner/bootstrap/identifier_redaction.go` と
       `internal/runner/bootstrap/identifier_redaction_test.go` を削除する。
-- [ ] `internal/redaction/redactor.go` の `RewritesValue` と
+- [x] `internal/redaction/redactor.go` の `RewritesValue` と
       `internal/redaction/redactor_test.go` の `TestConfig_RewritesValue` を削除する。
       production の呼び出し元は `identifier_redaction.go` だけなので、同時に消える。
-- [ ] `internal/runner/config/errors.go` の `ErrIdentifierRedacted` を削除する。
-- [ ] `cmd/runner/main.go` で `bootstrap.ValidateIdentifierRedaction` の呼び出しと付随コメントを
+- [x] `internal/runner/config/errors.go` の `ErrIdentifierRedacted` を削除する。
+- [x] `cmd/runner/main.go` で `bootstrap.ValidateIdentifierRedaction` の呼び出しと付随コメントを
       削除する。`SetupSlackLogging` の戻り値 `redactionConfig` は `executeRunner` を経て
       `runner.WithRedactionConfig` へ渡す配線を維持する（検査撤去の対象ではない）。
-- [ ] `cmd/runner/startup_order_guard_test.go` の `TestIdentifierRedactionWiring` と、その
+- [x] `cmd/runner/startup_order_guard_test.go` の `TestIdentifierRedactionWiring` と、その
       ヘルパー・合成ソース定数（`identifierRedactionWiring*`、`rebindingProblems` など、
       同テストだけが使うもの）を削除する。同じファイルの特権降格と起動順のガードは残す。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` の
+- [x] `cmd/runner/integration_pre_execution_error_test.go` の
       `TestE2E_PreExecutionError_RedactedCommandName` と
       `TestE2E_PreExecutionError_RedactedAllowedHostCommandName` を削除する。
-- [ ] 削除後、`make test` と `make lint` が通ることを確認する。
-- [ ] 削除の前後で `go tool cover -func` を比較し、存続する関数のカバレッジが下がっていない
+- [x] 削除後、`make test` と `make lint` が通ることを確認する。
+- [x] 削除の前後で `go tool cover -func` を比較し、存続する関数のカバレッジが下がっていない
       ことをコミットメッセージへ記す。
 
 **完了条件**:

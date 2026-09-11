@@ -1119,64 +1119,6 @@ func TestRedactLogAttribute_NonStringValues(t *testing.T) {
 	}
 }
 
-// TestConfig_RewritesValue pins the predicate configuration validation uses to
-// reject identifiers redaction would rewrite. The value-format rows assert
-// first that IsSensitiveValue alone leaves the value untouched, so a predicate
-// that stopped after the word list would fail the row instead of passing it.
-func TestConfig_RewritesValue(t *testing.T) {
-	const (
-		awsKeyID  = "AKIAIOSFODNN7EXAMPLE"
-		githubPAT = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab"
-		jwt       = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc"
-	)
-
-	t.Run("word matches are redacted by the pattern list", func(t *testing.T) {
-		config := DefaultConfig()
-		for _, value := range []string{"monkey", "keyring", "rotate_api_key"} {
-			require.True(t, config.patterns.IsSensitiveValue(value),
-				"%q should be classified sensitive by IsSensitiveValue alone", value)
-			assert.True(t, config.RewritesValue(value), "%q", value)
-		}
-	})
-
-	t.Run("value formats are redacted by the value detector", func(t *testing.T) {
-		config := DefaultConfig()
-		for _, value := range []string{awsKeyID, githubPAT, jwt} {
-			require.False(t, config.patterns.IsSensitiveValue(value),
-				"%q must pass IsSensitiveValue alone, or this row cannot show the value detector ran", value)
-			assert.True(t, config.RewritesValue(value), "%q", value)
-		}
-	})
-
-	t.Run("a URL on the configured webhook host is redacted", func(t *testing.T) {
-		const webhookURL = "https://hooks.slack.com/services/example"
-
-		config, err := NewConfig(WithWebhookHost("hooks.slack.com"))
-		require.NoError(t, err)
-		require.False(t, config.patterns.IsSensitiveValue(webhookURL),
-			"the URL must pass IsSensitiveValue alone, or this row cannot show the webhook-host detector ran")
-		assert.True(t, config.RewritesValue(webhookURL))
-
-		// The same URL is unknown to the default Config, whose webhook host is
-		// unset: the pair is what shows the check uses the supplied Config.
-		assert.False(t, DefaultConfig().RewritesValue(webhookURL))
-	})
-
-	t.Run("ordinary names are left alone", func(t *testing.T) {
-		config := DefaultConfig()
-		for _, value := range []string{"backup", "pg_dump", "smoke_tests"} {
-			assert.False(t, config.RewritesValue(value), "%q", value)
-		}
-	})
-
-	t.Run("an unvalidated Config rewrites everything", func(t *testing.T) {
-		// RedactLogAttribute replaces values outright when the Config skipped
-		// NewConfig, so the predicate must not report "nothing to rewrite" for a
-		// zero value.
-		assert.True(t, (&Config{}).RewritesValue("backup"))
-	})
-}
-
 // mockHandler is a simple mock implementation of slog.Handler for testing
 type mockHandler struct {
 	enabled      bool

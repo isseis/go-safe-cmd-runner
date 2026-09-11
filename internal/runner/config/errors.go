@@ -113,14 +113,6 @@ var (
 	// as the same scope.
 	ErrIdentifierTooLong = errors.New("identifier exceeds maximum length")
 
-	// ErrIdentifierRedacted is returned when the production redaction
-	// transformation would rewrite a group or command name. The rewritten name
-	// reaches notifications as the redaction placeholder, so the scope no longer
-	// points at the configured group or command. This check runs after the Slack
-	// handlers exist because only then does a Config with the deployment's
-	// webhook host exist.
-	ErrIdentifierRedacted = errors.New("identifier is rewritten by redaction")
-
 	// ErrNilConfig is returned when configuration is nil
 	ErrNilConfig = errors.New("configuration must not be nil")
 
