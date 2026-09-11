@@ -56,11 +56,10 @@ const (
 // the queue-priority decision below and Handle's message builder switch must
 // agree on the exact strings.
 const (
-	messageTypeCommandGroupSummary      = "command_group_summary"
-	messageTypePreExecutionError        = "pre_execution_error"
-	messageTypeSecurityAlert            = "security_alert"
-	messageTypePrivilegedCommandFailure = "privileged_command_failure"
-	messageTypePrivilegeEscalationFail  = "privilege_escalation_failure"
+	messageTypeCommandGroupSummary     = "command_group_summary"
+	messageTypePreExecutionError       = "pre_execution_error"
+	messageTypeSecurityAlert           = "security_alert"
+	messageTypePrivilegeEscalationFail = "privilege_escalation_failure"
 )
 
 // Reasons recorded for a notification that was never delivered.
