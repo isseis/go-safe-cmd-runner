@@ -69,6 +69,15 @@ func TestRuntimeCommand_GroupName(t *testing.T) {
 	}
 }
 
+func TestRuntimeCommand_GroupName_Panic(t *testing.T) {
+	var cmd *RuntimeCommand
+	assert.PanicsWithValue(
+		t,
+		"RuntimeCommand.GroupName: nil receiver (programming error - use NewRuntimeCommand)",
+		func() { cmd.GroupName() },
+	)
+}
+
 func TestRuntimeCommand_RunAsUser(t *testing.T) {
 	tests := []struct {
 		name string

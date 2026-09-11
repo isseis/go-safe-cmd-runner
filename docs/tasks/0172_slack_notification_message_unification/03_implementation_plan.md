@@ -504,6 +504,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/common/interpolation.go`（新規）、
 `internal/common/notification_context_test.go`（新規）、
 `internal/common/interpolation_test.go`（新規）、`internal/common/logschema.go`、
+`internal/common/errors.go`、
 `internal/runner/base/runnertypes/runtime.go`、`internal/runner/base/runnertypes/runtime_test.go`、
 `internal/logging/pre_execution_error.go`、`internal/logging/pre_execution_error_test.go`、
 `cmd/runner/main.go`、`internal/runner/bootstrap/config.go`、
@@ -559,6 +560,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       置く。判定は 02_architecture.md §3.1 の表と §3.6 の理由コード分類に従う。下位キーは
       `scope`・`group`・`command` のちょうど 3 種（`command` だけ条件付き出力）に限り、
       未知キー・重複キー・非文字列値・スコープと名前の組の矛盾をすべて不正として返す。
+      不正は `internal/common/errors.go` の `ErrInvalidNotificationContext` として返し、
+      SlackHandler 側で §3.6 の理由コード `invalid_notification_context` に対応付ける。
       「表示できる文字が残らない名前」の判定は §4.0 の述語を呼ぶ。
 - [x] `internal/common/logschema.go` へ、通知コンテキストの属性キー名とスコープ名
       （`global`／`group`／`command`）の対応を加える。

@@ -121,6 +121,18 @@ func TestInterpolate_OutputProperties(t *testing.T) {
 			role:  InterpolationRoleFreeText,
 			want:  "a\uFFFDb",
 		},
+		{
+			name:  "identifier takes the same one-line and entity rules without truncation",
+			input: "line1\nline2<&>\u202E",
+			role:  InterpolationRoleIdentifier,
+			want:  "line1 line2&lt;&amp;&gt; ",
+		},
+		{
+			name:  "envelope value takes the same one-line and entity rules",
+			input: "line1\nline2<&>\u202E",
+			role:  InterpolationRoleEnvelopeValue,
+			want:  "line1 line2&lt;&amp;&gt; ",
+		},
 	}
 
 	for _, tt := range tests {
@@ -159,13 +171,33 @@ func TestInterpolate_FreeTextTruncation(t *testing.T) {
 			want:  strings.Repeat("あ", interpolationMaxBytes/3),
 		},
 		{
-			name:  "complete entity ending at the limit is kept",
-			input: strings.Repeat("a", 495) + "<",
-			want:  strings.Repeat("a", 495) + "&lt;",
+			name:  "complete entity ending exactly at the limit is kept",
+			input: strings.Repeat("a", 496) + "<" + "z",
+			want:  strings.Repeat("a", 496) + "&lt;",
+		},
+		{
+			name:  "amp prefix of length 4 at the boundary is removed",
+			input: strings.Repeat("a", 496) + "&",
+			want:  strings.Repeat("a", 496),
+		},
+		{
+			name:  "amp prefix of length 3 at the boundary is removed",
+			input: strings.Repeat("a", 497) + "&",
+			want:  strings.Repeat("a", 497),
 		},
 		{
 			name:  "partial entity at the boundary is removed with its &",
 			input: strings.Repeat("a", 498) + "<",
+			want:  strings.Repeat("a", 498),
+		},
+		{
+			name:  "partial amp entity at the boundary is removed with its &",
+			input: strings.Repeat("a", 498) + "&",
+			want:  strings.Repeat("a", 498),
+		},
+		{
+			name:  "partial gt entity at the boundary is removed with its &",
+			input: strings.Repeat("a", 498) + ">",
 			want:  strings.Repeat("a", 498),
 		},
 		{
@@ -253,6 +285,9 @@ func TestHasDisplayableContent(t *testing.T) {
 		{name: "format controls only", input: "\u202A\u202E\u2066", want: false},
 		{name: "line separators only", input: "\u2028\u2029", want: false},
 		{name: "mixed whitespace and controls", input: " \t\n\x00 ", want: false},
+		{name: "non-breaking space only", input: "\u00a0", want: false},
+		{name: "ideographic space only", input: "\u3000", want: false},
+		{name: "multiple non-ascii whitespace runes", input: "\u00a0\u2003\u3000", want: false},
 		{name: "plain name", input: "backup", want: true},
 		{name: "name surrounded by whitespace", input: "  backup  ", want: true},
 		{name: "name with a control character", input: "back\nup", want: true},

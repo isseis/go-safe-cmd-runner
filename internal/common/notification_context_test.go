@@ -143,6 +143,22 @@ func TestGroupScope_EmptyNameIsInvalidAtDisplayBoundary(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidNotificationContext)
 }
 
+func TestNotificationContext_UnknownScopeEncodesEmptyAndIsRejected(t *testing.T) {
+	// Only an in-package value can hold an out-of-range scope; it encodes as
+	// an empty scope name so the decoder rejects it instead of seeing a valid
+	// global scope.
+	ctx := NotificationContext{scope: NotificationScope(99), group: "backup"}
+
+	assert.Equal(
+		t,
+		contextGroupValue(scopeAttr(""), groupAttr("backup")),
+		ctx.LogValue(),
+	)
+
+	_, err := DecodeNotificationContext(ctx.LogValue())
+	require.ErrorIs(t, err, ErrInvalidNotificationContext)
+}
+
 func TestDecodeNotificationContext_Validity(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -321,6 +337,14 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 				scopeAttr(NotificationScopeNames.Command),
 				groupAttr("backup"),
 				commandAttr(""),
+			),
+			wantErr: true,
+		},
+		{
+			name: "command scope has no command key",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				groupAttr("backup"),
 			),
 			wantErr: true,
 		},
