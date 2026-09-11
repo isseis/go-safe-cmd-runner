@@ -286,7 +286,7 @@ args = ["hello"]
 
 // TestE2E_PreExecutionError_MissingSlackAllowedHost verifies that runner startup fails
 // with a config parsing error when Slack webhook env vars are configured but
-// global.slack_allowed_host is missing from TOML (AC-L2-20).
+// global.slack_allowed_host is missing from TOML.
 func TestE2E_PreExecutionError_MissingSlackAllowedHost(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	configFile := filepath.Join(tmpDir, "missing_slack_allowed_host.toml")
