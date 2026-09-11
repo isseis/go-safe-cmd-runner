@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -252,7 +253,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test-deploy", "index 1"},
+			errorContains: []string{"invalid group name", "must match pattern", "index 1"},
 		},
 		{
 			name: "invalid group name with dot",
@@ -263,7 +264,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test.deploy"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with space",
@@ -274,7 +275,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test deploy"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name starting with number",
@@ -285,7 +286,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "123build"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character @",
@@ -296,7 +297,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build@test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character #",
@@ -307,7 +308,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build#test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character $",
@@ -318,7 +319,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build$test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "duplicate group names - simple case",
@@ -331,7 +332,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "build", "indices 0 and 2"},
+			errorContains: []string{"duplicate group name", "indices 0 and 2"},
 		},
 		{
 			name: "duplicate group names - adjacent",
@@ -343,7 +344,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "test", "indices 0 and 1"},
+			errorContains: []string{"duplicate group name", "indices 0 and 1"},
 		},
 		{
 			name: "duplicate group names - at end",
@@ -357,7 +358,7 @@ func TestValidateIdentifiers(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "test", "indices 1 and 3"},
+			errorContains: []string{"duplicate group name", "indices 1 and 3"},
 		},
 		{
 			name: "valid command names",
@@ -514,6 +515,97 @@ func TestValidateIdentifiers(t *testing.T) {
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
 			}
+		})
+	}
+}
+
+// TestValidateIdentifiers_DoesNotEchoRejectedNames pins that a rejected
+// identifier never reaches the error text. These errors travel to stderr
+// without redaction, and a rejected name can be a credential shape.
+func TestValidateIdentifiers_DoesNotEchoRejectedNames(t *testing.T) {
+	const credential = "AKIAIOSFODNN7EXAMPLE"
+
+	tests := []struct {
+		name          string
+		config        *runnertypes.ConfigSpec
+		expectedError error
+	}{
+		{
+			name: "control character in a command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(credential+"\n", nil)}},
+				},
+			},
+			expectedError: ErrIdentifierContainsControlCharacter,
+		},
+		{
+			name: "pattern violation in a group name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: credential + "/x"},
+				},
+			},
+			expectedError: ErrInvalidGroupName,
+		},
+		{
+			name: "duplicate group name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: credential},
+					{Name: credential},
+				},
+			},
+			expectedError: ErrDuplicateGroupName,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateIdentifiers(tt.config)
+			require.ErrorIs(t, err, tt.expectedError)
+			assert.NotContains(t, err.Error(), credential,
+				"the rejected identifier must not appear in the error text")
+		})
+	}
+}
+
+// TestValidateIdentifiers_ChecksEveryCommand pins that the command loop does
+// not stop at the first group: the violation sits in the second group's second
+// command, and the error names that position.
+func TestValidateIdentifiers_ChecksEveryCommand(t *testing.T) {
+	cfg := &runnertypes.ConfigSpec{
+		Groups: []runnertypes.GroupSpec{
+			{Name: "backup", Commands: []runnertypes.CommandSpec{makeCommand("pg_dump", nil)}},
+			{Name: "restore", Commands: []runnertypes.CommandSpec{makeCommand("psql", nil), makeCommand("", nil)}},
+		},
+	}
+
+	err := ValidateIdentifiers(cfg)
+	require.ErrorIs(t, err, ErrEmptyCommandName)
+	assert.ErrorContains(t, err, "groups[1].commands[1]")
+}
+
+// TestLoadConfigRejectsInvalidCommandNames pins that the loader actually calls
+// ValidateIdentifiers. Every check above passes when the call site is removed,
+// and then a bad command name would be accepted for execution.
+func TestLoadConfigRejectsInvalidCommandNames(t *testing.T) {
+	tests := []struct {
+		name        string
+		commandName string
+		wantErr     error
+	}{
+		{name: "empty command name", commandName: "", wantErr: ErrEmptyCommandName},
+		{name: "control character command name", commandName: "backup\nother", wantErr: ErrIdentifierContainsControlCharacter},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := []byte("[[groups]]\nname = \"build\"\n\n[[groups.commands]]\nname = " +
+				strconv.Quote(tt.commandName) + "\ncmd = \"/bin/echo\"\n")
+
+			_, err := NewLoaderForTest().LoadConfigForTest(content)
+			require.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }

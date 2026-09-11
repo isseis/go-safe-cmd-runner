@@ -20,10 +20,12 @@ const reservedVariablePrefix = "__runner_"
 var GroupNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // validateGroupName validates a single group name against the naming convention.
-// Returns a detailed error if the name is invalid.
+// Returns a detailed error if the name is invalid. The name itself is not
+// echoed: a rejected identifier can be a credential shape, and these errors
+// reach stderr without redaction.
 func validateGroupName(name string) error {
 	if !GroupNamePattern.MatchString(name) {
-		return fmt.Errorf("%w: %q must match pattern [A-Za-z_][A-Za-z0-9_]*", ErrInvalidGroupName, name)
+		return fmt.Errorf("%w: must match pattern [A-Za-z_][A-Za-z0-9_]*", ErrInvalidGroupName)
 	}
 	return nil
 }
@@ -60,7 +62,7 @@ func ValidateIdentifiers(cfg *runnertypes.ConfigSpec) error {
 
 		// Check for duplicate group names
 		if prevIndex, exists := seen[group.Name]; exists {
-			return fmt.Errorf("%w: %q at indices %d and %d", ErrDuplicateGroupName, group.Name, prevIndex, i)
+			return fmt.Errorf("%w at indices %d and %d", ErrDuplicateGroupName, prevIndex, i)
 		}
 		seen[group.Name] = i
 
@@ -78,9 +80,9 @@ func ValidateIdentifiers(cfg *runnertypes.ConfigSpec) error {
 // in a notification. The control-character check and the displayable-content
 // check are independent: a name can contain control characters and still leave
 // displayable characters ("backup\nother"), and a name without any control
-// character can still render as blank ("   "). The value is quoted in the
-// message, which escapes control characters, so the diagnostic cannot itself
-// inject a new line.
+// character can still render as blank ("   "). The message names the position
+// and the check but never the value: a rejected identifier can itself be a
+// credential, and these errors reach stderr without redaction.
 func validateCommandName(name string, groupIdx, cmdIdx int) error {
 	position := fmt.Sprintf("groups[%d].commands[%d]", groupIdx, cmdIdx)
 
@@ -88,10 +90,10 @@ func validateCommandName(name string, groupIdx, cmdIdx int) error {
 		return fmt.Errorf("%w at %s", ErrEmptyCommandName, position)
 	}
 	if strings.ContainsFunc(name, isControlOrFormatCharacter) {
-		return fmt.Errorf("%w at %s: %q", ErrIdentifierContainsControlCharacter, position, name)
+		return fmt.Errorf("%w at %s", ErrIdentifierContainsControlCharacter, position)
 	}
 	if !common.HasDisplayableContent(name) {
-		return fmt.Errorf("%w at %s: %q", ErrIdentifierNotDisplayable, position, name)
+		return fmt.Errorf("%w at %s", ErrIdentifierNotDisplayable, position)
 	}
 	return validateIdentifierLength(name, position)
 }

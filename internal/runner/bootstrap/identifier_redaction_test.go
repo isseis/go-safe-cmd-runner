@@ -161,6 +161,25 @@ func TestValidateIdentifierRedaction(t *testing.T) {
 	}
 }
 
+// TestValidateIdentifierRedactionChecksEveryIdentifier pins that the scan walks
+// every group and command. The violation sits in the second group's second
+// command, so an implementation that checks only the first of each cannot pass.
+func TestValidateIdentifierRedactionChecksEveryIdentifier(t *testing.T) {
+	cfg := &runnertypes.ConfigSpec{
+		Groups: []runnertypes.GroupSpec{
+			{Name: "backup", Commands: []runnertypes.CommandSpec{{Name: "pg_dump"}}},
+			{Name: "restore", Commands: []runnertypes.CommandSpec{{Name: "psql"}, {Name: "monkey"}}},
+		},
+	}
+
+	err := ValidateIdentifierRedaction(cfg, redaction.DefaultConfig())
+	require.ErrorIs(t, err, config.ErrIdentifierRedacted)
+
+	preExecErr, ok := errors.AsType[*logging.PreExecutionError](err)
+	require.True(t, ok)
+	assert.Contains(t, preExecErr.Detail(), "groups[1].commands[1]")
+}
+
 // TestValidateIdentifierRedactionDoesNotEchoValues pins that a rejected
 // identifier never reaches the error detail or the stderr report. The values
 // this check rejects are exactly the ones redaction would rewrite, and
@@ -259,7 +278,14 @@ func TestSampleConfigsPassIdentifierRedaction(t *testing.T) {
 			cfg, err := loader.LoadConfigForTest(content)
 			require.NoErrorf(t, err, "sample %s must load", path)
 
-			require.NoError(t, ValidateIdentifierRedaction(cfg, redaction.DefaultConfig()),
+			// Mirror production: the host is normalized before the check builds
+			// its Config, so a sample is checked against its own allowed host.
+			host, err := normalizeSlackAllowedHost(cfg.Global.SlackAllowedHost)
+			require.NoError(t, err)
+			redactionConfig, err := redaction.NewConfig(redaction.WithWebhookHost(host))
+			require.NoError(t, err)
+
+			require.NoError(t, ValidateIdentifierRedaction(cfg, redactionConfig),
 				"sample %s contains an identifier redaction would rewrite", path)
 		})
 	}

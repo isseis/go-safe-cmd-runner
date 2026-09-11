@@ -255,6 +255,10 @@ func enumerationOrderOptions() identitymutationguard.Options {
 // exposes both SetupSlackLogging and ValidateIdentifierRedaction.
 const identifierRedactionBootstrapPath = "github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 
+// identifierRedactionConfigPath is the import path of the package whose
+// ExpandGlobal must run after the identifier check.
+const identifierRedactionConfigPath = "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+
 // TestIdentifierRedactionWiring statically verifies that run validates
 // identifiers with the redaction Config SetupSlackLogging built.
 //
@@ -306,6 +310,14 @@ func TestIdentifierRedactionWiring(t *testing.T) {
 				src:         missingIdentifierRedactionCheck,
 				wantProblem: "expected exactly one ValidateIdentifierRedaction call",
 			},
+			"deferred check": {
+				src:         defersIdentifierRedactionCheck,
+				wantProblem: "must be assigned, not deferred",
+			},
+			"check after expansion": {
+				src:         checksAfterExpansion,
+				wantProblem: "must be called before config.ExpandGlobal",
+			},
 		} {
 			t.Run(name, func(t *testing.T) {
 				problems := identifierRedactionWiringProblemsInSource(t, name+".go", tt.src)
@@ -346,12 +358,15 @@ func identifierRedactionWiringFileProblems(t *testing.T, filename string, file *
 	t.Helper()
 
 	localToImport := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
-		return importPath == identifierRedactionBootstrapPath
+		return importPath == identifierRedactionBootstrapPath || importPath == identifierRedactionConfigPath
 	})
-	qualifier := ""
+	qualifier, configQualifier := "", ""
 	for local, importPath := range localToImport {
-		if importPath == identifierRedactionBootstrapPath {
+		switch importPath {
+		case identifierRedactionBootstrapPath:
 			qualifier = local
+		case identifierRedactionConfigPath:
+			configQualifier = local
 		}
 	}
 	if qualifier == "" {
@@ -417,6 +432,14 @@ func identifierRedactionWiringFileProblems(t *testing.T, filename string, file *
 		problems = append(problems, "ValidateIdentifierRedaction must receive the variable SetupSlackLogging returned")
 	}
 
+	// The check must precede the first global expansion: a name it rejects must
+	// not be used by any earlier step.
+	if configQualifier == "" {
+		problems = append(problems, "the file does not import the config package")
+	} else if firstExpansion, found := firstCallByName(run.Body, configQualifier, "ExpandGlobal"); found && firstExpansion.Pos() < checkCall.Pos() {
+		problems = append(problems, "ValidateIdentifierRedaction must be called before config.ExpandGlobal")
+	}
+
 	parents := parentMap(file)
 	problems = append(problems, checkCallPlacement(parents, checkCall, run.Body)...)
 	if setupIdx < checkIdx {
@@ -426,10 +449,11 @@ func identifierRedactionWiringFileProblems(t *testing.T, filename string, file *
 	return problems
 }
 
-// checkCallPlacement rejects a check call that is not a direct statement of
-// run's body or the initializer of a top-level if statement. A call nested in a
-// block or function literal can receive a shadowing variable that happens to
-// share the name, which the argument-name comparison above cannot see.
+// checkCallPlacement rejects a check call that is not assigned in run's body or
+// in the initializer of a top-level if statement. A call nested in a block or
+// function literal can receive a shadowing variable that happens to share the
+// name, which the argument-name comparison above cannot see; a deferred or bare
+// call discards the error the check exists to report.
 func checkCallPlacement(parents map[ast.Node]ast.Node, call *ast.CallExpr, body *ast.BlockStmt) []string {
 	parent, ok := parents[call]
 	if !ok {
@@ -439,10 +463,12 @@ func checkCallPlacement(parents map[ast.Node]ast.Node, call *ast.CallExpr, body 
 	if !ok {
 		return []string{"ValidateIdentifierRedaction must be called in a statement of run"}
 	}
-	if assign, isAssign := stmt.(*ast.AssignStmt); isAssign {
-		if len(assign.Rhs) != 1 || assign.Rhs[0] != call {
-			return []string{"ValidateIdentifierRedaction must be the whole value of its assignment"}
-		}
+	assign, isAssign := stmt.(*ast.AssignStmt)
+	if !isAssign {
+		return []string{"ValidateIdentifierRedaction must be assigned, not deferred or called for effect"}
+	}
+	if len(assign.Rhs) != 1 || assign.Rhs[0] != call {
+		return []string{"ValidateIdentifierRedaction must be the whole value of its assignment"}
 	}
 	stmtParent := parents[stmt]
 	if stmtParent == body {
@@ -455,10 +481,32 @@ func checkCallPlacement(parents map[ast.Node]ast.Node, call *ast.CallExpr, body 
 	return []string{"ValidateIdentifierRedaction must be a direct statement of run, not nested in a block or function literal"}
 }
 
+// firstCallByName returns the earliest call in body whose selector name is
+// funcName and whose qualifier resolves to the given local import name.
+func firstCallByName(body *ast.BlockStmt, qualifier, funcName string) (*ast.CallExpr, bool) {
+	var first *ast.CallExpr
+	for _, stmt := range body.List {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if qualifiedCallName(call, qualifier) != funcName {
+				return true
+			}
+			if first == nil || call.Pos() < first.Pos() {
+				first = call
+			}
+			return true
+		})
+	}
+	return first, first != nil
+}
+
 // rebindingProblems reports every declaration or assignment of name inside the
 // statements between the SetupSlackLogging assignment and the check call. Both
-// assignments in the same scope and redeclarations in an inner scope count: the
-// plan's guard is written against rebinding, not against a list of statement
+// assignments in the same scope and redeclarations in an inner scope count:
+// this guard is written against rebinding, not against a list of statement
 // shapes.
 func rebindingProblems(stmts []ast.Stmt, name string) []string {
 	if name == "" {
@@ -563,6 +611,7 @@ const validIdentifierRedactionWiring = `package main
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 )
 
 func run(cfg any) error {
@@ -573,6 +622,7 @@ func run(cfg any) error {
 	if err := bootstrap.ValidateIdentifierRedaction(cfg, redactionConfig); err != nil {
 		return err
 	}
+	_, _ = config.ExpandGlobal(cfg)
 	return nil
 }
 `
@@ -662,6 +712,7 @@ const missingIdentifierRedactionCheck = `package main
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 )
 
 func run(cfg any) error {
@@ -669,7 +720,46 @@ func run(cfg any) error {
 	if err != nil {
 		return err
 	}
+	_, _ = config.ExpandGlobal(cfg)
 	_ = redactionConfig
+	return nil
+}
+`
+
+const defersIdentifierRedactionCheck = `package main
+
+import (
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+)
+
+func run(cfg any) error {
+	redactionConfig, err := bootstrap.SetupSlackLogging(cfg)
+	if err != nil {
+		return err
+	}
+	defer bootstrap.ValidateIdentifierRedaction(cfg, redactionConfig)
+	_, _ = config.ExpandGlobal(cfg)
+	return nil
+}
+`
+
+const checksAfterExpansion = `package main
+
+import (
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+)
+
+func run(cfg any) error {
+	redactionConfig, err := bootstrap.SetupSlackLogging(cfg)
+	if err != nil {
+		return err
+	}
+	_, _ = config.ExpandGlobal(cfg)
+	if err := bootstrap.ValidateIdentifierRedaction(cfg, redactionConfig); err != nil {
+		return err
+	}
 	return nil
 }
 `

@@ -171,8 +171,9 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 // TestE2E_PreExecutionError_RedactedCommandName verifies that a command name
 // the redaction transformation would rewrite stops startup before any command
 // runs. The name has an AWS access key ID shape, which no other validation
-// rejects, so removing the call to ValidateIdentifierRedaction turns this into
-// a successful dry run.
+// rejects, so removing the call to ValidateIdentifierRedaction lets the run
+// pass the check and stop later at unverified content (exit 3) instead of
+// failing here with a pre-execution error.
 func TestE2E_PreExecutionError_RedactedCommandName(t *testing.T) {
 	const redactedName = "AKIAIOSFODNN7EXAMPLE"
 
