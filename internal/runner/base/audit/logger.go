@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -124,44 +123,6 @@ func (l *Logger) LogUserGroupExecution(
 		copy(errorAttrs, baseAttrs)
 		errorAttrs = append(errorAttrs, additionalAttrs...)
 		l.logger.LogAttrs(ctx, slog.LevelError, "User/group command failed", errorAttrs...)
-	}
-}
-
-// LogPrivilegeEscalation logs privilege escalation events
-func (l *Logger) LogPrivilegeEscalation(
-	ctx context.Context,
-	operation string,
-	commandName string,
-	originalUID int,
-	targetUID int,
-	success bool,
-	duration time.Duration,
-) {
-	attrs := []slog.Attr{
-		slog.String("audit_type", "privilege_escalation"),
-		slog.Bool("audit", true), // Mark as audit event
-		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String(common.PrivilegeEscalationFailureAttrs.Operation, l.redactor.RedactText(operation)),
-		slog.String(common.PrivilegeEscalationFailureAttrs.CommandName, l.redactor.RedactText(commandName)),
-		slog.Int(common.PrivilegeEscalationFailureAttrs.OriginalUID, originalUID),
-		slog.Int(common.PrivilegeEscalationFailureAttrs.TargetUID, targetUID),
-		slog.Bool("success", success),
-		slog.Int64("duration_ms", duration.Milliseconds()),
-		slog.Int("process_id", os.Getpid()),
-	}
-
-	if success {
-		l.logger.LogAttrs(ctx, slog.LevelInfo, "Privilege escalation successful", attrs...)
-	} else {
-		// Failed privilege escalation should be notified via Slack
-		// Create new slice to avoid modifying the original attrs slice
-		failureAttrs := slices.Clone(attrs)
-		failureAttrs = append(
-			failureAttrs,
-			slog.Bool("slack_notify", true),
-			slog.String("message_type", "privilege_escalation_failure"),
-		)
-		l.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", failureAttrs...)
 	}
 }
 
