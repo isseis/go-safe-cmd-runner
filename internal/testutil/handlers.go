@@ -230,6 +230,8 @@ func (r RecordSnapshot) NotificationContext() (common.NotificationContext, bool)
 		return common.GlobalScope(), false
 	}
 
+	// Handle stores attr.Value.Any(), which yields the LogValuer itself for a
+	// KindLogValuer attribute and []slog.Attr for an already-resolved group.
 	var value slog.Value
 	switch v := raw.(type) {
 	case common.NotificationContext:
@@ -238,8 +240,6 @@ func (r RecordSnapshot) NotificationContext() (common.NotificationContext, bool)
 		value = v.LogValue()
 	case []slog.Attr:
 		value = slog.GroupValue(v...)
-	case slog.Value:
-		value = v
 	default:
 		return common.GlobalScope(), false
 	}

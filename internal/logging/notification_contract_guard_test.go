@@ -243,7 +243,8 @@ func checkNotificationContextBuilds(t *testing.T, filename, src string) (violati
 // their type implicit when the enclosing literal's element type matches
 // isType. []T{{...}} and map[K]T{k: {...}} create a T value without ever
 // spelling the type name, so a type check on the nested literal alone (whose
-// Type is nil) would miss them.
+// Type is nil) would miss them. The same elision is allowed for a pointer
+// element type: []*T{{...}} builds &T{...}, so *T is unwrapped to T.
 func elidedCompositeLiterals(lit *ast.CompositeLit, isType func(ast.Expr) bool) []*ast.CompositeLit {
 	element := compositeElementType(lit.Type)
 	if element == nil || !isType(element) {
@@ -262,16 +263,22 @@ func elidedCompositeLiterals(lit *ast.CompositeLit, isType func(ast.Expr) bool) 
 }
 
 // compositeElementType returns the element type of a slice, array or map type,
-// unwrapping parentheses.
+// unwrapping parentheses and one level of pointer: an element of type *T may
+// elide &T in the literal, which still constructs a T.
 func compositeElementType(expr ast.Expr) ast.Expr {
+	var element ast.Expr
 	switch e := unwrapParen(expr).(type) {
 	case *ast.ArrayType:
-		return e.Elt
+		element = e.Elt
 	case *ast.MapType:
-		return e.Value
+		element = e.Value
 	default:
 		return nil
 	}
+	if star, ok := unwrapParen(element).(*ast.StarExpr); ok {
+		return star.X
+	}
+	return element
 }
 
 // unwrapParen peels parenthesized type expressions.
@@ -350,6 +357,18 @@ func TestPreExecutionErrorLiteralCheckRecognizesForms(t *testing.T) {
 			wantHits: 1,
 		},
 		{
+			name:     "elided pointer slice element without the field is reported",
+			body:     "var es = []*l.PreExecutionError{{Type: l.ErrorTypeSystemError}}",
+			want:     1,
+			wantHits: 1,
+		},
+		{
+			name:     "elided pointer map value without the field is reported",
+			body:     "var es = map[string]*l.PreExecutionError{\"k\": {Type: l.ErrorTypeSystemError}}",
+			want:     1,
+			wantHits: 1,
+		},
+		{
 			name: "a same-named type in another package is not reported",
 			body: "type PreExecutionError struct{ Type l.ErrorType }\n\nvar e = &PreExecutionError{}",
 			want: 0,
@@ -420,6 +439,18 @@ func TestNotificationContextBuildCheckRecognizesForms(t *testing.T) {
 			name: "elided map value",
 			path: "internal/x/x.go",
 			src:  importedHeader + "var ctxs = map[string]c.NotificationContext{\"k\": {}}\n",
+			want: 1,
+		},
+		{
+			name: "elided pointer slice element",
+			path: "internal/x/x.go",
+			src:  importedHeader + "var ctxs = []*c.NotificationContext{{}}\n",
+			want: 1,
+		},
+		{
+			name: "elided pointer map value",
+			path: "internal/x/x.go",
+			src:  importedHeader + "var ctxs = map[string]*c.NotificationContext{\"k\": {}}\n",
 			want: 1,
 		},
 		{
