@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
@@ -126,6 +127,15 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 				record.AssertAttrs(t, map[string]any{"run_as_group": tt.cmd.RunAsGroup()})
 			} else {
 				assert.NotContains(t, record.Attrs, "run_as_group")
+			}
+
+			// Only a failed command is a notification candidate, so only the
+			// failure path carries the command scope context.
+			if tt.result.ExitCode != 0 {
+				record.AssertNotificationContext(t, common.CommandScope(tt.cmd.GroupName(), tt.cmd.Name()))
+			} else {
+				_, hasContext := record.NotificationContext()
+				assert.False(t, hasContext, "successful commands must not carry a notification context")
 			}
 		})
 	}

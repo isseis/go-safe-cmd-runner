@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -309,6 +310,11 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 		message   string
 		component string
 		runID     string
+		ctx       common.NotificationContext
+		err       error
+		// wantDetails defaults to message when empty; it pins that the report
+		// renders Detail() rather than Message alone.
+		wantDetails string
 	}{
 		{
 			name:      "config parsing error",
@@ -316,6 +322,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "failed to parse config",
 			component: "config",
 			runID:     "test-run-1",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "log file open error",
@@ -323,6 +330,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "cannot open log file",
 			component: "logging",
 			runID:     "test-run-2",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "privilege drop error",
@@ -330,6 +338,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "failed to drop privileges",
 			component: "security",
 			runID:     "test-run-3",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "file access error",
@@ -337,6 +346,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "permission denied",
 			component: "filesystem",
 			runID:     "test-run-4",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "system error",
@@ -344,6 +354,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "system call failed",
 			component: "system",
 			runID:     "test-run-5",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "build config error",
@@ -351,19 +362,98 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			message:   "build configuration invalid",
 			component: "build",
 			runID:     "test-run-6",
+			ctx:       common.GlobalScope(),
+		},
+		{
+			name:      "group scoped error",
+			errorType: ErrorTypeGroupFileVerification,
+			message:   "group files failed verification",
+			component: "runner",
+			runID:     "test-run-7",
+			ctx:       common.GroupScope("backup"),
+		},
+		{
+			name:        "wrapped cause appears in details",
+			errorType:   ErrorTypeFileAccess,
+			message:     "Failed to verify and read the configuration file",
+			component:   "verification",
+			runID:       "test-run-8",
+			ctx:         common.GlobalScope(),
+			err:         fmt.Errorf("toml: line 3: expected key separator: %w", errStandardError),
+			wantDetails: "Failed to verify and read the configuration file: toml: line 3: expected key separator: standard error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// HandlePreExecutionError writes to stderr and stdout
-			// We can't easily capture these without complex setup,
-			// but we can at least verify it doesn't panic
-			assert.NotPanics(t, func() {
-				HandlePreExecutionError(tt.errorType, tt.message, tt.component, tt.runID)
-			}, "HandlePreExecutionError should not panic")
+			wantDetails := tt.wantDetails
+			if wantDetails == "" {
+				wantDetails = tt.message
+			}
+
+			stdout, stderr := captureErrorOutput(t, func() {
+				HandlePreExecutionError(&PreExecutionError{
+					Type:                tt.errorType,
+					Message:             tt.message,
+					Component:           tt.component,
+					RunID:               tt.runID,
+					NotificationContext: tt.ctx,
+					Err:                 tt.err,
+				})
+			})
+
+			// The human-readable stderr and stdout shapes are unchanged.
+			wantStderr := "Error: " + string(tt.errorType) + "\n"
+			if tt.component != "" {
+				wantStderr += "  Component: " + tt.component + "\n"
+			}
+			wantStderr += "  Details: " + wantDetails + "\n"
+			if tt.runID != "" {
+				wantStderr += "  Run ID: " + tt.runID + "\n"
+			}
+			assert.Equal(t, wantStderr, stderr)
+
+			wantStdout := fmt.Sprintf("Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n",
+				tt.errorType, tt.runID)
+			assert.Equal(t, wantStdout, stdout)
 		})
 	}
+}
+
+// captureErrorOutput runs fn with os.Stdout and os.Stderr redirected to pipes
+// and returns what it wrote to each. It captures the fmt-based report only;
+// the structured slog line goes through the handler installed at startup and
+// is asserted by the record-capturing tests instead. The report is small
+// enough to fit in the pipe buffers, so it cannot block before it is drained.
+func captureErrorOutput(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+
+	outReader, outWriter, err := os.Pipe()
+	require.NoError(t, err)
+	errReader, errWriter, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStdout, origStderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = outWriter, errWriter
+	t.Cleanup(func() {
+		os.Stdout, os.Stderr = origStdout, origStderr
+		_ = outWriter.Close()
+		_ = errWriter.Close()
+		_ = outReader.Close()
+		_ = errReader.Close()
+	})
+
+	fn()
+
+	os.Stdout, os.Stderr = origStdout, origStderr
+	require.NoError(t, outWriter.Close())
+	require.NoError(t, errWriter.Close())
+
+	outBytes, err := io.ReadAll(outReader)
+	require.NoError(t, err)
+	errBytes, err := io.ReadAll(errReader)
+	require.NoError(t, err)
+	return string(outBytes), string(errBytes)
 }
 
 func TestPreExecutionError_Unwrap(t *testing.T) {
@@ -446,6 +536,44 @@ func TestHandleExecutionError(t *testing.T) {
 			}, "HandleExecutionError should not panic")
 		})
 	}
+}
+
+// TestHandleExecutionError_DoesNotNotifySlack pins the notification contract of
+// the shared error handler after the attributes moved into the caller: an
+// execution error must carry slack_notify=false and its own message_type so it
+// is never routed to Slack, while a pre-execution error must carry true.
+func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
+	var captured []slog.Record
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	slog.SetDefault(slog.New(tu.NewCallbackHandler(func(r slog.Record) {
+		captured = append(captured, r)
+	})))
+
+	_, _ = captureErrorOutput(t, func() {
+		HandleExecutionError(&ExecutionError{
+			Message:   "error running commands",
+			Component: "runner",
+			RunID:     "test-run-exec",
+		})
+	})
+
+	require.Len(t, captured, 1, "HandleExecutionError should emit exactly one record")
+
+	var slackNotify bool
+	var messageType string
+	captured[0].Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "slack_notify":
+			slackNotify = a.Value.Bool()
+		case "message_type":
+			messageType = a.Value.String()
+		}
+		return true
+	})
+
+	assert.False(t, slackNotify, "execution errors must not reach Slack")
+	assert.Equal(t, "execution_error", messageType)
 }
 
 func TestHandleExecutionError_WithWrappedError(t *testing.T) {
@@ -706,6 +834,7 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 		message   string
 		component string
 		runID     string
+		ctx       common.NotificationContext
 	}{
 		{
 			name:      "TOML parse error should trigger Slack notification",
@@ -713,6 +842,7 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			message:   "failed to parse TOML: unexpected character",
 			component: "config",
 			runID:     "test-toml-error-001",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "hash verification failure should trigger Slack notification",
@@ -720,6 +850,7 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			message:   "hash verification failed for /etc/config.toml",
 			component: "verification",
 			runID:     "test-hash-error-001",
+			ctx:       common.GlobalScope(),
 		},
 		{
 			name:      "file access error should trigger Slack notification",
@@ -727,6 +858,15 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			message:   "permission denied: /var/log/app.log",
 			component: "filesystem",
 			runID:     "test-file-error-001",
+			ctx:       common.GlobalScope(),
+		},
+		{
+			name:      "group verification error carries the group scope",
+			errorType: ErrorTypeGroupFileVerification,
+			message:   "group files failed verification",
+			component: "runner",
+			runID:     "test-group-error-001",
+			ctx:       common.GroupScope("backup"),
 		},
 	}
 
@@ -736,7 +876,13 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			capturedRecords = nil
 
 			// Call HandlePreExecutionError
-			HandlePreExecutionError(tt.errorType, tt.message, tt.component, tt.runID)
+			HandlePreExecutionError(&PreExecutionError{
+				Type:                tt.errorType,
+				Message:             tt.message,
+				Component:           tt.component,
+				RunID:               tt.runID,
+				NotificationContext: tt.ctx,
+			})
 
 			// Verify slog.Error() was called
 			require.Len(t, capturedRecords, 1, "HandlePreExecutionError should call slog.Error() once")
@@ -769,6 +915,14 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			assert.True(t, slackNotify, "slack_notify should be true for PreExecutionErrors")
 			assert.Equal(t, string(tt.errorType), errorTypeAttr)
 			assert.Equal(t, tt.message, errorMessageAttr)
+
+			// The report boundary always attaches the notification context so
+			// the notification can name the scope it occurred in.
+			value, ok := capturedNotificationContext(record)
+			require.True(t, ok, "the record must carry a notification context")
+			gotCtx, err := common.DecodeNotificationContext(value.Resolve())
+			require.NoError(t, err, "the notification context must decode")
+			assert.Equal(t, tt.ctx, gotCtx)
 		})
 	}
 }

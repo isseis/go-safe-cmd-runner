@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -51,7 +52,12 @@ type PreExecutionError struct {
 	Message   string
 	Component string
 	RunID     string
-	Err       error // Wrapped error for better error context preservation
+	// NotificationContext declares where the failure originated so the
+	// notification record can name the group or command. Its zero value is a
+	// valid global scope, but production call sites set it explicitly with
+	// common.GlobalScope() or a group scope.
+	NotificationContext common.NotificationContext
+	Err                 error // Wrapped error for better error context preservation
 }
 
 // Error implements the error interface
@@ -103,9 +109,10 @@ type errorHandlingParams struct {
 	component     string
 	runID         string
 	slogMessage   string
-	slogMsgType   string
 	summaryStatus string
-	slackNotify   bool
+	// notificationAttrs are recorded with the structured log line. The caller
+	// decides which notification attributes, if any, the record carries.
+	notificationAttrs []slog.Attr
 }
 
 // handleErrorCommon is a private helper that contains the common error handling logic
@@ -126,14 +133,14 @@ func handleErrorCommon(params errorHandlingParams) {
 
 	// Try to log through slog if available
 	if logger := slog.Default(); logger != nil {
-		slog.Error(params.slogMessage,
+		attrs := []slog.Attr{
 			slog.String(common.PreExecErrorAttrs.ErrorType, string(params.errorType)),
 			slog.String(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
 			slog.String(common.PreExecErrorAttrs.Component, params.component),
 			slog.String("run_id", params.runID),
-			slog.Bool("slack_notify", params.slackNotify),
-			slog.String("message_type", params.slogMsgType),
-		)
+		}
+		attrs = append(attrs, params.notificationAttrs...)
+		logger.LogAttrs(context.Background(), slog.LevelError, params.slogMessage, attrs...)
 	}
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
@@ -143,17 +150,22 @@ func handleErrorCommon(params errorHandlingParams) {
 	fmt.Print(stdoutBuilder.String())
 }
 
-// HandlePreExecutionError handles pre-execution errors by logging and notifying
-func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
+// HandlePreExecutionError handles pre-execution errors by logging and notifying.
+// The notification context is always attached because the report boundary is
+// the only place that knows where the failure originated.
+func HandlePreExecutionError(preExecErr *PreExecutionError) {
 	handleErrorCommon(errorHandlingParams{
-		errorType:     errorType,
-		errorMsg:      errorMsg,
-		component:     component,
-		runID:         runID,
+		errorType:     preExecErr.Type,
+		errorMsg:      preExecErr.Detail(),
+		component:     preExecErr.Component,
+		runID:         preExecErr.RunID,
 		slogMessage:   "Pre-execution error occurred",
-		slogMsgType:   "pre_execution_error",
 		summaryStatus: "pre_execution_error",
-		slackNotify:   true,
+		notificationAttrs: []slog.Attr{
+			slog.Bool("slack_notify", true),
+			slog.String("message_type", "pre_execution_error"),
+			preExecErr.NotificationContext.LogAttr(),
+		},
 	})
 }
 
@@ -182,8 +194,10 @@ func HandleExecutionError(execErr *ExecutionError) {
 		component:     execErr.Component,
 		runID:         execErr.RunID,
 		slogMessage:   "Execution error occurred",
-		slogMsgType:   "execution_error",
 		summaryStatus: "execution_error",
-		slackNotify:   false,
+		notificationAttrs: []slog.Attr{
+			slog.Bool("slack_notify", false),
+			slog.String("message_type", "execution_error"),
+		},
 	})
 }

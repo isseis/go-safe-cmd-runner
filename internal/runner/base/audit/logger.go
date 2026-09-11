@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -75,12 +76,12 @@ func (l *Logger) LogUserGroupExecution(
 		slog.String("audit_type", "user_group_execution"),
 		slog.Bool("audit", true), // Mark as audit event for new logging framework
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("command_name", cmd.Name()),
+		slog.String(common.UserGroupCommandFailureAttrs.CommandName, cmd.Name()),
 		slog.String("command_path", cmd.Cmd()),
 		slog.String("command_args", l.redactor.RedactText(strings.Join(cmd.Args(), " "))),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
 		slog.String("expanded_command_args", l.redactor.RedactText(strings.Join(cmd.ExpandedArgs, " "))),
-		slog.Int("exit_code", result.ExitCode),
+		slog.Int(common.UserGroupCommandFailureAttrs.ExitCode, result.ExitCode),
 		slog.Int64("execution_duration_ms", duration.Milliseconds()),
 		slog.Int("user_id", os.Getuid()),
 		slog.Int("effective_user_id", os.Geteuid()),
@@ -114,10 +115,11 @@ func (l *Logger) LogUserGroupExecution(
 	} else {
 		// Create new slice to avoid modifying baseAttrs
 		additionalAttrs := []slog.Attr{
-			slog.String("stdout", l.redactor.RedactText(result.Stdout)),
-			slog.String("stderr", l.redactor.RedactText(result.Stderr)),
+			slog.String(common.UserGroupCommandFailureAttrs.Stdout, l.redactor.RedactText(result.Stdout)),
+			slog.String(common.UserGroupCommandFailureAttrs.Stderr, l.redactor.RedactText(result.Stderr)),
 			slog.Bool("slack_notify", true), // Notify Slack for failed user/group commands
 			slog.String("message_type", "user_group_command_failure"),
+			common.CommandScope(cmd.GroupName(), cmd.Name()).LogAttr(),
 		}
 		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
 		copy(errorAttrs, baseAttrs)

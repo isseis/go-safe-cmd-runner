@@ -20,8 +20,10 @@ import (
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -169,6 +171,80 @@ func ProductionGoFiles(t *testing.T, dir string) []string {
 	}
 
 	return paths
+}
+
+// RepositoryRoot returns the absolute path of the repository root, found by
+// walking up from the current working directory to the nearest directory that
+// contains a go.mod. Guard tests at any package depth can use it to address
+// repository files without embedding their own ".." prefix.
+func RepositoryRoot(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no go.mod found above the working directory %s", dir)
+		}
+		dir = parent
+	}
+}
+
+// ProductionGoFilesInRepo returns the slash-separated paths, relative to the
+// repository root, of every production .go file under internal/ and cmd/,
+// sorted for stable iteration. The scan starts at the root resolved by
+// RepositoryRoot, so it does not depend on the calling package's depth.
+//
+// Production Go files outside these two trees (scripts/verification/, say) are
+// out of scope: the scan covers what the runner binaries build. The same walk
+// applies the exclusions of ProductionGoFiles, including testdata and
+// test-only build constraints, so the definition of "production file" stays in
+// one place.
+func ProductionGoFilesInRepo(t *testing.T) []string {
+	t.Helper()
+
+	root := RepositoryRoot(t)
+	var files []string
+	for _, tree := range []string{"internal", "cmd"} {
+		treeRoot := filepath.Join(root, tree)
+		err := filepath.WalkDir(treeRoot, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !entry.IsDir() {
+				return nil
+			}
+			// testdata holds test inputs, not code this repository builds.
+			if entry.Name() == "testdata" {
+				return fs.SkipDir
+			}
+			for _, file := range ProductionGoFiles(t, path) {
+				rel, err := filepath.Rel(root, file)
+				require.NoErrorf(t, err, "failed to make %s relative to the repository root", file)
+				files = append(files, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+		require.NoErrorf(t, err, "failed to walk %s", treeRoot)
+	}
+	sort.Strings(files)
+	return files
+}
+
+// ReadProductionSource reads the production Go file at path, which is either a
+// path returned by ProductionGoFilesInRepo (relative to the repository root)
+// or an absolute path.
+func ReadProductionSource(t *testing.T, path string) string {
+	t.Helper()
+
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(RepositoryRoot(t), filepath.FromSlash(path))
+	}
+	return readGoFile(t, path)
 }
 
 // readGoFile reads a .go file found by directory traversal.

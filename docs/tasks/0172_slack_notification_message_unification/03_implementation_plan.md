@@ -610,58 +610,60 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 4.3 `PreExecutionError` の構造体化と発火元への伝搬
 
-- [ ] `internal/logging/pre_execution_error.go` の `PreExecutionError` へ
+- [x] `internal/logging/pre_execution_error.go` の `PreExecutionError` へ
       `NotificationContext common.NotificationContext` を追加する。
-- [ ] `HandlePreExecutionError` のシグネチャを
+- [x] `HandlePreExecutionError` のシグネチャを
       `func HandlePreExecutionError(preExecErr *PreExecutionError)` へ変える。本文は
       `preExecErr.Detail()`、Run ID は `preExecErr.RunID`、種別とコンポーネントは同名
       フィールドを使う（02_architecture.md §3.2 の表）。
-- [ ] `handleErrorCommon` を、`slack_notify` と `message_type` を自前で組まず、呼び出し元が
+- [x] `handleErrorCommon` を、`slack_notify` と `message_type` を自前で組まず、呼び出し元が
       渡した `[]slog.Attr` をそのまま記録する形へ変える。`errorHandlingParams` から
       `slackNotify` と `slogMsgType` を取り除き、属性スライスの項目を加える。記録は現在
       `slog.Error(msg, ...any)` なので `slog.LogAttrs` へ切り替える。
-- [ ] **Phase 4 の時点では**、`HandlePreExecutionError` が渡す属性スライスを、現在と同じ
+- [x] **Phase 4 の時点では**、`HandlePreExecutionError` が渡す属性スライスを、現在と同じ
       `slack_notify=true` と `message_type="pre_execution_error"` に通知コンテキスト属性を
       足したものとして、`pre_execution_error.go` の中で組み立てる。`NotificationAttrs` へ
       差し替えるのは Phase 5 である。この中間状態にするのは、各コミットで `make test` が
       通る状態を保つためである（AC-30）。
-- [ ] `HandleExecutionError` は Slack へ送らない自分の属性（`slack_notify=false` と
+- [x] `HandleExecutionError` は Slack へ送らない自分の属性（`slack_notify=false` と
       `message_type="execution_error"`）を渡す形へ合わせる。Slack 通知を行わないという既存
       契約は変えない。
-- [ ] `cmd/runner/main.go` の既存 `PreExecutionError` リテラル 11 箇所すべてへ
+- [x] `cmd/runner/main.go` の既存 `PreExecutionError` リテラル 11 箇所すべてへ
       `NotificationContext: common.GlobalScope()` を加える。
-- [ ] `cmd/runner/main.go` の `HandlePreExecutionError` 呼び出し 5 箇所（132、177、186、217、
+- [x] `cmd/runner/main.go` の `HandlePreExecutionError` 呼び出し 5 箇所（132、177、186、217、
       221 行目）を、構造体を渡す形へ移す。このうち 132・177・186・221 行目は現在リテラルを
       作っていないため、**新設するリテラルにも `NotificationContext: common.GlobalScope()` を
       付ける**。報告境界で `preExecErr.RunID` へプロセス唯一の Run ID を代入してから呼ぶ
       （02_architecture.md §3.2）。
-- [ ] `internal/runner/bootstrap/config.go` の `PreExecutionError` リテラル 4 箇所へ
+- [x] `internal/runner/bootstrap/config.go` の `PreExecutionError` リテラル 4 箇所へ
       `NotificationContext: common.GlobalScope()` を加える。
-- [ ] `internal/runner/bootstrap/environment.go` の `PreExecutionError` リテラル 2 箇所へ
+- [x] `internal/runner/bootstrap/environment.go` の `PreExecutionError` リテラル 2 箇所へ
       `NotificationContext: common.GlobalScope()` を加える。
-- [ ] `internal/runner/runner.go:429` の検証エラー経路を、
+- [x] `internal/runner/runner.go:429` の検証エラー経路を、
       `NotificationContext: common.GroupScope(verErr.Group)` を持つ**新設リテラル**を渡す形へ
       移す。本文からの `Group: <name>, ` 除去は Phase 5 で行う（02_architecture.md §8.2）。
-- [ ] `internal/runner/runner.go` の `logGroupExecutionSummary` へ
+- [x] `internal/runner/runner.go` の `logGroupExecutionSummary` へ
       `common.GroupScope(groupSpec.Name)` の通知コンテキスト属性を加える。`...any` の可変長
       引数から `LogAttrs` を使う形へ変える。既存のトップレベル `group` 属性は残す。
-- [ ] `internal/runner/base/audit/logger.go` の `LogUserGroupExecution` の失敗経路へ
+- [x] `internal/runner/base/audit/logger.go` の `LogUserGroupExecution` の失敗経路へ
       `common.CommandScope(cmd.GroupName(), cmd.Name())` の通知コンテキスト属性を加える。
-- [ ] 同関数で、`common.UserGroupCommandFailureAttrs` の **4 項目すべて**（`command_name`、
+- [x] 同関数で、`common.UserGroupCommandFailureAttrs` の **4 項目すべて**（`command_name`、
       `exit_code`、`stdout`、`stderr`）を構造体から引く形へ変える。`command_name` と
       `exit_code` は成功経路と共有する `baseAttrs` にあるため、成功経路も同じ定数を使う。
       片側だけリテラルを残すと、キー名を変えたときに読み側がコマンド名を取り落とす場合がある。
       しかし記録側のコードは変更なしにテストを通ってしまうため、AC-23 がサイレントに壊れる。
-- [ ] `internal/runner/runner_test.go` の `TestLogGroupExecutionSummary_LogLevel`
-      （`tu.NewCallbackHandler` で `logGroupExecutionSummary` の出力を集める既存テスト）を
-      拡張し、グループ集計のレコードにグループスコープの通知コンテキスト属性が載ることを
-      検証する。`TestSlackNotification` は拡張先にしない（理由は §1.3）。
-- [ ] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` を
+- [x] `internal/runner/runner_test.go` の `TestLogGroupExecutionSummary_LogLevel`
+      を拡張し、グループ集計のレコードにグループスコープの通知コンテキスト属性が載ることを
+      検証する。`TestSlackNotification` は拡張先にしない（理由は §1.3）。実装では
+      `tu.NewCallbackHandler` のローカル集計を既存の `tu.NewLogRecorder` へ置き換え、
+      記録の属性を `RecordSnapshot` から読めるようにした
+      （`RecordSnapshot.AssertNotificationContext`）。
+- [x] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` を
       拡張し、失敗経路のレコードがコマンドスコープの通知コンテキストを持つことを検証する。
 直上 2 件のテスト拡張を Phase 5 ではなく Phase 4 に置くのは、属性を載せるのが本節の
 `logGroupExecutionSummary` と `LogUserGroupExecution` のタスクだからである。本 Phase の構文木
@@ -670,7 +672,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 持つ」であり、3 発火元のうち 2 つの検証を Phase 5 へ送ると、Phase 4 の完了条件が実際には
 確かめていないものを緑と称することになる。
 
-- [ ] **リポジトリ全体を歩く走査を `internal/testutil/identitymutationguard/helpers.go` へ
+- [x] **リポジトリ全体を歩く走査を `internal/testutil/identitymutationguard/helpers.go` へ
       括り出す。** `internal` と `cmd` の本番 Go ファイルをリポジトリ全体から列挙する関数を
       追加する。中身は `internal/testutil/synccensus/census_guard_test.go` にある走査
       （`filepath.WalkDir`、`testdata` の `fs.SkipDir`、ディレクトリごとの
@@ -687,14 +689,17 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       テストが緑であることで確認する。**この括り出しを Phase 5 ではなく Phase 4 に置くのは、
       直下の構文木ガードが本 Phase で入り、その走査がこの関数を呼ぶためである。** Phase 5 に
       残すと Phase 4 のガードが存在しない API を参照し、Phase 4 の `make test`／AC-30 が
-      通らない（複製して回避することは §1.2 の 5 が禁じている）。
-- [ ] `internal/logging/notification_contract_guard_test.go` を新規作成し（`//go:build test`）、
+      通らない（複製して回避することは §1.2 の 5 が禁じている）。実装は走査そのものに加え、
+      root 解決（`RepositoryRoot`）と、root 相対パスから本番ソースを読む
+      （`ReadProductionSource`）の 2 つを同じパッケージへ置いた。`synccensus` と新しいガードは
+      どちらもこの 2 つを共有し、ファイルを読む手段を各テストへ複製しない。
+- [x] `internal/logging/notification_contract_guard_test.go` を新規作成し（`//go:build test`）、
       本番コードの `PreExecutionError` 複合リテラルが `NotificationContext` を省略していない
       ことを検証する。走査は直上で括り出したヘルパーを使う。この半分を Phase 4 に置くのは、
       検査対象が Phase 4 の構造体変更だけに依存し、Phase 4 の完了条件（AC-11）を Phase 5 の
       成果物に依存させないためである。残る半分（`slack_notify`／`message_type` の直接構築の
       禁止と `NotificationAttrs` の引数制限）は Phase 5 で足す。
-- [ ] 同ファイルへ、**AC-09 のコンストラクタ検査**も本 Phase で入れる。`internal/common` を
+- [x] 同ファイルへ、**AC-09 のコンストラクタ検査**も本 Phase で入れる。`internal/common` を
       import する本番ファイルごとに `ResolveLocalImports` で実際の import 名を解決し、
       解決結果が `internal/common` を指す `NotificationContext` について、**コンストラクタ
       呼び出し以外でゼロ値を生じさせる構文をすべて拒否する**。既知の形は
@@ -709,25 +714,29 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       足したヘルパーがコンストラクタを迂回できてしまう。同パッケージ内では修飾子が付かない
       ため、構文木の照合は修飾子つきと修飾子なしの双方を見る。除外するのは
       `notification_context.go` の 3 コンストラクタ（`GlobalScope`・`GroupScope`・
-      `CommandScope`）の本体だけであり、これらは非公開フィールドを初期化する正規の実装で
-      ある。除外はファイル単位ではなく関数単位にする。ファイルごと除外すると、同じファイルへ
-      足した別の関数が迂回できる。上の各形はいずれも
-      コンストラクタを迂回してゼロ値を作る経路であり、AC-09 は「値はコンストラクタでのみ
-      構築する」だけでなく「グローバルな場合も `GlobalScope()` で明示的に」付与することを
-      要求している（§7 の AC-09 の行）。検査対象は Phase 4 の構造体変更だけに依存するため、
-      Phase 5 へ送らない。**(i)〜(iv) それぞれについて、本番ファイルへ 1 個足すと落ちることを
-      確認する**（1 形でも見落とす実装が緑のまま残らないようにする）。別名 import
-      （`import c ".../internal/common"`）の行も含める。
-- [ ] **この検査は完全にはできない。その前提で書く。** AC-09 はゼロ値を `ScopeGlobal` と
+      `CommandScope`）と復元関数 `DecodeNotificationContext` の本体だけである。復元関数は
+      レコードのエンコードから値を組み立てて §3.1 の妥当性判定を行う正規の実装であり、
+      3 コンストラクタと同じく型自身の機構に属する。除外はファイル単位ではなく関数単位に
+      する。ファイルごと除外すると、同じファイルへ足した別の関数が迂回できる。上の各形は
+      いずれもコンストラクタを迂回してゼロ値を作る経路であり、AC-09 は「値はコンストラクタ
+      でのみ構築する」だけでなく「グローバルな場合も `GlobalScope()` で明示的に」付与する
+      ことを要求している（§7 の AC-09 の行）。検査対象は Phase 4 の構造体変更だけに依存する
+      ため、Phase 5 へ送らない。**(i)〜(iv) それぞれについて、本番ファイルへ 1 個足すと
+      落ちることを確認する**（1 形でも見落とす実装が緑のまま残らないようにする）。別名
+      import（`import c ".../internal/common"`）の行も含める。
+- [x] **この検査は完全にはできない。その前提で書く。** AC-09 はゼロ値を `ScopeGlobal` と
       定めており（`TestNotificationContext_ZeroValueIsGlobalScope` が固定している）、Go で
       ゼロ値を得る書き方は構文として列挙しきれない。したがってこの検査が防ぐのは、
       **事故でコンストラクタを迂回すること**であって、意図した迂回のすべてではない。
       発火元が実際に正しいスコープを載せていることは、§5.5 の 3 発火元のスコープ assert が
       実行時に確かめる。構文木ガードと実行テストのどちらか一方に寄せず、両方を持つ理由が
       ここにある。AC-27 の (d) に同じ断りを書いてあるのと同じ立場である。
-- [ ] `cmd/runner/startup_privilege_test.go` の `TestReportStartupPrivilegeFailure_UsesValidRunID`
-      を、新しい引数形（構造体）に合わせて更新する。
-- [ ] `internal/logging/pre_execution_error_test.go` の `TestHandlePreExecutionError_AllTypes`
+- [x] `cmd/runner/startup_privilege_test.go` の `TestReportStartupPrivilegeFailure_UsesValidRunID`
+      を、新しい引数形（構造体）に合わせて更新する。実装では更新不要だった。同テストが呼ぶ
+      `reportStartupPrivilegeFailure` のシグネチャは変わらず（構造体化されるのはその中の
+      `HandlePreExecutionError` 呼び出しだけ）、テストは stderr と RUN_SUMMARY 行を検証して
+      いるためである。
+- [x] `internal/logging/pre_execution_error_test.go` の `TestHandlePreExecutionError_AllTypes`
       と `TestHandlePreExecutionError_SlackNotification` を、位置引数から構造体を渡す形へ
       移す。あわせて、グローバルとグループの通知コンテキストがレコードへ載ることと、既存の
       stderr／stdout 出力の形が変わらないことを検証する。
@@ -744,8 +753,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **判定理由**: `PreExecutionError` の構造体化と 3 発火元への通知コンテキスト伝搬という、状態の整合性を発火元ごとに保証しなければならない孤立した高リスク・複雑ステップである。とくに AC-09 のコンストラクタ迂回検査は「ゼロ値の生成」という性質に対して書く AST 検査であり、既知の 4 形は例示であって網羅ではないという設計上の割り切りを要する（§4.3 内の検査設計）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

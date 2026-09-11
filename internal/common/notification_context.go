@@ -34,7 +34,7 @@ type NotificationContext struct {
 }
 
 // Compile-time guard to ensure NotificationContext implements slog.LogValuer.
-var _ slog.LogValuer = NotificationContext{}
+var _ slog.LogValuer = GlobalScope()
 
 // GlobalScope returns the notification context of an error that is not tied to
 // a group or command.
