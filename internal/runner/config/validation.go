@@ -33,7 +33,8 @@ func validateGroupName(name string) error {
 // ValidateIdentifiers validates the group and command names in the configuration.
 // Group names are checked for emptiness, pattern and duplicates; command names
 // for emptiness, control and format-control characters, displayable content,
-// and length. Group names also have a length limit. The length limit counts
+// length, and duplicates within their group. Group names also have a length
+// limit. The length limit counts
 // bytes, matching the display-safe interpolation contract that never truncates
 // identifiers.
 //
@@ -66,10 +67,18 @@ func ValidateIdentifiers(cfg *runnertypes.ConfigSpec) error {
 		}
 		seen[group.Name] = i
 
+		seenCommands := make(map[string]int, len(group.Commands))
 		for j, cmd := range group.Commands {
 			if err := validateCommandName(cmd.Name, i, j); err != nil {
 				return err
 			}
+			// A notification scope is "group/command", so a name repeated
+			// within one group cannot say which command it points at.
+			if prevIndex, exists := seenCommands[cmd.Name]; exists {
+				return fmt.Errorf("%w at groups[%d].commands[%d] and groups[%d].commands[%d]",
+					ErrDuplicateCommandName, i, prevIndex, i, j)
+			}
+			seenCommands[cmd.Name] = j
 		}
 	}
 

@@ -83,6 +83,11 @@ var (
 	// ErrDuplicateGroupName is returned when duplicate group names are found
 	ErrDuplicateGroupName = errors.New("duplicate group name")
 
+	// ErrDuplicateCommandName is returned when two commands in the same group
+	// share a name. A notification scope is "group/command", so two commands
+	// with one name in one group would render as the same scope.
+	ErrDuplicateCommandName = errors.New("duplicate command name in group")
+
 	// ErrEmptyCommandName is returned when a command has an empty name. Unlike
 	// group names, command names were never required to be present.
 	ErrEmptyCommandName = errors.New("command has empty name")

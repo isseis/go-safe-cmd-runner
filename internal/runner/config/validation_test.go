@@ -376,6 +376,33 @@ func TestValidateIdentifiers(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			// The same command name in two different groups is two distinct
+			// scopes ("build/sync", "deploy/sync"), so it is accepted.
+			name: "same command name in different groups",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("sync", nil)}},
+					{Name: "deploy", Commands: []runnertypes.CommandSpec{makeCommand("sync", nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "duplicate command names in one group",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{
+						makeCommand("compile", nil),
+						makeCommand("sync", nil),
+						makeCommand("sync", nil),
+					}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrDuplicateCommandName,
+			errorContains: []string{"duplicate command name", "groups[0].commands[1] and groups[0].commands[2]"},
+		},
+		{
 			name: "empty command name",
 			config: &runnertypes.ConfigSpec{
 				Groups: []runnertypes.GroupSpec{
@@ -557,6 +584,18 @@ func TestValidateIdentifiers_DoesNotEchoRejectedNames(t *testing.T) {
 				},
 			},
 			expectedError: ErrDuplicateGroupName,
+		},
+		{
+			name: "duplicate command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{
+						makeCommand(credential, nil),
+						makeCommand(credential, nil),
+					}},
+				},
+			},
+			expectedError: ErrDuplicateCommandName,
 		},
 	}
 
