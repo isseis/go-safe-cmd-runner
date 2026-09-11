@@ -814,15 +814,16 @@ func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
 		})
 }
 
-// TestLogElevationOutcome_ReportsSeteuidOutcome verifies that an escalation
+// TestLogElevationOutcome verifies the reporting switch: an escalation
 // performed through seteuid is reported with the operation, command, original
-// UID and the moment the escalation succeeded.
+// UID and the moment the escalation succeeded, and an outcome of elevationNone
+// reports nothing.
 //
-// This branch cannot be reached through WithPrivileges here: CI and the dev
-// container run as a non-root user, so syscall.Seteuid(0) fails with EPERM,
+// The seteuid branch cannot be reached through WithPrivileges here: CI and the
+// dev container run as a non-root user, so syscall.Seteuid(0) fails with EPERM,
 // escalatePrivileges returns before setting execCtx.elevation, and
-// logElevationOutcome reports nothing. The test therefore sets
-// elevationSeteuid on the execution context directly and exercises only the
+// logElevationOutcome reports nothing. The test therefore sets the elevation
+// outcome on the execution context directly and exercises only the
 // logElevationOutcome boundary. It does not show that WithPrivileges reaches
 // this branch on a setuid binary, and the assignment of elevationSeteuid and
 // elevatedAt in escalatePrivileges stays unverified in this environment; only
@@ -830,28 +831,45 @@ func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
 //
 // Not parallel: every test in this file runs sequentially (see the file
 // comment). This test touches no process identity, but the rule is file-wide.
-func TestLogElevationOutcome_ReportsSeteuidOutcome(t *testing.T) {
-	logger, rec := tu.NewRecordingLogger()
-	manager := &UnixPrivilegeManager{
-		logger:      logger,
-		originalUID: 1000,
-	}
+func TestLogElevationOutcome(t *testing.T) {
+	const originalUID = 1000
 	elevatedAt := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileValidation,
+		CommandName: "test-command",
+	}
 
-	manager.logElevationOutcome(&executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		elevation:  elevationSeteuid,
-		elevatedAt: elevatedAt,
-	})
+	tests := []struct {
+		name      string
+		elevation elevationOutcome
+		wantLog   bool
+	}{
+		{name: "seteuid outcome is reported", elevation: elevationSeteuid, wantLog: true},
+		{name: "no escalation reports nothing", elevation: elevationNone},
+	}
 
-	rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
-		AssertAttrs(t, map[string]any{
-			"operation":    runnertypes.OperationFileValidation,
-			"command":      "test-command",
-			"original_uid": 1000,
-			"elevated_at":  elevatedAt,
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, rec := tu.NewRecordingLogger()
+			manager := &UnixPrivilegeManager{logger: logger, originalUID: originalUID}
+
+			manager.logElevationOutcome(&executionContext{
+				elevationCtx: elevationCtx,
+				elevation:    tt.elevation,
+				elevatedAt:   elevatedAt,
+			})
+
+			if !tt.wantLog {
+				assert.Empty(t, rec.Records(), "nothing may be recorded when no escalation was performed")
+				return
+			}
+			rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
+				AssertAttrs(t, map[string]any{
+					"operation":    runnertypes.OperationFileValidation,
+					"command":      "test-command",
+					"original_uid": originalUID,
+					"elevated_at":  elevatedAt,
+				})
 		})
+	}
 }
