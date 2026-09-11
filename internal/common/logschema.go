@@ -44,20 +44,6 @@ var PreExecErrorAttrs = struct {
 	Component:    "component",
 }
 
-// PrivilegeEscalationFailureAttrs contains attribute keys for privilege escalation failure logs.
-// Used in audit.Logger.LogPrivilegeEscalation (write) and logging.buildPrivilegeEscalationFailure (read).
-var PrivilegeEscalationFailureAttrs = struct {
-	Operation   string // operation being performed
-	CommandName string // command name
-	OriginalUID string // original user ID
-	TargetUID   string // target user ID
-}{
-	Operation:   "operation",
-	CommandName: "command_name",
-	OriginalUID: "original_uid",
-	TargetUID:   "target_uid",
-}
-
 // CommandResultFields defines the structure and types for command result log fields.
 // This struct serves as the canonical definition of the schema used for logging command results.
 //

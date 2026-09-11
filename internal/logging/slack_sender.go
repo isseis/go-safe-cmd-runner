@@ -56,9 +56,8 @@ const (
 // the queue-priority decision below and Handle's message builder switch must
 // agree on the exact strings.
 const (
-	messageTypeCommandGroupSummary     = "command_group_summary"
-	messageTypePreExecutionError       = "pre_execution_error"
-	messageTypePrivilegeEscalationFail = "privilege_escalation_failure"
+	messageTypeCommandGroupSummary = "command_group_summary"
+	messageTypePreExecutionError   = "pre_execution_error"
 )
 
 // Reasons recorded for a notification that was never delivered.
@@ -278,11 +277,11 @@ func (sd *slackSender) isClosed() bool {
 }
 
 // isHighPriority reports whether a message type goes to the high-priority
-// queue. Privilege-escalation failures and pre-execution errors must not be
-// pushed out by a flood of ordinary command notifications.
+// queue. Pre-execution errors must not be pushed out by a flood of ordinary
+// command notifications.
 func isHighPriority(messageType string) bool {
 	switch messageType {
-	case messageTypePrivilegeEscalationFail, messageTypePreExecutionError:
+	case messageTypePreExecutionError:
 		return true
 	default:
 		return false

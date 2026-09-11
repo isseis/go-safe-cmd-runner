@@ -159,31 +159,6 @@ func TestLogger_LogUserGroupExecution_ByOperationAttrs(t *testing.T) {
 		})
 }
 
-func TestLogger_LogPrivilegeEscalation(t *testing.T) {
-	logger, rec := tu.NewRecordingLogger()
-	auditLogger := audit.NewAuditLoggerWithCustom(logger)
-
-	ctx := context.Background()
-	operation := "command_execution"
-	commandName := "test_command"
-	originalUID := 1000
-	targetUID := 0
-	success := true
-	duration := 10 * time.Millisecond
-
-	auditLogger.LogPrivilegeEscalation(ctx, operation, commandName, originalUID, targetUID, success, duration)
-
-	rec.RequireRecord(t, slog.LevelInfo, "Privilege escalation successful").
-		AssertAttrs(t, map[string]any{
-			"audit_type":   "privilege_escalation",
-			"operation":    operation,
-			"command_name": commandName,
-			"original_uid": originalUID,
-			"target_uid":   targetUID,
-			"success":      true,
-		})
-}
-
 // logUserGroupExecutionEntry runs LogUserGroupExecution against a fresh JSON
 // logger (no RedactingHandler) and returns the parsed log entry.
 func logUserGroupExecutionEntry(
@@ -298,42 +273,6 @@ func TestNewAuditLogger_UsesInjectedRedactionConfig(t *testing.T) {
 	require.True(t, ok)
 	assert.NotContains(t, stderr, "abcdefghijklmnopqrstuvwxyz", "webhook path must not reach the log output")
 	assert.Contains(t, stderr, "https://mattermost.example.com/[REDACTED]")
-}
-
-// TestLogPrivilegeEscalation_Masking verifies operation/commandName are
-// boundary-redacted.
-func TestLogPrivilegeEscalation_Masking(t *testing.T) {
-	logEntry := func(t *testing.T, operation, commandName string) map[string]any {
-		t.Helper()
-		var buf bytes.Buffer
-		logger := slog.New(slog.NewJSONHandler(&buf, nil))
-		audit.NewAuditLoggerWithCustom(logger).LogPrivilegeEscalation(
-			context.Background(), operation, commandName, 1000, 0, true, 0,
-		)
-		var entry map[string]any
-		require.NoError(t, json.Unmarshal(buf.Bytes(), &entry))
-		return entry
-	}
-
-	t.Run("commandName and operation masked", func(t *testing.T) {
-		entry := logEntry(t, "run --token=secretopvalue", "cmd --token=secretcmdvalue")
-
-		operation, ok := entry["operation"].(string)
-		require.True(t, ok)
-		assert.NotContains(t, operation, "secretopvalue")
-		assert.Contains(t, operation, "[REDACTED]")
-
-		commandName, ok := entry["command_name"].(string)
-		require.True(t, ok)
-		assert.NotContains(t, commandName, "secretcmdvalue")
-		assert.Contains(t, commandName, "[REDACTED]")
-	})
-
-	t.Run("NoSensitiveContent", func(t *testing.T) {
-		entry := logEntry(t, "command_execution", "test_command")
-		assert.Equal(t, "command_execution", entry["operation"])
-		assert.Equal(t, "test_command", entry["command_name"])
-	})
 }
 
 // logRiskProfileEntry runs LogRiskProfile against a fresh DEBUG-level JSON logger

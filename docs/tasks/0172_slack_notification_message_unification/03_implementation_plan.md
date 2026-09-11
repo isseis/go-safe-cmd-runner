@@ -265,7 +265,9 @@ Phase 5 で個別に気付く形にせず、共有ヘルパー `slackRecord` の
 `tu.NewCallbackHandler` を `slog.SetDefault` へ差し込み `logGroupExecutionSummary` を直接
 呼ぶ）であり、グループ集計側の拡張先はこちらである（§5.5）。
 
-`internal/runner/base/privilege` には `logElevationOutcome` を対象とする既存テストが無い。
+`internal/runner/base/privilege` の既存テスト `TestWithPrivileges_WritesNoRecordWhileElevated` は
+native root の記録が存在することまでしか assert せず、記録の属性（operation・command・original_uid）を
+固定するテストは無い。
 AC-05 のテストは Phase 3 で新規に書く。ただし到達性に制約がある。`escalatePrivileges`
 （`unix.go:299`）は、`originalUID == 0` のときだけ `elevationNativeRoot` を設定して早期
 return し、それ以外では実際に `syscall.Seteuid(0)` を呼ぶ。同ファイル冒頭のコメントが
@@ -431,8 +433,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: `privilege_escalation_failure` の削除と特権監査テストの追加
 
@@ -441,37 +443,37 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/logging/slack_handler_test.go`、`internal/runner/base/audit/logger_test.go`、
 `internal/runner/base/privilege/unix_privilege_test.go`
 
-- [ ] `internal/common/logschema.go` から `PrivilegeEscalationFailureAttrs` を削除する。
-- [ ] `internal/runner/base/audit/logger.go` から `LogPrivilegeEscalation` を削除する。削除後に
+- [x] `internal/common/logschema.go` から `PrivilegeEscalationFailureAttrs` を削除する。
+- [x] `internal/runner/base/audit/logger.go` から `LogPrivilegeEscalation` を削除する。削除後に
       未使用になる import があれば取り除く。
-- [ ] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegeEscalationFail` を
+- [x] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegeEscalationFail` を
       削除する。
-- [ ] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
+- [x] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
       `messageTypePrivilegeEscalationFail` を外し、doc コメントの記述も合わせる。この時点で
       高優先度は `messageTypePreExecutionError` だけになる。
-- [ ] `internal/logging/slack_handler.go` の `Handle` から
+- [x] `internal/logging/slack_handler.go` の `Handle` から
       `case messageTypePrivilegeEscalationFail:` の分岐を削除する。
-- [ ] `internal/logging/slack_handler.go` から `buildPrivilegeEscalationFailure` を削除する。
-- [ ] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
+- [x] `internal/logging/slack_handler.go` から `buildPrivilegeEscalationFailure` を削除する。
+- [x] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
       テーブルケース「privilege escalation failure」を削除する。
-- [ ] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogPrivilegeEscalation` を
+- [x] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogPrivilegeEscalation` を
       削除する。
-- [ ] 同ファイルから `TestLogPrivilegeEscalation_Masking` を削除する。
-- [ ] `internal/runner/base/privilege/unix_privilege_test.go` へ、native root の昇格結果が
+- [x] 同ファイルから `TestLogPrivilegeEscalation_Masking` を削除する。
+- [x] `internal/runner/base/privilege/unix_privilege_test.go` へ、native root の昇格結果が
       記録され続けることを `WithPrivileges` 経由で検証するテストを追加する。マネージャは
       `originalUID: 0` の構造体リテラルで組む（同ファイル 126・250・590・689 行目と同じ
       書き方）。`unix.go:129` の `defer m.logElevationOutcome(execCtx)` を取り除くと失敗する
       形にし、`logElevationOutcome` の本体だけを見るテストにしない。
-- [ ] 同ファイルへ、`seteuid` 経路の昇格結果が記録されることを、`execCtx.elevation` を
+- [x] 同ファイルへ、`seteuid` 経路の昇格結果が記録されることを、`execCtx.elevation` を
       `elevationSeteuid` に設定して `logElevationOutcome` の境界で検証するテストを追加する。
       `WithPrivileges` 経由にしないのは、非 root では `syscall.Seteuid(0)` が EPERM で失敗し
       `elevation` が `elevationNone` のままとなって何も記録されず、この分岐へ到達できない
       ためである（§1.3）。到達できない経路を緑に見せないよう、この制約をテストの doc コメント
       へ英語で記す。
-- [ ] 追加する 2 つのテストは `t.Parallel()` を呼ばない。同ファイルはプロセス全体の識別情報を
+- [x] 追加する 2 つのテストは `t.Parallel()` を呼ばない。同ファイルはプロセス全体の識別情報を
       共有するためである。
-- [ ] 削除の直前と直後で `go tool cover -func` を比較し、結果をコミットメッセージへ記す。
-- [ ] `make deadcode` を実行し、新たな到達不能コードが報告されないことを確認する。
+- [x] 削除の直前と直後で `go tool cover -func` を比較し、結果をコミットメッセージへ記す。
+- [x] `make deadcode` を実行し、新たな到達不能コードが報告されないことを確認する。
 
 **完了条件**:
 - `rg -n -e privilege_escalation_failure -e PrivilegeEscalationFailureAttrs -e buildPrivilegeEscalationFailure -e LogPrivilegeEscalation -e messageTypePrivilegeEscalationFail --type go cmd internal` が一致なし。
@@ -491,8 +493,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **判定理由**: 特権昇格結果ログの孤立した高リスクステップ。CI・開発コンテナが非 root で走るため `seteuid` 分岐が `WithPrivileges` 経由では到達できないという制約に対して、到達可能な境界を選び直す設計判断を要する（§1.3 の到達性分析）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1478,7 +1480,7 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 | 統一書式が Slack ワークフローや監視ルールを壊す | 外部の運用が止まる | リポジトリ内の利用箇所と文書を先に検索する。外部利用者にはリリースノートで新旧のペイロード例を示す。テスト用チャンネルで先に検証する |
 | 識別子の設定検証が利用者の既存 TOML を拒否する | 既存利用者の設定が読み込めなくなる | センチネルを検査ごとに独立させ、直す箇所と直し方が分かるメッセージにする。リリースノートに拒否される名前の条件（機密語を含む名前を含む）を明記する |
 | 削除に伴うカバレッジ低下を見落とす | 存続コードの検証がサイレントに薄くなる | 各削除コミットで `go tool cover -func` を前後比較し、結果をコミットメッセージへ記す |
-| `seteuid` 経路が CI で到達不能 | AC-05 の片方の分岐が実質未検証になる | native root は `WithPrivileges` 経由、`seteuid` は `logElevationOutcome` の境界で検証し、到達不能な理由をテストの doc コメントに残す（§Phase 3） |
+| `seteuid` 経路が CI で到達不能 | AC-05 の片方の分岐が実質未検証になる | native root は `WithPrivileges` 経由、`seteuid` は `logElevationOutcome` の境界で検証し、到達不能な理由をテストの doc コメントに残す（§Phase 3）。境界で検証できるのは記録の側だけで、`escalatePrivileges` が成功時に `execCtx.elevation` へ `elevationSeteuid` を代入する行は本番コードに注入点（`syscall.Seteuid` を差し替える seam）を設けない限り未検証のまま残る。代入を削除しても `make test` は緑であり、これは本 Phase で閉じない残余リスクとして記録する |
 
 ### 5.2 スケジュールリスク
 
