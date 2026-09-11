@@ -15,7 +15,7 @@ env_allowed = [
 
 # Basic output capture examples
 [[groups]]
-name = "basic_output_examples"
+name = "output_capture_examples"
 description = "Basic output capture functionality demonstration"
 
 [[groups.commands]]

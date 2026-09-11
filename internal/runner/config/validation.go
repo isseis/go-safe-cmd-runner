@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
@@ -26,14 +28,15 @@ func validateGroupName(name string) error {
 	return nil
 }
 
-// ValidateGroupNames validates all group names in the configuration.
-// It checks for:
-// 1. Empty group names
-// 2. Invalid characters in group names (must match [A-Za-z_][A-Za-z0-9_]*)
-// 3. Duplicate group names
+// ValidateIdentifiers validates the group and command names in the configuration.
+// Group names are checked for emptiness, pattern and duplicates; command names
+// for emptiness, control and format-control characters, displayable content,
+// and length. Group names also have a length limit. The length limit counts
+// bytes, matching the display-safe interpolation contract that never truncates
+// identifiers.
 //
 // This function is called during configuration loading to ensure early validation.
-func ValidateGroupNames(cfg *runnertypes.ConfigSpec) error {
+func ValidateIdentifiers(cfg *runnertypes.ConfigSpec) error {
 	if cfg == nil {
 		return ErrNilConfig
 	}
@@ -51,14 +54,65 @@ func ValidateGroupNames(cfg *runnertypes.ConfigSpec) error {
 			return fmt.Errorf("group at index %d: %w", i, err)
 		}
 
+		if err := validateIdentifierLength(group.Name, fmt.Sprintf("groups[%d]", i)); err != nil {
+			return err
+		}
+
 		// Check for duplicate group names
 		if prevIndex, exists := seen[group.Name]; exists {
 			return fmt.Errorf("%w: %q at indices %d and %d", ErrDuplicateGroupName, group.Name, prevIndex, i)
 		}
 		seen[group.Name] = i
+
+		for j, cmd := range group.Commands {
+			if err := validateCommandName(cmd.Name, i, j); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
+}
+
+// validateCommandName rejects a command name that cannot identify the command
+// in a notification. The control-character check and the displayable-content
+// check are independent: a name can contain control characters and still leave
+// displayable characters ("backup\nother"), and a name without any control
+// character can still render as blank ("   "). The value is quoted in the
+// message, which escapes control characters, so the diagnostic cannot itself
+// inject a new line.
+func validateCommandName(name string, groupIdx, cmdIdx int) error {
+	position := fmt.Sprintf("groups[%d].commands[%d]", groupIdx, cmdIdx)
+
+	if name == "" {
+		return fmt.Errorf("%w at %s", ErrEmptyCommandName, position)
+	}
+	if strings.ContainsFunc(name, isControlOrFormatCharacter) {
+		return fmt.Errorf("%w at %s: %q", ErrIdentifierContainsControlCharacter, position, name)
+	}
+	if !common.HasDisplayableContent(name) {
+		return fmt.Errorf("%w at %s: %q", ErrIdentifierNotDisplayable, position, name)
+	}
+	return validateIdentifierLength(name, position)
+}
+
+// validateIdentifierLength rejects a group or command name longer than
+// common.MaxIdentifierBytes. It reports the measured and allowed lengths rather
+// than echoing a value that may be arbitrarily large.
+func validateIdentifierLength(name, position string) error {
+	if len(name) <= common.MaxIdentifierBytes {
+		return nil
+	}
+	return fmt.Errorf("%w at %s: %d bytes, max %d",
+		ErrIdentifierTooLong, position, len(name), common.MaxIdentifierBytes)
+}
+
+// isControlOrFormatCharacter reports whether r is a control character (Unicode
+// general category Cc) or a format-control character (category Cf). Format
+// controls include the bidirectional overrides that can make a name read as a
+// different name than it is.
+func isControlOrFormatCharacter(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
 }
 
 // validateVariableName validates a variable name and returns a detailed error

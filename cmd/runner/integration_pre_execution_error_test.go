@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,6 +166,121 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
+}
+
+// TestE2E_PreExecutionError_RedactedCommandName verifies that a command name
+// the redaction transformation would rewrite stops startup before any command
+// runs. The name has an AWS access key ID shape, which no other validation
+// rejects, so removing the call to ValidateIdentifierRedaction turns this into
+// a successful dry run.
+func TestE2E_PreExecutionError_RedactedCommandName(t *testing.T) {
+	const redactedName = "AKIAIOSFODNN7EXAMPLE"
+
+	configFile := setupTempConfig(t, `
+version = "1.0"
+
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "`+redactedName+`"
+cmd = "/bin/echo"
+args = ["hello"]
+`)
+
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
+	// Isolated from any GSCR_SLACK_* the machine exports: the default
+	// redaction config rejects this shape with or without Slack configured.
+	cmd.Env = envWithoutSlackVars()
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.Error(t, err, "runner should reject an identifier redaction would rewrite")
+	requireExitCode(t, cmd, 1)
+
+	stderrOutput := stderr.String()
+	assert.Contains(t, stderrOutput, string(logging.ErrorTypeConfigParsing),
+		"stderr should indicate config parsing failure")
+	assert.Contains(t, stderrOutput, "groups[0].commands[0]",
+		"stderr should point at the rejected identifier")
+	assert.NotContains(t, stderrOutput, redactedName, "stderr must not echo the rejected identifier")
+	assert.NotContains(t, stdout.String(), redactedName, "stdout must not echo the rejected identifier")
+	assert.Contains(t, stdout.String(), "status=pre_execution_error")
+}
+
+// TestE2E_PreExecutionError_RedactedAllowedHostCommandName verifies that the
+// startup redaction check uses the Config SetupSlackLogging built: a URL-shaped
+// command name on the configured slack_allowed_host is rejected only when the
+// webhook environment variables make that Config exist. With Slack disabled the
+// check falls back to the default Config, which knows no allowed host, and the
+// same name passes.
+func TestE2E_PreExecutionError_RedactedAllowedHostCommandName(t *testing.T) {
+	const (
+		allowedHost  = "hooks.example.test"
+		redactedName = "https://hooks.example.test/services/example"
+	)
+
+	configFile := setupTempConfig(t, `
+version = "1.0"
+
+[global]
+slack_allowed_host = "`+allowedHost+`"
+
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "`+redactedName+`"
+cmd = "/bin/echo"
+args = ["hello"]
+`)
+
+	t.Run("webhooks on the allowed host make the name a rejection", func(t *testing.T) {
+		cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
+		cmd.Env = append(envWithoutSlackVars(),
+			logging.SlackWebhookURLSuccessEnvVar+"=https://"+allowedHost+"/services/T000/B000/SUCCESS",
+			logging.SlackWebhookURLErrorEnvVar+"=https://"+allowedHost+"/services/T000/B000/ERROR",
+		)
+
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		err := cmd.Run()
+		require.Error(t, err, "runner should reject a URL command name on the configured webhook host")
+		requireExitCode(t, cmd, 1)
+
+		stderrOutput := stderr.String()
+		assert.Contains(t, stderrOutput, string(logging.ErrorTypeConfigParsing),
+			"stderr should indicate config parsing failure")
+		assert.Contains(t, stderrOutput, "groups[0].commands[0]",
+			"stderr should point at the rejected identifier")
+		assert.Contains(t, stderrOutput, "redaction",
+			"stderr should name the redaction check")
+	})
+
+	t.Run("without webhooks the same name passes", func(t *testing.T) {
+		cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
+		cmd.Env = envWithoutSlackVars()
+
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		// No hash records exist in this run's hash directory, so the dry run
+		// stops at unverified content and exits with
+		// DryRunExitVerificationUnavailable. What matters here is that it got
+		// past the identifier check: the rejection above must come from the
+		// Config SetupSlackLogging built, not from the default one.
+		err := cmd.Run()
+		require.Error(t, err)
+		requireExitCode(t, cmd, resource.DryRunExitVerificationUnavailable)
+		assert.NotContains(t, stderr.String(), "Identifier redaction validation failed")
+		assert.NotContains(t, stdout.String(), "status=pre_execution_error")
+	})
 }
 
 // TestE2E_PreExecutionError_MissingSlackAllowedHost verifies that runner startup fails

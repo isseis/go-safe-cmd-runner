@@ -361,6 +361,14 @@ func run(runID string) error {
 		return err
 	}
 
+	// Checked with the Config SetupSlackLogging built, so the check applies the
+	// same webhook-host masking the running handler chain uses. Placed before
+	// the first expansion and verification so no command runs with a name the
+	// notification scope cannot point at.
+	if err := bootstrap.ValidateIdentifierRedaction(cfg, redactionConfig); err != nil {
+		return err
+	}
+
 	slog.Info("Verification and configuration completed",
 		"config_path", configPath,
 		"hash_directory", cmdcommon.DefaultHashDirectory,

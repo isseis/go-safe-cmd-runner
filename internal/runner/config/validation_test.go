@@ -1,8 +1,10 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,8 +120,9 @@ func TestValidateVariableName(t *testing.T) {
 	}
 }
 
-// TestValidateGroupNames tests group name validation during config loading
-func TestValidateGroupNames(t *testing.T) {
+// TestValidateIdentifiers tests group and command identifier validation during
+// config loading.
+func TestValidateIdentifiers(t *testing.T) {
 	tests := []struct {
 		name          string
 		config        *runnertypes.ConfigSpec
@@ -357,6 +360,136 @@ func TestValidateGroupNames(t *testing.T) {
 			errorContains: []string{"duplicate group name", "test", "indices 1 and 3"},
 		},
 		{
+			name: "valid command names",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "build",
+						Commands: []runnertypes.CommandSpec{
+							makeCommand("compile", nil),
+							makeCommand("package-v2", nil),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrEmptyCommandName,
+			errorContains: []string{"command has empty name", "groups[0].commands[0]"},
+		},
+		{
+			name: "control character only command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("\n", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			// The name still holds displayable characters, so only the
+			// control-character check can reject it; removing that check makes
+			// the displayable-content check pass this row.
+			name: "format control with displayable characters",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("backup\u202eevil", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			name: "newline with displayable characters",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("backup\nother", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			// Half-width spaces are neither control characters nor format
+			// controls, so only the displayable-content predicate rejects this
+			// row.
+			name: "whitespace-only command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("   ", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierNotDisplayable,
+			errorContains: []string{"displayable content", "groups[0].commands[0]"},
+		},
+		{
+			name: "command name at byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("a", common.MaxIdentifierBytes), nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "command name one byte over limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("a", common.MaxIdentifierBytes+1), nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0].commands[0]"},
+		},
+		{
+			// 64 two-byte runes are exactly at the byte limit; a rune-counting
+			// implementation would also accept 65 (130 bytes), which the next
+			// row pins as a rejection.
+			name: "multibyte command name at byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("\u00e9", common.MaxIdentifierBytes/2), nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multibyte command name over byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("\u00e9", common.MaxIdentifierBytes/2)+"a", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0].commands[0]"},
+		},
+		{
+			name: "group name one byte over limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: strings.Repeat("a", common.MaxIdentifierBytes+1)},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0]"},
+		},
+		{
 			name:          "nil config",
 			config:        nil,
 			wantErr:       true,
@@ -367,7 +500,7 @@ func TestValidateGroupNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateGroupNames(tt.config)
+			err := ValidateIdentifiers(tt.config)
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")

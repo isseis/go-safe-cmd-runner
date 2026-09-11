@@ -760,7 +760,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.4 識別子の設定検証
 
-- [ ] `internal/runner/config/errors.go` へ、`ErrEmptyGroupName` に並べて 5 個のセンチネル
+- [x] `internal/runner/config/errors.go` へ、`ErrEmptyGroupName` に並べて 5 個のセンチネル
       エラーを追加する。検査ごとに独立させ、対応は次のとおりとする。
       (a) 空のコマンド名、(b) 制御文字または書式制御文字を含む識別子、(c) 補間契約を通すと
       表示できる文字が残らない識別子、(d) 長さ上限を超える識別子、(e) redaction の変換が
@@ -770,17 +770,17 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `internal/runner/config/errors.go` の `ErrEmptyGroupName` と
       `internal/runner/resource/manager.go` の同名センチネルは今も共存している。名前を避ける
       規則は分かりにくい名前を強いるだけで、コンパイル上も可読性上も得るものが無い。
-- [ ] `internal/redaction/redactor.go` へ、`RedactLogAttribute` が文字列値に施す変換
+- [x] `internal/redaction/redactor.go` へ、`RedactLogAttribute` が文字列値に施す変換
       （`RedactText` と `IsSensitiveValue` の両方）が値を書き換えるかを返す述語を公開する。
       既存の変換を読み取るだけで、redaction の適用範囲は変えない。
-- [ ] `internal/redaction/redactor_test.go` へ、この述語が `IsSensitiveValue` の語一致だけで
+- [x] `internal/redaction/redactor_test.go` へ、この述語が `IsSensitiveValue` の語一致だけで
       なく `ValueDetector` による値形式の検出（`AKIA` 形、`ghp_` 形、JWT 形、設定した
       Webhook ホストを含む URL 形）でも真を返すことを検証するケースを追加する。**各値形式の
       行では、まず `IsSensitiveValue` 単独ではその値が素通りすることを assert する**。これが
       無いと、述語が `ValueDetector` まで含んだ経路を通っているのか語一致だけなのかを行が
       区別できず、`IsSensitiveValue` だけの実装へ戻しても緑のままになる。既存テストは変更
       しない。
-- [ ] `internal/runner/config/validation.go` へ、確定した検査のうち外部依存を持たないもの
+- [x] `internal/runner/config/validation.go` へ、確定した検査のうち外部依存を持たないもの
       （redaction 検査以外のすべて）を追加する。すなわち (a) コマンド名が空でないこと、
       (b) 制御文字（一般カテゴリ Cc）と書式制御文字（同 Cf）を含まないこと、(c) 補間契約を
       通した後に White_Space 以外の rune が 1 個以上残ること、および (d) 長さが上限を超えない
@@ -791,7 +791,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       対象とする。長さの上限は既存のどの検証も持たないためである。
       (b) と (c) を独立させる根拠は次のとおりである。制御文字を含みつつ表示できる
       文字も残す名前は (c) を通ってしまい、半角空白だけの名前は (b) を通ってしまう。
-- [ ] 検査を足すにあたり、`ValidateGroupNames` の扱いを決める。現在この関数は group だけを
+- [x] 検査を足すにあたり、`ValidateGroupNames` の扱いを決める。現在この関数は group だけを
       走査し、関数名・doc コメント（英語）・テスト名も group 名専用である。呼び出し元は
       `internal/runner/config/loader.go:236` の 1 箇所だけなので、**`ValidateIdentifiers` へ
       改名し、doc コメント・呼び出し元・テスト名（`TestValidateIdentifiers`）をすべて更新
@@ -800,7 +800,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       旧名を doc コメントで参照している `internal/runner/cli/filter.go:44` と同 `:93` も同じ
       コミットで直す。後者はコンパイルエラーにならないため、放っておくと存在しない関数を指す
       コメントが残る。
-- [ ] `internal/runner/bootstrap/identifier_redaction.go` を新規作成し、5 個目の検査
+- [x] `internal/runner/bootstrap/identifier_redaction.go` を新規作成し、5 個目の検査
       （redaction の変換が識別子を書き換えないこと）をここに置く。読み込み済みの
       `*runnertypes.ConfigSpec` と `SetupSlackLogging` が返した `*redaction.Config` の 2 個だけを
       受け取り、全 group 名と全 command 名を §4.4 の述語へ通す。**Run ID は受け取らない。**
@@ -811,7 +811,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `internal/runner/config` のセンチネルを包んだ `PreExecutionError` とし、
       `NotificationContext` は `GlobalScope()`、本文には設定内の位置（何番目の group、その中の
       何番目の command）と、どの検査に掛かったかを含める。
-- [ ] **本文に識別子の値そのものを入れてはならない。** この検査が拒否する識別子は、定義上
+- [x] **本文に識別子の値そのものを入れてはならない。** この検査が拒否する識別子は、定義上
       redaction の変換が書き換える値であり、実際の AWS キー ID・GitHub トークン・JWT・Webhook
       認証情報がそのまま group 名や command 名に書かれている場合を含む。ところが
       `HandlePreExecutionError` の stderr 出力は `RedactingHandler` を通らない。
@@ -821,23 +821,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       潰すはずの秘匿値を、まさにそれを理由に拒否した経路が端末とプロセスログへ平文で出す**
       ことになる。位置を本文に入れるのはこのためでもある。利用者は自分の TOML の該当位置を
       見れば対象を特定でき、値の再掲は不要である。
-- [ ] `internal/runner/bootstrap/identifier_redaction_test.go` へ、値が漏れないことを固定する
+- [x] `internal/runner/bootstrap/identifier_redaction_test.go` へ、値が漏れないことを固定する
       テストを置く。実際の秘匿値の形（`AKIA` 形と `ghp_` 形）を command 名に持つ設定を拒否
       させ、**返った `PreExecutionError` の本文とその stderr 表現のどちらにも、その値が部分文字列
       として現れないこと**、および位置と検査名は現れることを assert する。本文へ値を戻す変更を
       入れるとこのテストが落ちる。
-- [ ] **本番側の実装に戻って**、`internal/runner/bootstrap/identifier_redaction.go` で、
+- [x] **本番側の実装に戻って**、`internal/runner/bootstrap/identifier_redaction.go` で、
       受け取った `*redaction.Config` が `nil`（Slack 未設定）のときは
       `redaction.DefaultConfig()` を使う。`nil` は「検査しない」ではない。Phase 1 の
       `RedactingHandler` が既定の `Config` で動き続けており（§1.3）、Slack が無効でも
       識別子は JSON ログで潰れうるためである。この分岐は `NewRedactingHandler` の
       `nil` 扱いと同じ意味であることをコメントに記す。
-- [ ] `cmd/runner/main.go` で、`bootstrap.SetupSlackLogging` の戻り値検査の直後、
+- [x] `cmd/runner/main.go` で、`bootstrap.SetupSlackLogging` の戻り値検査の直後、
       `slog.Info("Verification and configuration completed", ...)` の前に上の関数を呼び、
       `SetupSlackLogging` が返した `redactionConfig` をそのまま渡す。`LoadAndPrepareConfig`
       の中へは置かない。本番と同じ変換を体現する `Config` は `AddSlackHandlers` が組み立てる
       まで存在せず、そこは `LoadAndPrepareConfig` より後だからである。
-- [ ] **同梱 TOML の改名とハッシュ再記録。** 検査を有効にする前に、`sample/` 配下と
+- [x] **同梱 TOML の改名とハッシュ再記録。** 検査を有効にする前に、`sample/` 配下と
       テストデータの全 TOML の group 名・command 名を新しい述語へ通し、抵触するものを列挙
       する。§1.3 で確認済みの 6 個（`basic_tests`、`cmd_expansion_basic`、
       `args_expansion_basic`、`basic_output_examples`、`basic_auto_env`、
@@ -850,7 +850,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `sample/comprehensive.toml` はハッシュ記録の対象なので、`make hash`・
       `hash-integration-test`・`hash-e2e-test` で記録を取り直す。改名・記録・検査の有効化は
       1 コミットにまとめ、中間状態でテストが落ちないようにする。
-- [ ] 再発防止として、`sample/*.toml` を range し、すべての group 名・command 名が新しい
+- [x] 再発防止として、`sample/*.toml` を range し、すべての group 名・command 名が新しい
       検査を通ることを assert するメタテストを `internal/runner/bootstrap/identifier_redaction_test.go`
       へ置く。5 個目の検査は `*redaction.Config` を要し、それを受け取る関数がこのパッケージに
       あるためである（Slack 未設定に相当する既定の `Config` で通す）。**`sample/` の位置は
@@ -858,7 +858,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       ヘルパーと同じ手段でリポジトリ root を解決し、そこからの相対で辿る。これにより、将来
       `key`・`token`・`basic` を含む名前のサンプルが増えても `make test` の段階で検出でき、
       発覚が e2e ターゲットまで遅れることを防げる。
-- [ ] `internal/runner/config/validation_test.go` の検証テーブルへ、02_architecture.md §7.1 の
+- [x] `internal/runner/config/validation_test.go` の検証テーブルへ、02_architecture.md §7.1 の
       「設定の検証」の観点の行を追加する。空のコマンド名、制御文字だけの名前、書式制御文字を
       含みつつ表示できる文字も残す名前（`backup` + U+202E + `evil`）、改行を含みつつ表示できる
       文字も残す名前（`backup\nother`）、半角空白だけの名前（`"   "`）、長さ上限ちょうどの
@@ -866,7 +866,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       文字を含む command 名で 128 byte 境界をまたぐもの**を必ず入れる。group 名は
       `[A-Za-z0-9_]` に限られ byte 数と rune 数を区別できないため、rune 単位で数える実装を
       落とせるのは command 名の行だけである。判定は `errors.Is` で行う。
-- [ ] `internal/runner/bootstrap/identifier_redaction_test.go` を新規作成し、
+- [x] `internal/runner/bootstrap/identifier_redaction_test.go` を新規作成し、
       02_architecture.md §7.1 の「識別子と redaction」の観点の行を書く。テストは
       読み込み済みの設定と `*redaction.Config` を渡して検査関数を直接呼ぶ。`LoadConfig`
       だけを呼ぶ形では redaction のセンチネルは出ない。語の一致で潰れる名前（`monkey`、`keyring`、
@@ -877,7 +877,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       本番に無い入力を固定することであり、02_architecture.md §3.2 の「production では届かない
       経路を単体テストだけで緑にしない」に反する。`slack_allowed_host` を設定した場合と未設定の
       場合を 1 組の行として持ち、どれにも当たらない名前が通ることも同じ表で確認する。
-- [ ] **許可ホストの 1 組が何を落とせるかを取り違えない。** この組が落とすのは
+- [x] **許可ホストの 1 組が何を落とせるかを取り違えない。** この組が落とすのは
       `redaction.DefaultConfig()` を使う実装と `nil` を渡す実装である。
       `NewConfig(WithWebhookHost(cfg.Global.SlackAllowedHost))` で**組み直す実装は落とせない**。
       `AddSlackHandlers` が渡すオプションは `WithWebhookHost` 1 個だけであり
@@ -889,13 +889,13 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       組み（`internal/redaction/value_detector.go:118`）、`validateWebhookURL` も
       `strings.ToLower` を通す（`internal/logging/slack_handler.go:192`）ため、大文字小文字は
       どの実装でも差を生まない。
-- [ ] 同ファイルへ、`*redaction.Config` に `nil` を渡す行を持つ。既定の変換による語一致
+- [x] 同ファイルへ、`*redaction.Config` に `nil` を渡す行を持つ。既定の変換による語一致
       （`monkey` など）と値形式（`AKIA` 形）が依然として拒否され、許可ホストを含む URL 形
       だけが通ることを確認する。`nil` を受けて検査を飛ばす実装を落とすためである。
-- [ ] 同ファイルへ、拒否した名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` に
+- [x] 同ファイルへ、拒否した名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` に
       なることを確認するケースを追加する。設定境界で拒否する理由が実在することを示すためで
       あり、これが無いと検査は「なぜ拒否するのか」を根拠づけられない。
-- [ ] **起動経路で実際に呼ばれることを検証する。** 上のテスト群は検査関数を直接呼ぶため、
+- [x] **起動経路で実際に呼ばれることを検証する。** 上のテスト群は検査関数を直接呼ぶため、
       `cmd/runner/main.go` が呼び出しを持たなくても、あるいは別の `*redaction.Config` を
       渡していても、すべて緑のままになる。すなわち本番の配線が欠けたまま規定のゲートが
       すべて通り、拒否されるはずの設定が実行され、Scope が `[REDACTED]` に潰れる。関数の
@@ -903,8 +903,11 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       `cmd/runner/integration_pre_execution_error_test.go` へ、redaction が書き換える
       command 名（`AKIA` 形）を持つ TOML で runner を起動し、**どのコマンドも実行されずに**
       起動前エラーで終わることを検証するケースを追加する。`main.go` から呼び出しを 1 行
-      削ると落ちる形にする。
-- [ ] 同じ配線について、`cmd/runner/startup_order_guard_test.go`（既存、`//go:build test`）へ
+      削ると落ちる形にする。実装では `-dry-run` で起動する。ハッシュ未記録の一時設定では
+      本実行が `LoadAndPrepareConfig` のハッシュ検証で先に止まるためである。起動前エラーの
+      段階で終わること（`status=pre_execution_error`）と、拒否した値を stderr・stdout の
+      どちらにも出さないことを assert する。
+- [x] 同じ配線について、`cmd/runner/startup_order_guard_test.go`（既存、`//go:build test`）へ
       順序と引数の検査を足す。すなわち、検査の呼び出しが `SetupSlackLogging` の**後**に
       あること、および渡している値が `SetupSlackLogging` の戻り値であって
       `redaction.DefaultConfig()` や新規に組み立てた `Config` ではないことを構文木で確かめる。
@@ -915,7 +918,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       順序のまま通ってしまう。同一ブロック内の代入と、内側スコープでの同名再宣言の双方を
       対象にする。新規ファイルを作らず既存の起動順ガードへ足すのは、そこが起動経路の構造を
       見る既存の置き場だからである。
-- [ ] **許可ホスト依存の起動経路テストを `cmd/runner/integration_pre_execution_error_test.go`
+- [x] **許可ホスト依存の起動経路テストを `cmd/runner/integration_pre_execution_error_test.go`
       へ追加する。** 上の `AKIA` 形の統合テストは「拒否されること」を示すが、**どの `Config`
       で**拒否したかは示さない（既定の `Config` でも `AKIA` 形は拒否されるため）。そこで、
       `slack_allowed_host` を設定した TOML と、**その許可ホストを含む URL 形の command 名**で
@@ -928,10 +931,15 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       に設定したうえで起動する（同種の設定は
       `cmd/runner/integration_pre_execution_error_test.go:173` に既存の書き方がある）。この形は
       `WithWebhookHost(<設定した許可ホスト>)` を持つ `Config` でしか拒否されないため、
-      `main.go` が `redaction.DefaultConfig()` や新規に組み立てた `Config` を渡す実装、
-      および上の再代入を挟む実装では**この行だけが落ちる**。構文木ガードが構造として見る
-      ものを、実行時の挙動として裏づける対になる。02_architecture.md 付録 B.11 が共有を
-      要求している以上、共有を見る検査は構造と挙動の両方から持つ。
+      `main.go` が `redaction.DefaultConfig()` を渡す実装、および上の再代入を挟む実装では
+      **この行だけが落ちる**。同じ式で `Config` を組み直す実装は本番と同一に振る舞うため
+      挙動では区別できず、組み直しを落とせるのは構文木ガードだけである（付録 B.11）。
+      構文木ガードが構造として見るものを、実行時の挙動として裏づける対になる。実装では、
+      Webhook の環境変数を設定しない負の行も同じテストに置く。許可ホストを知らない既定の
+      `Config` では同じ URL 形 command 名が検査を通り、ハッシュ未記録の dry-run が検証
+      未完了の終了コード（`DryRunExitVerificationUnavailable`）で止まることを assert する。
+      02_architecture.md 付録 B.11 が共有を要求している以上、共有を見る検査は構造と挙動の
+      両方から持つ。
 
 **完了条件**:
 - AC-09、AC-10、AC-11、AC-16 の検証が緑である。AC-11 については、構文木ガードのうち

@@ -83,6 +83,39 @@ var (
 	// ErrDuplicateGroupName is returned when duplicate group names are found
 	ErrDuplicateGroupName = errors.New("duplicate group name")
 
+	// ErrEmptyCommandName is returned when a command has an empty name. Unlike
+	// group names, command names were never required to be present.
+	ErrEmptyCommandName = errors.New("command has empty name")
+
+	// ErrIdentifierContainsControlCharacter is returned when a command name
+	// contains a control character (Unicode general category Cc) or a
+	// format-control character (category Cf). Such a name cannot be pointed at
+	// in a notification, a log line or an audit record, and bidirectional
+	// format controls can make it read as a different name than it is. Group
+	// names cannot contain these characters: GroupNamePattern already rejects
+	// them.
+	ErrIdentifierContainsControlCharacter = errors.New("identifier contains a control character")
+
+	// ErrIdentifierNotDisplayable is returned when a command name retains no
+	// character that survives the display-safe interpolation contract and is not
+	// Unicode White_Space. A name made only of spaces, for example, is visually
+	// empty after interpolation, so a notification cannot point at it.
+	ErrIdentifierNotDisplayable = errors.New("identifier has no displayable content")
+
+	// ErrIdentifierTooLong is returned when a group or command name is longer
+	// than common.MaxIdentifierBytes. The interpolation contract never truncates
+	// identifiers, because two names that differ only beyond a cut would render
+	// as the same scope.
+	ErrIdentifierTooLong = errors.New("identifier exceeds maximum length")
+
+	// ErrIdentifierRedacted is returned when the production redaction
+	// transformation would rewrite a group or command name. The rewritten name
+	// reaches notifications as the redaction placeholder, so the scope no longer
+	// points at the configured group or command. This check runs after the Slack
+	// handlers exist because only then does a Config with the deployment's
+	// webhook host exist.
+	ErrIdentifierRedacted = errors.New("identifier is rewritten by redaction")
+
 	// ErrNilConfig is returned when configuration is nil
 	ErrNilConfig = errors.New("configuration must not be nil")
 
