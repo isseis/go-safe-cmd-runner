@@ -46,8 +46,8 @@ const (
 
 	// Default send-queue capacities. The normal queue's 128 exceeds the command
 	// count of a typical configuration; the high-priority queue's 32 rests on
-	// the judgement that more than 32 security alerts in one run is already an
-	// incident, where the count alone is enough.
+	// the judgement that more than 32 pre-execution errors in one run is already
+	// an incident, where the count alone is enough.
 	defaultHighPriorityQueueSize = 32
 	defaultNormalQueueSize       = 128
 )
@@ -58,7 +58,6 @@ const (
 const (
 	messageTypeCommandGroupSummary     = "command_group_summary"
 	messageTypePreExecutionError       = "pre_execution_error"
-	messageTypeSecurityAlert           = "security_alert"
 	messageTypePrivilegeEscalationFail = "privilege_escalation_failure"
 )
 
@@ -279,11 +278,11 @@ func (sd *slackSender) isClosed() bool {
 }
 
 // isHighPriority reports whether a message type goes to the high-priority
-// queue. Security alerts, privilege-escalation failures and pre-execution
-// errors must not be pushed out by a flood of ordinary command notifications.
+// queue. Privilege-escalation failures and pre-execution errors must not be
+// pushed out by a flood of ordinary command notifications.
 func isHighPriority(messageType string) bool {
 	switch messageType {
-	case messageTypeSecurityAlert, messageTypePrivilegeEscalationFail, messageTypePreExecutionError:
+	case messageTypePrivilegeEscalationFail, messageTypePreExecutionError:
 		return true
 	default:
 		return false

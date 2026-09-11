@@ -247,15 +247,16 @@ func slackRecord(level slog.Level, messageType, text string) slog.Record {
 	return record
 }
 
-// securityAlertRecord builds a high-priority record whose rendered text
-// carries eventType, so tests can tell alerts apart in delivery order.
-func securityAlertRecord(eventType string) slog.Record {
-	record := slog.NewRecord(time.Now(), slog.LevelError, "security alert", 0)
+// preExecutionErrorRecord builds a high-priority record whose rendered text
+// carries errorType, so tests can tell pre-execution errors apart in delivery
+// order. buildPreExecutionError reads the summary from the error_type attribute
+// and ignores the record body, so the value has to travel there to be visible.
+func preExecutionErrorRecord(errorType string) slog.Record {
+	record := slog.NewRecord(time.Now(), slog.LevelError, "pre execution error", 0)
 	record.AddAttrs(
 		slog.Bool("slack_notify", true),
-		slog.String("message_type", messageTypeSecurityAlert),
-		slog.String(common.SecurityAlertAttrs.EventType, eventType),
-		slog.String(common.SecurityAlertAttrs.Severity, common.SeverityCritical),
+		slog.String("message_type", messageTypePreExecutionError),
+		slog.String(common.PreExecErrorAttrs.ErrorType, errorType),
 	)
 	return record
 }
@@ -412,8 +413,8 @@ func TestSlackSender_HighPriorityBypassesFullNormalQueue(t *testing.T) {
 	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "queued normal")))
 	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "dropped normal")))
 
-	// A full normal queue must not keep an alert out.
-	require.NoError(t, handler.Handle(ctx, securityAlertRecord("intrusion")))
+	// A full normal queue must not keep a pre-execution error out.
+	require.NoError(t, handler.Handle(ctx, preExecutionErrorRecord("intrusion")))
 
 	release()
 	waitForRequests(t, rec, 3)
@@ -422,7 +423,7 @@ func TestSlackSender_HighPriorityBypassesFullNormalQueue(t *testing.T) {
 	texts := rec.texts()
 	require.Len(t, texts, 3, "the overflowing normal notification should have been dropped: %v", texts)
 	assert.Contains(t, texts[0], "in flight")
-	assert.Contains(t, texts[1], "intrusion", "the alert must be sent before the queued normal notification")
+	assert.Contains(t, texts[1], "intrusion", "the pre-execution error must be sent before the queued normal notification")
 	assert.Contains(t, texts[2], "queued normal")
 	assert.Equal(t, int64(1), stats.Dropped, "exactly the overflowing normal notification is dropped")
 }
@@ -443,8 +444,8 @@ func TestSlackSender_QueueOverflowDropsAndRecords(t *testing.T) {
 		{
 			name:        "high priority queue",
 			opts:        func(o *SlackHandlerOptions) { o.HighPriorityQueueSize = 1 },
-			record:      func() slog.Record { return securityAlertRecord("intrusion") },
-			messageType: messageTypeSecurityAlert,
+			record:      func() slog.Record { return preExecutionErrorRecord("intrusion") },
+			messageType: messageTypePreExecutionError,
 		},
 	}
 
@@ -611,7 +612,7 @@ func TestSlackSender_FlushLogsMessageTypeBreakdown(t *testing.T) {
 
 	ctx := context.Background()
 	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, messageTypeCommandGroupSummary, "summary")))
-	require.NoError(t, handler.Handle(ctx, securityAlertRecord("intrusion")))
+	require.NoError(t, handler.Handle(ctx, preExecutionErrorRecord("intrusion")))
 	waitForRequests(t, rec, 2)
 
 	handler.Flush(ctx)
@@ -620,7 +621,7 @@ func TestSlackSender_FlushLogsMessageTypeBreakdown(t *testing.T) {
 	assert.Equal(t, "run-breakdown", aggregate["run_id"], "the aggregate carries the sender's run ID")
 	assert.Equal(t, map[string]any{
 		messageTypeCommandGroupSummary: float64(1),
-		messageTypeSecurityAlert:       float64(1),
+		messageTypePreExecutionError:   float64(1),
 	}, aggregate["sent_by_message_type"], "each delivered notification counts under its own type")
 	assert.Empty(t, aggregate["failed_by_message_type"])
 	assert.Empty(t, aggregate["dropped_by_message_type"])

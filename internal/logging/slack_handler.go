@@ -345,8 +345,6 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		message = s.buildCommandGroupSummary(r)
 	case messageTypePreExecutionError:
 		message = s.buildPreExecutionError(r)
-	case messageTypeSecurityAlert:
-		message = s.buildSecurityAlert(r)
 	case messageTypePrivilegeEscalationFail:
 		message = s.buildPrivilegeEscalationFailure(r)
 	default:
@@ -688,71 +686,6 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 						Title: "Component",
 						Value: component,
 						Short: true,
-					},
-					{
-						Title: fieldTitleHostname,
-						Value: hostname,
-						Short: true,
-					},
-					{
-						Title: fieldTitleRunID,
-						Value: s.runID,
-						Short: true,
-					},
-				},
-			},
-		},
-	}
-
-	return message
-}
-
-// buildSecurityAlert builds a Slack message for security alerts
-func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
-	var eventType, severity, details string
-
-	r.Attrs(func(attr slog.Attr) bool {
-		switch attr.Key {
-		case common.SecurityAlertAttrs.EventType:
-			eventType = attr.Value.String()
-		case common.SecurityAlertAttrs.Severity:
-			severity = attr.Value.String()
-		case common.SecurityAlertAttrs.Message:
-			details = attr.Value.String()
-		}
-		return true
-	})
-
-	color := colorDanger
-	switch severity {
-	case common.SeverityCritical:
-		color = colorDanger
-	case common.SeverityHigh:
-		color = colorWarning
-	}
-
-	hostname := common.GetHostname()
-
-	message := SlackMessage{
-		Text: fmt.Sprintf("%s Security Alert: %s", emojiAlert, eventType),
-		Attachments: []SlackAttachment{
-			{
-				Color: color,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Severity",
-						Value: strings.ToUpper(severity),
-						Short: true,
-					},
-					{
-						Title: "Event Type",
-						Value: eventType,
-						Short: true,
-					},
-					{
-						Title: "Details",
-						Value: details,
-						Short: false,
 					},
 					{
 						Title: fieldTitleHostname,

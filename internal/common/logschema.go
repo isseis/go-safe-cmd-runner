@@ -58,24 +58,6 @@ var PrivilegeEscalationFailureAttrs = struct {
 	TargetUID:   "target_uid",
 }
 
-// SecurityAlertAttrs contains attribute keys for security alert logs.
-// Used in audit.Logger.LogSecurityEvent (write) and logging.buildSecurityAlert (read).
-var SecurityAlertAttrs = struct {
-	EventType string // event type identifier
-	Severity  string // severity level (critical/high/medium/low)
-	Message   string // alert message details
-}{
-	EventType: "event_type",
-	Severity:  "severity",
-	Message:   "message",
-}
-
-// SecuritySeverity defines severity levels for security events
-const (
-	SeverityCritical = "critical" // Critical severity - requires immediate attention
-	SeverityHigh     = "high"     // High severity - requires prompt attention
-)
-
 // CommandResultFields defines the structure and types for command result log fields.
 // This struct serves as the canonical definition of the schema used for logging command results.
 //

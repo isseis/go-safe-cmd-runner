@@ -354,8 +354,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: `security_alert` の削除
 
@@ -364,42 +364,42 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/logging/slack_handler_test.go`、`internal/logging/slack_sender_test.go`、
 `internal/runner/base/audit/logger_test.go`
 
-- [ ] `internal/common/logschema.go` から `SecurityAlertAttrs` を削除する。
-- [ ] `internal/common/logschema.go` から `SeverityCritical` と `SeverityHigh` を、その
+- [x] `internal/common/logschema.go` から `SecurityAlertAttrs` を削除する。
+- [x] `internal/common/logschema.go` から `SeverityCritical` と `SeverityHigh` を、その
       `SecuritySeverity` の見出しコメントごと削除する。
-- [ ] `internal/runner/base/audit/logger.go` から `LogSecurityEvent` を削除する。削除後に
+- [x] `internal/runner/base/audit/logger.go` から `LogSecurityEvent` を削除する。削除後に
       未使用になる import があれば取り除く。
-- [ ] `internal/logging/slack_sender.go` から定数 `messageTypeSecurityAlert` を削除する。
-- [ ] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
+- [x] `internal/logging/slack_sender.go` から定数 `messageTypeSecurityAlert` を削除する。
+- [x] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
       `messageTypeSecurityAlert` を外し、関数の doc コメントから "Security alerts" の記述を
       削除する。
-- [ ] `internal/logging/slack_handler.go` の `Handle` から `case messageTypeSecurityAlert:` の
+- [x] `internal/logging/slack_handler.go` の `Handle` から `case messageTypeSecurityAlert:` の
       分岐を削除する。
-- [ ] `internal/logging/slack_handler.go` から `buildSecurityAlert` を削除する。
-- [ ] `internal/logging/slack_sender_test.go` のヘルパー `securityAlertRecord` を、存続する
+- [x] `internal/logging/slack_handler.go` から `buildSecurityAlert` を削除する。
+- [x] `internal/logging/slack_sender_test.go` のヘルパー `securityAlertRecord` を、存続する
       高優先度種別で書いた `preExecutionErrorRecord` へ置き換える。レコードはレベル ERROR、
       `message_type` は `messageTypePreExecutionError` とし、**引数の文字列は
       `common.PreExecErrorAttrs.ErrorType` 属性へ載せる**。`buildPreExecutionError` は Text 行を
       この属性から作り、レコード本文（`r.Message`）は読まないためである。Phase 5 以降も
       要約は `error_type` のままなので、この形は両フェーズで有効である。
-- [ ] `securityAlertRecord` の 3 箇所の利用（`TestSlackSender_HighPriorityBypassesFullNormalQueue`、
+- [x] `securityAlertRecord` の 3 箇所の利用（`TestSlackSender_HighPriorityBypassesFullNormalQueue`、
       `TestSlackSender_QueueOverflowDropsAndRecords` のテーブル行「high priority queue」、
       `TestSlackSender_FlushLogsMessageTypeBreakdown`）を新しいヘルパーへ差し替える。
       配送順を見分ける `assert.Contains` の期待文字列も、新しいヘルパーが Text 行へ出す値に
       合わせて更新する。`TestSlackSender_FlushLogsMessageTypeBreakdown` の期待マップのキーも
       `messageTypeSecurityAlert` から `messageTypePreExecutionError` へ変える。
-- [ ] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
+- [x] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
       テーブルケース「security alert」を削除する。
-- [ ] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogSecurityEvent` を削除する。
-- [ ] 同ファイルから `TestLogSecurityEvent_Masking` を削除する。
-- [ ] 同ファイルから `TestLogSecurityEvent_DetailsRedaction` を削除する。
-- [ ] 同ファイルから `TestLogSecurityEvent_DetailsKeyCollisionPrevention` を削除する。
-- [ ] 同ファイルの補助型 `sensitiveLogValuer`（25 行目付近）とその doc コメント、`LogValue`
+- [x] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogSecurityEvent` を削除する。
+- [x] 同ファイルから `TestLogSecurityEvent_Masking` を削除する。
+- [x] 同ファイルから `TestLogSecurityEvent_DetailsRedaction` を削除する。
+- [x] 同ファイルから `TestLogSecurityEvent_DetailsKeyCollisionPrevention` を削除する。
+- [x] 同ファイルの補助型 `sensitiveLogValuer`（25 行目付近）とその doc コメント、`LogValue`
       メソッドを削除する。唯一の参照が `TestLogSecurityEvent_DetailsRedaction` の中にあり、
       テストだけを消すと未使用型として `make lint` が落ちるためである。
-- [ ] 削除後、同ファイル内の他のヘルパー（`NewAuditLoggerWithCustomRedaction` など）が未参照に
+- [x] 削除後、同ファイル内の他のヘルパー（`NewAuditLoggerWithCustomRedaction` など）が未参照に
       なっていないことを確認する。
-- [ ] 削除の直前と直後に
+- [x] 削除の直前と直後に
       `go test -tags test -coverprofile=<file> ./internal/logging/... ./internal/runner/base/audit/... ./internal/common/...`
       を実行し、`go tool cover -func=<file>` を比較して結果をコミットメッセージへ記す。
 
@@ -429,8 +429,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **判定理由**: 削除と既存ヘルパーの置換が中心で、設計判断は 02_architecture.md に既決。複数の実装アプローチの検討は無く、トリガーは一致しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
