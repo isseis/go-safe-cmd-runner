@@ -340,6 +340,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - `rg -n -e privileged_command_failure -e PrivilegedCommandFailureAttrs -e buildPrivilegedCommandFailure -e messageTypePrivilegedCommandFailure --type go cmd internal` が一致なし（終了コード 1）。
 - `make test` と `make lint` が通り、この Phase だけで 1 コミットになっている。
 
+### PR-1 作成ポイント: remove privileged_command_failure notification type
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `refactor(0172): remove privileged_command_failure notification type`
+
+**レビュー観点**: 削除漏れが無いこと（AC-01 の `rg` 検索が一致なしであること）／削除前後のカバレッジ比較（`go tool cover -func`）が存続関数について差が無いこと／テストテーブルケース削除後に未参照になったヘルパーが残っていないこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 単純な削除作業で、設計判断は 02_architecture.md に既決。未確定の実装アプローチや高リスク分岐は無く、トリガーは一致しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: `security_alert` の削除
 
 **対象ファイル**: `internal/common/logschema.go`、`internal/logging/slack_sender.go`、
@@ -400,6 +417,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
   `isHighPriority` を常に `false` へ倒すと失敗することを確認済みである。
 - `make test` と `make lint` が通り、この Phase だけで 1 コミットになっている。
 
+### PR-2 作成ポイント: remove security_alert notification type
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `refactor(0172): remove security_alert notification type`
+
+**レビュー観点**: `securityAlertRecord` から `preExecutionErrorRecord` への置き換えが Text 行の期待値・集計キーの双方で一貫していること／`sensitiveLogValuer` が未参照化されており `audit` パッケージ内の検索でのみ確認していること（`redaction_test.go` の同名別物を巻き込まないこと）／`TestSlackSender_HighPriorityBypassesFullNormalQueue` が `pre_execution_error` 基準で緑になり、優先度判定を倒すと落ちること
+
+**実装モデル要件**: standard
+
+**判定理由**: 削除と既存ヘルパーの置換が中心で、設計判断は 02_architecture.md に既決。複数の実装アプローチの検討は無く、トリガーは一致しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 3: `privilege_escalation_failure` の削除と特権監査テストの追加
 
 **対象ファイル**: `internal/common/logschema.go`、`internal/logging/slack_sender.go`、
@@ -445,6 +479,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
   することを確認済みである。
 - `make test`、`make lint`、`make deadcode` が通り、この Phase だけで 1 コミットになっている。
 
+### PR-3 作成ポイント: remove privilege_escalation_failure and add elevation-outcome tests
+
+**対象ステップ**: Phase 3
+
+**推奨タイトル**: `feat(0172): remove privilege_escalation_failure and add elevation-outcome tests`
+
+**レビュー観点**: native root 側テストが `WithPrivileges` 経由で `defer m.logElevationOutcome(execCtx)` を外すと落ちること／`seteuid` 側テストが到達不能である理由をテストの doc コメントに残し、`logElevationOutcome` の境界だけを検証していること／2 テストが `t.Parallel()` を呼ばない理由（プロセス全体の識別情報の共有）が妥当であること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: 特権昇格結果ログの孤立した高リスクステップ。CI・開発コンテナが非 root で走るため `seteuid` 分岐が `WithPrivileges` 経由では到達できないという制約に対して、到達可能な境界を選び直す設計判断を要する（§1.3 の到達性分析）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 4: 通知コンテキストの追加と伝搬、識別子の設定検証
 
 **対象ファイル**: `internal/common/notification_context.go`（新規）、
@@ -469,10 +520,12 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `cmd/runner/integration_pre_execution_error_test.go`、
 `cmd/runner/startup_order_guard_test.go`、`sample/*.toml`
 
-この一覧は本 Phase のコミット範囲そのものである。下のタスクが触るファイルはすべてここに
-現れる。とくに `cmd/runner` の 2 本は、起動経路で検査が呼ばれていることと、渡している
-`*redaction.Config` が `SetupSlackLogging` の戻り値であることを見る唯一の検証であり
-（§4.4）、一覧から漏らすと AC-32 の確認が別のコミットへ散る。
+この一覧は本 Phase 全体（PR-4／PR-5／PR-6 の 3 PR の和）が触るファイルの範囲であり、
+下のタスクが触るファイルはすべてここに現れる。PR 境界は §4.0〜§4.2（PR-4）・§4.3（PR-5）・
+§4.4（PR-6）で切られており、各 PR が実際に変更するのはこの一覧の部分集合である。とくに
+`cmd/runner` の 2 本は、起動経路で検査が呼ばれていることと、渡している `*redaction.Config` が
+`SetupSlackLogging` の戻り値であることを見る唯一の検証であり（§4.4、PR-6 に属する）、一覧から
+漏らすと AC-32 の確認がこの一覧の外へ散る。
 
 #### 4.0 表示安全な補間契約
 
@@ -536,6 +589,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - [ ] `internal/runner/base/runnertypes/runtime_test.go` へ、`NewRuntimeCommand` に渡した
       group 名を `GroupName()` が返すことを検証するテストを追加する。構造体リテラルで
       `RuntimeCommand` を組む既存ケースでは `TimeoutResolution` を明示する。
+
+### PR-4 作成ポイント: display-safe interpolation contract and notification context type
+
+**対象ステップ**: Phase 4 §4.0 / §4.1 / §4.2
+
+**推奨タイトル**: `feat(0172): add interpolation contract and notification context type`
+
+**レビュー観点**: 補間契約の変換規則・役割ごとの切り詰め有無が 02_architecture.md §3.5 と一致すること／`NotificationContext` のフィールドが非公開でコンストラクタ 3 個経由でのみ構築できる設計であること／エンコード往復・妥当性判定の全行・下位キー重複のテスト網羅性（02_architecture.md §7.1）／RuntimeCommand.GroupName が正しくグループ名を返し、既存のテストケースで TimeoutResolution が明示されていること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: 表示安全な補間契約はセキュリティ上重要な新規設計で、識別子／エンベロープ値／自由文／大量出力という複数の役割にまたがる切り分けを要する孤立した高リスク・複雑ステップである。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 4.3 `PreExecutionError` の構造体化と発火元への伝搬
 
@@ -655,6 +725,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       と `TestHandlePreExecutionError_SlackNotification` を、位置引数から構造体を渡す形へ
       移す。あわせて、グローバルとグループの通知コンテキストがレコードへ載ることと、既存の
       stderr／stdout 出力の形が変わらないことを検証する。
+
+### PR-5 作成ポイント: propagate NotificationContext through PreExecutionError and firing points
+
+**対象ステップ**: Phase 4 §4.3
+
+**推奨タイトル**: `feat(0172): propagate NotificationContext to firing points`
+
+**レビュー観点**: 存続する 3 発火元（`logGroupExecutionSummary`、`HandlePreExecutionError` の全呼び出し元、`LogUserGroupExecution`）がすべて正しいスコープを載せること／AC-09 のコンストラクタ迂回検査（複合リテラル・`var` 宣言・`new` 呼び出し・名前付き戻り値の 4 形）が本番ファイルへ 1 個ずつ足すと個別に落ちること／`synccensus` の走査を `identitymutationguard` へ括り出した後もリポジトリ root の解決とパス正規化が既存テストと整合すること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: `PreExecutionError` の構造体化と 3 発火元への通知コンテキスト伝搬という、状態の整合性を発火元ごとに保証しなければならない孤立した高リスク・複雑ステップである。とくに AC-09 のコンストラクタ迂回検査は「ゼロ値の生成」という性質に対して書く AST 検査であり、既知の 4 形は例示であって網羅ではないという設計上の割り切りを要する（§4.3 内の検査設計）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 4.4 識別子の設定検証
 
@@ -841,6 +928,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - 追加した各テストについて、対象の実装を一時的に壊すと失敗することを確認し、その旨を
   コミットメッセージへ記す（AC-32）。
 - `make fmt`、`make test`、`make lint` が通る。
+
+### PR-6 作成ポイント: identifier redaction validation at config boundary
+
+**対象ステップ**: Phase 4 §4.4
+
+**推奨タイトル**: `feat(0172): validate identifiers against redaction rules at startup`
+
+**レビュー観点**: 同梱 TOML 6 個の改名・`sample/comprehensive.toml` のハッシュ再記録・検査の有効化が 1 コミットにまとまっていること／`identifier_redaction.go` が `*redaction.Config` を組み直さず `SetupSlackLogging` の戻り値をそのまま使い、`nil`（Slack 未設定）時のみ `DefaultConfig()` に倒すこと／拒否時のエラー本文に識別子の値そのものを含めず位置情報だけを載せていること／`startup_order_guard_test.go` が呼び出し順序と再代入・再宣言の有無まで構文木で検証していること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: mkplan panel-mode の security-gate／migration トリガーに該当する。ロジック追加（検査ロジック・redaction 述語）とデータ移行（同梱 TOML 6 個の改名・`sample/comprehensive.toml` のハッシュ再記録）を切り離さず 1 PR に収めるのは §4.4 自身の設計判断であり、「改名・記録・検査の有効化は 1 コミットにまとめ、中間状態でテストが落ちないようにする」（§4.4）ためである。検査だけを先に有効化すると同梱 TOML がリポジトリ自身のテストと e2e を壊し、改名だけを先に行うと再発防止のメタテストが検査対象を持たない。この不可分性自体が、単純なロジック追加より高いレビュー慎重度を要する根拠である。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 通知種別定義・共通エンベロープ・書式の統一
 
@@ -1138,6 +1242,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
   すべて緑になる。なお同 target は `-list` の一致数を `SLACK_E2E_COUNT` と突き合わせるため、
   テストを増減した場合は同じコミットで `SLACK_E2E_COUNT` を更新する。
 
+### PR-7 作成ポイント: unify Slack notification format via notification type definitions
+
+**対象ステップ**: Phase 5 §5.1 / §5.2 / §5.3 / §5.4 / §5.5
+
+**推奨タイトル**: `feat(0172): unify Slack notification format and type definitions`
+
+**レビュー観点**: **本 PR は 1 コミットで不可分だが、レビューは §5.1→§5.2→§5.3→§5.4→§5.5 の小見出し順に段階的に読み進めること**（型定義 → 共通エンベロープ → ビルダー移行と `Handle` 再構成 → 発火元の移行 → テストの順で、後段は前段の型・関数を前提にする）。個別の重点は、`notification_contract_guard_test.go` の (a)〜(d) がそれぞれ意図した迂回経路（`slack_notify` の直接構築、種別名リテラルの複製、非公開 token 変数・公開アクセサの位置外呼び出し）を実際に塞ぐこと／未知種別・不正スコープの WARN が送信失敗ロガーだけへ届き Slack 通知を再帰させず秘匿値を含まないこと／レベル→表示のマッピングが全域（DEBUG・中間値を含む）で検証されていること／`make slack-e2e-test` を Linux で実行した結果を確認していること（macOS の結果はゲートを満たさない）
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: mkplan panel-mode トリガー（重い統合テスト／外部リソース面: `e2e && test` タグの Slack e2e テスト 2 ファイルが `make slack-e2e-test` でしかビルドされず、Linux 限定実行が必須）に該当する。加えて AC-27 の token 迂回防止 AST 検査（種別名リテラル走査だけでなく、非公開 token 変数・公開アクセサの構文木ベースの経路制限）は前例の無い設計判断であり、Phase 5 全体が 1 個の取り消し可能なコミットとして扱われる高リスクの統合ステップでもある。この不可分性（差分をこれ以上 PR 単位で割れないこと）が、レビュー観点の先頭で段階的読解の順序を明示している理由でもある。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 6: 文書の更新と翻訳
 
 **対象ファイル**: `docs/user/runner_command.ja.md`、
@@ -1182,6 +1303,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 - AC-28、AC-29、AC-30 の検証が緑である。
 - 日本語版と英語版が別コミットに分かれている。
 
+### PR-8 作成ポイント: update user and developer documentation
+
+**対象ステップ**: Phase 6
+
+**推奨タイトル**: `docs(0172): update notification docs for unified format and removed types`
+
+**レビュー観点**: `docs/user/runner_command.ja.md` に載せた Text 行の例が `internal/logging/notification_test.go` の期待値と一字一句一致していること／日本語版を先にコミットし英語版は `/mktrans` で反映していること（直接両方編集していないこと）／削除した 3 種別についての記述が実態（監査ログ記述は残す・Slack 通知記述は改める）に沿って区別されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 文書更新と翻訳のみで、設計判断や高リスク分岐を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 7: 全体検証と実 Slack 表示確認
 
 - [ ] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
@@ -1223,6 +1361,23 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **完了条件**: 全 AC と Success Criteria を満たす。
 
+### PR-9 作成ポイント: final verification and live Slack display confirmation
+
+**対象ステップ**: Phase 7
+
+**推奨タイトル**: `chore(0172): run full verification suite and confirm live Slack display`
+
+**レビュー観点**: §7 受け入れ基準検証表と §8 横断検索チェックリストの全行を実行した記録が残っていること／実 Slack 表示確認（または未確認時のモックサーバー代替検証）の記録が残っていること／AC-18 の強調表示が期待どおりでない場合、表示を直す前に 01_requirements.md の AC-18 を改訂する手順が守られていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 既定のコマンド実行と結果記録が中心で、新規の設計判断を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ## 3. 実装順序とマイルストーン
 
 | マイルストーン | 含む Phase | 成果物 | 判定 |
@@ -1236,6 +1391,20 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 M2 の時点では Slack の表示は変わらない。AC-12〜AC-15 と AC-17 が M3 の判定に入るのは、
 いずれも表示についての基準であり、Phase 4 のコミットでは満たしようがないためである
 （02_architecture.md §8.2）。
+
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `privileged_command_failure` の本番コードとテストを削除 | standard |
+| PR-2 | Phase 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | standard |
+| PR-3 | Phase 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログのテストを追加 | frontier-recommended |
+| PR-4 | Phase 4 §4.0 / §4.1 / §4.2 | 表示安全な補間契約、通知コンテキストの型、`RuntimeCommand.GroupName` | frontier-recommended |
+| PR-5 | Phase 4 §4.3 | `PreExecutionError` の構造体化と存続する 3 発火元への伝搬、AC-09 のコンストラクタ迂回検査 | frontier-recommended |
+| PR-6 | Phase 4 §4.4 | 識別子の設定検証、redaction 検査の配線、同梱 TOML の改名とハッシュ再記録 | frontier-required |
+| PR-7 | Phase 5 §5.1 / §5.2 / §5.3 / §5.4 / §5.5 | 通知種別定義、共通エンベロープ、ビルダー移行、`Handle` 再構成、WARN、構文木ガード (a)〜(d) | frontier-required |
+| PR-8 | Phase 6 | 利用者向け・開発者向け文書の更新と翻訳 | standard |
+| PR-9 | Phase 7 | 全体検証と実 Slack 表示確認 | standard |
 
 ## 4. テスト戦略
 
@@ -1322,13 +1491,15 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 
 ## 6. 実装チェックリスト
 
-- [ ] Phase 1: `privileged_command_failure` の削除
-- [ ] Phase 2: `security_alert` の削除
-- [ ] Phase 3: `privilege_escalation_failure` の削除と特権監査テストの追加
-- [ ] Phase 4: 通知コンテキストの追加と伝搬、識別子の設定検証
-- [ ] Phase 5: 通知種別定義・共通エンベロープ・書式の統一
-- [ ] Phase 6: 文書の更新と翻訳
-- [ ] Phase 7: 全体検証と実 Slack 表示確認
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
+- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
+- [ ] PR-4 マージ済み（対象ステップ: Phase 4 §4.0 / §4.1 / §4.2）
+- [ ] PR-5 マージ済み（対象ステップ: Phase 4 §4.3）
+- [ ] PR-6 マージ済み（対象ステップ: Phase 4 §4.4）
+- [ ] PR-7 マージ済み（対象ステップ: Phase 5 §5.1 / §5.2 / §5.3 / §5.4 / §5.5）
+- [ ] PR-8 マージ済み（対象ステップ: Phase 6）
+- [ ] PR-9 マージ済み（対象ステップ: Phase 7）
 
 ## 7. 受け入れ基準の検証
 
