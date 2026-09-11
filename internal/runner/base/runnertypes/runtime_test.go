@@ -35,9 +35,36 @@ func TestRuntimeCommand_Name(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got := r.Name()
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestRuntimeCommand_GroupName(t *testing.T) {
+	tests := []struct {
+		name      string
+		groupName string
+	}{
+		{name: "non-empty group name", groupName: "backup"},
+		{name: "empty group name is returned as passed", groupName: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &CommandSpec{Name: "test-command", Cmd: "/usr/bin/echo"}
+			cmd, err := NewRuntimeCommand(
+				spec,
+				common.NewUnsetTimeout(),
+				commontestutil.NewUnsetOutputSizeLimit(),
+				tt.groupName,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tt.groupName, cmd.GroupName())
 		})
 	}
 }
@@ -68,6 +95,9 @@ func TestRuntimeCommand_RunAsUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got := r.RunAsUser()
 			assert.Equal(t, tt.want, got)
@@ -101,6 +131,9 @@ func TestRuntimeCommand_RunAsGroup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got := r.RunAsGroup()
 			assert.Equal(t, tt.want, got)
@@ -134,6 +167,9 @@ func TestRuntimeCommand_Output(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got := r.Output()
 			assert.Equal(t, tt.want, got)
@@ -194,6 +230,9 @@ func TestRuntimeCommand_GetRiskLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got, err := r.GetRiskLevel()
 			if tt.wantErr {
@@ -250,6 +289,9 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &RuntimeCommand{
 				Spec: tt.spec,
+				TimeoutResolution: common.TimeoutResolutionContext{
+					GroupName: "test-group",
+				},
 			}
 			got := r.HasUserGroupSpecification()
 			assert.Equal(t, tt.want, got)
@@ -332,6 +374,9 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		ExpandedVars:     map[string]string{},
 		EffectiveWorkDir: "/tmp",
 		EffectiveTimeout: 60,
+		TimeoutResolution: common.TimeoutResolutionContext{
+			GroupName: "test-group",
+		},
 	}
 
 	// Verify that the structure is properly created

@@ -323,6 +323,17 @@ func (r *RuntimeCommand) Name() string {
 	return r.Spec.Name
 }
 
+// GroupName returns the name of the group containing the command from the
+// timeout resolution context, which stores the value passed to
+// NewRuntimeCommand. No separate copy is kept.
+// Panics if r is nil (programming error - use NewRuntimeCommand).
+func (r *RuntimeCommand) GroupName() string {
+	if r == nil {
+		panic("RuntimeCommand.GroupName: nil receiver (programming error - use NewRuntimeCommand)")
+	}
+	return r.TimeoutResolution.GroupName
+}
+
 // RunAsUser returns the user to run the command as from the spec.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) RunAsUser() string {

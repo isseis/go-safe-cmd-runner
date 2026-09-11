@@ -515,6 +515,7 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/runner/config/validation_test.go`、`internal/runner/config/loader.go`、
 `internal/runner/cli/filter.go`、`internal/redaction/redactor.go`、
 `internal/redaction/redactor_test.go`、`cmd/runner/startup_privilege_test.go`、
+`internal/logging/notification_context_test.go`（新規）、
 `internal/logging/notification_contract_guard_test.go`（新規）、
 `internal/testutil/identitymutationguard/helpers.go`、
 `internal/testutil/synccensus/census_guard_test.go`、`internal/runner/runner_test.go`、
@@ -531,14 +532,14 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.0 表示安全な補間契約
 
-- [ ] `internal/common/interpolation.go` を新規作成し、02_architecture.md §3.5 の表示安全な
+- [x] `internal/common/interpolation.go` を新規作成し、02_architecture.md §3.5 の表示安全な
       補間契約を実装する。役割（識別子／エンベロープ値／自由文／大量出力）を enum で受け取り、
       切り詰めの有無を `switch` で決める。ゼロ値と `default` は自由文と同じ最も強い加工へ
       倒す。置き換えの順序・対象文字・上限は 02_architecture.md §3.5 の「変換規則」に
       そのまま従う。
-- [ ] 同ファイルへ、補間契約を通した結果に Unicode の White_Space 以外の rune が 1 個以上
+- [x] 同ファイルへ、補間契約を通した結果に Unicode の White_Space 以外の rune が 1 個以上
       残るかを返す述語を置く。設定検証と通知コンテキストの妥当性判定が共有する。
-- [ ] `internal/common/interpolation_test.go` を新規作成し、02_architecture.md §7.1 の
+- [x] `internal/common/interpolation_test.go` を新規作成し、02_architecture.md §7.1 の
       「表示安全な補間契約」と「自由文の切り詰め」の観点を表駆動で検証する。出力側は §3.5 の
       「出力の性質」5 項目を共通の検査として当てる。置き換え集合から 1 文字を外すと、その
       文字の行が対応する性質の検査で失敗する形にする。裸の URL の行は綴りが変わらないことを
@@ -549,27 +550,27 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.1 通知コンテキストの型
 
-- [ ] `internal/common/notification_context.go` を新規作成し、02_architecture.md §3.1 の
+- [x] `internal/common/notification_context.go` を新規作成し、02_architecture.md §3.1 の
       `NotificationScope`、`NotificationContext`、コンストラクタ 3 個、参照メソッド 3 個、
       `LogValue`、`LogAttr` を定義する。フィールドはすべて非公開にする。
-- [ ] 同ファイルへ識別子 1 個あたりの長さ上限を定数として置く。値は 128 byte とし、
+- [x] 同ファイルへ識別子 1 個あたりの長さ上限を定数として置く。値は 128 byte とし、
       設定検証だけが参照する（02_architecture.md §3.1）。
-- [ ] 同ファイルへ、レコード上のエンコードから通知コンテキストを復元し妥当性を判定する関数を
+- [x] 同ファイルへ、レコード上のエンコードから通知コンテキストを復元し妥当性を判定する関数を
       置く。判定は 02_architecture.md §3.1 の表と §3.6 の理由コード分類に従う。下位キーは
       `scope`・`group`・`command` のちょうど 3 種（`command` だけ条件付き出力）に限り、
       未知キー・重複キー・非文字列値・スコープと名前の組の矛盾をすべて不正として返す。
       「表示できる文字が残らない名前」の判定は §4.0 の述語を呼ぶ。
-- [ ] `internal/common/logschema.go` へ、通知コンテキストの属性キー名とスコープ名
+- [x] `internal/common/logschema.go` へ、通知コンテキストの属性キー名とスコープ名
       （`global`／`group`／`command`）の対応を加える。
-- [ ] `internal/common/logschema.go` へ `UserGroupCommandFailureAttrs` を追加する。項目は
+- [x] `internal/common/logschema.go` へ `UserGroupCommandFailureAttrs` を追加する。項目は
       `command_name`（string）、`exit_code`（int）、`stdout`（string）、`stderr`（string）で、
       記録側と参照側が共有する（02_architecture.md §3.4）。
-- [ ] `internal/common/notification_context_test.go` を新規作成し、ゼロ値と `GlobalScope()` が
+- [x] `internal/common/notification_context_test.go` を新規作成し、ゼロ値と `GlobalScope()` が
       同じエンコードになること、各スコープの往復、`command` の条件付き出力、および復元と
       妥当性判定の全行（02_architecture.md §7.1 の「妥当性判定の全行」「下位キーの重複」の
       観点）を検証する。`GroupScope("")` については、`scope=group`・`group=""` として
       エンコードされ、判定が `invalid_notification_context` を返すことを assert する。
-- [ ] `internal/logging` 側のテストへ、通知コンテキストを持つレコードを
+- [x] `internal/logging/notification_context_test.go` へ、通知コンテキストを持つレコードを
       `RedactingHandler` へ流し、**下位ハンドラを捕捉用ハンドラ**（`tu.NewCallbackHandler`）
       とし、そこで受け取った属性を §4.1 の復元関数へ直接渡して、直接エンコードした場合と
       同じ妥当性判定になることを検証するケースを追加する
@@ -586,9 +587,9 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 #### 4.2 `RuntimeCommand` のグループ名
 
-- [ ] `internal/runner/base/runnertypes/runtime.go` へ、`TimeoutResolution.GroupName` を返す
+- [x] `internal/runner/base/runnertypes/runtime.go` へ、`TimeoutResolution.GroupName` を返す
       参照メソッド `GroupName()` を追加する。新しいフィールドは足さない。
-- [ ] `internal/runner/base/runnertypes/runtime_test.go` へ、`NewRuntimeCommand` に渡した
+- [x] `internal/runner/base/runnertypes/runtime_test.go` へ、`NewRuntimeCommand` に渡した
       group 名を `GroupName()` が返すことを検証するテストを追加する。構造体リテラルで
       `RuntimeCommand` を組む既存ケースでは `TimeoutResolution` を明示する。
 
