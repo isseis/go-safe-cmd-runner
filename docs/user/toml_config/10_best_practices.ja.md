@@ -505,7 +505,7 @@ output_file = "echo-output.txt"  # 不要なキャプチャ(リソースの無�
 ```toml
 # ステップ1: 最小構成でテスト
 [[groups.commands]]
-name = "test_basic"
+name = "test_minimal"
 cmd = "/bin/echo"
 args = ["test"]
 ```
