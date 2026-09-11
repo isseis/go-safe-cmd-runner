@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-08 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 決定変更: 識別子の redaction 検査（旧 §3.1）を削除した。group 名・command 名は TOML に人間が書くリテラルで展開されず、名前に機密を書く経路が現実に無い。実際に旧検査が落とすのは語の部分一致による誤検知（`monkey`、`rotate_api_key` など）であり、ログ整形の方針がコマンド実行の可否を左右していた。削除に伴い §2.2 のファイル表、§3.1、§3.2、§3.5、§5.2、§7.1、§8.1 を更新し、付録 B.11 を削除した。再承認を求める。 |
+| Review date | 2026-09-12 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
