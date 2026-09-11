@@ -77,21 +77,28 @@ func TestNotificationContextBuiltOnlyByConstructors(t *testing.T) {
 	require.NotEmpty(t, files, "the repository scan returned no production files")
 
 	var (
-		references int
-		violations []string
+		references          int
+		qualifiedReferences int
+		violations          []string
 	)
 	for _, file := range files {
 		src := identitymutationguard.ReadProductionSource(t, file)
-		builds, refs := checkNotificationContextBuilds(t, file, src)
+		builds, refs, qualifiedRefs := checkNotificationContextBuilds(t, file, src)
 		references += refs
+		qualifiedReferences += qualifiedRefs
 		violations = append(violations, builds...)
 	}
 
-	// If import resolution or the filename convention breaks, every file
-	// reports nothing and the guard passes vacuously. The type is named by its
-	// own declaration, so a healthy scan always sees at least one reference.
+	// If the filename convention or import resolution breaks, the guard would
+	// pass vacuously: unqualified references in internal/common alone keep
+	// `references` above zero, so the qualified counter is the one that proves
+	// the resolver still reaches out-of-package uses.
+	require.Contains(t, files, notificationContextFile,
+		"the repository scan must use root-relative slash paths")
 	require.NotZero(t, references,
-		"the scan saw no NotificationContext reference; the import or file scan is broken")
+		"the scan saw no NotificationContext reference; the file scan is broken")
+	require.NotZero(t, qualifiedReferences,
+		"the scan resolved no qualified NotificationContext reference; import resolution is broken")
 	assert.Empty(t, violations,
 		"NotificationContext values may only be built by GlobalScope, GroupScope and CommandScope:\n%s",
 		strings.Join(violations, "\n"))
@@ -119,32 +126,51 @@ func checkPreExecutionErrorLiterals(t *testing.T, filename, src string) (found i
 		return importPath == loggingImportPath
 	})
 	inLogging := path.Dir(filename) == loggingPackageDir
+	isPreExecutionError := func(expr ast.Expr) bool {
+		return isNamedType(expr, qualifiers, loggingImportPath, "PreExecutionError", inLogging)
+	}
 
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
-		if !ok || !isNamedType(lit.Type, qualifiers, loggingImportPath, "PreExecutionError", inLogging) {
+		if !ok {
 			return true
 		}
-		found++
-		for _, elt := range lit.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "NotificationContext" {
-				return true
+		literals := make([]*ast.CompositeLit, 0, 1)
+		if isPreExecutionError(lit.Type) {
+			literals = append(literals, lit)
+		}
+		literals = append(literals, elidedCompositeLiterals(lit, isPreExecutionError)...)
+		for _, literal := range literals {
+			found++
+			if !setsNotificationContext(literal) {
+				missing = append(missing, fset.Position(literal.Pos()).String())
 			}
 		}
-		missing = append(missing, fset.Position(lit.Pos()).String())
 		return true
 	})
 	return found, missing
 }
 
+// setsNotificationContext reports whether the literal sets the
+// NotificationContext field with a keyed element.
+func setsNotificationContext(lit *ast.CompositeLit) bool {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "NotificationContext" {
+			return true
+		}
+	}
+	return false
+}
+
 // checkNotificationContextBuilds parses one production file and returns the
 // positions of the constructs that build a NotificationContext without a
-// constructor, plus the number of references to the type anywhere in the file.
-func checkNotificationContextBuilds(t *testing.T, filename, src string) (violations []string, references int) {
+// constructor, plus the number of references to the type anywhere in the file
+// and the number of those references that were resolved through an import.
+func checkNotificationContextBuilds(t *testing.T, filename, src string) (violations []string, references, qualifiedReferences int) {
 	t.Helper()
 
 	fset, file := parseSource(t, filename, src)
@@ -174,6 +200,9 @@ func checkNotificationContextBuilds(t *testing.T, filename, src string) (violati
 				if isType(n.Type) {
 					report(n.Pos(), "composite literal builds a NotificationContext outside the constructors")
 				}
+				for _, elided := range elidedCompositeLiterals(n, isType) {
+					report(elided.Pos(), "composite literal with an elided type builds a NotificationContext outside the constructors")
+				}
 			case *ast.ValueSpec:
 				if n.Type != nil && len(n.Values) == 0 && isType(n.Type) {
 					report(n.Pos(), "var declaration leaves a NotificationContext at its zero value")
@@ -201,19 +230,66 @@ func checkNotificationContextBuilds(t *testing.T, filename, src string) (violati
 			case *ast.SelectorExpr:
 				if isType(n) {
 					references++
+					qualifiedReferences++
 				}
 			}
 			return true
 		})
 	}
-	return violations, references
+	return violations, references, qualifiedReferences
+}
+
+// elidedCompositeLiterals returns the nested composite literals that leave
+// their type implicit when the enclosing literal's element type matches
+// isType. []T{{...}} and map[K]T{k: {...}} create a T value without ever
+// spelling the type name, so a type check on the nested literal alone (whose
+// Type is nil) would miss them.
+func elidedCompositeLiterals(lit *ast.CompositeLit, isType func(ast.Expr) bool) []*ast.CompositeLit {
+	element := compositeElementType(lit.Type)
+	if element == nil || !isType(element) {
+		return nil
+	}
+	var elided []*ast.CompositeLit
+	for _, elt := range lit.Elts {
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			elt = kv.Value
+		}
+		if inner, ok := elt.(*ast.CompositeLit); ok && inner.Type == nil {
+			elided = append(elided, inner)
+		}
+	}
+	return elided
+}
+
+// compositeElementType returns the element type of a slice, array or map type,
+// unwrapping parentheses.
+func compositeElementType(expr ast.Expr) ast.Expr {
+	switch e := unwrapParen(expr).(type) {
+	case *ast.ArrayType:
+		return e.Elt
+	case *ast.MapType:
+		return e.Value
+	default:
+		return nil
+	}
+}
+
+// unwrapParen peels parenthesized type expressions.
+func unwrapParen(expr ast.Expr) ast.Expr {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = paren.X
+	}
 }
 
 // isNamedType reports whether expr names the identifier name of the package at
 // importPath: qualified through an import resolved in qualifiers, or
 // unqualified because the file belongs to that package (inPackage).
 func isNamedType(expr ast.Expr, qualifiers map[string]string, importPath, name string, inPackage bool) bool {
-	switch e := expr.(type) {
+	switch e := unwrapParen(expr).(type) {
 	case *ast.Ident:
 		return inPackage && e.Name == name
 	case *ast.SelectorExpr:
@@ -259,6 +335,18 @@ func TestPreExecutionErrorLiteralCheckRecognizesForms(t *testing.T) {
 			name:     "literal without the field is reported",
 			body:     "var e = &l.PreExecutionError{Type: l.ErrorTypeSystemError}",
 			want:     1,
+			wantHits: 1,
+		},
+		{
+			name:     "elided slice element without the field is reported",
+			body:     "var es = []l.PreExecutionError{{Type: l.ErrorTypeSystemError}}",
+			want:     1,
+			wantHits: 1,
+		},
+		{
+			name:     "elided slice element with the field is accepted",
+			body:     "var es = []l.PreExecutionError{{NotificationContext: commonScope()}}",
+			want:     0,
 			wantHits: 1,
 		},
 		{
@@ -317,9 +405,33 @@ func TestNotificationContextBuildCheckRecognizesForms(t *testing.T) {
 			want: 1,
 		},
 		{
+			name: "parenthesized var type",
+			path: "internal/x/x.go",
+			src:  importedHeader + "var ctx (c.NotificationContext)\n",
+			want: 1,
+		},
+		{
+			name: "elided slice element",
+			path: "internal/x/x.go",
+			src:  importedHeader + "var ctxs = []c.NotificationContext{{}}\n",
+			want: 1,
+		},
+		{
+			name: "elided map value",
+			path: "internal/x/x.go",
+			src:  importedHeader + "var ctxs = map[string]c.NotificationContext{\"k\": {}}\n",
+			want: 1,
+		},
+		{
 			name: "named result",
 			path: "internal/x/x.go",
 			src:  importedHeader + "func f() (ctx c.NotificationContext) { return }\n",
+			want: 1,
+		},
+		{
+			name: "named result with a parenthesized type",
+			path: "internal/x/x.go",
+			src:  importedHeader + "func f() (ctx (c.NotificationContext)) { return }\n",
 			want: 1,
 		},
 		{
@@ -380,7 +492,7 @@ func TestNotificationContextBuildCheckRecognizesForms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			violations, _ := checkNotificationContextBuilds(t, tt.path, tt.src)
+			violations, _, _ := checkNotificationContextBuilds(t, tt.path, tt.src)
 			assert.Len(t, violations, tt.want, "violations: %v", violations)
 		})
 	}

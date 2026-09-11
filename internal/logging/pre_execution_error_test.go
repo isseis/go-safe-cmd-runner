@@ -311,6 +311,10 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 		component string
 		runID     string
 		ctx       common.NotificationContext
+		err       error
+		// wantDetails defaults to message when empty; it pins that the report
+		// renders Detail() rather than Message alone.
+		wantDetails string
 	}{
 		{
 			name:      "config parsing error",
@@ -368,10 +372,25 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			runID:     "test-run-7",
 			ctx:       common.GroupScope("backup"),
 		},
+		{
+			name:        "wrapped cause appears in details",
+			errorType:   ErrorTypeFileAccess,
+			message:     "Failed to verify and read the configuration file",
+			component:   "verification",
+			runID:       "test-run-8",
+			ctx:         common.GlobalScope(),
+			err:         fmt.Errorf("toml: line 3: expected key separator: %w", errStandardError),
+			wantDetails: "Failed to verify and read the configuration file: toml: line 3: expected key separator: standard error",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			wantDetails := tt.wantDetails
+			if wantDetails == "" {
+				wantDetails = tt.message
+			}
+
 			stdout, stderr := captureErrorOutput(t, func() {
 				HandlePreExecutionError(&PreExecutionError{
 					Type:                tt.errorType,
@@ -379,6 +398,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 					Component:           tt.component,
 					RunID:               tt.runID,
 					NotificationContext: tt.ctx,
+					Err:                 tt.err,
 				})
 			})
 
@@ -387,7 +407,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			if tt.component != "" {
 				wantStderr += "  Component: " + tt.component + "\n"
 			}
-			wantStderr += "  Details: " + tt.message + "\n"
+			wantStderr += "  Details: " + wantDetails + "\n"
 			if tt.runID != "" {
 				wantStderr += "  Run ID: " + tt.runID + "\n"
 			}
@@ -401,8 +421,10 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 }
 
 // captureErrorOutput runs fn with os.Stdout and os.Stderr redirected to pipes
-// and returns what it wrote to each. The error report is small enough to fit
-// in the pipe buffers, so it cannot block before it is drained.
+// and returns what it wrote to each. It captures the fmt-based report only;
+// the structured slog line goes through the handler installed at startup and
+// is asserted by the record-capturing tests instead. The report is small
+// enough to fit in the pipe buffers, so it cannot block before it is drained.
 func captureErrorOutput(t *testing.T, fn func()) (stdout, stderr string) {
 	t.Helper()
 
@@ -514,6 +536,44 @@ func TestHandleExecutionError(t *testing.T) {
 			}, "HandleExecutionError should not panic")
 		})
 	}
+}
+
+// TestHandleExecutionError_DoesNotNotifySlack pins the notification contract of
+// the shared error handler after the attributes moved into the caller: an
+// execution error must carry slack_notify=false and its own message_type so it
+// is never routed to Slack, while a pre-execution error must carry true.
+func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
+	var captured []slog.Record
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	slog.SetDefault(slog.New(tu.NewCallbackHandler(func(r slog.Record) {
+		captured = append(captured, r)
+	})))
+
+	_, _ = captureErrorOutput(t, func() {
+		HandleExecutionError(&ExecutionError{
+			Message:   "error running commands",
+			Component: "runner",
+			RunID:     "test-run-exec",
+		})
+	})
+
+	require.Len(t, captured, 1, "HandleExecutionError should emit exactly one record")
+
+	var slackNotify bool
+	var messageType string
+	captured[0].Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "slack_notify":
+			slackNotify = a.Value.Bool()
+		case "message_type":
+			messageType = a.Value.String()
+		}
+		return true
+	})
+
+	assert.False(t, slackNotify, "execution errors must not reach Slack")
+	assert.Equal(t, "execution_error", messageType)
 }
 
 func TestHandleExecutionError_WithWrappedError(t *testing.T) {

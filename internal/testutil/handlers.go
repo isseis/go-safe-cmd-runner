@@ -233,7 +233,9 @@ func (r RecordSnapshot) NotificationContext() (common.NotificationContext, bool)
 	var value slog.Value
 	switch v := raw.(type) {
 	case common.NotificationContext:
-		return v, true
+		// Re-encode and decode so the value passes the same validity checks
+		// as one read back from the encoded group.
+		value = v.LogValue()
 	case []slog.Attr:
 		value = slog.GroupValue(v...)
 	case slog.Value:
