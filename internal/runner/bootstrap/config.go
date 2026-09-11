@@ -59,10 +59,11 @@ func normalizeSlackAllowedHost(host string) (string, error) {
 func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.ConfigSpec, error) {
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeRequiredArgumentMissing,
-			Message:   "Config file path is required",
-			Component: string(resource.ComponentConfig),
-			RunID:     runID,
+			Type:                logging.ErrorTypeRequiredArgumentMissing,
+			Message:             "Config file path is required",
+			Component:           string(resource.ComponentConfig),
+			RunID:               runID,
+			NotificationContext: common.GlobalScope(),
 		}
 	}
 
@@ -71,10 +72,11 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	content, err := verificationManager.VerifyAndReadConfigFile(configPath)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeFileAccess,
-			Message:   "Failed to verify and read the configuration file",
-			Component: string(resource.ComponentVerification),
-			RunID:     runID,
+			Type:                logging.ErrorTypeFileAccess,
+			Message:             "Failed to verify and read the configuration file",
+			Component:           string(resource.ComponentVerification),
+			RunID:               runID,
+			NotificationContext: common.GlobalScope(),
 			// Carried as an error, not flattened into Message, so callers can tell
 			// the cause apart with errors.Is/As.
 			Err: err,
@@ -90,22 +92,24 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	cfg, err := cfgLoader.LoadConfig(configPath, content)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeConfigParsing,
-			Message:   "Failed to load the configuration",
-			Component: string(resource.ComponentConfig),
-			RunID:     runID,
-			Err:       err,
+			Type:                logging.ErrorTypeConfigParsing,
+			Message:             "Failed to load the configuration",
+			Component:           string(resource.ComponentConfig),
+			RunID:               runID,
+			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 
 	normalizedHost, err := normalizeSlackAllowedHost(cfg.Global.SlackAllowedHost)
 	if err != nil {
 		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeConfigParsing,
-			Message:   "Invalid slack_allowed_host",
-			Component: string(resource.ComponentConfig),
-			RunID:     runID,
-			Err:       err,
+			Type:                logging.ErrorTypeConfigParsing,
+			Message:             "Invalid slack_allowed_host",
+			Component:           string(resource.ComponentConfig),
+			RunID:               runID,
+			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 	cfg.Global.SlackAllowedHost = normalizedHost

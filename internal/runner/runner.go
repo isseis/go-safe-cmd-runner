@@ -426,12 +426,13 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Error: %s",
 					verErr.Group, verErr.TotalFiles, verErr.VerifiedFiles,
 					verErr.FailedFiles, verErr.Err.Error())
-				logging.HandlePreExecutionError(
-					logging.ErrorTypeGroupFileVerification,
-					errorMsg,
-					"runner",
-					r.runID,
-				)
+				logging.HandlePreExecutionError(&logging.PreExecutionError{
+					Type:                logging.ErrorTypeGroupFileVerification,
+					Message:             errorMsg,
+					Component:           "runner",
+					RunID:               r.runID,
+					NotificationContext: common.GroupScope(verErr.Group),
+				})
 				continue // Skip this group but continue with the next one
 			}
 			// Collect error but continue with next group
@@ -540,20 +541,21 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 //   - Success: INFO level (sent to success webhook if configured)
 //   - Error: ERROR level (sent to error webhook if configured)
 func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
-	attrs := []any{
-		common.GroupSummaryAttrs.Group, groupSpec.Name,
-		common.GroupSummaryAttrs.Status, result.status,
-		common.GroupSummaryAttrs.Commands, result.commands,
-		common.GroupSummaryAttrs.DurationMs, duration.Milliseconds(),
-		"run_id", r.runID,
-		"slack_notify", true,
-		"message_type", "command_group_summary",
+	attrs := []slog.Attr{
+		slog.String(common.GroupSummaryAttrs.Group, groupSpec.Name),
+		slog.String(common.GroupSummaryAttrs.Status, string(result.status)),
+		slog.Any(common.GroupSummaryAttrs.Commands, result.commands),
+		slog.Int64(common.GroupSummaryAttrs.DurationMs, duration.Milliseconds()),
+		slog.String("run_id", r.runID),
+		slog.Bool("slack_notify", true),
+		slog.String("message_type", "command_group_summary"),
+		common.GroupScope(groupSpec.Name).LogAttr(),
 	}
 
 	if result.status == GroupExecutionStatusError {
-		slog.Error("Command group execution completed", attrs...)
+		slog.LogAttrs(context.Background(), slog.LevelError, "Command group execution completed", attrs...)
 	} else {
-		slog.Info("Command group execution completed", attrs...)
+		slog.LogAttrs(context.Background(), slog.LevelInfo, "Command group execution completed", attrs...)
 	}
 }
 

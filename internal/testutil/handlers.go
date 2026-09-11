@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -217,6 +218,47 @@ func (r RecordSnapshot) AssertHasAttrs(t *testing.T, keys ...string) {
 		_, ok := r.Attrs[key]
 		assert.True(t, ok, "record %q has no attribute %q; attributes: %v", r.Message, key, r.Attrs)
 	}
+}
+
+// NotificationContext returns the record's notification context attribute
+// decoded through common.DecodeNotificationContext. ok is false when the
+// attribute is missing or does not decode, so a test cannot mistake a
+// malformed context for a valid one.
+func (r RecordSnapshot) NotificationContext() (common.NotificationContext, bool) {
+	raw, ok := r.Attrs[common.NotificationContextAttrs.Key]
+	if !ok {
+		return common.GlobalScope(), false
+	}
+
+	var value slog.Value
+	switch v := raw.(type) {
+	case common.NotificationContext:
+		return v, true
+	case []slog.Attr:
+		value = slog.GroupValue(v...)
+	case slog.Value:
+		value = v
+	default:
+		return common.GlobalScope(), false
+	}
+
+	ctx, err := common.DecodeNotificationContext(value.Resolve())
+	if err != nil {
+		return common.GlobalScope(), false
+	}
+	return ctx, true
+}
+
+// AssertNotificationContext asserts that the record carries want as its
+// notification context attribute.
+func (r RecordSnapshot) AssertNotificationContext(t *testing.T, want common.NotificationContext) {
+	t.Helper()
+
+	got, ok := r.NotificationContext()
+	if !assert.True(t, ok, "record %q has no decodable notification context; attributes: %v", r.Message, r.Attrs) {
+		return
+	}
+	assert.Equal(t, want, got, "notification context of record %q", r.Message)
 }
 
 // CallbackHandler calls a function for each handled record without capturing.

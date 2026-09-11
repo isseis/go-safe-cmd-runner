@@ -19,7 +19,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -29,21 +28,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// scanRoots are the directories the census covers, relative to this file.
-// Paths are reported relative to the repository root, so repoRootPrefix is
-// stripped from every scanned path before it reaches the expectation table.
-//
-// Production Go files outside these two trees (scripts/verification/) are out
-// of scope on purpose: the census covers what the runner binaries build.
-//
-// filepath.WalkDir does not follow directory symlinks, so a package reached
-// only through a symlinked directory would be skipped silently. No such
-// directory exists here. An unreadable directory does fail loudly, since
-// WalkDir reports the error to the callback, which returns it.
-var scanRoots = []string{"../../../internal", "../../../cmd"}
-
-const repoRootPrefix = "../../../"
 
 // declaration is one synchronization primitive found by the scan, identified
 // by the file it lives in and the name it is declared under.
@@ -147,31 +131,15 @@ func TestSyncCensusMatchesExpectation(t *testing.T) {
 		strings.Join(missing, "\n"))
 }
 
-// scanProductionDeclarations parses every production Go file under scanRoots
-// and returns the synchronization primitives declared in them, sorted so
-// failure messages are stable.
+// scanProductionDeclarations parses every production Go file the repository
+// scan returns and extracts the synchronization primitives declared in them,
+// sorted so failure messages are stable.
 func scanProductionDeclarations(t *testing.T) []declaration {
 	t.Helper()
 
 	var found []declaration
-	for _, root := range scanRoots {
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !entry.IsDir() {
-				return nil
-			}
-			// testdata holds test inputs, not code this repository builds.
-			if entry.Name() == "testdata" {
-				return fs.SkipDir
-			}
-			for _, file := range identitymutationguard.ProductionGoFiles(t, path) {
-				found = append(found, declarationsInFile(t, file)...)
-			}
-			return nil
-		})
-		require.NoErrorf(t, err, "failed to walk %s", root)
+	for _, file := range identitymutationguard.ProductionGoFilesInRepo(t) {
+		found = append(found, declarationsInFile(t, file)...)
 	}
 
 	sort.Slice(found, func(i, j int) bool {
@@ -183,17 +151,16 @@ func scanProductionDeclarations(t *testing.T) []declaration {
 	return found
 }
 
-// declarationsInFile parses one file and returns every synchronization
-// primitive declared in it. Struct fields, var declarations (both top level
-// and inside function bodies) and short variable declarations are all
-// inspected: a WaitGroup declared as a local var inside a function is as much
-// part of the census as a mutex field, and := is the form a future addition
-// is most likely to take.
+// declarationsInFile parses one production file, named by its
+// repository-root-relative path, and returns every synchronization primitive
+// declared in it. Struct fields, var declarations (both top level and inside
+// function bodies) and short variable declarations are all inspected: a
+// WaitGroup declared as a local var inside a function is as much part of the
+// census as a mutex field, and := is the form a future addition is most likely
+// to take.
 func declarationsInFile(t *testing.T, path string) []declaration {
 	t.Helper()
-	// Passing a nil source lets go/parser read the file itself, so this scan
-	// never opens a path of its own.
-	return declarationsInSource(t, path, nil)
+	return declarationsInSource(t, path, identitymutationguard.ReadProductionSource(t, path))
 }
 
 // declarationsInSource is declarationsInFile over source held in memory, so
@@ -208,7 +175,7 @@ func declarationsInSource(t *testing.T, filename string, src any) []declaration 
 	require.NoErrorf(t, err, "failed to parse %s", filename)
 
 	sc := &fileScanner{
-		file: strings.TrimPrefix(filepath.ToSlash(filename), repoRootPrefix),
+		file: filepath.ToSlash(filename),
 		localToImportPath: identitymutationguard.ResolveLocalImports(t, filename, file,
 			func(importPath string) bool { return importPath == "sync" || importPath == "sync/atomic" }),
 		syncTypeNames: make(map[string]struct{}),

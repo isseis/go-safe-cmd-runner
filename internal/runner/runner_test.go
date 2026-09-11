@@ -2315,26 +2315,16 @@ func TestGroupFilteringE2E(t *testing.T) {
 // the correct log level based on execution status:
 // - INFO for success (sent to success webhook)
 // - ERROR for error (sent to error webhook)
+// It also verifies that the record carries the group scope notification context.
 func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
-	// Create a custom handler to capture log records
-	type logRecord struct {
-		level   slog.Level
-		message string
-	}
-	var capturedLogs []logRecord
-	captureHandler := tu.NewCallbackHandler(func(r slog.Record) {
-		capturedLogs = append(capturedLogs, logRecord{
-			level:   r.Level,
-			message: r.Message,
-		})
-	})
+	recorder := tu.NewLogRecorder(nil)
 
 	// Save original logger and restore after test
 	originalLogger := slog.Default()
 	defer slog.SetDefault(originalLogger)
 
 	// Set up test logger
-	slog.SetDefault(slog.New(captureHandler))
+	slog.SetDefault(slog.New(recorder))
 
 	// Create a runner for testing
 	config := &runnertypes.ConfigSpec{
@@ -2349,8 +2339,6 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("success status logs at INFO level", func(t *testing.T) {
-		capturedLogs = nil // Clear previous logs
-
 		groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
 		result := &groupExecutionResult{
 			status:   GroupExecutionStatusSuccess,
@@ -2359,22 +2347,11 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 
 		runner.logGroupExecutionSummary(groupSpec, result, time.Second)
 
-		// Find the execution summary log
-		var found bool
-		for _, log := range capturedLogs {
-			if log.message == "Command group execution completed" {
-				found = true
-				assert.Equal(t, slog.LevelInfo, log.level,
-					"Success status should log at INFO level")
-				break
-			}
-		}
-		assert.True(t, found, "Should have logged execution summary")
+		record := recorder.RequireRecord(t, slog.LevelInfo, "Command group execution completed")
+		record.AssertNotificationContext(t, common.GroupScope("test-group"))
 	})
 
 	t.Run("error status logs at ERROR level", func(t *testing.T) {
-		capturedLogs = nil // Clear previous logs
-
 		groupSpec := &runnertypes.GroupSpec{Name: "test-group"}
 		result := &groupExecutionResult{
 			status:   GroupExecutionStatusError,
@@ -2384,17 +2361,8 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 
 		runner.logGroupExecutionSummary(groupSpec, result, time.Second)
 
-		// Find the execution summary log
-		var found bool
-		for _, log := range capturedLogs {
-			if log.message == "Command group execution completed" {
-				found = true
-				assert.Equal(t, slog.LevelError, log.level,
-					"Error status should log at ERROR level")
-				break
-			}
-		}
-		assert.True(t, found, "Should have logged execution summary")
+		record := recorder.RequireRecord(t, slog.LevelError, "Command group execution completed")
+		record.AssertNotificationContext(t, common.GroupScope("test-group"))
 	})
 }
 

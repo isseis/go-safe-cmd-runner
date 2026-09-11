@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -100,10 +101,11 @@ func SetupLogging(opts SetupLoggingOptions) error {
 
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
 		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeLogFileOpen,
-			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
-			Component: string(resource.ComponentLogging),
-			RunID:     opts.RunID,
+			Type:                logging.ErrorTypeLogFileOpen,
+			Message:             fmt.Sprintf("Failed to setup logger: %v", err),
+			Component:           string(resource.ComponentLogging),
+			RunID:               opts.RunID,
+			NotificationContext: common.GlobalScope(),
 		}
 	}
 
@@ -138,11 +140,12 @@ func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions
 		// into Message, because url.Parse errors embed the webhook URL verbatim and Message
 		// is written to stderr/slog by HandlePreExecutionError.
 		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeConfigParsing,
-			Message:   "Slack webhook URL validation failed",
-			Component: string(resource.ComponentLogging),
-			RunID:     opts.RunID,
-			Err:       err,
+			Type:                logging.ErrorTypeConfigParsing,
+			Message:             "Slack webhook URL validation failed",
+			Component:           string(resource.ComponentLogging),
+			RunID:               opts.RunID,
+			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 
