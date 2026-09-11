@@ -1,6 +1,4 @@
 // Package common provides shared types and utilities used across the application
-//
-//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import (

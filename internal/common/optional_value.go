@@ -1,6 +1,4 @@
 // Package common provides shared data types and constants used throughout the command runner.
-//
-//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 // Numeric is a constraint for numeric types that can be used with OptionalValue.
