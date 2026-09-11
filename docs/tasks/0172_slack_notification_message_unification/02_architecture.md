@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-08 |
-| Review date | 2026-09-11 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 決定変更: 識別子の redaction 検査（旧 §3.1）を削除した。group 名・command 名は TOML に人間が書くリテラルで展開されず、名前に機密を書く経路が現実に無い。実際に旧検査が落とすのは語の部分一致による誤検知（`monkey`、`rotate_api_key` など）であり、ログ整形の方針がコマンド実行の可否を左右していた。削除に伴い §2.2 のファイル表、§3.1、§3.2、§3.5、§5.2、§7.1、§8.1 を更新し、付録 B.11 を削除した。再承認を求める。 |
 
 ## 関連文書
 
@@ -195,18 +195,16 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
-| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加し、同関数を `ValidateIdentifiers` へ改名する（group 名専用ではなくなるため。03_implementation_plan.md §4.4）。5 個目である redaction の検査だけは、本番と同じ `redaction.Config` が Slack ハンドラの登録まで存在しないため `bootstrap` 側に置く（§3.1） | 改名後の `TestValidateIdentifiers` と同ファイルの検証テーブル |
-| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、制御文字・書式制御文字を含む識別子、表示できる文字を持たない識別子、長さ上限を超える識別子、redaction の変換が書き換える識別子に対する 5 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
-| `internal/redaction/redactor.go` | 変更 | `RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue`）が値を書き換えるかを返す述語を公開する。既存の変換を読み取るだけで、redaction の適用範囲は変えない（§3.1） | 既存テストは変更しない。述語が `ValueDetector` の検出にも及ぶことを新規ケースで検証する |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加し、同関数を `ValidateIdentifiers` へ改名する（group 名専用ではなくなるため。03_implementation_plan.md §4.4） | 改名後の `TestValidateIdentifiers` と同ファイルの検証テーブル |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、制御文字・書式制御文字を含む識別子、表示できる文字を持たない識別子、長さ上限を超える識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
 | `internal/runner/runner.go` | 変更 | グループ検証エラーを `GroupScope` と構造化された本文で通知し、グループ集計へ通知コンテキストを付ける | `TestLogGroupExecutionSummary_LogLevel` と、`Execute` 経由で検証エラー分岐へ到達する新規テスト |
 | `internal/runner/runner_test.go` | 変更 | グループ集計とグループ検証エラーの通知コンテキストを検証する | グループ集計は `TestLogGroupExecutionSummary_LogLevel` を拡張し、検証エラー経路は新規に書く。**`TestSlackNotification` は使わない**（名前に反して通知レコードを捕捉せず、`Group: %s, ` の分岐を持つ `executeGroups` ではなく `ExecuteGroup` を呼ぶため、AC-13・AC-14 に到達しない） |
-| `cmd/runner/main.go` | 変更 | 11 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加え、報告境界で Run ID を代入してから構造体を渡す。あわせて `SetupSlackLogging` の直後、グローバル展開より前に識別子の redaction 検査を呼び、その戻り値の `*redaction.Config` をそのまま渡す | 起動前エラーの統合テスト群 |
+| `cmd/runner/main.go` | 変更 | 11 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加え、報告境界で Run ID を代入してから構造体を渡す | 起動前エラーの統合テスト群 |
 | `internal/runner/bootstrap/config.go` | 変更 | 4 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。ここで構築される設定読み込み失敗は SlackHandler の登録前に起きるため Slack へは届かず、AC-15 の検証対象ではない | 同パッケージの設定読み込みエラーのテスト |
 | `internal/runner/bootstrap/environment.go` | 変更 | 2 箇所の `PreExecutionError` リテラルへ `GlobalScope` を加える。`SetupSlackLogging` の戻り値と引数は変更しない | 同パッケージの環境準備エラーのテスト |
-| `internal/runner/bootstrap/identifier_redaction.go` | 新規 | 識別子の redaction 検査を行う関数を置く。`SetupSlackLogging` が返した `*redaction.Config`（Slack 未設定なら `nil`）と読み込み済み設定を受け取り、`internal/redaction` の述語で group 名・command 名を検査して、`internal/runner/config` のセンチネルを包んだ `PreExecutionError` を返す（§3.1） | 新規 `internal/runner/bootstrap/identifier_redaction_test.go`。許可ホストの設定有無で結果が変わる組を持ち、既定 `Config` へ差し替えた実装を落とす |
 | `cmd/runner/startup_privilege_test.go` | 変更 | 特権降格エラーの新しい引数形を検証する | `TestReportStartupPrivilegeFailure_UsesValidRunID` |
 | `cmd/runner/integration_pre_execution_error_test.go` | 変更 | 設定読み込みなどの起動前エラーがグローバルスコープを保つことを検証する | 同ファイルの既存 E2E テスト |
 | `cmd/runner/integration_slack_flush_test.go` | 変更 | 終了時 flush で送る通知レコードへ通知コンテキストを付け、共通書式を検証する | `TestIntegration_RunnerFlushesSlackOnNormalExit` |
@@ -369,7 +367,7 @@ func (c NotificationContext) LogAttr() slog.Attr
 
 表示境界の検知は最後の防御であって、最初の防御ではない。`audit.Logger.LogUserGroupExecution` が `CommandScope` へ渡す `cmd.Name()` は設定ファイル由来の値であり、現在の設定検証はこれが空である場合を拒否していない。`internal/runner/config/validation.go` の `ValidateGroupNames` はグループ名が空の設定を `ErrEmptyGroupName` で拒否し、`GroupNamePattern` で文字種も縛る一方、コマンド名について空を拒否する検証はどこにも無く、どちらの名前についても長さの上限は無い。すなわち `name` を書き忘れたコマンドを含む TOML が現在は読み込みを通り、`CommandScope(group, "")` が実在の設定から到達しうる。
 
-そこで、実行が始まる前に識別子（group 名と command 名）が**通知で発生箇所を指し示せる形である**ことを検査し、外れる場合は専用のセンチネルエラーで拒否する。5 個の検査のうち 4 個は既存の `ValidateGroupNames`（本タスクで `ValidateIdentifiers` へ改名する。§2.2）と同じ `config.Loader` の経路に置く。redaction の検査だけは後述の理由で Slack ハンドラ登録の直後に置く。どちらもコマンドが 1 個も走らないうちに拒否する点は同じである。
+そこで、実行が始まる前に識別子（group 名と command 名）が**通知で発生箇所を指し示せる形である**ことを検査し、外れる場合は専用のセンチネルエラーで拒否する。4 個の検査はいずれも既存の `ValidateGroupNames`（本タスクで `ValidateIdentifiers` へ改名する。§2.2）と同じ `config.Loader` の経路に置き、コマンドが 1 個も走らないうちに拒否する。
 
 | 検査 | 対象 | 検査位置 | 拒否する理由 |
 |---|---|---|---|
@@ -377,49 +375,18 @@ func (c NotificationContext) LogAttr() slog.Attr
 | 制御文字（一般カテゴリ Cc）と書式制御文字（同 Cf）を含まないこと | command 名（group 名は既存の文字種検証で担保済み） | 設定の読み込み | 制御文字を含む名前は、通知でもログでも監査記録でも指し示せない。双方向表示制御などの書式制御文字は、名前を実際とは別の順序で見せる |
 | §3.5 の補間契約を通すと表示できる文字が 1 文字以上残ること | command 名（group 名は既存の文字種検証で担保済み） | 設定の読み込み | 判定は、補間契約を通した後の値に Unicode の White_Space 以外の rune が 1 個以上あることとする。1 行上と別の検査にするのは、制御文字を 1 文字も含まない半角空白だけの名前が文字種の検査を通り、しかも補間後は視覚的に空になるためである。空でないことと禁止文字を含まないことだけを見る実装は、`command=   ` という発生箇所を指さないスコープを通してしまう |
 | 長さが上限を超えないこと | group 名と command 名 | 設定の読み込み | 補間契約は識別子を切り詰めない（§3.5）。長すぎる名前を表示境界で短くすると、先頭が一致する 2 つの名前が同じ Scope として表示され、どの group・どの command の通知か判別できなくなる |
-| redaction が値を書き換えないこと | group 名と command 名 | Slack ハンドラ登録の直後（`bootstrap`） | 書き換えられる名前は `RedactingHandler` が `[REDACTED]` へ置き換えるため、通知でも JSON ログでも発生箇所を指し示せなくなる（§3.5）。語の一致（`IsSensitiveValue`）だけでなく、`ValueDetector` による値形式の検出（AWS キー ID、GitHub トークン、JWT など）も対象に含む |
 
-センチネルエラーは 5 個の検査ごとに独立させる。空の名前を書き忘れた設定、制御文字を含む設定、見た目には値があるのに指し示せない設定、長すぎる設定、redaction に潰される設定では、利用者が直す箇所も直し方も違うためである。空だけを拒否すると、制御文字だけからなる名前が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前も、表示境界で短くするしかない名前も、設定境界で拒否する。
+センチネルエラーは 4 個の検査ごとに独立させる。空の名前を書き忘れた設定、制御文字を含む設定、見た目には値があるのに指し示せない設定、長すぎる設定では、利用者が直す箇所も直し方も違うためである。空だけを拒否すると、制御文字だけからなる名前が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前も、表示境界で短くするしかない名前も、設定境界で拒否する。
 
 識別子 1 個あたりの長さ上限は `internal/common` の定数として置き、設定検証だけが参照する。値は補間契約の 500 byte 上限より十分小さい 128 byte とする。Text 行には製品名、STATUS、Scope、要約が並ぶため、識別子 1 個がその大半を占めると Text 行の役割を果たせない。上限を `internal/common/notification_context.go` に置くのは、通知コンテキストが載せる識別子の制約であり、その型の定義と同じ場所に置くことで同じ値を 2 箇所へ書かずに済むためである。
 
 この検査は通知のためだけのものではない。名前を持たないコマンドは、Slack 通知に限らずログでも監査記録でも指し示せない。名前を設定境界で検査することで、「外部入力の誤りは読み込みで拒否する」「発火点へ届いた空の名前は呼び出し側の不具合であり、表示境界で `(scope: invalid)` として表に出す」という役割分担が成り立つ。空の名前を黙って通したうえで通知だけを不正表示にすると、設定が誤っていることは Slack を見た者にしか分からず、当のコマンドはそのまま実行され続ける。
 
-機密パターンの検査は、`DefaultSensitivePatterns().IsSensitiveValue` だけを呼ぶ形にはしない。この判定は redaction が識別子を書き換える経路の一部にしか及ばないためである。`Config.RedactLogAttribute`（`internal/redaction/redactor.go`）は、文字列値に対してまず `RedactText` を呼ぶ。`RedactText` はキー名由来の `key=value` 置換を当てたのち `ValueDetector.Mask` を通し、ここが AWS アクセスキー ID（`AKIA`／`ASIA` + 16 文字）、GitHub トークンと fine-grained PAT、JWT、および設定された Webhook ホストを含む URL を、語の一致とは無関係に `[REDACTED]` へ置き換える。`IsSensitiveValue` が呼ばれるのはその後、値が変化しなかったときだけである。したがって `AKIAIOSFODNN7EXAMPLE` のような group 名は `IsSensitiveValue` に一致しないまま `ValueDetector` に潰される。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` はこの形の名前を許すため、実在する TOML から到達できる。
+4 検査のいずれも、識別子の値そのものはエラー本文へ含めない。`HandlePreExecutionError` の stderr 出力は `RedactingHandler` を経由せず `fmt.Fprint(os.Stderr, ...)` へ直接書くため、値を入れると、機密らしき名前を端末とプロセスログへ平文で出すことになる。位置（何番目の group、その中の何番目の command）と検査名があれば利用者は該当箇所を特定できる。
 
-そこで検査は語の一覧ではなく**変換そのもの**を基準にする。すなわち、本番と同じ redaction の変換を識別子へ適用し、**値が変化したら拒否する**。判定は `internal/redaction` 側に述語として置き、`RedactLogAttribute` が文字列値へ施す変換（`RedactText` と `IsSensitiveValue` の両方）と同じ経路を通す。設定検証側で変換の一覧を複製しない。この形にすると、将来 `ValueDetector` に検出器が増えたときも設定検証が自動的に追随する。列挙で書けば、増えた検出器の分だけ Scope が `[REDACTED]` に潰れる名前が読み込みを通るようになる。
+通知コンテキストのコンストラクタは全域関数のままとし、事前条件違反で panic させることはしない。通知コンテキストの構築はログ出力の途中に置かれるため、ここで panic するとエラー報告の最中にプロセスを落とす。拒否は設定境界に、検知は表示境界に置き、その中間にあるログ経路は決して停止させない。
 
-Webhook ホストの変換も対象に含める。許可ホストは TOML の `slack_allowed_host` であり、`GlobalSpec.SlackAllowedHost` として設定の復号で埋まる。後述のとおり redaction の検査は正規化済みの許可ホストが確定した後に走るため、既定の `NewConfig()` だけを対象にする理由は無い。これにより、`https://hooks.slack.com/services/example` のような command 名が起動を通ったうえで Scope と `Command` の双方で `[REDACTED]` になる状態（AC-17 違反）を防げる。
-
-##### redaction 検査だけを設定の読み込みから外す理由
-
-ただし redaction の検査だけは、この改名後の `ValidateIdentifiers` の中に置けない。理由は 2 つある。
-
-1 つは許可ホストの正規化である。本番が `redaction.WithWebhookHost` へ渡すのは生の TOML 値ではなく `normalizeSlackAllowedHost` が小文字化と括弧除去を施した値であり（`bootstrap/config.go`）、この正規化は `LoadConfig` が返った**後**に走る。差が出るのは IPv6 リテラルである。TOML は `[2001:db8::1]` と書き、`redaction.ValidateWebhookHost` は括弧付きの値を拒否するため、生の値のままでは検査用の `Config` を組むことすらできない。大文字小文字については差が出ない。`compileWebhookHostPattern` は `(?i)` で組み（`internal/redaction/value_detector.go:118`）、`validateWebhookURL` も小文字化を通す（`internal/logging/slack_handler.go:192`）。正規化関数は `internal/runner/bootstrap` にあり、`bootstrap` は既に `internal/runner/config` へ依存しているため、逆向きの import は循環になる。
-
-もう 1 つは決定的な理由である。この検査は**本番と同じ変換**を適用してはじめて意味を持つが、その変換を体現する `*redaction.Config` は `AddSlackHandlers` が組み立てるまで存在しない。`AddSlackHandlers` は正規化済みホストを必要とするため、設定の読み込みより後にしか走れない。したがって設定の読み込み時点では、比較すべき相手がまだ無い。
-
-##### 検査用の `redaction.Config` は本番から受け取る
-
-同じ式（`NewConfig(WithWebhookHost(...))`）を検査側でもう一度書く形は採らない。同じ式を 2 箇所に書くことは、同じ変換であることの保証ではないからである。`NewConfig` の戻り値は `webhookHost` だけで決まらず、placeholder、キー名パターン、値形式検出器の既定も取り込む。今日は本番が渡すオプションが `WithWebhookHost` 1 個だけなので両者は一致するが、片方にオプションが足された時点で黙って分岐する。検査が本番より弱ければ、拒否したはずの名前が起動を通り、通知で `[REDACTED]` に潰れる。すなわちこの検査の存在理由そのものが失われる。強ければ無害な名前を拒否する。どちらもビルドは通り、既存テストも緑のままである。「不変条件は規約ではなく型で守る」に反する。
-
-そこで、本番が組み立てた `Config` をそのまま検査へ渡す。`SetupSlackLogging` は `AddSlackHandlers` が組み立てた `*redaction.Config` を既に戻り値として返しており、その doc コメントは「呼び出し元が同じ webhook ホストのマスクを、各自で組み直さずに共有できるようにするため」と目的を明示している（`bootstrap/environment.go`）。`cmd/runner/main.go` はこの値を受け取り、`runner.WithRedactionConfig` へ引き回している。識別子の redaction 検査は、この戻り値と読み込み済みの設定を受け取る `bootstrap` の関数として置き、`cmd/runner` が `SetupSlackLogging` の直後に呼ぶ。`SetupSlackLogging` の引数と戻り値は変更しない。
-
-Slack 未設定のとき `SetupSlackLogging` は `nil` を返すが、これを「検査しない」の意味にはしない。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包んでおり、Slack が無効でも Phase 1 が組み立てた `RedactingHandler` が既定の `Config` で走り続けるためである（`NewRedactingHandler` は `config` が `nil` のとき `DefaultConfig()` を使う）。したがって `nil` を受け取った検査は `redaction.DefaultConfig()` を使う。この規則の下では、検査に使う `Config` は Slack の有無にかかわらず、その時点で `slog.Default()` が現に使っている `Config` と同じ値になる。
-
-共有していることは型では保証できないため、2 つの検査で固定する。第 1 に §7.1 の「`slack_allowed_host` を設定した状態でそのホストを含む URL 形の command 名が拒否され、同じ名前が許可ホスト未設定なら通る」という 1 組。これは既定 `Config` へ差し替えた実装、`nil` を「検査しない」と読む実装、正規化前の値を使う実装のいずれでも失敗する。**ただし `NewConfig(WithWebhookHost(...))` で組み直す実装は落とせない。** `AddSlackHandlers` が渡すオプションはこの 1 個だけであり、正規化済みホストは `cfg.Global` へ書き戻されているため、組み直した `Config` は今日の本番と同一の挙動を示す（付録 B.11 もこの点は認めている）。第 2 に、その組み直しを落とせるのは起動経路の構文木検査だけである。`cmd/runner/startup_order_guard_test.go` が、検査の呼び出しが `SetupSlackLogging` の後にあること、および渡している値がその戻り値であって `DefaultConfig()` でも新規に組み立てた `Config` でもないことを確かめる。**共有そのものを見るのはこちらであり、上の 1 組ではない。**
-
-空・制御文字・表示できる内容を持たない・長すぎるの 4 検査は外部への依存を持たないため、`ValidateGroupNames` を改名した `ValidateIdentifiers`（§2.2）に残す。センチネルエラーは 5 個とも `internal/runner/config/errors.go` に置いたままでよい。`bootstrap` は `config` に依存しており、そこから返せる。この配置では `internal/runner/config` から `internal/redaction` への新しい辺は生じない。redaction の述語を呼ぶのは `bootstrap` であり、`bootstrap` は既に `internal/redaction` に依存している。
-
-##### 検査位置が Slack ハンドラ登録の後になることの帰結
-
-検査は `SetupSlackLogging` の直後、グローバル設定の展開・テンプレート検証・対象ファイル検証よりも前に走る。どのコマンドも走る前に拒否される点は、設定の読み込みで拒否する場合と変わらない。変わるのは、この拒否が SlackHandler の登録**後**に起きることであり、他の 4 検査と違って Slack へ通知が届く（§3.2）。届くこと自体は望ましいが、2 つの帰結を設計として定める。
-
-第 1 に、この `PreExecutionError` のスコープは `GlobalScope()` とする。拒否した識別子を `GroupScope` や `CommandScope` に載せると、指し示せない名前や `[REDACTED]` に潰れる名前を Scope に置くことになり、この検査が防ごうとしている状態を通知自身が体現する。設定全体の不備としてグローバルで報告する。
-
-第 2 に、本文には設定内の位置（何番目の group、その中の何番目の command）と、どの検査に掛かったかを含め、**識別子の値そのものは含めない**。この検査が拒否する識別子は、定義上 redaction の変換が書き換える値であり、実際の AWS キー ID・GitHub トークン・JWT・Webhook 認証情報が group 名や command 名にそのまま書かれている場合を含む。ところが `HandlePreExecutionError` の stderr 出力は `RedactingHandler` を経由しない。`internal/logging/pre_execution_error.go` は本文を組み立てて `fmt.Fprint(os.Stderr, ...)` へ直接書く。したがって本文へ値を入れると、**redaction が潰すはずの秘匿値を、まさにそれを理由に拒否した経路が端末とプロセスログへ平文で出す**ことになる。位置と検査名があれば利用者は自分の TOML の該当箇所を特定でき、値の再掲は要らない。Slack と JSON ログでは値は `[REDACTED]` になりうるため、位置の無い通知はいずれにせよ「識別子が拒否された」としか読めない。
-
-コンストラクタ側は前段落までのとおり全域関数のままとし、事前条件違反で panic させることはしない。通知コンテキストの構築はログ出力の途中に置かれるため、ここで panic するとエラー報告の最中にプロセスを落とす。拒否は設定境界に、検知は表示境界に置き、その中間にあるログ経路は決して停止させない。
+なお、redaction の変換が値を書き換える識別子（`monkey`、`rotate_api_key`、AWS アクセスキー ID 形、許可ホスト配下の URL 形など）は、本タスクでは設定境界で拒否しない。名前は TOML に人間が書くリテラルであり展開されず、名前に機密を書く経路が現実に無いため、拒否は語の部分一致による誤検知（`rotate_api_key` など）を実行不能にするだけになる。したがって redaction が識別子を書き換える場合の通知 Scope は `[REDACTED]` になりうる。この挙動は §3.5 の残余リスクとして扱う。
 
 ### 3.2 `PreExecutionError` と発火元
 
@@ -455,8 +422,6 @@ func HandlePreExecutionError(preExecErr *PreExecutionError)
 #### Slack へ届く実行前エラーの範囲
 
 SlackHandler は TOML から許可ホストを読んだ後に登録されるため、TOML 自体の読み込み・解析失敗、ログ設定、Webhook URL 検証など登録前のエラーは Slack へ届かない。登録後に起きるグローバル設定の展開、テンプレート・対象ファイルの検証、グループ選択、および `runner.executeGroups` の検証エラーは届く。この境界は本タスクで変更しない。
-
-本タスクが 1 件だけ加えるのは、§3.1 の識別子の redaction 検査である。この検査は本番と同じ `redaction.Config` を必要とし、その `Config` は SlackHandler の登録と同時にしか得られないため、登録の直後に置かれる。すなわち他の 4 検査と違って、拒否が Slack へ届く側に入る。スコープは `GlobalScope()` とし、本文には設定内の位置を含める（理由は §3.1）。
 
 到達性は `ErrorType` ではなく発生時点で決まる。たとえば `config_parsing_failed` は登録前後の両方で使われるため、AC-15 の統合テストには SlackHandler 登録後に発生するグローバル対象ファイルの検証失敗などを使う。production では届かない経路を handler 単体テストだけで緑にしない。
 
@@ -632,7 +597,7 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 | 値の役割 | 適用する規則 |
 |---|---|
-| 識別子 | 設定境界で、空・表示できる内容を持たない名前・書式制御文字を含む名前・過剰な長さ・redaction の変換が書き換える名前を拒否する（§3.1）。そのうえで、識別子を載せる**すべての**フィールド（Scope、Text 行、`Command` など）で 1 行化、書式制御文字の除去、実体参照化を通す。接頭辞での切り詰めは行わない |
+| 識別子 | 設定境界で、空・表示できる内容を持たない名前・書式制御文字を含む名前・過剰な長さを拒否する（§3.1）。そのうえで、識別子を載せる**すべての**フィールド（Scope、Text 行、`Command` など）で 1 行化、書式制御文字の除去、実体参照化を通す。接頭辞での切り詰めは行わない |
 | エンベロープ値 | 1 行化、書式制御文字の除去、実体参照化を通す。長さ上限も同じく適用する（実際の値はいずれも上限より短いが、経路を分けない） |
 | 自由文 | 1 行化、書式制御文字の除去、実体参照化、長さ上限のすべてを適用する |
 | 大量出力 | 既存の切り詰め規則（stdout 1000 文字、stderr 500 文字）のままとし、本タスクでは変更しない |
@@ -657,13 +622,11 @@ Error Message を自由文に置く理由を補足する。`pre_execution_error`
 
 書式制御文字の置き換えは、絵文字を ZWJ（U+200D）で連結した文字列を構成要素へ分解する。共通エンベロープが置く ✅・⚠️・❌ は静的な部分であり契約を通さないため、STATUS の表示は変わらない。分解が起こりうるのは自由文と、書式制御文字を含む識別子だけであり、後者は設定の読み込みで拒否される（§3.1）。
 
-**識別子を接頭辞で切り詰めない理由**。`command_group_summary` では、group 名が現れる場所は Scope フィールドだけである。ここで接頭辞を素朴に切ると、先頭 500 byte が一致する 2 つの group は同じ Scope として表示され、どちらの group の集計なのか通知から判別できなくなる。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` は文字種を縛るだけで長さを縛らないため、この状態は現在の設定検証を通る。「補正しない」に従い、長すぎる識別子は表示境界で黙って短くせず、設定の読み込みで拒否する（§3.1。5 個の検査のうち長さの検査は読み込み側にある）。接頭辞の切り詰めは、識別子ではない自由文とエンベロープ値にだけ残す。
+**識別子を接頭辞で切り詰めない理由**。`command_group_summary` では、group 名が現れる場所は Scope フィールドだけである。ここで接頭辞を素朴に切ると、先頭 500 byte が一致する 2 つの group は同じ Scope として表示され、どちらの group の集計なのか通知から判別できなくなる。`validateGroupName` の `[A-Za-z_][A-Za-z0-9_]*` は文字種を縛るだけで長さを縛らないため、この状態は現在の設定検証を通る。「補正しない」に従い、長すぎる識別子は表示境界で黙って短くせず、設定の読み込みで拒否する（§3.1。4 個の検査のうち長さの検査は読み込み側にある）。接頭辞の切り詰めは、識別子ではない自由文とエンベロープ値にだけ残す。
 
-**識別子と既存の値まるごと redaction の関係**。`RedactingHandler` の `Config.RedactLogAttribute` は、キー名の判定と本文中の `key=value` 形式の置換に加えて、**値まるごと**を未アンカーの `SensitivePatterns.IsSensitiveValue`（`(?i)(password|token|secret|key|api_key)`、`bearer`、`basic`、`authorization` など）で判定する。語の一部に一致するため、`monkey`、`keyring`、`rotate_api_key` のような group 名や command 名は `[REDACTED]` へ置き換わり、Scope が発生箇所を指し示せなくなる。語の一致はこの経路の一部でしかない。`RedactLogAttribute` は `IsSensitiveValue` より先に `RedactText` を呼び、その中の `ValueDetector` が AWS アクセスキー ID、GitHub トークン、JWT、Webhook ホストの URL を値の形式だけで潰す。`AKIAIOSFODNN7EXAMPLE` のような名前はどの機密語も含まないまま `[REDACTED]` になる（§3.1）。
+**識別子と既存の値まるごと redaction の関係（残余リスク）**。`RedactingHandler` の `Config.RedactLogAttribute` は、キー名の判定と本文中の `key=value` 形式の置換に加えて、**値まるごと**を未アンカーの `SensitivePatterns.IsSensitiveValue`（`(?i)(password|token|secret|key|api_key)`、`bearer`、`basic`、`authorization` など）で判定する。語の一部に一致するため、`monkey`、`keyring`、`rotate_api_key` のような group 名や command 名は `[REDACTED]` へ置き換わり、Scope が発生箇所を指し示せなくなる。語の一致はこの経路の一部でしかない。`RedactLogAttribute` は `IsSensitiveValue` より先に `RedactText` を呼び、その中の `ValueDetector` が AWS アクセスキー ID、GitHub トークン、JWT、Webhook ホストの URL を値の形式だけで潰す。`AKIAIOSFODNN7EXAMPLE` のような名前はどの機密語も含まないまま `[REDACTED]` になる。
 
-この過剰な置換を、識別子のキーだけ値まるごとの判定から外すことでは解消しない。`RedactingHandler` が包むのは Slack ハンドラ単体ではなく、JSON ログを含むすべての出力先を持つ `MultiHandler` である（`bootstrap/logger.go`）。除外を入れれば Slack だけでなく JSON ログのマスクも同時に弱まる。01_requirements.md の対象外は `internal/redaction` の適用範囲を変更しないと定めており、広げるにせよ狭めるにせよ本タスクでは触らない。
-
-代わりに、実行が始まる前に拒否する（§3.1）。本番と同じ redaction の変換が値を書き換える group 名・command 名を持つ設定は、専用のセンチネルエラーで起動に失敗する。「補正しない」に従い、通知で `[REDACTED]` に潰れる名前を黙って通すことも、識別子だけ redaction を緩めることもせず、利用者に名前を変えてもらう。判定は語の一覧ではなく変換そのものを基準にし、redaction 側に置いた述語を呼ぶ（§3.1）。設定検証側へ機密語や値形式の一覧を複製しない。
+本タスクはこの挙動を変更せず、識別子を設定境界で拒否する検査も置かない（§3.1）。理由は、group 名・command 名が TOML に人間が書くリテラルで展開されず、名前に機密を書く経路が現実に無いこと、そして旧検査が実際に落としていたのは語の部分一致による誤検知（`rotate_api_key`、`monkey` など）であり、ログ整形の方針がコマンド実行の可否を左右していたことである。したがって redaction が識別子を書き換える場合、その通知 Scope は `[REDACTED]` になりうる。`RedactingHandler` を識別子のキーだけ除外することは、`RedactingHandler` が Slack ハンドラ単体ではなく JSON ログを含む全出力先を包むため（`bootstrap/logger.go`）、Slack 以外のマスクも同時に弱めるので行わない。これは本タスクの残余リスクとして受け入れ、`internal/redaction` の適用範囲の見直しは別タスクとする。AC-17 は redaction が値を書き換えない名前について満たされる。
 
 **Hostname と Run ID も同じ契約を通す理由**。Hostname の値は `common.GetHostname()`（`os.Hostname`）の戻り値をそのまま載せており、どこでも検証していない。契約を通すことで、上の「出力の性質」をエンベロープ値についても処理として保証し、ホスト名を差し替えたテストで検証できるようにする（テスト機の実際のホスト名に依存させない）。ただしこれは注入ではなく一貫性の欠落である。ホスト名は本設計の脅威モデルが信用しない TOML の作成者ではなく、機械の管理者が決める値である。危険度を実際より大きく見せず、AC-20 が検証できる状態にすることが目的である。なお `###` は Slack の mrkdwn では見出しにならず、契約はこの 3 文字を対象にしない。AC-20 の `###` に関する主張は Text 行の骨格とフィールド見出しに限り、Hostname と Run ID の値については「出力の性質」を検証する。
 
@@ -794,7 +757,7 @@ flowchart LR
 ### 5.2 既存の保護との関係
 
 - `internal/redaction` がログ境界で機密値を置換する現在の責務を維持する。本タスクの Slack 表示用エスケープは redaction の代替ではなく、その後段で書式制御文字だけを扱う。
-- `internal/redaction` の適用範囲は変更しない。redaction の変換が書き換える識別子は、redaction を識別子だけ緩めるのではなく、設定の読み込みで拒否する（§3.1、§3.5）。判定用の述語を `internal/redaction` へ足すことは、既存の変換を読み取るだけであり適用範囲を変えない。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包むため、除外は Slack 以外のマスクも弱める。
+- `internal/redaction` の適用範囲は変更しない。redaction の変換が書き換える識別子は設定境界で拒否せず、通知 Scope が `[REDACTED]` になりうることを残余リスクとして受け入れる（§3.1、§3.5）。`RedactingHandler` は Slack ハンドラだけでなく JSON ログを含む全出力先を包むため、識別子だけを除外すると Slack 以外のマスクも弱める。
 - Webhook URL、許可ホスト、HTTPS 検証、送信失敗ロガーが Slack に依存しない構成を変更しない。
 - INFO は成功用 Webhook、WARN 以上はエラー用 Webhook という `SlackHandlerLevelMode` の振り分けを変更しない。
 - キューの容量、優先処理、リトライ、送信期限、flush 期限、同期モードを変更しない。削除対象の高優先度種別を除いた後も `pre_execution_error` を高優先度に保つ。
@@ -940,7 +903,6 @@ flowchart LR
 | `RuntimeCommand` | コンストラクタへ渡した group 名を `GroupName` が返す | AC-16 |
 | 設定の検証 | コマンド名が空の設定、制御文字や書式制御文字だけで表示できる文字を持たない設定、および長さ上限を 1 byte 超える group 名・command 名を持つ設定が、それぞれ別のセンチネルエラーで拒否されることを `errors.Is` で検証する。上限ちょうどの名前は通ることも同じ表で確認する。制御文字・書式制御文字の検査には、表示できる文字を**残す**入力（`backup\nother`、`backup` + U+202E + `evil`）を必ず含める。制御文字だけの名前は「表示できる内容を持たない」検査でも拒否されるため、それだけでは 2 つの検査を区別できず、無条件の制御文字拒否を外しても行が緑のままになる。逆向きの区別として、半角空白だけの名前（`"   "`）の行も持つ。これは制御文字も書式制御文字も含まないため文字種の検査には掛からず、White_Space 以外の rune を求める述語だけが拒否できる。この行があると、空でないことと禁止文字の不在だけを見る実装が落ちる。各検査を外すと対応する行が失敗する | AC-17 |
 | 識別子を切り詰めない | 長さ上限ちょうどまでの group 名が Scope フィールドと Text 行に接頭辞ではなく全体として現れることを検証する。先頭が長く一致する 2 つの group 名が異なる Scope として表示されることも確認し、識別子へ切り詰めを入れると失敗する形にする | AC-13, AC-18 |
-| 識別子と redaction | 語の一致で潰れる名前（`monkey`、`keyring`、`rotate_api_key`）と、値の形式だけで潰れる名前（`AKIAIOSFODNN7EXAMPLE`、`ghp_` で始まるトークン形、`eyJ` で始まる JWT 形）を持つ設定が、redaction 用のセンチネルエラーで拒否されることを `errors.Is` で検証する。この検査は `config.Loader` ではなく `bootstrap` の識別子検査関数にあるため（§3.1）、テストは読み込み済みの設定と `*redaction.Config` を渡してその関数を直接呼ぶ。`LoadConfig` だけを呼ぶ形では redaction のセンチネルは出ない。ただし各行が使える識別子の種類は group 名の文法で決まる。`GroupNamePattern`（`^[A-Za-z_][A-Za-z0-9_]*$`）は `.`、`:`、`/` を許さず、しかも `ValidateIdentifiers`（改名前の `ValidateGroupNames`）は `loadConfigInternal` の中、すなわち `bootstrap` の redaction 検査より前に走る。したがって本番経路では JWT 形と URL 形の group 名が redaction 検査へ到達しないため、この 2 形は command 名の行としてのみ書く。直接呼び出しなら到達させられるが、それは本番に無い入力を固定することであり §3.2 に反する。group 名と command 名の双方で使えるのは、語の一致で潰れる名前と、`AKIA` 形・`ghp_` 形のように英数字と下線だけで綴れる値形式に限る。どちらにも該当しない名前が通ることも同じ表で確認する。値の形式の行は `IsSensitiveValue` 単独では素通りすることを先に確かめ、検査が `ValueDetector` まで含んだ経路を通っていることを層として示す（`IsSensitiveValue` だけの実装へ戻すとこの行が失敗する）。さらに `slack_allowed_host` を設定した状態で、そのホストを含む URL 形の command 名が拒否されることと、同じ名前が許可ホスト未設定なら通ることを 1 組の行として持つ。この組が落とすのは、`SetupSlackLogging` の戻り値を使わず既定の `Config` で検査する実装と、`nil` を渡す実装である。同じ式で `Config` を組み直す実装は落とせない。本番のオプションが `WithWebhookHost` 1 個だけである以上、組み直した `Config` は本番と同一に振る舞うためである（付録 B.11）。組み直しは §8 の検索で、呼び出し側の配線は `cmd/runner` の統合テストと `startup_order_guard_test.go` の構文木ガードで固定する。統合テストは「拒否されること」しか示さず、どの `Config` で拒否したかは示さないため、共有そのものは構文木で見る。許可ホストを大文字で書いた行は作らない。`compileWebhookHostPattern` が `(?i)` で組み、`validateWebhookURL` も小文字化するため、大文字小文字はどの実装でも差を生まないからである。Slack 未設定（戻り値が `nil`）の行では、既定の `Config` で語の一致と値形式の検査が依然として働くことを確認し、`nil` を「検査しない」と読む実装を落とす。あわせて同じ名前を値に持つ属性が `RedactingHandler` を通ると `[REDACTED]` になることを確認し、設定境界で拒否する理由が実在することを示す。この検査を外すと、通知の Scope が `[REDACTED]` になる | AC-13, AC-17 |
 | レベル表示 | INFO、WARN、ERROR の絵文字、STATUS、色を全種別で検証する。各ビルダーが表示を上書きできないことも確認する | AC-18, AC-19 |
 | 共通エンベロープ | 登録済みの通知種別定義を順に走査し、製品名、Text 形式、エンベロープの静的な部分（Text 行の骨格、フィールド見出し）における `###` の不在、末尾 3 フィールドの順序を検証する。Scope や要約へ補間される動的な値は対象にせず、下の「表示安全な補間契約」の行で扱う | AC-18〜AC-22, AC-26 |
 | エンベロープ値の出力の性質 | §3.5 の継ぎ目（`internal/logging` の非公開パッケージ変数）を差し替え、改行・双方向表示制御・`<!channel>` を含むホスト名を返させたうえで、Hostname フィールドの値が §3.5 の「出力の性質」（1 行、制御文字と書式制御文字の不在、実体参照化、長さ上限、有効な UTF-8）をすべて満たすことを検証する。テスト機の実際のホスト名には依存させない。Hostname を契約から外すとこの行が失敗する | AC-20 |
@@ -989,7 +951,7 @@ F-002 から F-005 の各テストは、対象のコンストラクタ呼び出�
 | 1 | `privileged_command_failure` の本番コードとテストを削除 | AC-01、AC-04、AC-06、AC-08、AC-30 を満たす独立コミット |
 | 2 | `security_alert` の本番コードとテストを削除し、高優先度テストを `pre_execution_error` へ移す | AC-02、AC-04、AC-06〜AC-08、AC-30 を満たす独立コミット |
 | 3 | `privilege_escalation_failure` の本番コードとテストを削除し、特権昇格結果ログが残ることを検証するテストを追加する | AC-03〜AC-06、AC-08、AC-30 を満たす独立コミット |
-| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる識別子を設定の読み込みで、redaction の変換が書き換える識別子を Slack ハンドラ登録の直後に、それぞれ拒否する（§3.1。後者だけ位置が違うのは、本番と同じ `redaction.Config` がハンドラ登録まで存在しないためである） | AC-09〜AC-11、AC-16、AC-30、AC-32 |
+| 4 | 通知コンテキストと `RuntimeCommand.GroupName` を追加し、`cmd/runner` と `internal/runner/bootstrap` を含む全発火元へ伝搬する。あわせて空・表示できない・長すぎる識別子を設定の読み込みで拒否する（§3.1） | AC-09〜AC-11、AC-16、AC-30、AC-32 |
 | 5 | 通知種別定義、全発火元の属性生成関数への移行、ユーザー／グループ指定コマンド固有のビルダー、共通エンベロープ、役割ごとの補間契約、WARN を 1 個の取り消し可能なコミットで導入する。あわせてグループ検証エラー本文からの `Group: <name>, ` 除去も行う | AC-12〜AC-15、AC-17、AC-18〜AC-27、AC-31〜AC-33 |
 | 6 | `runner_command`、`security-architecture`、`slack_async_delivery`、`README`、`security-risk-assessment` の日本語版を更新し（§2.2）、各英語版へ `/mktrans` で翻訳を反映する | AC-28〜AC-30 |
 | 7 | 全体検証と実 Slack 表示確認を行う | 全 AC、Success Criteria |
@@ -1078,15 +1040,3 @@ AC-09 に従い `NotificationContext` のゼロ値はグローバルとする。
 採らなかったのは、AC-22 を型で守れなくなるためである。ハンドラを渡せば、ビルダーは Run ID も Hostname も製品名も手に取れる。すなわちエンベロープの要素を種別ごとに組み立て直すことが可能なままであり、「エンベロープの生成は 1 箇所」は規約でしか守られない。
 
 引数をレコードだけにすると、ビルダーはエンベロープを組み立てる手段そのものを持たない。現行コードを確認したところ、存続する 3 ビルダーが receiver から読んでいるのは `s.runID` の 1 個だけであり、その Run ID は本設計で共通エンベロープの担当へ移る。したがってハンドラを渡さないことによる不足は生じない。副次的に、ビルダーはハンドラを構築せずに検証できる純粋な関数になる。
-
-### B.11 識別子の redaction 検査で `redaction.Config` を組み直さない理由
-
-初版は、検査用の `redaction.Config` を `AddSlackHandlers` と同じ `NewConfig(WithWebhookHost(...))` で組み立て、それによって「検査と本番が同じ変換を使うことを構成で保証する」と記していた。保証になっていない。同じ式を 2 箇所に書くことが担保するのは、今この瞬間に両者の結果が一致することだけであり、それを維持する仕組みは無い。`NewConfig` の戻り値は placeholder とパターン群の既定も取り込むため、片方にオプションが 1 個足された時点で黙って分岐する。分岐した先で起きるのは、この検査が防ぐはずだった状態（拒否すべき名前が通り、通知の Scope が `[REDACTED]` になる）そのものである。
-
-代案は 3 つあった。
-
-1 つ目は、検査を `SetupSlackLogging` の中へ入れる案である。`Config` を作った場所で検査すれば、別の値を渡す余地が無い。採らなかったのは、`SetupSlackLogging` が Slack 未設定のときに 2 箇所の早期 return で `nil` を返すためである。検査をその中へ置くと、Slack が無効な設定では検査ごと飛ぶ。しかし `RedactingHandler` は Slack の有無にかかわらず JSON ログを含む全出力先を包んでおり、識別子は Slack 未設定でも `[REDACTED]` に潰れうる。ログ設定の関数に、設定全体の妥当性検査という別の責務を持たせることにもなる。
-
-2 つ目は、`LoadAndPrepareConfig` の中に置いたまま `Config` だけを組み直す案、すなわち初版の形である。上のとおり保証にならないため採らない。
-
-3 つ目が本文の形である。`SetupSlackLogging` が既に返している `*redaction.Config` を検査へ渡す。値が 1 個しか無ければ分岐しようがない。引き換えに、検査が SlackHandler 登録後に動くこと（拒否が Slack へ届く）と、`nil` の扱いを設計として決める必要が生じる。前者は §3.1 と §3.2 で、後者は「`nil` は Slack 未設定を意味し、そのとき本番が使っているのは Phase 1 の既定 `Config` であるから検査も `DefaultConfig()` を使う」として決めた。渡し忘れや別の値の混入は型では防げない。許可ホスト依存の 1 組（§7.1）が落とせるのは、既定の `Config` を使う実装と `nil` を渡す実装までである。同じ式で組み直す実装は、本番のオプションが `WithWebhookHost` 1 個だけである以上まったく同じ振る舞いになり、いかなる入出力テストでも区別できない。したがって組み直しは §8 の検索で禁じ、呼び出し側が戻り値を渡していることは `cmd/runner` の統合テスト（実バイナリの起動が失敗すること）と `startup_order_guard_test.go` の構文木ガード（渡している値が `SetupSlackLogging` の戻り値であること）で固定する。
