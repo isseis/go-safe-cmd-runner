@@ -30,8 +30,10 @@ name = "command_name"
 | **Type** | String (string) |
 | **Required/Optional** | Required |
 | **Configurable Level** | Command only |
-| **Valid Values** | Alphanumeric characters, underscores, hyphens |
-| **Uniqueness** | Must be unique within the group |
+| **Valid Values** | A string that contains no control or format-control characters (newline, tab, bidirectional control characters, etc.) and contains at least one displayable non-whitespace character. Naming with alphanumeric characters, underscores, and hyphens is recommended |
+| **Length** | 128 bytes or less |
+| **Uniqueness** | Must be unique within the group (the same name can be used in a different group) |
+| **Prohibited Words** | Same as group names. See "Words That Cannot Be Included in a Name" in [5.1.1 name - Group Name](05_group_level.md#511-name---group-name) |
 
 #### Configuration Example
 

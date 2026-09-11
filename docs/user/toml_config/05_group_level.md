@@ -26,8 +26,10 @@ name = "group_name"
 | **Type** | String (string) |
 | **Required/Optional** | Required |
 | **Configurable Level** | Group only |
-| **Valid Values** | Alphanumeric characters, underscores, hyphens |
+| **Valid Values** | Starts with a letter or underscore and consists only of alphanumeric characters and underscores (`[A-Za-z_][A-Za-z0-9_]*`). Hyphens cannot be used |
+| **Length** | 128 bytes or less |
 | **Uniqueness** | Must be unique within the configuration file |
+| **Prohibited Words** | See "Words That Cannot Be Included in a Name" below |
 
 #### Role
 
@@ -52,6 +54,30 @@ name = "log_rotation"
 name = "system_maintenance"
 # ...
 ```
+
+#### Words That Cannot Be Included in a Name
+
+Group names and command names are used in Slack notifications and logs to show
+"which group or command had a problem". Notifications and logs pass through the
+masking of sensitive information (redaction) before they are sent, so a name that
+the redaction rewrites can no longer identify the target of the notification. Such
+a name is rejected at startup.
+
+Specifically, a name that contains any of the following words as a
+case-insensitive substring cannot be used.
+
+- `password`, `token`, `secret`, `key`
+- `bearer`, `basic`, `authorization`
+- `google_application_credentials`
+
+`basic_commands`, `test_basic`, `monkey` (contains `key`), and `tokenizer`
+(contains `token`) are all rejected. A name that matches a credential format,
+such as an AWS access key ID or a GitHub token, is also rejected.
+
+When a name is rejected, the error message shows only the position (such as
+`groups[0]`) and not the name itself. This is because the name may be a
+credential, and the error is written to standard error without passing through
+redaction.
 
 #### Naming Best Practices
 

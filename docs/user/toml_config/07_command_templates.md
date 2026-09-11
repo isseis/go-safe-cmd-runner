@@ -510,7 +510,7 @@ env_import = ["ldflags=LDFLAGS", "cflags=CFLAGS"]
 
 # Case 2: Use template only
 [[groups.commands]]
-name = "compile-basic"
+name = "compile-template-only"
 template = "compiler_template"
 # Result: env_import=["cc=CC", "cxx=CXX"] (inherited from template)
 
