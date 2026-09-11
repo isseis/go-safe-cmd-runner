@@ -1734,7 +1734,7 @@ func TestKeyValuePattern_RedundantSeparatorWouldFailOpen(t *testing.T) {
 }
 
 // TestRedactText_ConcurrentUse verifies that one Config shared across goroutines
-// produces the single-threaded result (AC-32). Precompiling moved the regexes
+// produces the single-threaded result. Precompiling moved the regexes
 // into the Config, so what this now guards is that they are only ever read after
 // NewConfig returns - a compiled *regexp.Regexp is safe for concurrent use, but
 // building one during a call would not have been. Runs under -race in CI.
@@ -3380,7 +3380,7 @@ func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
 		"key=value redaction should work, but value-based detection should be skipped")
 }
 
-// TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault verifies AC-11:
+// TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault verifies that
 // value-based masking is active by default (DefaultConfig wires a non-nil
 // ValueDetector) without requiring any explicit opt-in. Plaintext values are only
 // produced when a caller explicitly bypasses redaction (e.g. the CLI's
@@ -3393,7 +3393,7 @@ func TestRedactText_ValueBasedDetection_DefaultConfigMasksByDefault(t *testing.T
 	result := config.RedactText("session used AKIAIOSFODNN7EXAMPLE without a recognizable key name")
 
 	assert.NotContains(t, result, "AKIAIOSFODNN7EXAMPLE",
-		"DefaultConfig must mask known secret value formats by default (AC-11)")
+		"DefaultConfig must mask known secret value formats by default")
 	assert.Contains(t, result, config.placeholder)
 }
 
