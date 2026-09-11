@@ -702,9 +702,10 @@ func newLoggingOrderTestManager(t *testing.T, logger *slog.Logger) *UnixPrivileg
 // escalation failures is gone. The manager takes the native-root branch
 // (originalUID 0) instead of calling syscall.Seteuid, so this runs unprivileged.
 //
-// The report is written by the deferred logElevationOutcome in WithPrivileges;
-// removing that defer must fail this test. Looking only at logElevationOutcome
-// would not catch such a removal.
+// The defer's removal is already caught by
+// TestWithPrivileges_WritesNoRecordWhileElevated; this test's added value is
+// pinning the reported fields (operation, command, original UID), which that
+// ordering test does not assert.
 func TestWithPrivileges_RecordsNativeRootElevationOutcome(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	manager := newLoggingOrderTestManager(t, logger)
@@ -810,9 +811,9 @@ func TestHandleCleanup_ReportsPanicAfterRestore(t *testing.T) {
 	assert.Greater(t, panicIdx, restoreIdx, "the panic must be reported after privileges are restored, not before")
 }
 
-// TestLogElevationOutcome_RecordsSeteuidOutcome verifies that the seteuid
-// elevation outcome is reported with the operation, command, original UID and
-// elevation time it carries.
+// TestLogElevationOutcome verifies the reporting switch: a seteuid outcome is
+// reported with the operation, command, original UID and elevation time it
+// carries, and an outcome of elevationNone reports nothing.
 //
 // The context is driven at this boundary instead of through WithPrivileges
 // because reaching elevationSeteuid there requires syscall.Seteuid(0) to
@@ -822,27 +823,48 @@ func TestHandleCleanup_ReportsPanicAfterRestore(t *testing.T) {
 // reports nothing. Driving the context directly keeps the branch reachable
 // without depending on root; what WithPrivileges itself guarantees -- that the
 // report happens after the window closes -- is covered by
-// TestWithPrivileges_WritesNoRecordWhileElevated.
-func TestLogElevationOutcome_RecordsSeteuidOutcome(t *testing.T) {
-	logger, rec := tu.NewRecordingLogger()
+// TestWithPrivileges_WritesNoRecordWhileElevated. The assignment that records
+// elevationSeteuid inside escalatePrivileges itself stays unexercised for the
+// same non-root reason and needs an injection seam to reach.
+func TestLogElevationOutcome(t *testing.T) {
 	const originalUID = 1000
-	manager := &UnixPrivilegeManager{logger: logger, originalUID: originalUID}
-
 	elevatedAt := time.Date(2026, time.September, 11, 5, 0, 0, 0, time.UTC)
-	manager.logElevationOutcome(&executionContext{
-		elevationCtx: runnertypes.ElevationContext{
-			Operation:   runnertypes.OperationFileValidation,
-			CommandName: "test-command",
-		},
-		elevation:  elevationSeteuid,
-		elevatedAt: elevatedAt,
-	})
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileValidation,
+		CommandName: "test-command",
+	}
 
-	rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
-		AssertAttrs(t, map[string]any{
-			"operation":    runnertypes.OperationFileValidation,
-			"command":      "test-command",
-			"original_uid": originalUID,
-			"elevated_at":  elevatedAt,
+	tests := []struct {
+		name      string
+		elevation elevationOutcome
+		wantLog   bool
+	}{
+		{name: "seteuid outcome is reported", elevation: elevationSeteuid, wantLog: true},
+		{name: "no escalation reports nothing", elevation: elevationNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, rec := tu.NewRecordingLogger()
+			manager := &UnixPrivilegeManager{logger: logger, originalUID: originalUID}
+
+			manager.logElevationOutcome(&executionContext{
+				elevationCtx: elevationCtx,
+				elevation:    tt.elevation,
+				elevatedAt:   elevatedAt,
+			})
+
+			if !tt.wantLog {
+				assert.Empty(t, rec.Records(), "nothing may be recorded when no escalation was performed")
+				return
+			}
+			rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
+				AssertAttrs(t, map[string]any{
+					"operation":    runnertypes.OperationFileValidation,
+					"command":      "test-command",
+					"original_uid": originalUID,
+					"elevated_at":  elevatedAt,
+				})
 		})
+	}
 }
