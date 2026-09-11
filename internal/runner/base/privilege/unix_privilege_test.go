@@ -794,8 +794,8 @@ func TestHandleCleanup_ReportsPanicAfterRestore(t *testing.T) {
 // TestWithPrivileges_WritesNoRecordWhileElevated pins when the record is
 // written; this test pins what it carries.
 //
-// Not parallel: this file shares process-wide identity state (see the file
-// comment).
+// Not parallel: every test in this file runs sequentially (see the file
+// comment). This test touches no process identity, but the rule is file-wide.
 func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	manager := newLoggingOrderTestManager(t, logger)
@@ -824,18 +824,17 @@ func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
 // logElevationOutcome reports nothing. The test therefore sets
 // elevationSeteuid on the execution context directly and exercises only the
 // logElevationOutcome boundary. It does not show that WithPrivileges reaches
-// this branch on a setuid binary; TestWithPrivileges_ReportsNativeRootOutcome
-// covers the deferred call from WithPrivileges, and TestEscalatePrivileges
-// covers that escalatePrivileges records the outcome it performed.
+// this branch on a setuid binary, and the assignment of elevationSeteuid and
+// elevatedAt in escalatePrivileges stays unverified in this environment; only
+// the reporting half of that pair is pinned here.
 //
-// Not parallel: this file shares process-wide identity state (see the file
-// comment).
+// Not parallel: every test in this file runs sequentially (see the file
+// comment). This test touches no process identity, but the rule is file-wide.
 func TestLogElevationOutcome_ReportsSeteuidOutcome(t *testing.T) {
 	logger, rec := tu.NewRecordingLogger()
 	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		originalUID:        1000,
-		privilegeSupported: true,
+		logger:      logger,
+		originalUID: 1000,
 	}
 	elevatedAt := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
 

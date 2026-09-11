@@ -265,7 +265,9 @@ Phase 5 で個別に気付く形にせず、共有ヘルパー `slackRecord` の
 `tu.NewCallbackHandler` を `slog.SetDefault` へ差し込み `logGroupExecutionSummary` を直接
 呼ぶ）であり、グループ集計側の拡張先はこちらである（§5.5）。
 
-`internal/runner/base/privilege` には `logElevationOutcome` を対象とする既存テストが無い。
+`internal/runner/base/privilege` の既存テスト `TestWithPrivileges_WritesNoRecordWhileElevated` は
+native root の記録が存在することまでしか assert せず、記録の属性（operation・command・original_uid）を
+固定するテストは無い。
 AC-05 のテストは Phase 3 で新規に書く。ただし到達性に制約がある。`escalatePrivileges`
 （`unix.go:299`）は、`originalUID == 0` のときだけ `elevationNativeRoot` を設定して早期
 return し、それ以外では実際に `syscall.Seteuid(0)` を呼ぶ。同ファイル冒頭のコメントが
