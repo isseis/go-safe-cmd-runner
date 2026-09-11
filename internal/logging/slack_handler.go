@@ -345,8 +345,6 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		message = s.buildCommandGroupSummary(r)
 	case messageTypePreExecutionError:
 		message = s.buildPreExecutionError(r)
-	case messageTypePrivilegeEscalationFail:
-		message = s.buildPrivilegeEscalationFailure(r)
 	default:
 		// Generic message
 		message = s.buildGenericMessage(r)
@@ -685,75 +683,6 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 					{
 						Title: "Component",
 						Value: component,
-						Short: true,
-					},
-					{
-						Title: fieldTitleHostname,
-						Value: hostname,
-						Short: true,
-					},
-					{
-						Title: fieldTitleRunID,
-						Value: s.runID,
-						Short: true,
-					},
-				},
-			},
-		},
-	}
-
-	return message
-}
-
-// buildPrivilegeEscalationFailure builds a Slack message for privilege escalation failures
-func (s *SlackHandler) buildPrivilegeEscalationFailure(r slog.Record) SlackMessage {
-	var operation, commandName string
-	var originalUID, targetUID int
-
-	r.Attrs(func(attr slog.Attr) bool {
-		switch attr.Key {
-		case common.PrivilegeEscalationFailureAttrs.Operation:
-			operation = attr.Value.String()
-		case common.PrivilegeEscalationFailureAttrs.CommandName:
-			commandName = attr.Value.String()
-		case common.PrivilegeEscalationFailureAttrs.OriginalUID:
-			if attr.Value.Kind() == slog.KindInt64 {
-				originalUID = int(attr.Value.Int64())
-			}
-		case common.PrivilegeEscalationFailureAttrs.TargetUID:
-			if attr.Value.Kind() == slog.KindInt64 {
-				targetUID = int(attr.Value.Int64())
-			}
-		}
-		return true
-	})
-
-	hostname := common.GetHostname()
-
-	message := SlackMessage{
-		Text: fmt.Sprintf("%s Privilege Escalation Failed: %s", emojiWarning, operation),
-		Attachments: []SlackAttachment{
-			{
-				Color: colorWarning,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Operation",
-						Value: operation,
-						Short: true,
-					},
-					{
-						Title: "Command",
-						Value: commandName,
-						Short: true,
-					},
-					{
-						Title: "From UID",
-						Value: fmt.Sprintf("%d", originalUID),
-						Short: true,
-					},
-					{
-						Title: "To UID",
-						Value: fmt.Sprintf("%d", targetUID),
 						Short: true,
 					},
 					{

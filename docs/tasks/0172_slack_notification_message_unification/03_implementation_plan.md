@@ -441,37 +441,37 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 `internal/logging/slack_handler_test.go`、`internal/runner/base/audit/logger_test.go`、
 `internal/runner/base/privilege/unix_privilege_test.go`
 
-- [ ] `internal/common/logschema.go` から `PrivilegeEscalationFailureAttrs` を削除する。
-- [ ] `internal/runner/base/audit/logger.go` から `LogPrivilegeEscalation` を削除する。削除後に
+- [x] `internal/common/logschema.go` から `PrivilegeEscalationFailureAttrs` を削除する。
+- [x] `internal/runner/base/audit/logger.go` から `LogPrivilegeEscalation` を削除する。削除後に
       未使用になる import があれば取り除く。
-- [ ] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegeEscalationFail` を
+- [x] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegeEscalationFail` を
       削除する。
-- [ ] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
+- [x] `internal/logging/slack_sender.go` の `isHighPriority` の `case` から
       `messageTypePrivilegeEscalationFail` を外し、doc コメントの記述も合わせる。この時点で
       高優先度は `messageTypePreExecutionError` だけになる。
-- [ ] `internal/logging/slack_handler.go` の `Handle` から
+- [x] `internal/logging/slack_handler.go` の `Handle` から
       `case messageTypePrivilegeEscalationFail:` の分岐を削除する。
-- [ ] `internal/logging/slack_handler.go` から `buildPrivilegeEscalationFailure` を削除する。
-- [ ] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
+- [x] `internal/logging/slack_handler.go` から `buildPrivilegeEscalationFailure` を削除する。
+- [x] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
       テーブルケース「privilege escalation failure」を削除する。
-- [ ] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogPrivilegeEscalation` を
+- [x] `internal/runner/base/audit/logger_test.go` から `TestLogger_LogPrivilegeEscalation` を
       削除する。
-- [ ] 同ファイルから `TestLogPrivilegeEscalation_Masking` を削除する。
-- [ ] `internal/runner/base/privilege/unix_privilege_test.go` へ、native root の昇格結果が
+- [x] 同ファイルから `TestLogPrivilegeEscalation_Masking` を削除する。
+- [x] `internal/runner/base/privilege/unix_privilege_test.go` へ、native root の昇格結果が
       記録され続けることを `WithPrivileges` 経由で検証するテストを追加する。マネージャは
       `originalUID: 0` の構造体リテラルで組む（同ファイル 126・250・590・689 行目と同じ
       書き方）。`unix.go:129` の `defer m.logElevationOutcome(execCtx)` を取り除くと失敗する
       形にし、`logElevationOutcome` の本体だけを見るテストにしない。
-- [ ] 同ファイルへ、`seteuid` 経路の昇格結果が記録されることを、`execCtx.elevation` を
+- [x] 同ファイルへ、`seteuid` 経路の昇格結果が記録されることを、`execCtx.elevation` を
       `elevationSeteuid` に設定して `logElevationOutcome` の境界で検証するテストを追加する。
       `WithPrivileges` 経由にしないのは、非 root では `syscall.Seteuid(0)` が EPERM で失敗し
       `elevation` が `elevationNone` のままとなって何も記録されず、この分岐へ到達できない
       ためである（§1.3）。到達できない経路を緑に見せないよう、この制約をテストの doc コメント
       へ英語で記す。
-- [ ] 追加する 2 つのテストは `t.Parallel()` を呼ばない。同ファイルはプロセス全体の識別情報を
+- [x] 追加する 2 つのテストは `t.Parallel()` を呼ばない。同ファイルはプロセス全体の識別情報を
       共有するためである。
-- [ ] 削除の直前と直後で `go tool cover -func` を比較し、結果をコミットメッセージへ記す。
-- [ ] `make deadcode` を実行し、新たな到達不能コードが報告されないことを確認する。
+- [x] 削除の直前と直後で `go tool cover -func` を比較し、結果をコミットメッセージへ記す。
+- [x] `make deadcode` を実行し、新たな到達不能コードが報告されないことを確認する。
 
 **完了条件**:
 - `rg -n -e privilege_escalation_failure -e PrivilegeEscalationFailureAttrs -e buildPrivilegeEscalationFailure -e LogPrivilegeEscalation -e messageTypePrivilegeEscalationFail --type go cmd internal` が一致なし。

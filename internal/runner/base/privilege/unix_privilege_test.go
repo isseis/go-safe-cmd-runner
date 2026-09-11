@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -780,4 +781,78 @@ func TestHandleCleanup_ReportsPanicAfterRestore(t *testing.T) {
 	require.NotEqual(t, -1, restoreIdx, "the restore must have been attempted")
 	require.NotEqual(t, -1, panicIdx, "the panic must still be reported")
 	assert.Greater(t, panicIdx, restoreIdx, "the panic must be reported after privileges are restored, not before")
+}
+
+// TestWithPrivileges_ReportsNativeRootOutcome verifies that a native-root run
+// still produces the elevation-outcome record, with the operation, command and
+// original UID a reader needs to correlate it. This record is the audit trail
+// of privilege use now that no separate audit-logger method reports it, so it
+// must keep flowing from WithPrivileges itself: the test drives the public
+// entry point and fails if the deferred logElevationOutcome call is removed
+// from it, not only if the function body changes.
+//
+// TestWithPrivileges_WritesNoRecordWhileElevated pins when the record is
+// written; this test pins what it carries.
+//
+// Not parallel: this file shares process-wide identity state (see the file
+// comment).
+func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
+	logger, rec := tu.NewRecordingLogger()
+	manager := newLoggingOrderTestManager(t, logger)
+
+	err := manager.WithPrivileges(runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileValidation,
+		CommandName: "test-command",
+	}, func() error { return nil })
+	require.NoError(t, err)
+
+	rec.RequireRecord(t, slog.LevelInfo, "Native root execution - no privilege escalation needed").
+		AssertAttrs(t, map[string]any{
+			"operation":    runnertypes.OperationFileValidation,
+			"command":      "test-command",
+			"original_uid": 0,
+		})
+}
+
+// TestLogElevationOutcome_ReportsSeteuidOutcome verifies that an escalation
+// performed through seteuid is reported with the operation, command, original
+// UID and the moment the escalation succeeded.
+//
+// This branch cannot be reached through WithPrivileges here: CI and the dev
+// container run as a non-root user, so syscall.Seteuid(0) fails with EPERM,
+// escalatePrivileges returns before setting execCtx.elevation, and
+// logElevationOutcome reports nothing. The test therefore sets
+// elevationSeteuid on the execution context directly and exercises only the
+// logElevationOutcome boundary. It does not show that WithPrivileges reaches
+// this branch on a setuid binary; TestWithPrivileges_ReportsNativeRootOutcome
+// covers the deferred call from WithPrivileges, and TestEscalatePrivileges
+// covers that escalatePrivileges records the outcome it performed.
+//
+// Not parallel: this file shares process-wide identity state (see the file
+// comment).
+func TestLogElevationOutcome_ReportsSeteuidOutcome(t *testing.T) {
+	logger, rec := tu.NewRecordingLogger()
+	manager := &UnixPrivilegeManager{
+		logger:             logger,
+		originalUID:        1000,
+		privilegeSupported: true,
+	}
+	elevatedAt := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+
+	manager.logElevationOutcome(&executionContext{
+		elevationCtx: runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationFileValidation,
+			CommandName: "test-command",
+		},
+		elevation:  elevationSeteuid,
+		elevatedAt: elevatedAt,
+	})
+
+	rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
+		AssertAttrs(t, map[string]any{
+			"operation":    runnertypes.OperationFileValidation,
+			"command":      "test-command",
+			"original_uid": 1000,
+			"elevated_at":  elevatedAt,
+		})
 }
