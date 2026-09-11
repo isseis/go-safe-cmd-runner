@@ -58,20 +58,6 @@ var PrivilegeEscalationFailureAttrs = struct {
 	TargetUID:   "target_uid",
 }
 
-// PrivilegedCommandFailureAttrs contains attribute keys for privileged command failure logs.
-// Used in logging.buildPrivilegedCommandFailure (read). Write side not yet implemented.
-var PrivilegedCommandFailureAttrs = struct {
-	CommandName string // command name
-	CommandPath string // command path
-	Stderr      string // standard error output
-	ExitCode    string // exit code
-}{
-	CommandName: "command_name",
-	CommandPath: "command_path",
-	Stderr:      "stderr",
-	ExitCode:    "exit_code",
-}
-
 // SecurityAlertAttrs contains attribute keys for security alert logs.
 // Used in audit.Logger.LogSecurityEvent (write) and logging.buildSecurityAlert (read).
 var SecurityAlertAttrs = struct {

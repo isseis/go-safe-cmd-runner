@@ -347,8 +347,6 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		message = s.buildPreExecutionError(r)
 	case messageTypeSecurityAlert:
 		message = s.buildSecurityAlert(r)
-	case messageTypePrivilegedCommandFailure:
-		message = s.buildPrivilegedCommandFailure(r)
 	case messageTypePrivilegeEscalationFail:
 		message = s.buildPrivilegeEscalationFailure(r)
 	default:
@@ -760,75 +758,6 @@ func (s *SlackHandler) buildSecurityAlert(r slog.Record) SlackMessage {
 						Title: fieldTitleHostname,
 						Value: hostname,
 						Short: true,
-					},
-					{
-						Title: fieldTitleRunID,
-						Value: s.runID,
-						Short: true,
-					},
-				},
-			},
-		},
-	}
-
-	return message
-}
-
-// buildPrivilegedCommandFailure builds a Slack message for privileged command failures
-func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage {
-	var commandName, commandPath, stderr string
-	var exitCode int
-
-	r.Attrs(func(attr slog.Attr) bool {
-		switch attr.Key {
-		case common.PrivilegedCommandFailureAttrs.CommandName:
-			commandName = attr.Value.String()
-		case common.PrivilegedCommandFailureAttrs.CommandPath:
-			commandPath = attr.Value.String()
-		case common.PrivilegedCommandFailureAttrs.Stderr:
-			stderr = attr.Value.String()
-		case common.PrivilegedCommandFailureAttrs.ExitCode:
-			if attr.Value.Kind() == slog.KindInt64 {
-				exitCode = int(attr.Value.Int64())
-			}
-		}
-		return true
-	})
-
-	// Truncate stderr if too long
-	if len(stderr) > stderrMaxLength {
-		const truncationSuffix = "..."
-		truncationPoint := stderrMaxLength - len(truncationSuffix)
-		stderr = stderr[:truncationPoint] + truncationSuffix
-	}
-
-	hostname := common.GetHostname()
-
-	message := SlackMessage{
-		Text: fmt.Sprintf("%s Privileged Command Failed: %s", emojiFailure, commandName),
-		Attachments: []SlackAttachment{
-			{
-				Color: colorDanger,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Command",
-						Value: fmt.Sprintf("`%s`", commandPath),
-						Short: false,
-					},
-					{
-						Title: "Exit Code",
-						Value: fmt.Sprintf("%d", exitCode),
-						Short: true,
-					},
-					{
-						Title: fieldTitleHostname,
-						Value: hostname,
-						Short: true,
-					},
-					{
-						Title: "Error Output",
-						Value: fmt.Sprintf("```\n%s\n```", stderr),
-						Short: false,
 					},
 					{
 						Title: fieldTitleRunID,

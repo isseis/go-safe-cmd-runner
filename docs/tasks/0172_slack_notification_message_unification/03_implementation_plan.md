@@ -320,20 +320,20 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 **対象ファイル**: `internal/common/logschema.go`、`internal/logging/slack_sender.go`、
 `internal/logging/slack_handler.go`、`internal/logging/slack_handler_test.go`
 
-- [ ] `internal/common/logschema.go` から `PrivilegedCommandFailureAttrs` の定義と、その直前の
+- [x] `internal/common/logschema.go` から `PrivilegedCommandFailureAttrs` の定義と、その直前の
       「Write side not yet implemented」と記すコメントを削除する。
-- [ ] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegedCommandFailure` を
+- [x] `internal/logging/slack_sender.go` から定数 `messageTypePrivilegedCommandFailure` を
       削除する。
-- [ ] `internal/logging/slack_handler.go` の `Handle` から
+- [x] `internal/logging/slack_handler.go` の `Handle` から
       `case messageTypePrivilegedCommandFailure:` の分岐を削除する。
-- [ ] `internal/logging/slack_handler.go` から `buildPrivilegedCommandFailure` を削除する。
-- [ ] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
+- [x] `internal/logging/slack_handler.go` から `buildPrivilegedCommandFailure` を削除する。
+- [x] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` から
       テーブルケース「privileged command failure」を削除する。
-- [ ] 削除の直前と直後に
+- [x] 削除の直前と直後に
       `go test -tags test -coverprofile=<file> ./internal/logging/... ./internal/common/...`
       を実行し、`go tool cover -func=<file>` を存続する関数ごとに比較する。差が無いことを
       コミットメッセージへ記す。
-- [ ] 削除したテストが参照していたヘルパーや型がファイル内で未参照になっていないことを確認
+- [x] 削除したテストが参照していたヘルパーや型がファイル内で未参照になっていないことを確認
       する。未参照になったものは同じコミットで削除する。
 
 **完了条件**:
@@ -352,8 +352,8 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
 
 **判定理由**: 単純な削除作業で、設計判断は 02_architecture.md に既決。未確定の実装アプローチや高リスク分岐は無く、トリガーは一致しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

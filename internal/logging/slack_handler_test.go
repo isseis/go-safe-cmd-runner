@@ -816,16 +816,6 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			serverStatus:  http.StatusOK,
 		},
 		{
-			name:        "privileged command failure",
-			messageType: "privileged_command_failure",
-			recordAttrs: []slog.Attr{
-				slog.Bool("slack_notify", true),
-				slog.String("message_type", "privileged_command_failure"),
-			},
-			expectSuccess: true,
-			serverStatus:  http.StatusOK,
-		},
-		{
 			name:        "privilege escalation failure",
 			messageType: "privilege_escalation_failure",
 			recordAttrs: []slog.Attr{
