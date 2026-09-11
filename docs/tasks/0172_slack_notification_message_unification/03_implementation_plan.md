@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-09 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 決定変更（02_architecture.md の再承認に追随）: 識別子の redaction 検査を撤去する。PR-6 は既に検査を着地させているため、マージ前に撤去コミットを積む手順を §4.4 と PR-6 に追加し、redaction 述語・同梱 TOML 改名・構文木ガード・統合テストの記述を削除した。同梱 TOML の改名とハッシュ再記録は維持する。再承認を求める。 |
+| Review date | 2026-09-12 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
