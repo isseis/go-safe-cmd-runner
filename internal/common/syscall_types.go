@@ -1,4 +1,3 @@
-//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 // DeterminationMethodDirectSVC0x80 indicates the syscall was detected as a

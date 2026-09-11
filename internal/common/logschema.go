@@ -1,6 +1,4 @@
 // Package common provides shared types and utilities used across the application
-//
-//nolint:revive // var-naming: package name "common" is intentional for shared internal utilities
 package common
 
 import (
@@ -42,6 +40,51 @@ var PreExecErrorAttrs = struct {
 	ErrorType:    "error_type",
 	ErrorMessage: "error_message",
 	Component:    "component",
+}
+
+// UserGroupCommandFailureAttrs contains attribute keys for user/group command
+// failure logs. Used in audit.Logger.LogUserGroupExecution (write) and the
+// user_group_command_failure message builder (read), so both sides share the
+// attribute names instead of repeating the literals.
+var UserGroupCommandFailureAttrs = struct {
+	CommandName string // command name
+	ExitCode    string // command exit code (int)
+	Stdout      string // command standard output
+	Stderr      string // command standard error
+}{
+	CommandName: "command_name",
+	ExitCode:    "exit_code",
+	Stdout:      "stdout",
+	Stderr:      "stderr",
+}
+
+// NotificationContextAttrs contains the attribute key and sub-key names of the
+// encoded notification context group. NotificationContext.LogValue writes this
+// group and the Slack handler reads it back, so the writer and the reader share
+// these names instead of repeating the literals.
+var NotificationContextAttrs = struct {
+	Key     string // outer attribute carrying the encoded context
+	Scope   string // sub-key holding the scope name
+	Group   string // sub-key holding the group name (always present, empty for global)
+	Command string // sub-key holding the command name (omitted when empty)
+}{
+	Key:     "notification_context",
+	Scope:   "scope",
+	Group:   "group",
+	Command: "command",
+}
+
+// NotificationScopeNames contains the encoded names of the NotificationScope
+// values. The names are part of the record encoding, so the constructors and
+// the decoder share these constants.
+var NotificationScopeNames = struct {
+	Global  string
+	Group   string
+	Command string
+}{
+	Global:  "global",
+	Group:   "group",
+	Command: "command",
 }
 
 // CommandResultFields defines the structure and types for command result log fields.
