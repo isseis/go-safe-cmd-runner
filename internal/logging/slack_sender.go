@@ -731,8 +731,9 @@ func (sd *slackSender) recordDrop(req slackRequest, reason string) {
 // recordSchemaViolation records the single WARN a malformed notification
 // record earns. It writes only to the failure logger, which is Slack-free by
 // construction, so the warning cannot recurse into a new Slack notification.
-// The declared scope is a scope word (or "missing"/"invalid"), never a group or
-// command name, so the record carries no user-supplied body.
+// The declared scope is one of the three encoded scope words or
+// "missing"/"invalid" (see declaredScopeName), so the record carries no
+// user-supplied body.
 func (sd *slackSender) recordSchemaViolation(req slackRequest, reasons []string, declaredScope string) {
 	attrs := []slog.Attr{
 		slog.Any("reasons", reasons),

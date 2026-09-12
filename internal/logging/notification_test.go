@@ -4,7 +4,9 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,4 +177,74 @@ func TestNotificationDefinitions_FieldsAreDeclaredInInventory(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNotificationDefinitions_KnownPriorities pins the registered priority of
+// each type and proves the level does not override it: only unknown types derive
+// their queue from the level.
+func TestNotificationDefinitions_KnownPriorities(t *testing.T) {
+	tests := []struct {
+		name  string
+		token Notification
+		want  notificationPriority
+	}{
+		{"command_group_summary", CommandGroupSummaryNotification(), priorityNormal},
+		{"pre_execution_error", PreExecutionErrorNotification(), priorityHigh},
+		{"user_group_command_failure", UserGroupCommandFailureNotification(), priorityNormal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotNil(t, tt.token.definition)
+			assert.Equal(t, tt.want, tt.token.definition.priority)
+			for _, level := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+				assert.Equal(t, tt.want, priorityForNotification(tt.token.definition, level),
+					"a registered type keeps its priority at %s", level)
+			}
+		})
+	}
+}
+
+// messageDetailsField returns the value of the first field with the title.
+func messageDetailsField(t *testing.T, details messageDetails, title string) string {
+	t.Helper()
+	for _, field := range details.fields {
+		if field.Title == title {
+			return field.Value
+		}
+	}
+	t.Fatalf("message details have no field titled %q: %v", title, details.fields)
+	return ""
+}
+
+// TestNotificationDefinitions_FieldRolesTransformValues pins the role mapping
+// with one marker per role: free text and identifiers are one-line normalized
+// and entity-escaped, while bulk output keeps its bytes and is only truncated.
+func TestNotificationDefinitions_FieldRolesTransformValues(t *testing.T) {
+	const marker = "a&b<c\nd"
+	const escaped = "a&amp;b&lt;c d"
+
+	t.Run("free text", func(t *testing.T) {
+		record := slog.NewRecord(time.Now(), slog.LevelError, "pre execution error", 0)
+		record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GlobalScope())...)
+		record.AddAttrs(
+			slog.String(common.PreExecErrorAttrs.ErrorType, marker),
+			slog.String(common.PreExecErrorAttrs.ErrorMessage, marker),
+			slog.String(common.PreExecErrorAttrs.Component, marker),
+		)
+		details := PreExecutionErrorNotification().definition.build(record)
+		assert.Equal(t, escaped, details.headline)
+		assert.Equal(t, escaped, messageDetailsField(t, details, "Error Message"))
+		assert.Equal(t, escaped, messageDetailsField(t, details, "Component"))
+	})
+
+	t.Run("identifier", func(t *testing.T) {
+		details := UserGroupCommandFailureNotification().definition.build(userGroupCommandFailureRecord(marker, 0, "", ""))
+		assert.Equal(t, escaped, messageDetailsField(t, details, "Command"))
+	})
+
+	t.Run("bulk output", func(t *testing.T) {
+		details := UserGroupCommandFailureNotification().definition.build(userGroupCommandFailureRecord("cmd", 1, marker, ""))
+		assert.Contains(t, messageDetailsField(t, details, "Output"), marker,
+			"bulk output keeps its bytes; only the existing truncation applies")
+	})
 }

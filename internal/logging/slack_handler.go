@@ -459,9 +459,10 @@ func checkNotificationContext(r slog.Record) notificationContextCheck {
 }
 
 // declaredScopeName returns the scope name carried by the raw context value,
-// for the schema-violation WARN. It reports "invalid" whenever the value is
-// not a group or does not carry a string scope sub-key; group and command
-// names are never read here.
+// for the schema-violation WARN. Only the three encoded scope words are
+// reported; anything else, including an arbitrary string in a hand-built
+// record, becomes "invalid" rather than being echoed into the failure log.
+// Group and command names are never read here.
 func declaredScopeName(value slog.Value) string {
 	if value.Kind() != slog.KindGroup {
 		return scopeNameInvalid
@@ -473,7 +474,12 @@ func declaredScopeName(value slog.Value) string {
 		if attr.Value.Kind() != slog.KindString {
 			return scopeNameInvalid
 		}
-		return attr.Value.String()
+		switch attr.Value.String() {
+		case common.NotificationScopeNames.Global, common.NotificationScopeNames.Group, common.NotificationScopeNames.Command:
+			return attr.Value.String()
+		default:
+			return scopeNameInvalid
+		}
 	}
 	return scopeNameInvalid
 }

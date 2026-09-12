@@ -20,6 +20,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1784,16 +1785,24 @@ func TestSlackHandler_SchemaViolationWarnIsSingle(t *testing.T) {
 }
 
 // TestSlackHandler_SchemaViolationWarnDoesNotRecurse verifies the WARN goes to
-// the failure logger only: it must not create another Slack request.
+// the failure logger only. The default logger is replaced with a recorder, so a
+// WARN routed through slog.Default -- instead of the Slack-free failure logger
+// -- fails the last assertion rather than passing unnoticed.
 func TestSlackHandler_SchemaViolationWarnDoesNotRecurse(t *testing.T) {
 	var failureLog syncBuffer
 	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
 	handler := synchronousTestHandler(t, server, &failureLog)
 
+	defaultRecorder := tu.NewLogRecorder(nil)
+	originalDefault := slog.Default()
+	slog.SetDefault(slog.New(defaultRecorder))
+	t.Cleanup(func() { slog.SetDefault(originalDefault) })
+
 	require.NoError(t, handler.Handle(context.Background(), genericNotificationRecord("body")))
 
 	assert.Equal(t, 1, rec.count(), "the schema WARN must not produce a second Slack request")
 	assert.Len(t, schemaViolationRecords(t, &failureLog), 1)
+	assert.Empty(t, defaultRecorder.Records(), "the schema WARN must not go through the default logger")
 }
 
 // TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues verifies the WARN
@@ -1813,11 +1822,21 @@ func TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues(t *testing.T) {
 
 	require.NoError(t, handler.Handle(context.Background(), record))
 
+	// An arbitrary scope word in a hand-built record must not be echoed into
+	// the WARN either: declaredScopeName reports "invalid" for it.
+	const scopeMarker = "secret-scope-marker"
+	markerRecord := slog.NewRecord(time.Now(), slog.LevelError, body, 0)
+	markerRecord.AddAttrs(slog.Bool(slackNotifyAttrKey, true))
+	markerRecord.AddAttrs(slog.String(msgTypeAttrKey, "no_such_type"))
+	markerRecord.AddAttrs(contextAttr(slog.String("scope", scopeMarker), slog.String("group", "")))
+	require.NoError(t, handler.Handle(context.Background(), markerRecord))
+
 	warnings := schemaViolationRecords(t, &failureLog)
-	require.Len(t, warnings, 1)
+	require.Len(t, warnings, 2)
 	assert.NotContains(t, failureLog.String(), body)
 	assert.NotContains(t, failureLog.String(), "secret-group")
 	assert.NotContains(t, failureLog.String(), "secret-command")
+	assert.NotContains(t, failureLog.String(), scopeMarker)
 	assert.NotContains(t, failureLog.String(), server.URL)
 }
 
@@ -1832,6 +1851,10 @@ func TestSlackHandler_SchemaViolationRecordedWithoutBuildingWhenClosed(t *testin
 	opts.FailureHandlers = failureLogHandlers(&failureLog)
 	handler := newTestSlackHandler(t, opts)
 
+	// The builder is temporarily substituted on the shared registry entry. No
+	// test in this package calls t.Parallel, and the cleanup restores it, so the
+	// substitution cannot outlive this test; it is the only way to observe that
+	// a closed sender does not invoke the builder at all.
 	name := PreExecutionErrorNotification().typeName()
 	definition, ok := lookupNotification(name)
 	require.True(t, ok)
