@@ -32,7 +32,7 @@ flowchart TD
 - Stage 1 (non-blocking): if `highPriority` has a request, take it unconditionally, process it, and go back to the top of the loop. `normal` and `shutdown` are never looked at.
 - Stage 2 (blocking): reached only when stage 1 fell through to `default` (meaning `highPriority` was empty at that instant). Here it waits on all three directions at once: `highPriority` / `normal` / `shutdown`.
 
-Because Go's `select` picks one ready case at random when multiple are ready, putting `highPriority` and `normal` in the same single-stage `select` would risk `highPriority` (security alerts, etc.) being kept waiting while `normal` has a large backlog. Splitting stage 1 out guarantees the priority rule "never touch `normal` while `highPriority` is non-empty."
+Because Go's `select` picks one ready case at random when multiple are ready, putting `highPriority` and `normal` in the same single-stage `select` would risk `highPriority` (pre-execution errors, `pre_execution_error`) being kept waiting while `normal` has a large backlog. Splitting stage 1 out guarantees the priority rule "never touch `normal` while `highPriority` is non-empty."
 
 Stage 2 also includes `highPriority` because, between stage 1 falling through to `default` and stage 2 being entered, another goroutine could enqueue a new item into `highPriority` (a TOCTOU window). Waiting on all three together makes sure that arrival is not missed.
 
