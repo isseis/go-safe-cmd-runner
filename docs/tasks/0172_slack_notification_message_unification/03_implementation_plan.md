@@ -1280,7 +1280,8 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 **AC-05〜AC-08（削除と特権監査）**
 
 - AC-05: `internal/runner/base/privilege/unix_privilege_test.go` の
-  `TestWithPrivileges_ReportsNativeRootOutcome` と `TestLogElevationOutcome_ReportsSeteuidOutcome`
+  `TestWithPrivileges_ReportsNativeRootOutcome` と `TestLogElevationOutcome`（`seteuid` 分岐は
+  サブテスト）
   が `make test` で緑である。
 - AC-06: Phase 1〜3 の各削除コミットのメッセージに `go tool cover -func` の前後比較が記録
   されていることを `git log -1 --format=%b` で確認した（`f069a69b`・`08503cc4`・`5929fb1b`）。
