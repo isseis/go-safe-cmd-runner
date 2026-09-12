@@ -388,6 +388,22 @@ func TestValidateIdentifiers(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			// Redaction rewrites these names in log output (a word match and
+			// value-format matches), so the notification scope can render as
+			// [REDACTED]. That is an accepted residual risk, not a config
+			// error: identifier validation never inspects redaction.
+			name: "names redaction rewrites are accepted",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "monkey", Commands: []runnertypes.CommandSpec{
+						makeCommand("rotate_api_key", nil),
+						makeCommand("AKIAIOSFODNN7EXAMPLE", nil),
+					}},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "duplicate command names in one group",
 			config: &runnertypes.ConfigSpec{
 				Groups: []runnertypes.GroupSpec{

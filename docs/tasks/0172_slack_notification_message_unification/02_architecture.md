@@ -195,8 +195,8 @@ flowchart LR
 | `internal/logging/pre_execution_error_test.go` | 変更 | グローバルとグループの通知コンテキスト、および既存の stderr/stdout 出力を検証する | 位置引数を使う全ケースを移行する |
 | `internal/runner/base/runnertypes/runtime.go` | 変更 | 既存の `TimeoutResolution.GroupName` を返す参照メソッドを追加する | `TestRuntimeCommand_Structure`、`TestRuntimeCommand_HelperMethods`、`TestNewRuntimeCommand_TimeoutResolution*` |
 | `internal/runner/base/runnertypes/runtime_test.go` | 変更 | 既存の保持値を参照メソッドが返すことを検証する | 構造体リテラルを使う既存ケースでは `TimeoutResolution.GroupName` を明示する |
-| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加し、同関数を `ValidateIdentifiers` へ改名する（group 名専用ではなくなるため。03_implementation_plan.md §4.4） | 改名後の `TestValidateIdentifiers` と同ファイルの検証テーブル |
-| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、制御文字・書式制御文字を含む識別子、表示できる文字を持たない識別子、長さ上限を超える識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する | - |
+| `internal/runner/config/validation.go` | 変更 | コマンド名が空である設定、制御文字・書式制御文字を含む設定、表示できる文字を含まない設定、group 名・command 名が長さ上限を超える設定、の 4 検査を、既存の `ValidateGroupNames` と同じ経路へ追加し、同関数を `ValidateIdentifiers` へ改名する（group 名専用ではなくなるため。03_implementation_plan.md §4.4）。あわせて、同一 group 内で command 名が重複する設定も `ErrDuplicateCommandName` で拒否する | 改名後の `TestValidateIdentifiers` と同ファイルの検証テーブル |
+| `internal/runner/config/errors.go` | 変更 | 空のコマンド名、制御文字・書式制御文字を含む識別子、表示できる文字を持たない識別子、長さ上限を超える識別子に対する 4 個のセンチネルエラーを、既存の `ErrEmptyGroupName` に並べて定義する。同一 group 内の重複した command 名に対する `ErrDuplicateCommandName` も加える | - |
 | `internal/runner/base/audit/logger.go` | 変更 | `LogSecurityEvent` と `LogPrivilegeEscalation` を削除し、失敗したユーザー／グループ指定コマンドへコマンドスコープを付ける | `TestLogger_LogUserGroupExecution` とマスク関連テスト。削除対象テストは F-001 のカバレッジ比較対象 |
 | `internal/runner/base/audit/logger_test.go` | 変更 | 削除対象の発火元のテストを削除し、ユーザー／グループ指定コマンドの失敗通知のコンテキスト属性を検証する | `TestLogger_LogPrivilegeEscalation`、`TestLogPrivilegeEscalation_Masking`、`TestLogger_LogSecurityEvent`、`TestLogSecurityEvent_*` を削除する |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 変更 | `logElevationOutcome` が native root と `seteuid` の結果を記録し続けることを検証するテストを追加する | 既存ケースは変更しない。同ファイルはプロセス全体の識別情報を共有するため、追加するテストも `t.Parallel()` を呼ばない |
@@ -377,6 +377,8 @@ func (c NotificationContext) LogAttr() slog.Attr
 | 長さが上限を超えないこと | group 名と command 名 | 設定の読み込み | 補間契約は識別子を切り詰めない（§3.5）。長すぎる名前を表示境界で短くすると、先頭が一致する 2 つの名前が同じ Scope として表示され、どの group・どの command の通知か判別できなくなる |
 
 センチネルエラーは 4 個の検査ごとに独立させる。空の名前を書き忘れた設定、制御文字を含む設定、見た目には値があるのに指し示せない設定、長すぎる設定では、利用者が直す箇所も直し方も違うためである。空だけを拒否すると、制御文字だけからなる名前が読み込みを通り、通知では Scope が空白に潰れる。「補正しない」に従い、通知側で空白へ潰れる名前も、表示境界で短くするしかない名前も、設定境界で拒否する。
+
+同一 group 内で command 名が重複する設定も、同じ `ValidateIdentifiers` で `ErrDuplicateCommandName` として拒否する。通知 Scope は group と command の組（`group=<name> command=<name>`）で表されるため、同名の command が 2 つあると、どちらで起きたのかを Scope から判別できない。上の 4 検査と同じく、拒否する位置はエラー本文に含めるが、名前の値そのものは含めない。
 
 識別子 1 個あたりの長さ上限は `internal/common` の定数として置き、設定検証だけが参照する。値は補間契約の 500 byte 上限より十分小さい 128 byte とする。Text 行には製品名、STATUS、Scope、要約が並ぶため、識別子 1 個がその大半を占めると Text 行の役割を果たせない。上限を `internal/common/notification_context.go` に置くのは、通知コンテキストが載せる識別子の制約であり、その型の定義と同じ場所に置くことで同じ値を 2 箇所へ書かずに済むためである。
 

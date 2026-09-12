@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,6 +166,49 @@ func TestE2E_PreExecutionError_NonExistentConfigFile(t *testing.T) {
 	stdoutOutput := stdout.String()
 	assert.Contains(t, stdoutOutput, "RUN_SUMMARY", "stdout should contain RUN_SUMMARY")
 	assert.Contains(t, stdoutOutput, "status=pre_execution_error", "stdout should indicate pre_execution_error status")
+}
+
+// TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted pins that
+// startup accepts group and command names the redaction transformation
+// rewrites. Identifying and rejecting those names at startup is the behavior
+// this task removed: a group named "monkey" and a command named
+// AKIAIOSFODNN7EXAMPLE must reach dry-run verification, which fails there with
+// DryRunExitVerificationUnavailable (no hash records exist for this temp
+// config), not with a config_parsing_failed pre-execution error.
+func TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted(t *testing.T) {
+	const (
+		groupName   = "monkey"
+		commandName = "AKIAIOSFODNN7EXAMPLE"
+	)
+
+	configFile := setupTempConfig(t, `
+version = "1.0"
+
+[[groups]]
+name = "`+groupName+`"
+
+[[groups.commands]]
+name = "`+commandName+`"
+cmd = "/bin/echo"
+args = ["hello"]
+`)
+
+	cmd := newGoRunCmd(t, "-config", configFile, "-dry-run")
+	cmd.Env = envWithoutSlackVars()
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.Error(t, err, "runner should stop at dry-run verification, not proceed without hashes")
+	requireExitCode(t, cmd, resource.DryRunExitVerificationUnavailable)
+
+	stderrOutput := stderr.String()
+	assert.NotContains(t, stderrOutput, string(logging.ErrorTypeConfigParsing),
+		"a name redaction rewrites must not be rejected as a config parsing error")
+	assert.NotContains(t, stderrOutput, "Identifier redaction validation failed")
+	assert.NotContains(t, stdout.String(), "status=pre_execution_error")
 }
 
 // TestE2E_PreExecutionError_MissingSlackAllowedHost verifies that runner startup fails

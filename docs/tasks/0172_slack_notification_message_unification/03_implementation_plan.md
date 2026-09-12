@@ -754,12 +754,16 @@ Phase の並びと内容は 02_architecture.md §8.1 に従う。
       文字を含む command 名で 128 byte 境界をまたぐもの**を必ず入れる。group 名は
       `[A-Za-z0-9_]` に限られ byte 数と rune 数を区別できないため、rune 単位で数える実装を
       落とせるのは command 名の行だけである。判定は `errors.Is` で行う。
+- [x] 同一 group 内で command 名が重複する設定を `ErrDuplicateCommandName` で拒否する検査を
+      同じ関数へ追加する。通知 Scope は group と command の組で表されるため、同名の command が
+      2 つあると、どちらで起きたのかを Scope から判別できない。この検査は 02_architecture.md
+      §3.1 の 4 検査に加わる 5 個目であり、同節の表と対になるよう文書へも記す。
 
 ##### 旧 redaction 検査の撤去
 
-PR-6 は 02_architecture.md の旧設計どおりに 5 個目の検査（redaction の変換が識別子を
-書き換えないこと）を着地させた。02_architecture.md §3.1 の再承認でこの検査は撤去されたため、
-PR-6 はマージ前に同 PR 内で次を撤去する。以下は未完了である。
+PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識別子を書き換えないことの
+検査を着地させた。02_architecture.md §3.1 の再承認でこの検査は撤去されたため、PR-6 は
+マージ前に同 PR 内で次を撤去する。以下は撤去済みである。
 
 - [x] `internal/runner/bootstrap/identifier_redaction.go` と
       `internal/runner/bootstrap/identifier_redaction_test.go` を削除する。
@@ -779,6 +783,15 @@ PR-6 はマージ前に同 PR 内で次を撤去する。以下は未完了で�
 - [x] 削除後、`make test` と `make lint` が通ることを確認する。
 - [x] 削除の前後で `go tool cover -func` を比較し、存続する関数のカバレッジが下がっていない
       ことをコミットメッセージへ記す。
+- [x] 撤去した検査の復元を検出する回帰テストを 2 件追加する。`internal/runner/config/validation_test.go`
+      の検証テーブルへ、redaction の変換対象になる group 名（`monkey`）と command 名
+      （`rotate_api_key`・AWS アクセスキー ID 形）が受理される行を足し、`internal/runner/config/validation.go`
+      へ同じ名前を拒否する検査を一時的に加えるとその行が失敗することを確認する。あわせて
+      `cmd/runner/integration_pre_execution_error_test.go` へ、同じ名前を含む設定が起動前検査で
+      拒否されず dry-run の検証失敗（`DryRunExitVerificationUnavailable`）へ到達することを
+      検証する E2E テストを足し、旧検査を復元すると失敗することを確認する。撤去は「設定が
+      受理される」という挙動の変更であり、`rg` による記号の不在確認だけでは復元を検出できない
+      ためである。
 
 **完了条件**:
 - AC-09、AC-10、AC-11、AC-16 の検証が緑である。AC-11 については、構文木ガードのうち
@@ -790,7 +803,8 @@ PR-6 はマージ前に同 PR 内で次を撤去する。以下は未完了で�
   拒否されない。同梱 TOML の改名とハッシュ再記録は維持され、`make test`・
   `make integration-test` が通る。
 - 追加した各テストについて、対象の実装を一時的に壊すと失敗することを確認し、その旨を
-  コミットメッセージへ記す（AC-32）。
+  コミットメッセージへ記す（AC-32）。テストを削除するだけで追加しない撤去コミットには
+  この確認が無いが、旧検査の復元を検出する回帰テストは上で追加しており、そちらで記録する。
 - `make fmt`、`make test`、`make lint` が通る。
 
 ### PR-6 作成ポイント: drop the identifier redaction validation
