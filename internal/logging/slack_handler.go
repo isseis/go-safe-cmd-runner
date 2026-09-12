@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -566,7 +567,11 @@ func truncateOutput(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}
-	return value[:limit-len(truncationSuffix)] + truncationSuffix
+	cut := limit - len(truncationSuffix)
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut] + truncationSuffix
 }
 
 // WithAttrs returns a new SlackHandler with the given attributes

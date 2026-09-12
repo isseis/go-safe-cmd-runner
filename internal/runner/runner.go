@@ -425,9 +425,9 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 			if verErr, ok := errors.AsType[*verification.Error](err); ok {
 				// The group name is carried only by the notification scope; it
 				// is not repeated in the message body.
-				errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %s",
+				errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
 					verErr.TotalFiles, verErr.VerifiedFiles,
-					verErr.FailedFiles, verErr.Err.Error())
+					verErr.FailedFiles, verErr.Err)
 				logging.HandlePreExecutionError(&logging.PreExecutionError{
 					Type:                logging.ErrorTypeGroupFileVerification,
 					Message:             errorMsg,
