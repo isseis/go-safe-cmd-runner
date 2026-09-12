@@ -1145,31 +1145,31 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 `docs/dev/architecture_design/slack_async_delivery.ja.md`、`README.ja.md`、
 `docs/user/security-risk-assessment.ja.md`、`02_architecture.md`、および対応する英語版
 
-- [ ] `docs/user/runner_command.ja.md` の `### 4.2 通知設定` へ、通知される 3 種別、統一書式の
+- [x] `docs/user/runner_command.ja.md` の `### 4.2 通知設定` へ、通知される 3 種別、統一書式の
       Text 行の形、Scope の表示（`(global)`・`group=<名前>`・
       `group=<名前> command=<名前>`・`(scope: invalid)`）、Text 行の先頭に付く製品名、および
       ドライラン時に通知が送られないことを日本語で記す。
-- [ ] 追加した記述を実装と突き合わせる。Text 行の例は、実装後の
+- [x] 追加した記述を実装と突き合わせる。Text 行の例は、実装後の
       `internal/logging/notification_test.go` が検証する形と一字一句一致させ、Scope の表示は
       02_architecture.md §3.6 の表と対応させる。一致は目視ではなく、テストの期待値と文書の
       例を並べて確認する。
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の 898・1307・1310 行目の
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の 898・1307・1310 行目の
       セキュリティイベント Slack 通知の記述を、削除後の実態へ改める。406・1143 行目は監査
       ログ全般の記述であり、削除後も事実として残るかを確認し、変更しない場合はその判断を
       コミットメッセージへ記す。
-- [ ] `docs/dev/architecture_design/slack_async_delivery.ja.md` 35 行目の
+- [x] `docs/dev/architecture_design/slack_async_delivery.ja.md` 35 行目の
       「`highPriority`(セキュリティアラート等)」を `pre_execution_error` へ改める。
-- [ ] `README.ja.md` 96 行目の「セキュリティイベントのリアルタイム通知」を、実際に通知される
+- [x] `README.ja.md` 96 行目の「セキュリティイベントのリアルタイム通知」を、実際に通知される
       内容（グループ実行の結果と実行前エラー）へ改める。57 行目は監査ログ全般の記述であり、
       上と同じ扱いとする。
-- [ ] `docs/user/security-risk-assessment.ja.md` 301 行目の「高優先度キュー（セキュリティ
+- [x] `docs/user/security-risk-assessment.ja.md` 301 行目の「高優先度キュー（セキュリティ
       アラート等）」を `pre_execution_error` へ改める。あわせて、通常キューの飽和で個々の
       失敗通知が落ちうる残余リスク（02_architecture.md §5.4）を記す。465 行目は監査ログ全般の
       記述であり、上と同じ扱いとする。
-- [ ] `02_architecture.md` §2.2 のコンポーネント配置表へ、表示安全な補間契約を実装する
+- [x] `02_architecture.md` §2.2 のコンポーネント配置表へ、表示安全な補間契約を実装する
       `internal/common` のファイルの行を追加する（§1.3「表示安全な補間契約の配置」）。
       設計判断は変わらないが、表に配置が書かれていないままだと実装と文書が食い違う。
-- [ ] 上記の日本語版をコミットする。
+- [x] 上記の日本語版をコミットする。
 - [ ] `/mktrans` で `README.md`、`docs/user/security-risk-assessment.md`、
       `docs/dev/architecture_design/security-architecture.md`、
       `docs/dev/architecture_design/slack_async_delivery.md`、`docs/user/runner_command.md`

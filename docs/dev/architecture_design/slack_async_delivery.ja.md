@@ -32,7 +32,7 @@ flowchart TD
 - 1段目(非ブロッキング): `highPriority` にリクエストがあれば無条件で取り出し、処理してループ先頭に戻る。`normal` や `shutdown` は一切見ない。
 - 2段目(ブロッキング): 1段目が `default` に落ちた(=その瞬間 `highPriority` が空だった)場合のみ到達する。ここでは `highPriority` / `normal` / `shutdown` の3方向を同時に待つ。
 
-Go の `select` は準備できているケースが複数あればランダムに1つを選ぶ仕様のため、もし1段構成で `highPriority` と `normal` を同じ `select` に並べると、`normal` に大量のリクエストがある間 `highPriority`(セキュリティアラート等)が待たされる可能性がある。1段目を分離することで「`highPriority` が空になるまで `normal` には絶対に手を付けない」という優先度を保証している。
+Go の `select` は準備できているケースが複数あればランダムに1つを選ぶ仕様のため、もし1段構成で `highPriority` と `normal` を同じ `select` に並べると、`normal` に大量のリクエストがある間 `highPriority`(実行前エラー `pre_execution_error`)が待たされる可能性がある。1段目を分離することで「`highPriority` が空になるまで `normal` には絶対に手を付けない」という優先度を保証している。
 
 2段目でも `highPriority` を含めているのは、1段目の `default` を通過してから2段目に入るまでの間に、別ゴルーチンが `highPriority` へ新規投入する可能性があるため(TOCTOU)。3方向まとめて待つことで、その投入を取りこぼさない。
 
