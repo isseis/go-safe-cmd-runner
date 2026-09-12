@@ -821,7 +821,7 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] 撤去コミットを PR-6 へ積み、`make test`・`make lint` を再実行した
+- [x] 撤去コミットを PR-6 へ積み、`make test`・`make lint` を再実行した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
