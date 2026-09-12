@@ -2380,7 +2380,7 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 func TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage(t *testing.T) {
 	recorder := tu.NewLogRecorder(nil)
 	originalLogger := slog.Default()
-	defer slog.SetDefault(originalLogger)
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 	slog.SetDefault(slog.New(recorder))
 
 	config := &runnertypes.ConfigSpec{

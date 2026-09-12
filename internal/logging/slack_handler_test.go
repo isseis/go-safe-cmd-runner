@@ -1919,7 +1919,7 @@ func TestSlackHandler_UnknownTypeWarnUsesHighPriority(t *testing.T) {
 // whole: a name at the configuration length limit appears in full, and two
 // names sharing a long prefix stay distinguishable.
 func TestSlackHandler_IdentifierIsNotTruncated(t *testing.T) {
-	longGroup := strings.Repeat("a", 127) + "b"
+	longGroup := strings.Repeat("a", common.MaxIdentifierBytes-1) + "b"
 
 	var failureLog syncBuffer
 	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
@@ -1933,9 +1933,9 @@ func TestSlackHandler_IdentifierIsNotTruncated(t *testing.T) {
 	assert.Contains(t, message.Text, "group="+longGroup, "a full-length identifier must not be cut")
 	assert.Equal(t, "group="+longGroup, attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
 
-	// Two names that share their first 127 bytes must stay distinguishable.
-	first := strings.Repeat("a", 127) + "b"
-	second := strings.Repeat("a", 127) + "c"
+	// Two names that differ only in their last byte must stay distinguishable.
+	first := strings.Repeat("a", common.MaxIdentifierBytes-1) + "b"
+	second := strings.Repeat("a", common.MaxIdentifierBytes-1) + "c"
 	require.NoError(t, handler.Handle(context.Background(), commandGroupSummaryRecord(first, "first")))
 	require.NoError(t, handler.Handle(context.Background(), commandGroupSummaryRecord(second, "second")))
 	texts := rec.texts()

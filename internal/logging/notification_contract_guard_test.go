@@ -698,9 +698,10 @@ func notificationAttrsFunctionRange(filename string, file *ast.File) ast.Node {
 // slack_notify=true outside NotificationAttrs and constructions of a
 // message_type string literal outside internal/logging. Both attribute keys
 // are recognized whether spelled as a string literal or through the package
-// constant, and both keyed call arguments (slog.Bool/Any/...) and keyed
-// composite literals (slog.Attr{Key: ..., Value: ...}) are inspected, so a
-// construction cannot hide behind a different slog constructor. A non-false
+// constant, and keyed call arguments (slog.Bool/Any/...), variadic key-value
+// pairs (slog.Info(msg, key, value), logger.With(key, value)) and keyed
+// composite literals (slog.Attr{Key: ..., Value: ...}) are all inspected, so
+// a construction cannot hide behind a different slog constructor or call form. A non-false
 // value is treated as true unless it is statically false. The number of
 // slack_notify constructions is returned so a scan that sees none can fail
 // loudly.
@@ -737,14 +738,18 @@ func checkNotificationAttributeConstructions(t *testing.T, filename, src string)
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch node := n.(type) {
 		case *ast.CallExpr:
-			if len(node.Args) < 2 {
-				return true
+			// Every argument position is a candidate key: slog.Bool(key, v)
+			// puts it first, while the variadic forms slog.Info(msg, key, v)
+			// and logger.With(k1, v1, key, v) put it anywhere before its
+			// value. A key in the last position has no value and is skipped.
+			for i := 0; i+1 < len(node.Args); i++ {
+				key, ok := notificationAttributeKey(node.Args[i])
+				if !ok {
+					continue
+				}
+				value := node.Args[i+1]
+				handleKeyedValue(key, value.Pos(), value.End(), value)
 			}
-			key, ok := notificationAttributeKey(node.Args[0])
-			if !ok {
-				return true
-			}
-			handleKeyedValue(key, node.Args[1].Pos(), node.Args[1].End(), node.Args[1])
 		case *ast.CompositeLit:
 			// slog.Attr{Key: ..., Value: ...} builds the attribute without a
 			// constructor call, so the key/value pair is inspected directly.
@@ -1096,6 +1101,26 @@ func TestSlackNotifyConstructionCheckRecognizesForms(t *testing.T) {
 			assert.Len(t, violations, tt.want, "violations: %v", violations)
 		})
 	}
+
+	t.Run("slack_notify as a variadic key-value pair is rejected", func(t *testing.T) {
+		slackViolations, _, constructions := checkNotificationAttributeConstructions(t,
+			"internal/x/x.go", header+"func f() { slog.Info(\"msg\", \"other\", 1, \"slack_notify\", true) }\n")
+		assert.Len(t, slackViolations, 1, "violations: %v", slackViolations)
+		assert.Equal(t, 1, constructions)
+	})
+
+	t.Run("a message_type literal as a variadic key-value pair is rejected outside logging", func(t *testing.T) {
+		_, messageTypeViolations, _ := checkNotificationAttributeConstructions(t,
+			"internal/x/x.go", header+"func f() { slog.Error(\"msg\", \"message_type\", \"pre_execution_error\") }\n")
+		assert.Len(t, messageTypeViolations, 1, "violations: %v", messageTypeViolations)
+	})
+
+	t.Run("a key in the last argument position has no value and is ignored", func(t *testing.T) {
+		slackViolations, _, constructions := checkNotificationAttributeConstructions(t,
+			"internal/x/x.go", header+"import \"strings\"\n\nvar _ = strings.Contains(\"x\", \"slack_notify\")\n")
+		assert.Empty(t, slackViolations, "violations: %v", slackViolations)
+		assert.Equal(t, 0, constructions)
+	})
 
 	t.Run("slack_notify through any constructor is rejected", func(t *testing.T) {
 		slackViolations, _, constructions := checkNotificationAttributeConstructions(t,
