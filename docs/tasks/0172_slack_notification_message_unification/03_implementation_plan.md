@@ -1135,46 +1135,60 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 文書の更新と翻訳
 
 **対象ファイル**: `docs/user/runner_command.ja.md`、
 `docs/dev/architecture_design/security-architecture.ja.md`、
 `docs/dev/architecture_design/slack_async_delivery.ja.md`、`README.ja.md`、
-`docs/user/security-risk-assessment.ja.md`、`02_architecture.md`、および対応する英語版
+`docs/user/security-risk-assessment.ja.md`、`02_architecture.md`、および対応する英語版。
+加えて、文書に載せたグループ集計の Text 行を実行可能なテストで固定するため
+`internal/logging/notification_test.go` を変更する（下の突き合わせタスク）。
 
-- [ ] `docs/user/runner_command.ja.md` の `### 4.2 通知設定` へ、通知される 3 種別、統一書式の
+- [x] `docs/user/runner_command.ja.md` の `### 4.2 通知設定` へ、通知される 3 種別、統一書式の
       Text 行の形、Scope の表示（`(global)`・`group=<名前>`・
       `group=<名前> command=<名前>`・`(scope: invalid)`）、Text 行の先頭に付く製品名、および
       ドライラン時に通知が送られないことを日本語で記す。
-- [ ] 追加した記述を実装と突き合わせる。Text 行の例は、実装後の
-      `internal/logging/notification_test.go` が検証する形と一字一句一致させ、Scope の表示は
-      02_architecture.md §3.6 の表と対応させる。一致は目視ではなく、テストの期待値と文書の
-      例を並べて確認する。
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の 898・1307・1310 行目の
-      セキュリティイベント Slack 通知の記述を、削除後の実態へ改める。406・1143 行目は監査
-      ログ全般の記述であり、削除後も事実として残るかを確認し、変更しない場合はその判断を
-      コミットメッセージへ記す。
-- [ ] `docs/dev/architecture_design/slack_async_delivery.ja.md` 35 行目の
+- [x] 追加した記述を実装と突き合わせる。Scope の表示は 02_architecture.md §3.1 の判定表
+      （`(global)` と `(scope: invalid)` の挙動は §3.6）と対応させる。Text 行の 4 例は
+      テストの期待値と一字一句一致させた。`pre_execution_error` と
+      `user_group_command_failure` の 2 例は既存テストが完全一致で assert している。
+      グループ集計の 2 例（成功・失敗）はどのテストも見出しの文言を固定していなかったため、
+      **`internal/logging/notification_test.go` へ
+      `TestNotificationDefinitions_GroupSummaryTextLines` を追加し、文書と同じ 2 行を
+      完全一致で assert する**。実装の見出しを `3 commands in` から `3 commands took` へ
+      変えるとこのテストが失敗することを確認した。一致は目視ではなく、テストの期待値と
+      文書の例を並べて確認する。
+- [x] グローバルスコープの説明は「エラー」ではなく「どの group にも紐付かないレコード」と
+      する。実装は INFO の成功レコードにも `(global)` を付けるためである。
+- [x] 通知コンテキストの redaction（識別子が `[REDACTED]` になりうる残余リスク、§3.5）は
+      利用者向け文書へは書かない。01_requirements.md の Success Criteria が「どの group か
+      判別できる」と定めており、残余リスクは 02_architecture.md §3.5 に記録済みである。
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の「セキュリティイベント
+      Slack 通知」の記述（898 行目の目的、1310 行目の監視・アラート一覧）を、削除後の実態
+      （グループ実行結果と実行前エラー）へ改める。監査ログ全般の記述（406・1143 行目、および
+      監視・アラート一覧の 1307 行目「セキュリティイベントの構造化ログ」）は削除後も事実と
+      して残るため変更しない。この判断をコミットメッセージへ記す。
+- [x] `docs/dev/architecture_design/slack_async_delivery.ja.md` 35 行目の
       「`highPriority`(セキュリティアラート等)」を `pre_execution_error` へ改める。
-- [ ] `README.ja.md` 96 行目の「セキュリティイベントのリアルタイム通知」を、実際に通知される
+- [x] `README.ja.md` 96 行目の「セキュリティイベントのリアルタイム通知」を、実際に通知される
       内容（グループ実行の結果と実行前エラー）へ改める。57 行目は監査ログ全般の記述であり、
       上と同じ扱いとする。
-- [ ] `docs/user/security-risk-assessment.ja.md` 301 行目の「高優先度キュー（セキュリティ
+- [x] `docs/user/security-risk-assessment.ja.md` 301 行目の「高優先度キュー（セキュリティ
       アラート等）」を `pre_execution_error` へ改める。あわせて、通常キューの飽和で個々の
       失敗通知が落ちうる残余リスク（02_architecture.md §5.4）を記す。465 行目は監査ログ全般の
       記述であり、上と同じ扱いとする。
-- [ ] `02_architecture.md` §2.2 のコンポーネント配置表へ、表示安全な補間契約を実装する
+- [x] `02_architecture.md` §2.2 のコンポーネント配置表へ、表示安全な補間契約を実装する
       `internal/common` のファイルの行を追加する（§1.3「表示安全な補間契約の配置」）。
       設計判断は変わらないが、表に配置が書かれていないままだと実装と文書が食い違う。
-- [ ] 上記の日本語版をコミットする。
-- [ ] `/mktrans` で `README.md`、`docs/user/security-risk-assessment.md`、
+- [x] 上記の日本語版をコミットする。
+- [x] `/mktrans` で `README.md`、`docs/user/security-risk-assessment.md`、
       `docs/dev/architecture_design/security-architecture.md`、
       `docs/dev/architecture_design/slack_async_delivery.md`、`docs/user/runner_command.md`
       へ翻訳を反映する。日英を直接両方編集しない。
-- [ ] 翻訳後、`docs/user/runner_command.md` の `### 4.2 Notification Configuration` と日本語版
+- [x] 翻訳後、`docs/user/runner_command.md` の `### 4.2 Notification Configuration` と日本語版
       の該当節を対照し、通知種別・書式・Scope の 4 形・製品名が過不足なく対応していることを
       確認する。英語版が日本語をそのまま貼り付けただけになっていないことも見る。
 
@@ -1194,8 +1208,8 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 **判定理由**: 文書更新と翻訳のみで、設計判断や高リスク分岐を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

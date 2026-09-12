@@ -93,7 +93,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Interactive Terminal Support**: Color-coded output with enhanced visibility
 - **Smart Terminal Detection**: Automatic detection of terminal capabilities
 - **Color Control**: Support for CLICOLOR, NO_COLOR, CLICOLOR_FORCE environment variables
-- **Slack Integration**: Real-time notifications for security events, with `slack_allowed_host` webhook URL host validation
+- **Slack Integration**: Real-time notifications of command group execution results and pre-execution errors, with `slack_allowed_host` webhook URL host validation
 - **Sensitive Data Redaction**: Automatic filtering of sensitive information
 - **ULID Execution Tracking**: Time-ordered execution tracking
 

@@ -183,6 +183,7 @@ flowchart LR
 |---|---|---|---|
 | `internal/common/notification_context.go` | 新規 | 通知スコープ、通知コンテキスト、コンストラクタ、参照メソッド、`slog.LogValuer`、および識別子 1 個あたりの長さ上限の定数を定義する | 新規 `internal/common/notification_context_test.go` でゼロ値、各スコープ、属性の省略、矛盾値を検証する |
 | `internal/common/notification_context_test.go` | 新規 | F-002 の型とログ表現を検証する | - |
+| `internal/common/interpolation.go` | 新規 | 表示安全な補間契約（§3.5）を実装する。役割（識別子・エンベロープ値・自由文・大量出力）ごとの変換規則と、補間後に表示できる文字が残るかの述語を提供し、設定検証・通知コンテキストの妥当性判定・共通エンベロープが同じ実装を参照する（配置の根拠は 03_implementation_plan.md §1.3「表示安全な補間契約の配置」） | 新規 `internal/common/interpolation_test.go` で変換規則と出力の性質を検証する。`internal/common/notification_context_test.go` と `internal/logging/slack_handler_test.go` は同じ契約を参照する |
 | `internal/common/logschema.go` | 変更 | 削除する 3 種別の属性定義と重大度定数を除き、`UserGroupCommandFailureAttrs` を含む存続する通知の共有属性名と型を定義する。既存の `GroupSummaryAttrs.Group` を維持し、通知コンテキストのキー名とスコープ名の対応表を加える | 該当定義を直接使う各パッケージのテスト。通知コンテキストを追加する各パッケージのテスト |
 | `internal/logging/notification.go` | 新規 | 存続する通知種別の唯一の定義、発火元用の属性生成関数、確定済み優先度、種別固有部分の契約を定義する | 新規 `internal/logging/notification_test.go` で通知種別定義の集合を検証し、発火元の静的契約は新規 `internal/logging/notification_contract_guard_test.go` が持つ（下 2 行） |
 | `internal/logging/notification_test.go` | 新規 | 全定義の共通契約（種別名の一意性、公開アクセサと定義の同一性、共通エンベロープ、予約フィールド見出し、Text 行の書式、§3.5 の動的な値の一覧との対応）を検証する | - |

@@ -1468,28 +1468,50 @@ runner -config config.toml
 | 警告 | - | ✓ |
 | エラー | - | ✓ |
 
-**通知例（成功）**
+**通知されるメッセージ種別**
+
+| message_type | 通知のタイミング | 優先度 |
+|---|---|---|
+| `command_group_summary` | コマンドグループの実行完了（成功・失敗の両方） | 通常 |
+| `pre_execution_error` | 実行前エラー（対象ファイルの検証失敗など） | 高 |
+| `user_group_command_failure` | ユーザー／グループ指定コマンドの失敗 | 通常 |
+
+**メッセージ書式**
+
+Slack に送信されるすべての通知は、Text 行の先頭に製品名 `go-safe-cmd-runner` を置く次の書式で統一されています。
 
 ```
-🤖 go-safe-cmd-runner
-
-✅ Command completed successfully
-Group: backup
-Command: db_backup
-Duration: 5.2s
-Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+[go-safe-cmd-runner] <絵文字> *<STATUS>* — <スコープ> : <要約>
 ```
 
-**通知例（エラー）**
+- `—` の後ろには必ずスコープを置きます。スコープは次の 4 通りで表示され、どの group・コマンドで起きたかを通知から判別できます。
+- 添付フィールドは種別固有のフィールドの後ろに、`Scope`、`Hostname`、`Run ID` の 3 件をこの順で持ちます。
+- `--dry-run` 時は通知メッセージを構築せず、どちらの Webhook にも送信しません。
+
+**スコープの表示**
+
+| スコープ | 表示 |
+|---|---|
+| グローバル（どの group にも紐付かないレコード） | `(global)` |
+| group のエラー | `group=<グループ名>` |
+| コマンドのエラー | `group=<グループ名> command=<コマンド名>` |
+| スコープを判別できないレコード | `(scope: invalid)` |
+
+**ログレベルと表示**
+
+| ログレベル | 絵文字 | STATUS | 色 |
+|---|---|---|---|
+| INFO | ✅ | `SUCCESS` | `good` |
+| WARN | ⚠️ | `WARNING` | `warning` |
+| ERROR | ❌ | `ERROR` | `danger` |
+
+**通知例**
 
 ```
-🤖 go-safe-cmd-runner
-
-❌ Command failed
-Group: backup
-Command: db_backup
-Error: exit status 1
-Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s
+[go-safe-cmd-runner] ❌ *ERROR* — group=backup : 3 commands, 1 failed in 1.2s
+[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)
+[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed
 ```
 
 **セキュリティ上の注意**

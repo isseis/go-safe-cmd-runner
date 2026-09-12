@@ -30,6 +30,7 @@
 | 型アサーション | type assertion | Go言語の文脈 |
 | アンカーされた | anchored | 正規表現パターンの文脈 |
 | 攻撃対象領域 | attack surface | セキュリティの文脈 |
+| 添付フィールド | attachment field | Slack 通知の添付に種別固有フィールドと共通エンベロープ（Scope・Hostname・Run ID）が並ぶ（Task 0172） |
 | 任意コード実行 | arbitrary code execution | シェル/インタプリタ等が任意のコードを実行できること |
 | 採用 | adoption | 基準UID決定方針が `SudoUIDAware` のときに、`SUDO_UID` の値を基準UIDとして用いること（Task 0161） |
 | 採用事実の記録 | adoption record | 採用によって基準UIDが実UIDと異なる値になったことを `log/slog` へ警告として出力すること（Task 0161） |
@@ -158,6 +159,7 @@
 | 環境変数 | environment variable | |
 | エラー | error | |
 | エラーメッセージ | error message | |
+| イベント種別 | event type | 通知が表すイベントの種別（Task 0172） |
 | エスケープ | escape / escaping | |
 | 完全一致 | exact match | basename 照合方式の文脈 |
 | 排他性 | exclusivity | Field exclusivity context |
@@ -236,6 +238,7 @@
 | 階層継承 | hierarchy inheritance | |
 | 階層解決 | hierarchy resolution | |
 | 階層間 | cross-level / across hierarchy levels | 設定の継承の文脈 |
+| 高優先度キュー | high-priority queue | Slack 送信キューの予約レーン。Task 0172 では `pre_execution_error` だけが入る（Task 0163） |
 
 ### I
 
@@ -329,6 +332,7 @@
 | メモリ枯渇 | memory exhaustion | DoS攻撃の文脈 |
 | メリット | advantage | |
 | メッセージ | message | |
+| メッセージ書式 | message format | Slack 通知の Text 行と添付フィールドの統一書式（Task 0172） |
 | マージ | merge / merging | |
 | 和集合マージ | union merge | 設定の継承の文脈 |
 | マップマージ | map merge | 設定の継承の文脈 |
@@ -355,6 +359,8 @@
 | 名前空間 | namespace | 2レベル名前空間/フラット名前空間の文脈 |
 | 通知 | notification | |
 | 通知先 | notification destination | |
+| 通知種別 | notification type | `message_type` で表される通知の種別。単一の通知種別定義から引く（Task 0172） |
+| 通常キュー | normal queue | Slack 送信キューの通常レーン（Task 0163） |
 
 ### O
 
@@ -427,6 +433,8 @@
 | プログラムによる処理 | programmatic processing | |
 | 保護 | protection | |
 | 目的 | purpose | |
+| 実行前エラー | pre-execution error | 実行開始前の検証などで発生するエラー。Slack 通知種別 `pre_execution_error` の日本語表記（Task 0172） |
+| 製品名 | product name | 通知の Text 行の先頭に付く固定の送信元名 `go-safe-cmd-runner`（Task 0172） |
 
 ### R
 
@@ -505,6 +513,7 @@
 | 後続グラフ | successor graph | CFGにおける後続ノードのグラフ |
 | サンプル | sample | |
 | スコープ | scope | 変数スコープの文脈 |
+| スコープの表示 | Scope display | 通知の Scope フィールドと Text 行に出す `(global)`・`group=`・`command=`・`(scope: invalid)` の表記（Task 0172） |
 | スクリプト | script | |
 | 検索 | search | |
 | Secret | secret | 機密情報・秘密情報 |
@@ -571,6 +580,7 @@
 | テンプレートパラメータ | template parameter | `${...}` 形式の参照 |
 | タグ | tag | TOMLタグの文脈 |
 | タスク | task | |
+| Text 行 | Text line | Slack 通知の本文 1 行目。`[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形（Task 0172） |
 | 改ざん | tampering | |
 | 改ざん兆候 | tampering signal | hash_mismatch のみが該当する、検証を試行し不整合を検出した状態。環境起因と対比される |
 | 一時 | temporary | |

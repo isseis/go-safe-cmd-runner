@@ -1503,28 +1503,50 @@ runner -config config.toml
 | Warnings | - | ✓ |
 | Errors | - | ✓ |
 
-**Notification Example (Success)**
+**Notified Message Types**
+
+| message_type | Notification Timing | Priority |
+|---|---|---|
+| `command_group_summary` | Command group execution completion (both success and failure) | Normal |
+| `pre_execution_error` | Pre-execution errors (such as target file verification failures) | High |
+| `user_group_command_failure` | Failure of a user/group-specified command | Normal |
+
+**Message Format**
+
+All notifications sent to Slack share the following format, with the product name `go-safe-cmd-runner` at the start of the Text line.
 
 ```
-🤖 go-safe-cmd-runner
-
-✅ Command completed successfully
-Group: backup
-Command: db_backup
-Duration: 5.2s
-Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+[go-safe-cmd-runner] <emoji> *<STATUS>* — <scope> : <summary>
 ```
 
-**Notification Example (Error)**
+- A scope is always placed after the `—`. The scope appears in the following four forms, so the notification identifies the group and command where the event occurred.
+- Attachment fields carry `Scope`, `Hostname` and `Run ID` in that order after the type-specific fields.
+- With `--dry-run`, the notification message is not built and nothing is sent to either webhook.
+
+**Scope Display**
+
+| Scope | Display |
+|---|---|
+| Global (a record not tied to any group) | `(global)` |
+| Group error | `group=<group name>` |
+| Command error | `group=<group name> command=<command name>` |
+| Record whose scope cannot be determined | `(scope: invalid)` |
+
+**Log Level and Display**
+
+| Log Level | Emoji | STATUS | Color |
+|---|---|---|---|
+| INFO | ✅ | `SUCCESS` | `good` |
+| WARN | ⚠️ | `WARNING` | `warning` |
+| ERROR | ❌ | `ERROR` | `danger` |
+
+**Notification Examples**
 
 ```
-🤖 go-safe-cmd-runner
-
-❌ Command failed
-Group: backup
-Command: db_backup
-Error: exit status 1
-Run ID: 01K2YK812JA735M4TWZ6BK0JH9
+[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s
+[go-safe-cmd-runner] ❌ *ERROR* — group=backup : 3 commands, 1 failed in 1.2s
+[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)
+[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed
 ```
 
 **Security Notes**

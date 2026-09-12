@@ -900,7 +900,7 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error)
 ### 14. Multi-Channel Notification Security
 
 #### Purpose
-Provides secure notification functionality for critical security events while protecting sensitive information in external communication.
+Provides functionality to safely notify command group execution results and pre-execution errors while protecting sensitive information in external communication.
 
 #### Implementation Details
 
@@ -1306,7 +1306,7 @@ The system implements multiple security layers:
 - Structured logging of security events
 - Syslog integration for centralized logging
 - Emergency shutdown events require immediate attention
-- Slack integration for real-time security alerts
+- Slack integration for group execution results and pre-execution errors
 - Automatic sensitive data redaction in all monitoring channels
 
 ## Known Security Limitations
