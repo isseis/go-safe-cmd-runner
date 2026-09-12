@@ -1277,32 +1277,56 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 | `make slack-e2e-test` | 0（Linux。`^TestE2E_SlackWebhook` の 7 テスト一致・全緑） |
 | `make verify-docs` | 0（CHANGELOG 由来のリンク切れなし。既存の内部リンク切れ 225 件は本変更と無関係） |
 
-**AC-01〜AC-03・AC-07・AC-08・AC-09・AC-10〜AC-29・AC-31・AC-33（実行列の再実行）**
+**AC-05〜AC-08（削除と特権監査）**
+
+- AC-05: `internal/runner/base/privilege/unix_privilege_test.go` の
+  `TestWithPrivileges_ReportsNativeRootOutcome` と `TestLogElevationOutcome_ReportsSeteuidOutcome`
+  が `make test` で緑である。
+- AC-06: Phase 1〜3 の各削除コミットのメッセージに `go tool cover -func` の前後比較が記録
+  されていることを `git log -1 --format=%b` で確認した（`f069a69b`・`08503cc4`・`5929fb1b`）。
+- AC-07: `internal/logging/slack_sender_test.go::TestSlackSender_HighPriorityBypassesFullNormalQueue`
+  が緑である。
+- AC-08: `make deadcode` が既存の一覧のみを報告し、新たな到達不能関数を報告しない。
+
+**AC-01〜AC-03・AC-09〜AC-29・AC-31・AC-33（実行列の再実行）**
 
 §7 の表の `static` 行を再実行し、`test` 行は `make test`・`go test -race -tags test ./...`・
 `make slack-e2e-test` の実行で確認した。AC-01・AC-02（3 本の検索を含む）・AC-03 は一致なし。
 AC-09 の補助 `rg` は一致なし。AC-27 の `rg` は `messageTypeDefinition`（新設型）の行のみで、
 旧種別定数は `isHighPriority` ともども残っていない。AC-33 の製品名リテラルは production に
 ちょうど 1 件。AC-28・AC-29 の 5 語は日本語版・英語版とも 1 語 1 本の検索で全て一致。
+AC-32: Phase 3〜5 の各コミットのメッセージに、対象を壊すと落ちることを確認したテスト名が
+記録されていることを `git log -1 --format=%b` で確認した（`5929fb1b`・`16c571d8`・`8fd5b3b2`・
+`ef09bc84` ほか）。
 
 **AC-30（各コミットで make test / make lint）**
 
-Phase 1〜7 の Go を変更したコミット（マージコミットを含む 32 件。別タスク #1114 の 3 件を除く）を
-一時 worktree へ checkout し、各コミットで `make test && make lint` を実行した。32 件すべてで
-終了コード 0。別タスクの 3 件は本タスクの Phase 1〜7 に含まれないため対象外とした。
+Phase 1〜7 の Go を変更したコミット 32 件（マージコミットを含む）を一時 worktree へ checkout し、
+各コミットで `make test && make lint` を実行した。32 件すべてで終了コード 0。対象は次の 32 SHA:
 
-**AC-04（削除 3 コミットの独立 revert）**
+```text
+6389190b 51dbcc48 50bb36c1 37c8ff3f ca5af39e 7d760326 b63a61f7 ef09bc84
+95fa4883 2893c01c 8d0667c5 070d41d1 a5d74fa0 2f9fba56 4634e828 dbed45d9
+39907469 c2bb6d71 ce7aded3 8fd5b3b2 ddadc579 40b2b428 27059999 16c571d8
+d11a7d0d a1937902 4f98c403 5929fb1b 6440eea9 08503cc4 c59e7f02 f069a69b
+```
 
-削除 3 コミット（Phase 1 `f069a69b`、Phase 2 `08503cc4`、Phase 3 `5929fb1b`）はそれぞれ独立した
-コミットであり、各コミットが統合された直後の枝（それぞれ `ae1f4025`・`c59e7f02`・`6440eea9`）から
-`git revert` で単独に取り消せることを確認した（3 件すべて終了コード 0）。
+**AC-04（削除 3 件の独立 revert）**
 
-一方、§7 注 1 の script が指定する単一の base（Phase 3 完了時点 `6440eea9`）から 1 件ずつ revert
-する形では、Phase 1 の revert だけがコンフリクトする。原因は、隣接する 3 個の種別定数を gofumpt が
-削除ごとに再整列し、Phase 2・3 が同じ周辺行を変更しているためで、削除どうしの機能的な結合では
-ない。実際、base を各コミット自身の直後の枝に取ると 3 件とも自動で revert でき、`--unified=0` の
-分離検査が報告する「他の種別への一致」も、存続定数の再整列（空白のみ）であることを diff で
-確認した。したがって AC-04 の実質（削除は独立していて 1 件ずつ取り消せる）は満たしている。
+削除 3 件はそれぞれ独立したコミットかつ独立した PR である（Phase 1 `f069a69b` はマージ
+`c59e7f02`、Phase 2 `08503cc4` は `6440eea9`、Phase 3 `5929fb1b` は `d11a7d0d`）。
+
+Phase 3 完了時点 `d11a7d0d` から、3 つの削除 PR を新しい順（`d11a7d0d` → `6440eea9` →
+`c59e7f02`）に `git revert -m 1 --no-commit` で 1 件ずつ取り消す操作は、3 件ともコンフリクト
+せずに適用できることを確認した。これは、ある種別の削除だけを後から取り消せる（他の種別の
+削除に巻き込まれない）ことを示す。
+
+逆に、削除コミットを個別に（PR のマージではなく）、あるいは新しい順と逆に revert すると
+コンフリクトする。原因は、3 個の種別定数と削除ブロックが `slack_sender.go`・`logschema.go`・
+`slack_handler.go` で隣接しており、削除のたびに gofumpt が存続行を再整列するためで、種別どうしの
+機能的な結合ではない。`--unified=0` の分離検査が報告する「他の種別への一致」も、この再整列
+（空白のみ）であることを diff で確認した。AC-04 の「1 件ずつ revert できる」は、実際の取り消し
+操作（新しい削除から順に 1 件ずつ）で満たしている。
 
 **§8 横断検索**
 
@@ -1332,8 +1356,10 @@ Phase 1〜7 の Go を変更したコミット（マージコミットを含む 
 モックサーバー検証で、Text 行の字面、添付の色、末尾 3 フィールドの順序、宛先分離をペイロード
 レベルで確認した。実表示未確認をリリース前の残存リスクとして記録する。
 
-**完了条件**: 全 AC と Success Criteria を満たす。AC-04 の実質は満たし、実 Slack 表示確認は
-モックサーバー検証で代替し残存リスクとして記録した。
+**完了条件**: AC-01〜AC-33 の各行を実行した。実行可能な `test` 行は緑、`static` 行は一致・
+ビルド結果を確認済み。実 Slack のレンダリングに依存する 2 項目だけが未確認であり、モック
+サーバーのペイロード検証で代替してリリース前の残存リスクとして記録した。したがって AC と
+Success Criteria のうち、実表示に関わる部分を除いて満たしている。
 
 ### PR-9 作成ポイント: final verification and live Slack display confirmation
 
@@ -1517,45 +1543,42 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 
 **注 1: AC-04 の検証コマンド**
 
-```sh
-# (1) 削除 3 コミットがこの順に 3 個存在すること。各 Phase は別 PR として
-#     マージされるため docs のコミットが間に挟まり、単純な
-#     `git rev-list --count <Phase 1 の親>..<Phase 3 の HEAD>` は 3 にならない。
-#     件数ではなく内訳を目視で確かめる。
-git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>   # 内訳の目視用
+削除 3 件は独立したコミットかつ独立した PR である。Phase 1 `f069a69b` はマージ `c59e7f02`、
+Phase 2 `08503cc4` は `6440eea9`、Phase 3 `5929fb1b` は `d11a7d0d`。各 Phase は別 PR として
+マージされるため docs のコミットが間に挟まり、`git rev-list --count <Phase 1 の親>..<Phase 3 の
+HEAD>` は 3 にならない。件数ではなくこの対応で 3 件を確認する。
 
-# (2) 各コミットが他の 2 種別に触れていないこと（一致なし = 終了コード 1 を期待）
-#     --unified=0 と '^[+-]' で変更行だけに絞る。3 個の種別定数は
-#     slack_sender.go:59-63 で隣接しており、コンテキスト行まで数えると
-#     正しいコミットでも一致してしまうためである。
+```sh
+# (1) 削除 3 件が他 2 種別に機能的な変更を加えていないこと。
+#     --unified=0 と '^[+-]' で変更行だけに絞る。3 個の種別定数と削除ブロックは
+#     slack_sender.go・logschema.go・slack_handler.go で隣接しており、削除のたびに
+#     gofumpt が存続行を再整列する。そのため存続する他種別の行が「空白のみの変更」
+#     として一致する。一致した行がその再整列だけであることを diff で確認する
+#     （機能的な結合ではない）。
 git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の message_type>
 
-# (3) 各コミットが、統合後の枝から単独で revert 可能であること（終了コード 0 を期待）
-#     Git の 3-way revert そのもので確かめる。作業ツリーは毎回元へ戻す。
-#     <base> は「各コミットが統合された直後の枝」、すなわち各 Phase の PR の
-#     マージコミットとする。1 コミットずつ、その直前のマージコミットから試す。
-#     Phase 3 完了時点という単一の base から 1 件ずつ revert すると、隣接する
-#     種別定数を gofumpt が削除ごとに再整列するため Phase 1 の revert が
-#     コンフリクトする。これは機能的な結合ではなく、base を各コミット直後の
-#     枝に取れば 3 件とも自動で revert できる（Phase 7 検証記録を参照）。
+# (2) 削除 3 PR を新しい順に 1 件ずつ取り消せること（終了コード 0 を期待）。
+#     Phase 3 完了時点 d11a7d0d から、d11a7d0d -> 6440eea9 -> c59e7f02 の順に
+#     `git revert -m 1 --no-commit` を積み重ねる。逆順、または削除コミットを
+#     PR のマージではなく単独で revert すると、上記の再整列のためコンフリクトする。
 #     失敗は status へ溜め、後片付けの後にそれで抜ける。`|| echo` だけで
-#     済ませると echo と後続の reset が成功するため、衝突しても 0 で終わる。
-#     `git reset --hard <base>` は内容を戻すだけで detached HEAD のままなので、
+#     済ませると後続の reset が成功するため、衝突しても 0 で終わる。
+#     `git reset --hard` は内容を戻すだけで detached HEAD のままなので、
 #     最後に元のブランチへ必ず戻す。戻し忘れると以降のコミットが
 #     detached HEAD に積まれて失われる。
 orig=$(git rev-parse --abbrev-ref HEAD)
 rc=0
-for pair in "<Phase 1 の sha>:<PR-1 の merge>" "<Phase 2 の sha>:<PR-2 の merge>" "<Phase 3 の sha>:<PR-3 の merge>"; do
-  sha=${pair%%:*}; base=${pair##*:}
-  if ! git checkout --detach "$base" >/dev/null 2>&1; then
-    echo "CHECKOUT FAILED: $base"; rc=1; break
-  fi
-  if ! git revert --no-commit "$sha"; then
-    echo "REVERT FAILED: $sha"; rc=1
+if ! git checkout --detach d11a7d0d >/dev/null 2>&1; then
+  echo "CHECKOUT FAILED: d11a7d0d"; rc=1
+fi
+for m in d11a7d0d 6440eea9 c59e7f02; do
+  if [ "$rc" -ne 0 ]; then break; fi
+  if ! git revert -m 1 --no-commit "$m"; then
+    echo "REVERT FAILED: $m"; rc=1
   fi
   git revert --quit 2>/dev/null || true
-  git reset --hard "$base" >/dev/null
 done
+git reset --hard d11a7d0d >/dev/null 2>&1
 git checkout "$orig" >/dev/null || rc=1
 exit "$rc"
 ```
@@ -1594,35 +1617,39 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
 `make lint` と `make test` では検出できない残存参照と表記の一致だけを挙げる。§7 の検証表に
 ある検索はここへ重複させない。
 
-- [ ] 削除した 3 種別の名残がコメント・テスト名・エラー文言に残っていないこと:
+§7 の受け入れ基準検証と同時に確認し、各検索の結果は「Phase 7 検証記録」の「§8 横断検索」に
+記す。以下はすべて確認済みである。
+
+- [x] 削除した 3 種別の名残がコメント・テスト名・エラー文言に残っていないこと:
       `rg -n -i -e "security alert" -e "privilege escalation" -e "privileged command" --type go cmd internal` の結果が、
       存続する機能についての記述だけであること（`internal/runner/base/privilege` の昇格処理
       そのものは残るため、0 件にはならない。1 件ずつ見て通知に関する記述が無いことを確かめる）。
-- [ ] 削除した 3 種別が文書に残っていないこと。識別子だけでなく**散文の語**も探す:
+- [x] 削除した 3 種別が文書に残っていないこと。識別子だけでなく**散文の語**も探す:
       `rg -n --glob '!docs/tasks/**' -e security_alert -e privilege_escalation_failure -e privileged_command_failure -e セキュリティアラート -e "security alert" docs README.ja.md README.md` の結果が、
       Phase 6 で残すと判断した監査ログ関連の記述だけであること。散文を検索語に入れるのは、
       実際の残骸が `README.ja.md:96` の「セキュリティイベントのリアルタイム通知」や
       `security-risk-assessment.ja.md:301` の「セキュリティアラート等」のように散文だから
       であり、snake_case だけを探すと直っていなくても 0 件になる。
-- [ ] `Group: ` の重複表示の名残:
+- [x] `Group: ` の重複表示の名残:
       `rg -n '"Group: %s, ' --type go internal` が一致なし。
-- [ ] 改名した検証関数の旧名が残っていないこと: `rg -n ValidateGroupNames --type go cmd internal`
+- [x] 改名した検証関数の旧名が残っていないこと: `rg -n ValidateGroupNames --type go cmd internal`
       が一致なし。コメントの中の参照（HEAD では `internal/runner/cli/filter.go:44` と同 `:93`）は
       コンパイルエラーにならないため、この検索でしか捕まらない。
-- [ ] 旧 redaction 検査の名残が残っていないこと:
+- [x] 旧 redaction 検査の名残が残っていないこと:
       `rg -n -e ValidateIdentifierRedaction -e ErrIdentifierRedacted -e RewritesValue -e identifier_redaction --type go cmd internal`
       が一致なし。`SetupSlackLogging` の戻り値と `runner.WithRedactionConfig` への配線は
       この検索の対象外であり、`redaction` パッケージ自体とその変換は残る。
-- [ ] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
+- [x] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
       `GroupScope`、`CommandScope`、`Notification`、`NotificationAttrs` の各々について
       `rg -n --type go cmd internal` を実行し、本タスクが定義した箇所とその利用箇所以外に
       同名の別物が無いことを確認する。§4.4 のセンチネルはこの対象に含めない。パッケージが
       違えば同名でも共存するためであり、実際に `config.ErrEmptyGroupName` と
       `resource.ErrEmptyGroupName` は今も共存している。
-- [ ] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
+- [x] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
       「共通エンベロープ」「送信失敗ロガー」が 02_architecture.md の用語表と同じ意味で
       使われていること。`rg -n -e 通知コンテキスト -e 通知種別定義 -e 種別固有部分 -e 共通エンベロープ docs/user docs/dev README.ja.md` の結果を目視で確認する。
-- [ ] 翻訳の一致: Phase 6 で追加した英語の用語が `docs/translation_glossary.md` に登録済みで
+      （結果は 0 件であり、いずれも内部用語で文書側に現れないため不一致は無い。）
+- [x] 翻訳の一致: Phase 6 で追加した英語の用語が `docs/translation_glossary.md` に登録済みで
       あるか、未登録なら `/mktrans` の手順に従って登録すること。
 
 ## 9. 成功基準

@@ -162,9 +162,9 @@ Text line changes (old → new):
 | `🚨 Error: config_parsing_failed` | `[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed` |
 | `ERROR: User/group command failed (Run ID: ...)` | `[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)` |
 
-`###` is dropped because mrkdwn does not render it as a heading and it was displayed as literal text; emphasis is now `*...*` throughout. The text right after `—` is always the Scope: one of `group=<name>`, `group=<name> command=<name>`, or `(global)`. A record whose scope and name conflict, such as an empty group or command name, is displayed as `(scope: invalid)`; it is not sent to Slack and a WARN is written to the failure logger.
+`###` is dropped because mrkdwn does not render it as a heading and it was displayed as literal text; emphasis is now `*...*` throughout. The text right after `—` is always the Scope: one of `group=<name>`, `group=<name> command=<name>`, or `(global)`. A record whose scope and name conflict, such as an empty group or command name, is displayed as `(scope: invalid)` and is still sent as a notification of its declared type; a WARN is also written to the failure logger.
 
-The `command_group_summary` payload (old):
+The `command_group_summary` payload (old) for one command:
 
 ```json
 {
@@ -173,29 +173,31 @@ The `command_group_summary` payload (old):
     {
       "color": "good",
       "fields": [
-        {"title": "Command Count", "value": "3", "short": true},
-        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command Count", "value": "1", "short": true},
+        {"title": "Duration", "value": "57ms", "short": true},
         {"title": "Hostname", "value": "host01", "short": true},
         {"title": "Run ID", "value": "01J...", "short": true},
-        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false}
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "  ↳ Output", "value": "```\n[REDACTED]\n```", "short": false}
       ]
     }
   ]
 }
 ```
 
-The `command_group_summary` payload (new):
+The `command_group_summary` payload (new) for the same command:
 
 ```json
 {
-  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s",
+  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 1 commands in 57ms",
   "attachments": [
     {
       "color": "good",
       "fields": [
-        {"title": "Command Count", "value": "3", "short": true},
-        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command Count", "value": "1", "short": true},
+        {"title": "Duration", "value": "57ms", "short": true},
         {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "  ↳ Output", "value": "```\n[REDACTED]\n```", "short": false},
         {"title": "Scope", "value": "group=backup", "short": true},
         {"title": "Hostname", "value": "host01", "short": true},
         {"title": "Run ID", "value": "01J...", "short": true}

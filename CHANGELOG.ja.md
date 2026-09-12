@@ -162,9 +162,9 @@ Text 行の変更（旧 → 新）:
 | `🚨 Error: config_parsing_failed` | `[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed` |
 | `ERROR: User/group command failed (Run ID: ...)` | `[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)` |
 
-`###` は Slack の mrkdwn では見出しにならず文字として表示されるため廃止し、強調は `*...*` に統一しました。`—` の直後は必ず Scope で、`group=<名前>`／`group=<名前> command=<名前>`／`(global)` のいずれかを表示します。group 名またはコマンド名が空など、scope と名前の組が矛盾するレコードは `(scope: invalid)` と表示し、Slack には送らず送信失敗ロガーに WARN を記録します。
+`###` は Slack の mrkdwn では見出しにならず文字として表示されるため廃止し、強調は `*...*` に統一しました。`—` の直後は必ず Scope で、`group=<名前>`／`group=<名前> command=<名前>`／`(global)` のいずれかを表示します。group 名またはコマンド名が空など、scope と名前の組が矛盾するレコードは `(scope: invalid)` と表示したうえで、宣言された種別の通知としてそのまま送信し、あわせて送信失敗ロガーに WARN を記録します。
 
-`command_group_summary` のペイロード（旧）:
+`command_group_summary` のペイロード（旧・コマンド 1 件の場合）:
 
 ```json
 {
@@ -173,29 +173,31 @@ Text 行の変更（旧 → 新）:
     {
       "color": "good",
       "fields": [
-        {"title": "Command Count", "value": "3", "short": true},
-        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command Count", "value": "1", "short": true},
+        {"title": "Duration", "value": "57ms", "short": true},
         {"title": "Hostname", "value": "host01", "short": true},
         {"title": "Run ID", "value": "01J...", "short": true},
-        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false}
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "  ↳ Output", "value": "```\n[REDACTED]\n```", "short": false}
       ]
     }
   ]
 }
 ```
 
-`command_group_summary` のペイロード（新）:
+`command_group_summary` のペイロード（新・同じコマンドの場合）:
 
 ```json
 {
-  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s",
+  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 1 commands in 57ms",
   "attachments": [
     {
       "color": "good",
       "fields": [
-        {"title": "Command Count", "value": "3", "short": true},
-        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command Count", "value": "1", "short": true},
+        {"title": "Duration", "value": "57ms", "short": true},
         {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "  ↳ Output", "value": "```\n[REDACTED]\n```", "short": false},
         {"title": "Scope", "value": "group=backup", "short": true},
         {"title": "Hostname", "value": "host01", "short": true},
         {"title": "Run ID", "value": "01J...", "short": true}
