@@ -1184,11 +1184,11 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       `internal/common` のファイルの行を追加する（§1.3「表示安全な補間契約の配置」）。
       設計判断は変わらないが、表に配置が書かれていないままだと実装と文書が食い違う。
 - [x] 上記の日本語版をコミットする。
-- [ ] `/mktrans` で `README.md`、`docs/user/security-risk-assessment.md`、
+- [x] `/mktrans` で `README.md`、`docs/user/security-risk-assessment.md`、
       `docs/dev/architecture_design/security-architecture.md`、
       `docs/dev/architecture_design/slack_async_delivery.md`、`docs/user/runner_command.md`
       へ翻訳を反映する。日英を直接両方編集しない。
-- [ ] 翻訳後、`docs/user/runner_command.md` の `### 4.2 Notification Configuration` と日本語版
+- [x] 翻訳後、`docs/user/runner_command.md` の `### 4.2 Notification Configuration` と日本語版
       の該当節を対照し、通知種別・書式・Scope の 4 形・製品名が過不足なく対応していることを
       確認する。英語版が日本語をそのまま貼り付けただけになっていないことも見る。
 
@@ -1208,7 +1208,7 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 **判定理由**: 文書更新と翻訳のみで、設計判断や高リスク分岐を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
