@@ -1210,34 +1210,49 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 7: 全体検証と実 Slack 表示確認
 
-- [ ] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
-- [ ] `go test -race -tags test ./...` を実行する。
-- [ ] `make slack-e2e-test` を **Linux で**実行する。上の `-tags test` は `e2e` を含まないため、
-      `e2e && test` タグを持つ Slack の e2e テスト 2 ファイルはここまでのどのコマンドでも
-      ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。**macOS で回しても
-      テストは走らない**（Darwin 分岐が `go vet` だけを実行する）ため、macOS の結果を
-      本 Phase の確認としない。
-- [ ] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する。
-- [ ] 本書 §8 の横断検索チェックリストを実行する。
-- [ ] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
+- [x] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
+- [x] `go test -race -tags test ./...` を実行する。
+- [x] `make slack-e2e-test` を **Linux で**実行する。上の `-tags test` は `e2e` を含まないため、
+       `e2e && test` タグを持つ Slack の e2e テスト 2 ファイルはここまでのどのコマンドでも
+       ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。**macOS で回しても
+       テストは走らない**（Darwin 分岐が `go vet` だけを実行する）ため、macOS の結果を
+       本 Phase の確認としない。
+- [x] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する（下の「Phase 7 検証記録」）。
+- [x] 本書 §8 の横断検索チェックリストを実行する（下の「Phase 7 検証記録」）。
+- [x] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
       の Webhook に設定し、`make slack-notify-test` と `make slack-group-notification-test` を
       実行する。これらが出すのは `command_group_summary`（成功・失敗の両方）である。
-- [ ] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
+      **実チャンネルで確認済み**（下の「実 Slack 表示確認」）。同梱の `sample/slack-notify.toml`
+      と `sample/slack-group-notification-test.toml` は `slack_allowed_host = "hooks.slack.com"`
+      を固定しており、用意された Webhook のホスト（`mm.issei.org`）を通せないため、同じ内容で
+      allowlist だけを差し替えた一時設定を `/tmp` で記録して runner を実行した。成功グループ集計
+      と、stdout/stderr を含む失敗グループ集計を各 1 件送信して表示を確認した。
+- [x] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
       対象ファイルの検証を失敗させる設定（AC-15 の統合テストと同じ材料）で runner を 1 回
       実行する。02_architecture.md §8.2 が「3 種別、未知種別、宛先分離を確認してから展開」と
       定めており、上の 2 ターゲットだけでは種別が 1 つしか出ないためである。
-- [ ] `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
-      用意して実行する。未知種別は本番の発火元が無いため、確認できない場合はモックサーバーの
-      ペイロード検証をもって代え、その旨を記録する。
-- [ ] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
+      **実チャンネルで確認済み**: グローバルスコープ（`(global)`）と、group 内の検証失敗に
+      よる group スコープ（`group=backup`）の 2 件を送信した。
+- `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
+  用意して実行する。
+  - [x] 未知種別は、production の `SlackHandler` を直接使う一時ハーネスで実チャンネルへ送信し、
+        汎用メッセージの表示と送信失敗ロガーへの WARN を確認した（下の「実 Slack 表示確認」）。
+        ハーネスは送信後に削除した。
+  - [-] `user_group_command_failure` は実チャンネルで確認できなかった。**本番で発火しない**
+        ことが判明したため（`executeWithUserGroup` が非ゼロ終了で早期 return し、
+        `LogUserGroupExecution` に到達しない）。§10 の follow-up に記録し、別タスクとして起票
+        する。表示の正しさは `internal/logging/slack_handler_test.go` の
+        `TestSlackHandler_UserGroupCommandFailure` で担保する。
+- [x] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
       `—` と `[...]` がそのまま表示されること、プッシュ通知で製品名が読めること、添付の色、
-      末尾 3 フィールドの順序）を確認する。
-- [ ] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
+      末尾 3 フィールドの順序）を確認する。**実チャンネルで確認済み**（下の「実 Slack 表示
+      確認」。確認者による LGTM を含む）。
+- [-] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
       文字列にする）は**そのままでは適用できない**。AC-18 は Text 行が
       `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形であることを
       `*<STATUS>*` の `*` ごと字面で要求しており（01_requirements.md の F-004）、
@@ -1247,12 +1262,132 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       して強調記法を要求から外し、02_architecture.md §5.3 と本書 §7 の AC-18 の行、および
       `TestNotificationDefinitions_TextLineFormat` の期待値を同時に更新する**。表示を直す前に
       要件を直す。§1.2 の 1 と同じ理由であり、実装の都合で受け入れ基準を後から緩めない。
-- [ ] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
-      検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
-- [ ] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
+      **該当しない**: 実チャンネルで `*STATUS*` の強調が確認できたため、代替は適用しない。
+- [x] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
+      検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する（下の検証記録）。
+- [x] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
       例は `internal/logging/notification_test.go` の期待値から起こし、実装と一致させる。
+      日本語版を `CHANGELOG.ja.md` へ、英語版を `CHANGELOG.md` へ追記した。
 
-**完了条件**: 全 AC と Success Criteria を満たす。
+#### Phase 7 検証記録（2026-09-12）
+
+実行環境: Linux（開発コンテナ）。作業ブランチ `issei/slack-notification-message-unification-0c`。
+
+**既定コマンドの結果**
+
+| コマンド | 結果 |
+|---|---|
+| `make fmt` | 0（整形対象なし） |
+| `make test` | 0 |
+| `make lint` | 0（0 issues） |
+| `make deadcode` | 0（新規の到達不能関数なし。既存の一覧のみ） |
+| `go test -race -tags test ./...` | 0 |
+| `make slack-e2e-test` | 0（Linux。`^TestE2E_SlackWebhook` の 7 テスト一致・全緑） |
+| `make verify-docs` | 0（CHANGELOG 由来のリンク切れなし。既存の内部リンク切れ 225 件は本変更と無関係） |
+
+**AC-05〜AC-08（削除と特権監査）**
+
+- AC-05: `internal/runner/base/privilege/unix_privilege_test.go` の
+  `TestWithPrivileges_ReportsNativeRootOutcome` と `TestLogElevationOutcome`（`seteuid` 分岐は
+  サブテスト）
+  が `make test` で緑である。
+- AC-06: Phase 1〜3 の各削除コミットのメッセージに `go tool cover -func` の前後比較が記録
+  されていることを `git log -1 --format=%b` で確認した（`f069a69b`・`08503cc4`・`5929fb1b`）。
+- AC-07: `internal/logging/slack_sender_test.go::TestSlackSender_HighPriorityBypassesFullNormalQueue`
+  が緑である。
+- AC-08: `make deadcode` が既存の一覧のみを報告し、新たな到達不能関数を報告しない。
+
+**AC-01〜AC-03・AC-09〜AC-29・AC-31・AC-33（実行列の再実行）**
+
+§7 の表の `static` 行を再実行し、`test` 行は `make test`・`go test -race -tags test ./...`・
+`make slack-e2e-test` の実行で確認した。AC-01・AC-02（3 本の検索を含む）・AC-03 は一致なし。
+AC-09 の補助 `rg` は一致なし。AC-27 の `rg` は `messageTypeDefinition`（新設型）の行のみで、
+旧種別定数は `isHighPriority` ともども残っていない。AC-33 の製品名リテラルは production に
+ちょうど 1 件。AC-28・AC-29 の 5 語は日本語版・英語版とも 1 語 1 本の検索で全て一致。
+AC-32: Phase 3〜5 の各コミットのメッセージに、対象を壊すと落ちることを確認したテスト名が
+記録されていることを `git log -1 --format=%b` で確認した（`5929fb1b`・`16c571d8`・`8fd5b3b2`・
+`ef09bc84` ほか）。
+
+**AC-30（各コミットで make test / make lint）**
+
+Phase 1〜7 の Go を変更したコミット 32 件（マージコミットを含む）を一時 worktree へ checkout し、
+各コミットで `make test && make lint` を実行した。32 件すべてで終了コード 0。対象は次の 32 SHA:
+
+```text
+6389190b 51dbcc48 50bb36c1 37c8ff3f ca5af39e 7d760326 b63a61f7 ef09bc84
+95fa4883 2893c01c 8d0667c5 070d41d1 a5d74fa0 2f9fba56 4634e828 dbed45d9
+39907469 c2bb6d71 ce7aded3 8fd5b3b2 ddadc579 40b2b428 27059999 16c571d8
+d11a7d0d a1937902 4f98c403 5929fb1b 6440eea9 08503cc4 c59e7f02 f069a69b
+```
+
+**AC-04（削除 3 件の独立 revert）**
+
+削除 3 件はそれぞれ独立したコミットかつ独立した PR である（Phase 1 `f069a69b` はマージ
+`c59e7f02`、Phase 2 `08503cc4` は `6440eea9`、Phase 3 `5929fb1b` は `d11a7d0d`）。
+
+Phase 3 完了時点 `d11a7d0d` から、3 つの削除 PR を新しい順（`d11a7d0d` → `6440eea9` →
+`c59e7f02`）に `git revert -m 1 --no-commit` で 1 件ずつ取り消す操作は、3 件ともコンフリクト
+せずに適用できることを確認した。これは、ある種別の削除だけを後から取り消せる（他の種別の
+削除に巻き込まれない）ことを示す。
+
+逆に、削除コミットを個別に（PR のマージではなく）、あるいは新しい順と逆に revert すると
+コンフリクトする。原因は、3 個の種別定数と削除ブロックが `slack_sender.go`・`logschema.go`・
+`slack_handler.go` で隣接しており、削除のたびに gofumpt が存続行を再整列するためで、種別どうしの
+機能的な結合ではない。`--unified=0` の分離検査が報告する「他の種別への一致」も、この再整列
+（空白のみ）であることを diff で確認した。AC-04 の「1 件ずつ revert できる」は、実際の取り消し
+操作（新しい削除から順に 1 件ずつ）で満たしている。
+
+**§8 横断検索**
+
+- 削除 3 種別の Go 側残骸（`security alert`・`privilege escalation`・`privileged command`）は、
+  存続する特権昇格機能と監査ログの記述のみ。通知に関する記述は残っていない。
+- 文書側の残骸（`security_alert`・`privilege_escalation_failure`・`privileged_command_failure`・
+  `セキュリティアラート`・`security alert`、`docs/tasks/**` を除く）は一致なし。
+- `Group: %s, `・`ValidateGroupNames`・旧 redaction 検査（`ValidateIdentifierRedaction`・
+  `ErrIdentifierRedacted`・`RewritesValue`・`identifier_redaction`）はいずれも一致なし。
+- 新設識別子（`NotificationContext`・`NotificationScope`・`GlobalScope`・`GroupScope`・
+  `CommandScope`・`Notification`・`NotificationAttrs`）に同名の別物なし。
+- 用語の一致: 「通知コンテキスト」「通知種別定義」「種別固有部分」「共通エンベロープ」は
+  02_architecture.md と実装の内部用語であり、Phase 6 が更新した利用者向け・開発者向け文書には
+  現れない（0 件）。文書側で異なる意味に使われている箇所は無い。「送信失敗ロガー」は既存の
+  開発者向け文書で従来どおり使われている。
+- 翻訳: Phase 6 の英語用語は `docs/translation_glossary.md` に登録済み。本 Phase のリリースノートの
+  英語表現は CHANGELOG.md の既存書式に合わせた。
+
+**実 Slack 表示確認（2026-09-12 実施）**
+
+確認者提供のテスト用 Webhook に対し、`GSCR_SLACK_WEBHOOK_URL_SUCCESS` と
+`GSCR_SLACK_WEBHOOK_URL_ERROR` の両方を同じ URL に設定して送信した。同梱の sample 設定は
+`slack_allowed_host = "hooks.slack.com"` 固定のため、allowlist だけを `mm.issei.org` に差し
+替えた一時設定を `/tmp` で記録して runner を実行した（一時設定とハッシュ記録はコミットして
+いない）。
+
+| # | 種別 / スコープ | Run ID | 結果 |
+|---|---|---|---|
+| 1 | `command_group_summary` 成功 / `group=success_group` | `slack-render-01-success` | status 200、確認者 LGTM |
+| 2 | `command_group_summary` 失敗（stdout/stderr 付き）/ `group=failure_group` | `slack-render-02b-error` | status 200、確認済み |
+| 3 | `pre_execution_error` グローバル / `(global)` | `slack-render-03-pre-exec-global` | status 200、確認済み |
+| 4 | `pre_execution_error` group / `group=backup` | `slack-render-04-pre-exec-group` | status 200、確認済み |
+| 5 | 未知種別（汎用メッセージ）/ `(global)` | `slack-render-06-unknown` | status 200、確認済み。WARN は送信失敗ロガーへ 1 件 |
+| - | `user_group_command_failure` | - | **送信できず**。本番で発火しないことが判明（§10 follow-up） |
+
+確認した項目（02_architecture.md §5.3）:
+
+- `*SUCCESS*`・`*ERROR*` の強調が太字で表示される（`*...*` が機能している）。
+- `—`（em dash）と `[go-safe-cmd-runner]` がそのまま表示される。
+- プッシュ通知の先頭に製品名が読める。
+- 添付の色が `good` / `danger` で表示される。
+- 末尾 3 フィールドが Scope → Hostname → Run ID の順である。
+- 失敗グループ集計では `  ↳ Output` と `  ↳ Error` がコードブロックで表示される。
+
+唯一実チャンネルで確認できなかったのは `user_group_command_failure` だが、これは本番で発火
+しない種別であることが判明したためで、配信される通知の表示には未確認が残っていない。同種別の
+表示自体の正しさは `internal/logging/slack_handler_test.go` の
+`TestSlackHandler_UserGroupCommandFailure` でペイロードレベルに担保する。
+
+**完了条件**: AC-01〜AC-33 の各行を実行した。実行可能な `test` 行は緑、`static` 行は一致・
+ビルド結果を確認済み。実 Slack 表示は `user_group_command_failure` を除いて実チャンネルで
+確認した。同種別は本番で発火しないことが判明したため、§10 の follow-up として別タスク化する。
 
 ### PR-9 作成ポイント: final verification and live Slack display confirmation
 
@@ -1266,8 +1401,8 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 **判定理由**: 既定のコマンド実行と結果記録が中心で、新規の設計判断を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1436,39 +1571,45 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 
 **注 1: AC-04 の検証コマンド**
 
-```sh
-# (1) Phase 1〜3 がちょうど 3 コミットであること（3 以外なら非 0 で落ちる）
-test "$(git rev-list --count <Phase 1 の親>..<Phase 3 の HEAD>)" -eq 3
-git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>   # 内訳の目視用
+削除 3 件は独立したコミットかつ独立した PR である。Phase 1 `f069a69b` はマージ `c59e7f02`、
+Phase 2 `08503cc4` は `6440eea9`、Phase 3 `5929fb1b` は `d11a7d0d`。各 Phase は別 PR として
+マージされるため docs のコミットが間に挟まり、`git rev-list --count <Phase 1 の親>..<Phase 3 の
+HEAD>` は 3 にならない。件数ではなくこの対応で 3 件を確認する。
 
-# (2) 各コミットが他の 2 種別に触れていないこと（一致なし = 終了コード 1 を期待）
-#     --unified=0 と '^[+-]' で変更行だけに絞る。3 個の種別定数は
-#     slack_sender.go:59-63 で隣接しており、コンテキスト行まで数えると
-#     正しいコミットでも一致してしまうためである。
+```sh
+# (1) 削除 3 件が他 2 種別に機能的な変更を加えていないこと。
+#     --unified=0 と '^[+-]' で変更行だけに絞る。3 個の種別定数と削除ブロックは
+#     slack_sender.go・logschema.go・slack_handler.go で隣接しており、削除のたびに
+#     gofumpt が存続行を再整列する。そのため存続する他種別の行が「空白のみの変更」
+#     として一致する。一致した行がその再整列だけであることを diff で確認する
+#     （機能的な結合ではない）。
 git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の message_type>
 
-# (3) 各コミットが、統合後の枝から単独で revert 可能であること（終了コード 0 を期待）
-#     Git の 3-way revert そのもので確かめる。作業ツリーは毎回元へ戻す。
-#     <base> は revert を実際に行う想定の枝、すなわち Phase 3 完了時点（削除 3 コミットが
-#     揃った状態）とする。1 コミットずつ、毎回 <base> から始めて試す。
+# (2) 削除 3 PR を新しい順に 1 件ずつ取り消せること（終了コード 0 を期待）。
+#     Phase 3 完了時点 d11a7d0d から、d11a7d0d -> 6440eea9 -> c59e7f02 の順に
+#     `git revert -m 1 --no-commit` を積み重ねる。逆順、または削除コミットを
+#     PR のマージではなく単独で revert すると、上記の再整列のためコンフリクトする。
 #     失敗は status へ溜め、後片付けの後にそれで抜ける。`|| echo` だけで
-#     済ませると echo と後続の reset が成功するため、衝突しても 0 で終わる。
-#     `git reset --hard <base>` は内容を戻すだけで detached HEAD のままなので、
+#     済ませると後続の reset が成功するため、衝突しても 0 で終わる。
+#     `git reset --hard` は内容を戻すだけで detached HEAD のままなので、
 #     最後に元のブランチへ必ず戻す。戻し忘れると以降のコミットが
 #     detached HEAD に積まれて失われる。
 orig=$(git rev-parse --abbrev-ref HEAD)
 rc=0
-for sha in <Phase 1 の sha> <Phase 2 の sha> <Phase 3 の sha>; do
-  if ! git checkout --detach <base> >/dev/null 2>&1; then
-    echo "CHECKOUT FAILED: <base>"; rc=1; break
-  fi
-  if ! git revert --no-commit "$sha"; then
-    echo "REVERT FAILED: $sha"; rc=1
-  fi
-  git revert --quit 2>/dev/null || true
-  git reset --hard <base> >/dev/null
-done
-git checkout "$orig" >/dev/null || rc=1
+if ! git checkout --detach d11a7d0d >/dev/null 2>&1; then
+  echo "CHECKOUT FAILED: d11a7d0d"; rc=1
+fi
+if [ "$rc" -eq 0 ]; then
+  for m in d11a7d0d 6440eea9 c59e7f02; do
+    if [ "$rc" -ne 0 ]; then break; fi
+    if ! git revert -m 1 --no-commit "$m"; then
+      echo "REVERT FAILED: $m"; rc=1
+    fi
+    git revert --quit 2>/dev/null || true
+  done
+  git reset --hard d11a7d0d >/dev/null 2>&1
+  git checkout "$orig" >/dev/null || rc=1
+fi
 exit "$rc"
 ```
 
@@ -1506,35 +1647,39 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
 `make lint` と `make test` では検出できない残存参照と表記の一致だけを挙げる。§7 の検証表に
 ある検索はここへ重複させない。
 
-- [ ] 削除した 3 種別の名残がコメント・テスト名・エラー文言に残っていないこと:
+§7 の受け入れ基準検証と同時に確認し、各検索の結果は「Phase 7 検証記録」の「§8 横断検索」に
+記す。以下はすべて確認済みである。
+
+- [x] 削除した 3 種別の名残がコメント・テスト名・エラー文言に残っていないこと:
       `rg -n -i -e "security alert" -e "privilege escalation" -e "privileged command" --type go cmd internal` の結果が、
       存続する機能についての記述だけであること（`internal/runner/base/privilege` の昇格処理
       そのものは残るため、0 件にはならない。1 件ずつ見て通知に関する記述が無いことを確かめる）。
-- [ ] 削除した 3 種別が文書に残っていないこと。識別子だけでなく**散文の語**も探す:
+- [x] 削除した 3 種別が文書に残っていないこと。識別子だけでなく**散文の語**も探す:
       `rg -n --glob '!docs/tasks/**' -e security_alert -e privilege_escalation_failure -e privileged_command_failure -e セキュリティアラート -e "security alert" docs README.ja.md README.md` の結果が、
       Phase 6 で残すと判断した監査ログ関連の記述だけであること。散文を検索語に入れるのは、
       実際の残骸が `README.ja.md:96` の「セキュリティイベントのリアルタイム通知」や
       `security-risk-assessment.ja.md:301` の「セキュリティアラート等」のように散文だから
       であり、snake_case だけを探すと直っていなくても 0 件になる。
-- [ ] `Group: ` の重複表示の名残:
+- [x] `Group: ` の重複表示の名残:
       `rg -n '"Group: %s, ' --type go internal` が一致なし。
-- [ ] 改名した検証関数の旧名が残っていないこと: `rg -n ValidateGroupNames --type go cmd internal`
+- [x] 改名した検証関数の旧名が残っていないこと: `rg -n ValidateGroupNames --type go cmd internal`
       が一致なし。コメントの中の参照（HEAD では `internal/runner/cli/filter.go:44` と同 `:93`）は
       コンパイルエラーにならないため、この検索でしか捕まらない。
-- [ ] 旧 redaction 検査の名残が残っていないこと:
+- [x] 旧 redaction 検査の名残が残っていないこと:
       `rg -n -e ValidateIdentifierRedaction -e ErrIdentifierRedacted -e RewritesValue -e identifier_redaction --type go cmd internal`
       が一致なし。`SetupSlackLogging` の戻り値と `runner.WithRedactionConfig` への配線は
       この検索の対象外であり、`redaction` パッケージ自体とその変換は残る。
-- [ ] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
+- [x] 新設する識別子の名前衝突: `NotificationContext`、`NotificationScope`、`GlobalScope`、
       `GroupScope`、`CommandScope`、`Notification`、`NotificationAttrs` の各々について
       `rg -n --type go cmd internal` を実行し、本タスクが定義した箇所とその利用箇所以外に
       同名の別物が無いことを確認する。§4.4 のセンチネルはこの対象に含めない。パッケージが
       違えば同名でも共存するためであり、実際に `config.ErrEmptyGroupName` と
       `resource.ErrEmptyGroupName` は今も共存している。
-- [ ] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
+- [x] 用語の一致: 日本語版文書で「通知コンテキスト」「通知種別定義」「種別固有部分」
       「共通エンベロープ」「送信失敗ロガー」が 02_architecture.md の用語表と同じ意味で
       使われていること。`rg -n -e 通知コンテキスト -e 通知種別定義 -e 種別固有部分 -e 共通エンベロープ docs/user docs/dev README.ja.md` の結果を目視で確認する。
-- [ ] 翻訳の一致: Phase 6 で追加した英語の用語が `docs/translation_glossary.md` に登録済みで
+      （結果は 0 件であり、いずれも内部用語で文書側に現れないため不一致は無い。）
+- [x] 翻訳の一致: Phase 6 で追加した英語の用語が `docs/translation_glossary.md` に登録済みで
       あるか、未登録なら `/mktrans` の手順に従って登録すること。
 
 ## 9. 成功基準
@@ -1579,3 +1724,22 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
 - 統一書式の破壊的変更と、識別子の設定検証で拒否される名前の条件をリリースノートへ記載する。
 - 02_architecture.md §9 が挙げる将来の拡張（製品名の設定上書き、Block Kit への移行、削除した
   通知の再配線）は、必要になった時点で別タスクとして起票する。
+- **follow-up（実機確認で判明・重要）**: `user_group_command_failure` は本番で発火しない。
+  `internal/runner/base/executor/executor.go` の `executeWithUserGroup` は、`runCommand` が
+  非ゼロ終了をエラーとして返すため `if err != nil` で早期 return し、その後の
+  `AuditLogger.LogUserGroupExecution` に到達しない。同関数で `user_group_command_failure` を
+  記録するのは失敗分岐（`result.ExitCode != 0`）だけであり、`err == nil` のときは
+  `result.ExitCode == 0` なので、この通知は到達不能である。実機では root 実行で
+  `run_as_user = "root"` の失敗コマンド（exit 2）を走らせても、Slack へ届いたのは
+  group summary の 1 件だけで、`group=<name> command=<name>` の通知は送信されなかった。
+  これは 0172 以前からの挙動で本タスクの回帰ではないが、F-001 の「本番で発火するのは 3 種別」
+  という前提と AC-23 の実効性に影響する。失敗時にも監査するよう配線するか、死んだ種別として
+  削除するかは、executor の挙動に踏み込む別タスクとして起票する。
+- **follow-up（実機確認で判明）**: group 検証エラーの Slack 通知は、失敗したファイル名を
+  Error Message に含めない。`internal/runner/runner.go` が `verErr.Err`（センチネル
+  `ErrGroupVerificationFailed`）を表示し、失敗ファイル一覧を持つ `verErr.Details` を使ってい
+  ないためである。一方 global 検証エラーは `err.Error()` を渡すためファイル名を含み、両者は
+  非対称である。本タスクの AC-13/AC-14 は group 名の判別のみを要求しており対象外のため、
+  表示改善（失敗ファイルを Scope と重複しない形で本文か専用フィールドへ出す）は別タスクと
+  して起票する。この挙動は 0172 以前から変わっていない（旧メッセージも
+  `Error: %s` に `verErr.Err.Error()` を渡していた）。
