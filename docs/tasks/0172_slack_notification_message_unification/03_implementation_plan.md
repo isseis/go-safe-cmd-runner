@@ -1224,26 +1224,34 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
        本 Phase の確認としない。
 - [x] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する（下の「Phase 7 検証記録」）。
 - [x] 本書 §8 の横断検索チェックリストを実行する（下の「Phase 7 検証記録」）。
-- [-] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
+- [x] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
       の Webhook に設定し、`make slack-notify-test` と `make slack-group-notification-test` を
       実行する。これらが出すのは `command_group_summary`（成功・失敗の両方）である。
-      **未実施**: 実行環境にテスト用 Webhook が用意されておらず、ネットワーク送信には承認も
-      要するため。モックサーバーによるペイロード検証で代替した（下の検証記録）。
-- [-] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
+      **実チャンネルで確認済み**（下の「実 Slack 表示確認」）。同梱の `sample/slack-notify.toml`
+      と `sample/slack-group-notification-test.toml` は `slack_allowed_host = "hooks.slack.com"`
+      を固定しており、用意された Webhook のホスト（`mm.issei.org`）を通せないため、同じ内容で
+      allowlist だけを差し替えた一時設定を `/tmp` で記録して runner を実行した。成功グループ集計
+      と、stdout/stderr を含む失敗グループ集計を各 1 件送信して表示を確認した。
+- [x] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
       対象ファイルの検証を失敗させる設定（AC-15 の統合テストと同じ材料）で runner を 1 回
       実行する。02_architecture.md §8.2 が「3 種別、未知種別、宛先分離を確認してから展開」と
       定めており、上の 2 ターゲットだけでは種別が 1 つしか出ないためである。
-      **未実施**: 上と同じ理由。`cmd/runner/integration_pre_execution_error_test.go` の統合テストで
-      代替した（下の検証記録）。
-- [-] `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
-      用意して実行する。未知種別は本番の発火元が無いため、確認できない場合はモックサーバーの
-      ペイロード検証をもって代え、その旨を記録する。**未実施・代替済み**: 実チャンネルでの確認は
-      行わず、`internal/logging/slack_handler_test.go` のモックサーバー検証をもって代える。
-- [-] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
+      **実チャンネルで確認済み**: グローバルスコープ（`(global)`）と、group 内の検証失敗に
+      よる group スコープ（`group=backup`）の 2 件を送信した。
+- `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
+  用意して実行する。
+  - [x] 未知種別は、production の `SlackHandler` を直接使う一時ハーネスで実チャンネルへ送信し、
+        汎用メッセージの表示と送信失敗ロガーへの WARN を確認した（下の「実 Slack 表示確認」）。
+        ハーネスは送信後に削除した。
+  - [-] `user_group_command_failure` は実チャンネルで確認できなかった。**本番で発火しない**
+        ことが判明したため（`executeWithUserGroup` が非ゼロ終了で早期 return し、
+        `LogUserGroupExecution` に到達しない）。§10 の follow-up に記録し、別タスクとして起票
+        する。表示の正しさは `internal/logging/slack_handler_test.go` の
+        `TestSlackHandler_UserGroupCommandFailure` で担保する。
+- [x] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
       `—` と `[...]` がそのまま表示されること、プッシュ通知で製品名が読めること、添付の色、
-      末尾 3 フィールドの順序）を確認する。**一部未実施**: 実表示に依存する強調と素の表示の
-      2 項目は実チャンネルが無いため未確認。添付の色、末尾 3 フィールドの順序、Text 行の字面は
-      モックサーバーのペイロード検証で確認した。
+      末尾 3 フィールドの順序）を確認する。**実チャンネルで確認済み**（下の「実 Slack 表示
+      確認」。確認者による LGTM を含む）。
 - [-] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
       文字列にする）は**そのままでは適用できない**。AC-18 は Text 行が
       `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形であることを
@@ -1254,7 +1262,7 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       して強調記法を要求から外し、02_architecture.md §5.3 と本書 §7 の AC-18 の行、および
       `TestNotificationDefinitions_TextLineFormat` の期待値を同時に更新する**。表示を直す前に
       要件を直す。§1.2 の 1 と同じ理由であり、実装の都合で受け入れ基準を後から緩めない。
-      **該当しない**: 実表示を確認していないため、代替は適用しない。
+      **該当しない**: 実チャンネルで `*STATUS*` の強調が確認できたため、代替は適用しない。
 - [x] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
       検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する（下の検証記録）。
 - [x] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
@@ -1346,21 +1354,40 @@ Phase 3 完了時点 `d11a7d0d` から、3 つの削除 PR を新しい順（`d1
 - 翻訳: Phase 6 の英語用語は `docs/translation_glossary.md` に登録済み。本 Phase のリリースノートの
   英語表現は CHANGELOG.md の既存書式に合わせた。
 
-**実 Slack 表示確認（未実施・残存リスク）**
+**実 Slack 表示確認（2026-09-12 実施）**
 
-実行環境にテスト用チャンネルの Webhook（`GSCR_SLACK_WEBHOOK_URL_SUCCESS` /
-`GSCR_SLACK_WEBHOOK_URL_ERROR`）が設定されておらず、ネットワーク送信には承認も必要であるため、
-`make slack-notify-test`・`make slack-group-notification-test` と実チャンネルでの
-`pre_execution_error` 確認は実施していない。02_architecture.md §5.3 の 5 項目のうち、Slack の
-実レンダリングに依存する 2 項目（`*STATUS*` の強調、`—`・`[...]` の素の表示）は未確認である。
-代わりに `make slack-e2e-test`（Linux、7 テスト）と `internal/logging/slack_handler_test.go` の
-モックサーバー検証で、Text 行の字面、添付の色、末尾 3 フィールドの順序、宛先分離をペイロード
-レベルで確認した。実表示未確認をリリース前の残存リスクとして記録する。
+確認者提供のテスト用 Webhook に対し、`GSCR_SLACK_WEBHOOK_URL_SUCCESS` と
+`GSCR_SLACK_WEBHOOK_URL_ERROR` の両方を同じ URL に設定して送信した。同梱の sample 設定は
+`slack_allowed_host = "hooks.slack.com"` 固定のため、allowlist だけを `mm.issei.org` に差し
+替えた一時設定を `/tmp` で記録して runner を実行した（一時設定とハッシュ記録はコミットして
+いない）。
+
+| # | 種別 / スコープ | Run ID | 結果 |
+|---|---|---|---|
+| 1 | `command_group_summary` 成功 / `group=success_group` | `slack-render-01-success` | status 200、確認者 LGTM |
+| 2 | `command_group_summary` 失敗（stdout/stderr 付き）/ `group=failure_group` | `slack-render-02b-error` | status 200、確認済み |
+| 3 | `pre_execution_error` グローバル / `(global)` | `slack-render-03-pre-exec-global` | status 200、確認済み |
+| 4 | `pre_execution_error` group / `group=backup` | `slack-render-04-pre-exec-group` | status 200、確認済み |
+| 5 | 未知種別（汎用メッセージ）/ `(global)` | `slack-render-06-unknown` | status 200、確認済み。WARN は送信失敗ロガーへ 1 件 |
+| - | `user_group_command_failure` | - | **送信できず**。本番で発火しないことが判明（§10 follow-up） |
+
+確認した項目（02_architecture.md §5.3）:
+
+- `*SUCCESS*`・`*ERROR*` の強調が太字で表示される（`*...*` が機能している）。
+- `—`（em dash）と `[go-safe-cmd-runner]` がそのまま表示される。
+- プッシュ通知の先頭に製品名が読める。
+- 添付の色が `good` / `danger` で表示される。
+- 末尾 3 フィールドが Scope → Hostname → Run ID の順である。
+- 失敗グループ集計では `  ↳ Output` と `  ↳ Error` がコードブロックで表示される。
+
+唯一実チャンネルで確認できなかったのは `user_group_command_failure` だが、これは本番で発火
+しない種別であることが判明したためで、配信される通知の表示には未確認が残っていない。同種別の
+表示自体の正しさは `internal/logging/slack_handler_test.go` の
+`TestSlackHandler_UserGroupCommandFailure` でペイロードレベルに担保する。
 
 **完了条件**: AC-01〜AC-33 の各行を実行した。実行可能な `test` 行は緑、`static` 行は一致・
-ビルド結果を確認済み。実 Slack のレンダリングに依存する 2 項目だけが未確認であり、モック
-サーバーのペイロード検証で代替してリリース前の残存リスクとして記録した。したがって AC と
-Success Criteria のうち、実表示に関わる部分を除いて満たしている。
+ビルド結果を確認済み。実 Slack 表示は `user_group_command_failure` を除いて実チャンネルで
+確認した。同種別は本番で発火しないことが判明したため、§10 の follow-up として別タスク化する。
 
 ### PR-9 作成ポイント: final verification and live Slack display confirmation
 
@@ -1695,6 +1722,17 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
 - 統一書式の破壊的変更と、識別子の設定検証で拒否される名前の条件をリリースノートへ記載する。
 - 02_architecture.md §9 が挙げる将来の拡張（製品名の設定上書き、Block Kit への移行、削除した
   通知の再配線）は、必要になった時点で別タスクとして起票する。
+- **follow-up（実機確認で判明・重要）**: `user_group_command_failure` は本番で発火しない。
+  `internal/runner/base/executor/executor.go` の `executeWithUserGroup` は、`runCommand` が
+  非ゼロ終了をエラーとして返すため `if err != nil` で早期 return し、その後の
+  `AuditLogger.LogUserGroupExecution` に到達しない。同関数で `user_group_command_failure` を
+  記録するのは失敗分岐（`result.ExitCode != 0`）だけであり、`err == nil` のときは
+  `result.ExitCode == 0` なので、この通知は到達不能である。実機では root 実行で
+  `run_as_user = "root"` の失敗コマンド（exit 2）を走らせても、Slack へ届いたのは
+  group summary の 1 件だけで、`group=<name> command=<name>` の通知は送信されなかった。
+  これは 0172 以前からの挙動で本タスクの回帰ではないが、F-001 の「本番で発火するのは 3 種別」
+  という前提と AC-23 の実効性に影響する。失敗時にも監査するよう配線するか、死んだ種別として
+  削除するかは、executor の挙動に踏み込む別タスクとして起票する。
 - **follow-up（実機確認で判明）**: group 検証エラーの Slack 通知は、失敗したファイル名を
   Error Message に含めない。`internal/runner/runner.go` が `verErr.Err`（センチネル
   `ErrGroupVerificationFailed`）を表示し、失敗ファイル一覧を持つ `verErr.Details` を使ってい
