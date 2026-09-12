@@ -74,6 +74,9 @@ var notificationDefinitions []*messageTypeDefinition
 // Calls happen only in the var block below, so the set is fixed before any
 // other package's init runs.
 func registerNotification(messageType string, priority notificationPriority, build messageBuilder) Notification {
+	if build == nil {
+		panic("registerNotification: build must not be nil for " + messageType)
+	}
 	definition := &messageTypeDefinition{
 		messageType: messageType,
 		priority:    priority,
