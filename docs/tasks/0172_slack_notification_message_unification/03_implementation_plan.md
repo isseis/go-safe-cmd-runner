@@ -1599,15 +1599,17 @@ rc=0
 if ! git checkout --detach d11a7d0d >/dev/null 2>&1; then
   echo "CHECKOUT FAILED: d11a7d0d"; rc=1
 fi
-for m in d11a7d0d 6440eea9 c59e7f02; do
-  if [ "$rc" -ne 0 ]; then break; fi
-  if ! git revert -m 1 --no-commit "$m"; then
-    echo "REVERT FAILED: $m"; rc=1
-  fi
-  git revert --quit 2>/dev/null || true
-done
-git reset --hard d11a7d0d >/dev/null 2>&1
-git checkout "$orig" >/dev/null || rc=1
+if [ "$rc" -eq 0 ]; then
+  for m in d11a7d0d 6440eea9 c59e7f02; do
+    if [ "$rc" -ne 0 ]; then break; fi
+    if ! git revert -m 1 --no-commit "$m"; then
+      echo "REVERT FAILED: $m"; rc=1
+    fi
+    git revert --quit 2>/dev/null || true
+  done
+  git reset --hard d11a7d0d >/dev/null 2>&1
+  git checkout "$orig" >/dev/null || rc=1
+fi
 exit "$rc"
 ```
 
