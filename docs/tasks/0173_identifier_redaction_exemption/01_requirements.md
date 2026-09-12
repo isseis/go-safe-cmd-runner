@@ -12,7 +12,7 @@
 
 ## 関連 Issue
 
-- なし（Task 0172 の `02_architecture.md` §3.5 で残余リスクとして受容した事項から派生）
+- なし（Task 0172 の [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.5 で残余リスクとして受容した事項から派生）
 
 ## 背景
 
@@ -60,16 +60,16 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 
 ### 対象
 
-1. 識別子を表す型の追加（`internal/common`。型名とメソッドは `02_architecture.md` で確定する）。
+1. 識別子を表す型の追加（`internal/common`。型名とメソッドは [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) で確定する）。
 2. `internal/redaction` に、宣言された識別子を値ベース変換の対象外として明示的に認識する経路を追加し、下流ハンドラには string として正規化して渡す。
 3. group 名・コマンド名を属性値として書く production の全経路を宣言型へ置き換える。少なくとも `group`、`command`、`command_name`、`name`、`notification_context` の名前値、`CommandResult`／`CommandResults` の名前が対象（約 13 ファイル・40 属性サイト）。
 4. 免除ケースと対照ケース（同じ内容の plain string は従来どおり redact される）を固定するテスト、コマンド行 redaction の維持を固定するテスト、Slack・JSON の表示を確認するテスト。
-5. `docs/dev/architecture_design/security-architecture.md` と `.ja.md`、`docs/user/security-risk-assessment.md` と `.ja.md` の更新。
+5. [`docs/dev/architecture_design/security-architecture.md`](../../dev/architecture_design/security-architecture.md) と [`security-architecture.ja.md`](../../dev/architecture_design/security-architecture.ja.md)、[`docs/user/security-risk-assessment.md`](../../user/security-risk-assessment.md) と [`security-risk-assessment.ja.md`](../../user/security-risk-assessment.ja.md) の更新。
 
 ### 対象外
 
 - **値ベース検出パターン自体の変更。** `IsSensitiveValue` の語境界化や `ValueDetector` のパターン調整は行わない（自由文の検出挙動を変えないため）。
-- **message・error 文字列に連結された識別子の免除。** 型では宣言できず、`RedactText`・`IsSensitiveValue` が引き続き適用される。この実害は残余リスクとして記録する（F-004）。
+- **message・error 文字列に連結された識別子の免除。** 型では宣言できず、自由文 redaction が引き続き適用される。[`RedactingHandler.Handle`](../../../internal/redaction/redactor.go) は `record.Message` には `Config.RedactText` のみを適用し、`IsSensitiveValue` による値まるごと判定は行わない。一方、error 属性をはじめとする文字列属性には `RedactText` に続けて `IsSensitiveValue` の値まるごと判定が適用される。この実害は残余リスクとして記録する（F-004）。
 - **設定境界の検査追加。** Task 0172 の決定（識別子の中身を redaction と照合しない）を維持する。
 - **`record.Message` の redaction 免除。**
 - **キー名ベースの除外。** `"command"`・`"name"` の多重用途により成立しない（背景参照）。
@@ -96,11 +96,11 @@ key=value 置換・値形式検出・値まるごと判定のいずれも、宣�
 
 ### 下流ハンドラには string として正規化する
 
-`RedactingHandler` の免除経路は宣言された識別子を string 値として後続へ渡す。Slack ハンドラ・JSON ハンドラ・`message_formatter` の読み取りコードは変更しない。テスト用の捕捉ヘルパーが値の型に依存している場合の扱いは `02_architecture.md` で決める。
+`RedactingHandler` の免除経路は宣言された識別子を string 値として後続へ渡す。Slack ハンドラ・JSON ハンドラ・`message_formatter` の読み取りコードは変更しない。テスト用の捕捉ヘルパーが値の型に依存している場合の扱いは [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) で決める。
 
 ### 0172 の残余リスクを置き換える
 
-本タスクの完了をもって、Task 0172 `02_architecture.md` §3.5 の残余リスク（redaction が識別子を書き換え、Scope が `[REDACTED]` になりうる）は解消される。0172 の承認済み文書は履歴として残し、本タスクの文書から相互参照する（AC-17）。
+本タスクの完了をもって、Task 0172 [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.5 の残余リスク（redaction が識別子を書き換え、Scope が `[REDACTED]` になりうる）は解消される。0172 の承認済み文書は履歴として残し、本タスクの文書から相互参照する（AC-17）。
 
 ## 受け入れ基準（Acceptance Criteria）
 
@@ -137,25 +137,25 @@ key=value 置換・値形式検出・値まるごと判定のいずれも、宣�
 #### F-004: 残余リスクの記録
 
 **Acceptance Criteria**:
-- **AC-13**: message・error 文字列に連結された識別子が本タスクの免除対象外であること、およびその実害（`monkey` を含むエラー文字列が全文 `[REDACTED]` になりうる）が、設計文書またはセキュリティ文書に記載されている。
+- **AC-13**: message・error 文字列に連結された識別子が本タスクの免除対象外であること、およびその実害（error 属性の文字列は `RedactText` に続く `IsSensitiveValue` の値まるごと判定で全文 `[REDACTED]` になりうる一方、`record.Message` には `RedactText` のみが適用され値まるごと判定は行われない）が、設計文書またはセキュリティ文書に記載されている。
 - **AC-14**: 識別子を redact しないことの帰結（設定の名前に機密を書いた場合は通知・ログにそのまま出る）が、利用者向けセキュリティ文書に記載されている。
 
 #### F-005: ドキュメント
 
 **Acceptance Criteria**:
-- **AC-15**: `docs/dev/architecture_design/security-architecture.ja.md` と `security-architecture.md` の redaction 層の説明に、識別子の型宣言による免除が記載されている。
-- **AC-16**: `docs/user/security-risk-assessment.ja.md` と `security-risk-assessment.md` の Limitations に AC-14 の内容が反映されている。
-- **AC-17**: 本タスクが Task 0172 `02_architecture.md` §3.5 の残余リスクを置き換えることが、本タスクの文書から参照できる。
+- **AC-15**: [`docs/dev/architecture_design/security-architecture.ja.md`](../../dev/architecture_design/security-architecture.ja.md) と [`security-architecture.md`](../../dev/architecture_design/security-architecture.md) の redaction 層の説明に、識別子の型宣言による免除が記載されている。
+- **AC-16**: [`docs/user/security-risk-assessment.ja.md`](../../user/security-risk-assessment.ja.md) と [`security-risk-assessment.md`](../../user/security-risk-assessment.md) の Limitations に AC-14 の内容が反映されている。
+- **AC-17**: 本タスクが Task 0172 [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.5 の残余リスクを置き換えることが、本タスクの文書から参照できる。
 
 #### F-006: 全体の健全性
 
 **Acceptance Criteria**:
 - **AC-18**: 各コミットの時点で `make test` と `make lint` が通る。
-- **AC-19**: F-001 から F-005 までの各 AC を検証するテストが、検証対象の挙動を壊すと失敗する（CLAUDE.md「Every test must be able to fail for its stated reason」）。確認したことをコミットメッセージに記す。
+- **AC-19**: F-001 から F-004 までの挙動に関する各 AC を検証するテストが、検証対象の挙動を壊すと失敗する（CLAUDE.md「Every test must be able to fail for its stated reason」）。F-005 の文書・テキスト基準は [requirements_process.md](../../dev/developer_guide/requirements_process.md) §4 に従い `static` 検証のみでよい。確認したことをコミットメッセージに記す。
 
 ## Success Criteria（要件レベル）
 
-- group 名・コマンド名が、その内容にかかわらず通知・ログで元の文字列のまま表示される。
+- 宣言された識別子型として出力される値（通知の Scope および構造化された名前属性）が、その内容にかかわらず通知・ログで元の文字列のまま表示される。ただし自由文の error 文字列に埋め込まれた名前はこの免除の対象外である。
 - 自由文・コマンド行・引数・環境変数値の redaction は弱まっていない。
 - Slack・JSON・text の読み取り構造、設定検証、既存の redaction パターン集合が変わっていない。
 - 免除の適用範囲と残余リスクが文書化され、Task 0172 の残余リスクが解消されたことが追跡できる。
