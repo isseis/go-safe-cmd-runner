@@ -150,6 +150,71 @@ If your self-build uses `CGO_ENABLED=0`, this item does not apply. If you build 
 
 **Rollback:** rebuilding with `CGO_ENABLED=0` does not avoid this, because the non-CGO build already fails closed in the same situations, as described in the item above; you must use a version that does not include this change. The configuration and hash file formats are unchanged, so no additional work is needed.
 
+#### Slack notifications now use a unified format and carry their scope
+
+The Text line of every Slack notification now follows `[<product name>] <emoji> *<STATUS>* — <Scope> : <headline>`. The emoji, `*STATUS*` and attachment color are determined by the log level alone, with no per-type discretion. The origin is attached to every type as a Scope, and notifications not tied to a group say `(global)` explicitly. The three types that never fired in production (`security_alert`, `privilege_escalation_failure`, `privileged_command_failure`) have been removed from the production code and tests.
+
+Text line changes (old → new):
+
+| Old | New |
+|---|---|
+| `### ✅ SUCCESS backup` | `[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s` |
+| `🚨 Error: config_parsing_failed` | `[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed` |
+| `ERROR: User/group command failed (Run ID: ...)` | `[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)` |
+
+`###` is dropped because mrkdwn does not render it as a heading and it was displayed as literal text; emphasis is now `*...*` throughout. The text right after `—` is always the Scope: one of `group=<name>`, `group=<name> command=<name>`, or `(global)`. A record whose scope and name conflict, such as an empty group or command name, is displayed as `(scope: invalid)`; it is not sent to Slack and a WARN is written to the failure logger.
+
+The `command_group_summary` payload (old):
+
+```json
+{
+  "text": "### ✅ SUCCESS backup",
+  "attachments": [
+    {
+      "color": "good",
+      "fields": [
+        {"title": "Command Count", "value": "3", "short": true},
+        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Hostname", "value": "host01", "short": true},
+        {"title": "Run ID", "value": "01J...", "short": true},
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false}
+      ]
+    }
+  ]
+}
+```
+
+The `command_group_summary` payload (new):
+
+```json
+{
+  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s",
+  "attachments": [
+    {
+      "color": "good",
+      "fields": [
+        {"title": "Command Count", "value": "3", "short": true},
+        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "Scope", "value": "group=backup", "short": true},
+        {"title": "Hostname", "value": "host01", "short": true},
+        {"title": "Run ID", "value": "01J...", "short": true}
+      ]
+    }
+  ]
+}
+```
+
+Type-specific attachment fields now come first and the last three are fixed in the order Scope, Hostname, Run ID. The old version placed Hostname and Run ID differently per type, before the type-specific fields for `command_group_summary`.
+
+**Affected scenarios:** Monitoring rules and integration scripts that match Text lines or attachment field ordering by string or position must be updated to the new format above. None of the three removed types had a production writer, so the set of notifications actually delivered in operation is unchanged. The in-group verification-error notification no longer embeds `Group: <name>, ` in its message; the group name now appears only in the Scope.
+
+#### Group and command names in the configuration are validated at startup
+
+Group and command identifiers are now validated at startup (before hash verification and execution). For command names, the process checks that the name is not empty, contains no control character (Unicode general category Cc) or format-control character (category Cf), retains at least one character that survives the display-safe interpolation contract, and is at most 128 bytes of UTF-8. Length applies to both group and command names. A configuration with two commands of the same name in one group is also rejected. Each check rejects with its own distinct error.
+
+**Affected scenarios:** A TOML file is rejected at startup if any identifier hits one of the following: an empty command name, a name containing a control or format-control character, a name with no displayable character left (such as one made only of ASCII spaces), a name longer than 128 bytes, or a duplicate command name within one group. The character-set check for group names (`^[A-Za-z_][A-Za-z0-9_]*$`) is unchanged.
+
 ### Changed
 
 #### Log file name timestamps are now UTC
