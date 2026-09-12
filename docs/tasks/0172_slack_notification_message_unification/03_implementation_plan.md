@@ -1143,20 +1143,34 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 **対象ファイル**: `docs/user/runner_command.ja.md`、
 `docs/dev/architecture_design/security-architecture.ja.md`、
 `docs/dev/architecture_design/slack_async_delivery.ja.md`、`README.ja.md`、
-`docs/user/security-risk-assessment.ja.md`、`02_architecture.md`、および対応する英語版
+`docs/user/security-risk-assessment.ja.md`、`02_architecture.md`、および対応する英語版。
+加えて、文書に載せたグループ集計の Text 行を実行可能なテストで固定するため
+`internal/logging/notification_test.go` を変更する（下の突き合わせタスク）。
 
 - [x] `docs/user/runner_command.ja.md` の `### 4.2 通知設定` へ、通知される 3 種別、統一書式の
       Text 行の形、Scope の表示（`(global)`・`group=<名前>`・
       `group=<名前> command=<名前>`・`(scope: invalid)`）、Text 行の先頭に付く製品名、および
       ドライラン時に通知が送られないことを日本語で記す。
-- [x] 追加した記述を実装と突き合わせる。Text 行の例は、実装後の
-      `internal/logging/notification_test.go` が検証する形と一字一句一致させ、Scope の表示は
-      02_architecture.md §3.6 の表と対応させる。一致は目視ではなく、テストの期待値と文書の
-      例を並べて確認する。
-- [x] `docs/dev/architecture_design/security-architecture.ja.md` の 898・1307・1310 行目の
-      セキュリティイベント Slack 通知の記述を、削除後の実態へ改める。406・1143 行目は監査
-      ログ全般の記述であり、削除後も事実として残るかを確認し、変更しない場合はその判断を
-      コミットメッセージへ記す。
+- [x] 追加した記述を実装と突き合わせる。Scope の表示は 02_architecture.md §3.1 の判定表
+      （`(global)` と `(scope: invalid)` の挙動は §3.6）と対応させる。Text 行の 4 例は
+      テストの期待値と一字一句一致させた。`pre_execution_error` と
+      `user_group_command_failure` の 2 例は既存テストが完全一致で assert している。
+      グループ集計の 2 例（成功・失敗）はどのテストも見出しの文言を固定していなかったため、
+      **`internal/logging/notification_test.go` へ
+      `TestNotificationDefinitions_GroupSummaryTextLines` を追加し、文書と同じ 2 行を
+      完全一致で assert する**。実装の見出しを `3 commands in` から `3 commands took` へ
+      変えるとこのテストが失敗することを確認した。一致は目視ではなく、テストの期待値と
+      文書の例を並べて確認する。
+- [x] グローバルスコープの説明は「エラー」ではなく「どの group にも紐付かないレコード」と
+      する。実装は INFO の成功レコードにも `(global)` を付けるためである。
+- [x] 通知コンテキストの redaction（識別子が `[REDACTED]` になりうる残余リスク、§3.5）は
+      利用者向け文書へは書かない。01_requirements.md の Success Criteria が「どの group か
+      判別できる」と定めており、残余リスクは 02_architecture.md §3.5 に記録済みである。
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の「セキュリティイベント
+      Slack 通知」の記述（898 行目の目的、1310 行目の監視・アラート一覧）を、削除後の実態
+      （グループ実行結果と実行前エラー）へ改める。監査ログ全般の記述（406・1143 行目、および
+      監視・アラート一覧の 1307 行目「セキュリティイベントの構造化ログ」）は削除後も事実と
+      して残るため変更しない。この判断をコミットメッセージへ記す。
 - [x] `docs/dev/architecture_design/slack_async_delivery.ja.md` 35 行目の
       「`highPriority`(セキュリティアラート等)」を `pre_execution_error` へ改める。
 - [x] `README.ja.md` 96 行目の「セキュリティイベントのリアルタイム通知」を、実際に通知される

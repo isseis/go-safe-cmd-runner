@@ -86,6 +86,60 @@ func TestNotificationDefinitions_TextLineFormat(t *testing.T) {
 	}
 }
 
+// TestNotificationDefinitions_GroupSummaryTextLines pins the full Text lines
+// documented for command group summaries in docs/user/runner_command.ja.md and
+// docs/user/runner_command.md. TestNotificationDefinitions_TextLineFormat
+// checks only the shape, so without this test a wording change in the summary
+// headline would leave the user documentation stale with every test green.
+func TestNotificationDefinitions_GroupSummaryTextLines(t *testing.T) {
+	handler := &SlackHandler{runID: "run-1"}
+	commandNames := []string{"cmd1", "cmd2", "cmd3"}
+
+	summaryRecord := func(status string, level slog.Level, exitCodes ...int) slog.Record {
+		results := make(common.CommandResults, 0, len(exitCodes))
+		for i, exitCode := range exitCodes {
+			results = append(results, common.CommandResult{
+				CommandResultFields: common.CommandResultFields{
+					Name:     commandNames[i],
+					ExitCode: exitCode,
+				},
+			})
+		}
+		record := slog.NewRecord(time.Now(), level, "summary", 0)
+		record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope("backup"))...)
+		record.AddAttrs(
+			slog.String(common.GroupSummaryAttrs.Status, status),
+			slog.Int64(common.GroupSummaryAttrs.DurationMs, 1200),
+			slog.Any(common.GroupSummaryAttrs.Commands, results),
+		)
+		return record
+	}
+
+	tests := []struct {
+		name   string
+		record slog.Record
+		want   string
+	}{
+		{
+			name:   "success",
+			record: summaryRecord("success", slog.LevelInfo, 0, 0, 0),
+			want:   "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s",
+		},
+		{
+			name:   "failure",
+			record: summaryRecord("error", slog.LevelError, 0, 1, 0),
+			want:   "[go-safe-cmd-runner] ❌ *ERROR* — group=backup : 3 commands, 1 failed in 1.2s",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			details := CommandGroupSummaryNotification().definition.build(tt.record)
+			message := handler.buildEnvelope(tt.record.Level, "group=backup", details)
+			assert.Equal(t, tt.want, message.Text)
+		})
+	}
+}
+
 // TestNotificationDefinitions_TrailingFieldsOrder verifies every type ends
 // with Scope, Hostname and Run ID in that order, after its own fields.
 func TestNotificationDefinitions_TrailingFieldsOrder(t *testing.T) {
