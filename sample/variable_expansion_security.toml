@@ -108,7 +108,7 @@ name = "sensitive_data"
 description = "Keep sensitive data in internal variables"
 
 [[groups.commands]]
-name = "api_call_with_token"
+name = "api_call_example"
 description = "Use API token from internal variable"
 cmd = "/usr/bin/curl"
 args = [

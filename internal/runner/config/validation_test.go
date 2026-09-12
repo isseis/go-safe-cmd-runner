@@ -1,8 +1,11 @@
 package config
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,8 +121,9 @@ func TestValidateVariableName(t *testing.T) {
 	}
 }
 
-// TestValidateGroupNames tests group name validation during config loading
-func TestValidateGroupNames(t *testing.T) {
+// TestValidateIdentifiers tests group and command identifier validation during
+// config loading.
+func TestValidateIdentifiers(t *testing.T) {
 	tests := []struct {
 		name          string
 		config        *runnertypes.ConfigSpec
@@ -249,7 +253,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test-deploy", "index 1"},
+			errorContains: []string{"invalid group name", "must match pattern", "index 1"},
 		},
 		{
 			name: "invalid group name with dot",
@@ -260,7 +264,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test.deploy"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with space",
@@ -271,7 +275,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "test deploy"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name starting with number",
@@ -282,7 +286,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "123build"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character @",
@@ -293,7 +297,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build@test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character #",
@@ -304,7 +308,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build#test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "invalid group name with special character $",
@@ -315,7 +319,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrInvalidGroupName,
-			errorContains: []string{"invalid group name", "build$test"},
+			errorContains: []string{"invalid group name", "must match pattern"},
 		},
 		{
 			name: "duplicate group names - simple case",
@@ -328,7 +332,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "build", "indices 0 and 2"},
+			errorContains: []string{"duplicate group name", "indices 0 and 2"},
 		},
 		{
 			name: "duplicate group names - adjacent",
@@ -340,7 +344,7 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "test", "indices 0 and 1"},
+			errorContains: []string{"duplicate group name", "indices 0 and 1"},
 		},
 		{
 			name: "duplicate group names - at end",
@@ -354,7 +358,180 @@ func TestValidateGroupNames(t *testing.T) {
 			},
 			wantErr:       true,
 			expectedError: ErrDuplicateGroupName,
-			errorContains: []string{"duplicate group name", "test", "indices 1 and 3"},
+			errorContains: []string{"duplicate group name", "indices 1 and 3"},
+		},
+		{
+			name: "valid command names",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "build",
+						Commands: []runnertypes.CommandSpec{
+							makeCommand("compile", nil),
+							makeCommand("package-v2", nil),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// The same command name in two different groups is two distinct
+			// scopes ("build/sync", "deploy/sync"), so it is accepted.
+			name: "same command name in different groups",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("sync", nil)}},
+					{Name: "deploy", Commands: []runnertypes.CommandSpec{makeCommand("sync", nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			// Redaction rewrites these names in log output (a word match and
+			// value-format matches), so the notification scope can render as
+			// [REDACTED]. That is an accepted residual risk, not a config
+			// error: identifier validation never inspects redaction.
+			name: "names redaction rewrites are accepted",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "monkey", Commands: []runnertypes.CommandSpec{
+						makeCommand("rotate_api_key", nil),
+						makeCommand("AKIAIOSFODNN7EXAMPLE", nil),
+					}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "duplicate command names in one group",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{
+						makeCommand("compile", nil),
+						makeCommand("sync", nil),
+						makeCommand("sync", nil),
+					}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrDuplicateCommandName,
+			errorContains: []string{"duplicate command name", "groups[0].commands[1] and groups[0].commands[2]"},
+		},
+		{
+			name: "empty command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrEmptyCommandName,
+			errorContains: []string{"command has empty name", "groups[0].commands[0]"},
+		},
+		{
+			name: "control character only command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("\n", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			// The name still holds displayable characters, so only the
+			// control-character check can reject it; removing that check makes
+			// the displayable-content check pass this row.
+			name: "format control with displayable characters",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("backup\u202eevil", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			name: "newline with displayable characters",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("backup\nother", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierContainsControlCharacter,
+			errorContains: []string{"control character", "groups[0].commands[0]"},
+		},
+		{
+			// Half-width spaces are neither control characters nor format
+			// controls, so only the displayable-content predicate rejects this
+			// row.
+			name: "whitespace-only command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand("   ", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierNotDisplayable,
+			errorContains: []string{"displayable content", "groups[0].commands[0]"},
+		},
+		{
+			name: "command name at byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("a", common.MaxIdentifierBytes), nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "command name one byte over limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("a", common.MaxIdentifierBytes+1), nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0].commands[0]"},
+		},
+		{
+			// 64 two-byte runes are exactly at the byte limit; a rune-counting
+			// implementation would also accept 65 (130 bytes), which the next
+			// row pins as a rejection.
+			name: "multibyte command name at byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("\u00e9", common.MaxIdentifierBytes/2), nil)}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multibyte command name over byte limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(strings.Repeat("\u00e9", common.MaxIdentifierBytes/2)+"a", nil)}},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0].commands[0]"},
+		},
+		{
+			name: "group name one byte over limit",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: strings.Repeat("a", common.MaxIdentifierBytes+1)},
+				},
+			},
+			wantErr:       true,
+			expectedError: ErrIdentifierTooLong,
+			errorContains: []string{"maximum length", "groups[0]"},
 		},
 		{
 			name:          "nil config",
@@ -367,7 +544,7 @@ func TestValidateGroupNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateGroupNames(tt.config)
+			err := ValidateIdentifiers(tt.config)
 
 			if tt.wantErr {
 				require.Error(t, err, "expected error but got none")
@@ -381,6 +558,109 @@ func TestValidateGroupNames(t *testing.T) {
 			} else {
 				require.NoError(t, err, "expected no error but got: %v", err)
 			}
+		})
+	}
+}
+
+// TestValidateIdentifiers_DoesNotEchoRejectedNames pins that a rejected
+// identifier never reaches the error text. These errors travel to stderr
+// without redaction, and a rejected name can be a credential shape.
+func TestValidateIdentifiers_DoesNotEchoRejectedNames(t *testing.T) {
+	const credential = "AKIAIOSFODNN7EXAMPLE"
+
+	tests := []struct {
+		name          string
+		config        *runnertypes.ConfigSpec
+		expectedError error
+	}{
+		{
+			name: "control character in a command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{makeCommand(credential+"\n", nil)}},
+				},
+			},
+			expectedError: ErrIdentifierContainsControlCharacter,
+		},
+		{
+			name: "pattern violation in a group name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: credential + "/x"},
+				},
+			},
+			expectedError: ErrInvalidGroupName,
+		},
+		{
+			name: "duplicate group name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: credential},
+					{Name: credential},
+				},
+			},
+			expectedError: ErrDuplicateGroupName,
+		},
+		{
+			name: "duplicate command name",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{Name: "build", Commands: []runnertypes.CommandSpec{
+						makeCommand(credential, nil),
+						makeCommand(credential, nil),
+					}},
+				},
+			},
+			expectedError: ErrDuplicateCommandName,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateIdentifiers(tt.config)
+			require.ErrorIs(t, err, tt.expectedError)
+			assert.NotContains(t, err.Error(), credential,
+				"the rejected identifier must not appear in the error text")
+		})
+	}
+}
+
+// TestValidateIdentifiers_ChecksEveryCommand pins that the command loop does
+// not stop at the first group: the violation sits in the second group's second
+// command, and the error names that position.
+func TestValidateIdentifiers_ChecksEveryCommand(t *testing.T) {
+	cfg := &runnertypes.ConfigSpec{
+		Groups: []runnertypes.GroupSpec{
+			{Name: "backup", Commands: []runnertypes.CommandSpec{makeCommand("pg_dump", nil)}},
+			{Name: "restore", Commands: []runnertypes.CommandSpec{makeCommand("psql", nil), makeCommand("", nil)}},
+		},
+	}
+
+	err := ValidateIdentifiers(cfg)
+	require.ErrorIs(t, err, ErrEmptyCommandName)
+	assert.ErrorContains(t, err, "groups[1].commands[1]")
+}
+
+// TestLoadConfigRejectsInvalidCommandNames pins that the loader actually calls
+// ValidateIdentifiers. Every check above passes when the call site is removed,
+// and then a bad command name would be accepted for execution.
+func TestLoadConfigRejectsInvalidCommandNames(t *testing.T) {
+	tests := []struct {
+		name        string
+		commandName string
+		wantErr     error
+	}{
+		{name: "empty command name", commandName: "", wantErr: ErrEmptyCommandName},
+		{name: "control character command name", commandName: "backup\nother", wantErr: ErrIdentifierContainsControlCharacter},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := []byte("[[groups]]\nname = \"build\"\n\n[[groups.commands]]\nname = " +
+				strconv.Quote(tt.commandName) + "\ncmd = \"/bin/echo\"\n")
+
+			_, err := NewLoaderForTest().LoadConfigForTest(content)
+			require.ErrorIs(t, err, tt.wantErr)
 		})
 	}
 }

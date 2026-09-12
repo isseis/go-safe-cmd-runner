@@ -35,7 +35,7 @@ TestMode = "comprehensive"
 
 # Group 1: Basic functionality test - no dependencies
 [[groups]]
-name = "basic_tests"
+name = "smoke_tests"
 description = "Basic command execution tests without special features"
 
 [[groups.commands]]

@@ -505,7 +505,7 @@ Test configuration files incrementally.
 ```toml
 # Step 1: Test with minimal configuration
 [[groups.commands]]
-name = "test_basic"
+name = "test_minimal"
 cmd = "/bin/echo"
 args = ["test"]
 ```

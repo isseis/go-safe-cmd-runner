@@ -232,8 +232,8 @@ func (l *Loader) loadConfigInternal(content []byte) (*runnertypes.ConfigSpec, er
 		return nil, err
 	}
 
-	// Validate group names
-	if err := ValidateGroupNames(&cfg); err != nil {
+	// Validate group and command identifiers
+	if err := ValidateIdentifiers(&cfg); err != nil {
 		return nil, err
 	}
 

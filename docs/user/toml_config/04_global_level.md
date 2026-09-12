@@ -827,7 +827,7 @@ env_allowed = [
 ]
 
 [[groups]]
-name = "basic_commands"
+name = "restricted_env"
 
 [[groups.commands]]
 name = "show_env"

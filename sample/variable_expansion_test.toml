@@ -12,7 +12,7 @@ env_allowed = [
 
 # Group 1: Basic variable expansion in cmd
 [[groups]]
-name = "cmd_expansion_basic"
+name = "cmd_expansion"
 description = "Test basic variable expansion in cmd field"
 
 [[groups.commands]]
@@ -25,7 +25,7 @@ path = "/bin/echo"
 
 # Group 2: Basic variable expansion in args
 [[groups]]
-name = "args_expansion_basic"
+name = "args_expansion"
 description = "Test basic variable expansion in args field"
 
 [[groups.commands]]

@@ -12,7 +12,7 @@ env_allowed = [
 
 # Group 1: Basic runner variable expansion with auto internal variables
 [[groups]]
-name = "basic_auto_env"
+name = "auto_env_example"
 description = "Test basic automatic internal variable expansion"
 
 [[groups.commands]]

@@ -510,7 +510,7 @@ env_import = ["ldflags=LDFLAGS", "cflags=CFLAGS"]
 
 # ケース2: テンプレートのみ使用
 [[groups.commands]]
-name = "compile-basic"
+name = "compile-template-only"
 template = "compiler_template"
 # 結果: env_import=["cc=CC", "cxx=CXX"] (テンプレートから継承)
 
