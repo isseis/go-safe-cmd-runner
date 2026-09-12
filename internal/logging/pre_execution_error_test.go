@@ -898,12 +898,15 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 
 			// Verify slack_notify attribute is set to true
 			var slackNotify bool
+			var messageTypeAttr string
 			var errorTypeAttr string
 			var errorMessageAttr string
 			record.Attrs(func(a slog.Attr) bool {
 				switch a.Key {
 				case "slack_notify":
 					slackNotify = a.Value.Bool()
+				case msgTypeAttrKey:
+					messageTypeAttr = a.Value.String()
 				case "error_type":
 					errorTypeAttr = a.Value.String()
 				case "error_message":
@@ -913,6 +916,8 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			})
 
 			assert.True(t, slackNotify, "slack_notify should be true for PreExecutionErrors")
+			assert.Equal(t, PreExecutionErrorNotification().typeName(), messageTypeAttr,
+				"the record must name the pre-execution error type token, not another registered type")
 			assert.Equal(t, string(tt.errorType), errorTypeAttr)
 			assert.Equal(t, tt.message, errorMessageAttr)
 

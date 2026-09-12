@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/stretchr/testify/assert"
@@ -74,9 +75,13 @@ func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 	t.Cleanup(bootstrap.FlushSlackNotifications)
 
 	// The last thing a failing run does before returning to main.
-	slog.Error("run failed",
-		"slack_notify", true,
-		"message_type", "pre_execution_error")
+	logging.HandlePreExecutionError(&logging.PreExecutionError{
+		Type:                logging.ErrorTypeSystemError,
+		Message:             "run failed",
+		Component:           "main",
+		RunID:               "test-flush-on-exit-001",
+		NotificationContext: common.GlobalScope(),
+	})
 
 	bootstrap.FlushSlackNotifications()
 

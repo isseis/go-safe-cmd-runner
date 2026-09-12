@@ -9,13 +9,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -702,59 +707,62 @@ func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
 func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 	tests := []struct {
 		name            string
-		messageType     string
-		recordAttrs     []slog.Attr
+		record          func() slog.Record
 		expectSuccess   bool
 		serverStatus    int
 		validateMessage func(t *testing.T, msg SlackMessage)
 	}{
 		{
-			name:        "generic message success",
-			messageType: "",
-			recordAttrs: []slog.Attr{
-				slog.Bool("slack_notify", true),
+			name: "generic message success",
+			record: func() slog.Record {
+				record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+				record.AddAttrs(NotificationAttrs(Notification{}, common.GlobalScope())...)
+				return record
 			},
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-				expectedText := fmt.Sprintf("%s: test message (Run ID: test-run)", slog.LevelInfo.String())
-				assert.Equal(t, expectedText, msg.Text, "Message text should match expected format")
+				expectedText := "[go-safe-cmd-runner] ✅ *SUCCESS* — (global) : test message"
+				assert.Equal(t, expectedText, msg.Text, "Message text should match the unified format")
 			},
 		},
 		{
-			name:        "command group summary",
-			messageType: "command_group_summary",
-			recordAttrs: []slog.Attr{
-				slog.Bool("slack_notify", true),
-				slog.String("message_type", "command_group_summary"),
-				slog.String(common.GroupSummaryAttrs.Status, "success"),
-				slog.String(common.GroupSummaryAttrs.Group, "test-group"),
-				slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
-				slog.Any(common.GroupSummaryAttrs.Commands, common.CommandResults{
-					{
-						CommandResultFields: common.CommandResultFields{
-							Name:     "echo test",
-							ExitCode: 0,
-							Output:   "test output",
-							Stderr:   "",
+			name: "command group summary",
+			record: func() slog.Record {
+				record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+				record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope("test-group"))...)
+				record.AddAttrs(
+					slog.String(common.GroupSummaryAttrs.Status, "success"),
+					slog.String(common.GroupSummaryAttrs.Group, "test-group"),
+					slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
+					slog.Any(common.GroupSummaryAttrs.Commands, common.CommandResults{
+						{
+							CommandResultFields: common.CommandResultFields{
+								Name:     "echo test",
+								ExitCode: 0,
+								Output:   "test output",
+								Stderr:   "",
+							},
 						},
-					},
-					{
-						CommandResultFields: common.CommandResultFields{
-							Name:     "echo test2",
-							ExitCode: 1,
-							Output:   "",
-							Stderr:   "error output",
+						{
+							CommandResultFields: common.CommandResultFields{
+								Name:     "echo test2",
+								ExitCode: 1,
+								Output:   "",
+								Stderr:   "error output",
+							},
 						},
-					},
-				}),
+					}),
+				)
+				return record
 			},
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-				// Verify the message text contains the title with group name and status
-				assert.Contains(t, msg.Text, "test-group", "Message text should contain group name")
+				// Verify the message text contains the scope with group name and status
+				assert.Contains(t, msg.Text, "group=test-group", "Message text should contain the group scope")
 				assert.Contains(t, msg.Text, "SUCCESS", "Message text should contain SUCCESS")
+				assert.True(t, strings.HasPrefix(msg.Text, "[go-safe-cmd-runner] "), "Message text should start with the product name")
 
 				require.Len(t, msg.Attachments, 1, "Should have one attachment")
 				attachment := msg.Attachments[0]
@@ -762,8 +770,8 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 				// Verify the attachment color
 				assert.Equal(t, colorGood, attachment.Color, "Color should be green for success")
 
-				// Verify command count field
-				var foundCommandCount, foundDuration, foundHostname bool
+				// Verify command count field and the trailing envelope fields
+				var foundCommandCount, foundDuration bool
 				var commandFields []SlackAttachmentField
 				for _, field := range attachment.Fields {
 					if field.Title == "Command Count" {
@@ -773,17 +781,13 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 					if field.Title == "Duration" {
 						foundDuration = true
 					}
-					if field.Title == "Hostname" {
-						foundHostname = true
-						assert.NotEmpty(t, field.Value, "Hostname should not be empty")
-					}
 					if field.Title == "Command" {
 						commandFields = append(commandFields, field)
 					}
 				}
 				assert.True(t, foundCommandCount, "Should have Command Count field")
 				assert.True(t, foundDuration, "Should have Duration field")
-				assert.True(t, foundHostname, "Should have Hostname field")
+				assertTrailingEnvelopeFields(t, attachment)
 
 				// Verify individual command fields
 				require.Len(t, commandFields, 2, "Should have 2 command fields")
@@ -794,21 +798,29 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			},
 		},
 		{
-			name:        "pre execution error",
-			messageType: "pre_execution_error",
-			recordAttrs: []slog.Attr{
-				slog.Bool("slack_notify", true),
-				slog.String("message_type", "pre_execution_error"),
-				slog.String("error", "test error"),
+			name: "pre execution error",
+			record: func() slog.Record {
+				record := slog.NewRecord(time.Now(), slog.LevelError, "pre execution error", 0)
+				record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GlobalScope())...)
+				record.AddAttrs(
+					slog.String(common.PreExecErrorAttrs.ErrorType, "config_parsing_failed"),
+					slog.String(common.PreExecErrorAttrs.ErrorMessage, "test error"),
+					slog.String(common.PreExecErrorAttrs.Component, "runner"),
+				)
+				return record
 			},
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
+			validateMessage: func(t *testing.T, msg SlackMessage) {
+				assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed", msg.Text)
+			},
 		},
 		{
-			name:        "server error",
-			messageType: "",
-			recordAttrs: []slog.Attr{
-				slog.Bool("slack_notify", true),
+			name: "server error",
+			record: func() slog.Record {
+				record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+				record.AddAttrs(NotificationAttrs(Notification{}, common.GlobalScope())...)
+				return record
 			},
 			expectSuccess: false,
 			serverStatus:  http.StatusInternalServerError,
@@ -839,10 +851,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			handler := newTestSlackHandler(t, opts)
 
 			ctx := context.Background()
-			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-			for _, attr := range tt.recordAttrs {
-				record.AddAttrs(attr)
-			}
+			record := tt.record()
 
 			// Handle only enqueues now, so it reports no delivery outcome.
 			require.NoError(t, handler.Handle(ctx, record))
@@ -880,9 +889,10 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 func TestSlackSender_Send_Retry(t *testing.T) {
 	testRequest := slackRequest{
 		message:     &SlackMessage{Text: "test"},
-		messageType: messageTypeCommandGroupSummary,
+		messageType: CommandGroupSummaryNotification().typeName(),
 		runID:       "test-run",
 		level:       slog.LevelInfo,
+		priority:    priorityNormal,
 	}
 
 	t.Run("retry on temporary failure", func(t *testing.T) {
@@ -1020,9 +1030,8 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 	// Create log record with command results
 	ctx := context.Background()
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Command group execution completed", 0)
+	record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope("test-group"))...)
 	record.AddAttrs(
-		slog.Bool("slack_notify", true),
-		slog.String("message_type", "command_group_summary"),
 		slog.String(common.GroupSummaryAttrs.Status, "success"),
 		slog.String(common.GroupSummaryAttrs.Group, "test-group"),
 		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
@@ -1316,4 +1325,806 @@ func TestSanitizeErrorForLog(t *testing.T) {
 		result := sanitizeErrorForLog(err)
 		assert.Equal(t, "failed with password=hunter2", result)
 	})
+}
+
+// --- Notification format, scope, and schema-violation tests ---
+
+// notificationFixture pairs a representative record with the token that names
+// its type. Tests range this table instead of listing type names, so a type
+// added to the registry without a fixture fails the range tests.
+type notificationFixture struct {
+	token  Notification
+	record slog.Record
+}
+
+// notificationFixtures returns one representative record per registered
+// notification type plus the zero token, which exercises the generic path.
+func notificationFixtures() []notificationFixture {
+	return []notificationFixture{
+		{CommandGroupSummaryNotification(), commandGroupSummaryRecord("backup", "3 commands in 1.2s")},
+		{PreExecutionErrorNotification(), preExecutionErrorRecord("config_parsing_failed")},
+		{UserGroupCommandFailureNotification(), userGroupCommandFailureRecord("pg_dump", 2, "out", "err")},
+		{Notification{}, genericNotificationRecord("some message")},
+	}
+}
+
+// userGroupCommandFailureRecord builds a user_group_command_failure record
+// through the public notification API. The group is fixed: the tests using it
+// assert the "backup" scope.
+func userGroupCommandFailureRecord(command string, exitCode int, stdout, stderr string) slog.Record {
+	record := slog.NewRecord(time.Now(), slog.LevelError, "user/group command failed", 0)
+	record.AddAttrs(NotificationAttrs(UserGroupCommandFailureNotification(), common.CommandScope("backup", command))...)
+	record.AddAttrs(
+		slog.String(common.UserGroupCommandFailureAttrs.CommandName, command),
+		slog.Int(common.UserGroupCommandFailureAttrs.ExitCode, exitCode),
+		slog.String(common.UserGroupCommandFailureAttrs.Stdout, stdout),
+		slog.String(common.UserGroupCommandFailureAttrs.Stderr, stderr),
+	)
+	return record
+}
+
+// genericNotificationRecord builds an unknown-type record with a valid global
+// context, so only the generic path is under test.
+func genericNotificationRecord(text string) slog.Record {
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, text, 0)
+	record.AddAttrs(NotificationAttrs(Notification{}, common.GlobalScope())...)
+	return record
+}
+
+// contextAttr builds the outer notification context attribute as a raw group.
+func contextAttr(attrs ...slog.Attr) slog.Attr {
+	return slog.Attr{
+		Key:   common.NotificationContextAttrs.Key,
+		Value: slog.GroupValue(attrs...),
+	}
+}
+
+// scopedContextAttr builds a well-formed context attribute from scope, group
+// and command values, including deliberately malformed ones.
+func scopedContextAttr(scope slog.Value, group, command slog.Value) slog.Attr {
+	return contextAttr(
+		slog.Attr{Key: common.NotificationContextAttrs.Scope, Value: scope},
+		slog.Attr{Key: common.NotificationContextAttrs.Group, Value: group},
+		slog.Attr{Key: common.NotificationContextAttrs.Command, Value: command},
+	)
+}
+
+// globalContextAttr is the fixed encoding of the global scope.
+func globalContextAttr() slog.Attr {
+	return scopedContextAttr(slog.StringValue("global"), slog.StringValue(""), slog.StringValue(""))
+}
+
+// synchronousTestHandler builds a synchronous handler (Handle sends inline)
+// whose schema WARN and delivery records go to buf.
+func synchronousTestHandler(t *testing.T, server *httptest.Server, buf *syncBuffer) *SlackHandler {
+	t.Helper()
+	opts := slackOptionsFor(t, server)
+	opts.Synchronous = true
+	opts.FailureHandlers = failureLogHandlers(buf)
+	handler, err := NewSlackHandler(opts)
+	require.NoError(t, err, "NewSlackHandler should accept the mock server options")
+	t.Cleanup(func() { handler.Close() })
+	return handler
+}
+
+// assertTrailingEnvelopeFields asserts the attachment's last three fields are
+// Scope, Hostname and Run ID in that order.
+func assertTrailingEnvelopeFields(t *testing.T, attachment SlackAttachment) {
+	t.Helper()
+	require.GreaterOrEqual(t, len(attachment.Fields), 3, "the envelope always appends three fields")
+	tail := attachment.Fields[len(attachment.Fields)-3:]
+	assert.Equal(t, fieldTitleScope, tail[0].Title)
+	assert.Equal(t, fieldTitleHostname, tail[1].Title)
+	assert.Equal(t, fieldTitleRunID, tail[2].Title)
+}
+
+// attachmentFieldValue returns the value of the first field with the title.
+func attachmentFieldValue(t *testing.T, attachment SlackAttachment, title string) string {
+	t.Helper()
+	for _, field := range attachment.Fields {
+		if field.Title == title {
+			return field.Value
+		}
+	}
+	t.Fatalf("attachment has no field titled %q: %v", title, attachment.Fields)
+	return ""
+}
+
+// assertDisplaySafeProperties asserts the properties the display-safe
+// interpolation contract guarantees for a free-text or envelope value.
+func assertDisplaySafeProperties(t *testing.T, value string) {
+	t.Helper()
+	assert.True(t, utf8.ValidString(value), "value must be valid UTF-8: %q", value)
+	assert.NotContains(t, value, "\n")
+	assert.NotContains(t, value, "\r")
+	assert.NotContains(t, value, "\u2028")
+	assert.NotContains(t, value, "\u2029")
+	for _, r := range value {
+		assert.False(t, unicode.IsControl(r) || unicode.Is(unicode.Cf, r),
+			"value must not contain a control or format-control character: %q", value)
+	}
+	stripped := strings.NewReplacer("&amp;", "", "&lt;", "", "&gt;", "").Replace(value)
+	assert.NotContains(t, stripped, "&")
+	assert.NotContains(t, stripped, "<")
+	assert.NotContains(t, stripped, ">")
+	assert.LessOrEqual(t, len(value), 500, "value must not exceed the shared length limit")
+}
+
+// schemaViolationRecords returns every schema-violation WARN parsed from buf.
+func schemaViolationRecords(t *testing.T, buf *syncBuffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			continue
+		}
+		if record["msg"] == "Slack notification schema violation" {
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
+// TestLevelDisplayIsTotal verifies the level-to-display mapping covers every
+// level, including DEBUG and the value between INFO and WARN that Handle never
+// sees in production.
+func TestSlackHandler_LevelDeterminesDisplay(t *testing.T) {
+	tests := []struct {
+		name   string
+		level  slog.Level
+		emoji  string
+		status string
+		color  string
+	}{
+		{"above error", slog.LevelError + 4, emojiFailure, "ERROR", colorDanger},
+		{"error", slog.LevelError, emojiFailure, "ERROR", colorDanger},
+		{"warn", slog.LevelWarn, emojiWarning, "WARNING", colorWarning},
+		{"between info and warn", slog.LevelInfo + 2, emojiSuccess, "SUCCESS", colorGood},
+		{"info", slog.LevelInfo, emojiSuccess, "SUCCESS", colorGood},
+		{"below info", slog.LevelDebug, emojiWarning, "WARNING", colorWarning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emoji, status, color := levelDisplay(tt.level)
+			assert.Equal(t, tt.emoji, emoji)
+			assert.Equal(t, tt.status, status)
+			assert.Equal(t, tt.color, color)
+		})
+	}
+}
+
+// TestSlackHandler_LevelDisplayIdenticalAcrossTypes verifies the display comes
+// from the level alone: every registered type and the generic path produce the
+// same emoji, STATUS and color at the same level. Builders return only
+// messageDetails, so they have no way to set the display themselves.
+func TestSlackHandler_LevelDisplayIdenticalAcrossTypes(t *testing.T) {
+	handler := &SlackHandler{runID: "run-1"}
+	for _, fixture := range notificationFixtures() {
+		definition, known := lookupNotification(fixture.token.typeName())
+		if !known {
+			continue
+		}
+		for _, level := range []slog.Level{slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+			emoji, status, color := levelDisplay(level)
+			message := handler.buildEnvelope(level, "(global)", definition.build(fixture.record))
+			assert.True(t, strings.HasPrefix(message.Text, "[go-safe-cmd-runner] "+emoji+" *"+status+"* — (global) : "),
+				"unexpected Text line %q", message.Text)
+			require.Len(t, message.Attachments, 1)
+			assert.Equal(t, color, message.Attachments[0].Color)
+		}
+	}
+
+	// The generic path is not in the registry, so cover it explicitly.
+	for _, level := range []slog.Level{slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+		emoji, status, color := levelDisplay(level)
+		message := handler.buildEnvelope(level, "(global)", buildGenericMessage(genericNotificationRecord("x")))
+		assert.True(t, strings.HasPrefix(message.Text, "[go-safe-cmd-runner] "+emoji+" *"+status+"* — (global) : "))
+		assert.Equal(t, color, message.Attachments[0].Color)
+	}
+}
+
+// TestUnknownTypePriorityIsTotal verifies the level-to-priority mapping for
+// unknown types covers every level; only WARN and above take the reserved lane.
+func TestUnknownTypePriorityIsTotal(t *testing.T) {
+	tests := []struct {
+		name  string
+		level slog.Level
+		want  notificationPriority
+	}{
+		{"error", slog.LevelError, priorityHigh},
+		{"warn", slog.LevelWarn, priorityHigh},
+		{"between info and warn", slog.LevelInfo + 2, priorityNormal},
+		{"info", slog.LevelInfo, priorityNormal},
+		{"below info", slog.LevelDebug, priorityNormal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, unknownTypePriority(tt.level))
+		})
+	}
+}
+
+// TestSlackHandler_InvalidNotificationContext walks the validity table: every
+// malformed context renders (scope: invalid) while keeping the declared type's
+// own message part, and earns exactly one WARN with the right reason code. The
+// valid rows prove the same code does not reject well-formed contexts.
+func TestSlackHandler_InvalidNotificationContext(t *testing.T) {
+	tests := []struct {
+		name         string
+		contextAttrs []slog.Attr
+		wantScope    string
+		wantReason   string
+	}{
+		{
+			name:       "missing context",
+			wantScope:  "(scope: invalid)",
+			wantReason: reasonMissingNotificationContext,
+		},
+		{
+			name:         "duplicate context",
+			contextAttrs: []slog.Attr{globalContextAttr(), globalContextAttr()},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonDuplicateNotificationContext,
+		},
+		{
+			name:         "value is not a group",
+			contextAttrs: []slog.Attr{slog.String(common.NotificationContextAttrs.Key, "global")},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "unknown scope word",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("tenant"), slog.StringValue("backup"), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "scope is not a string",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.IntValue(1), slog.StringValue("backup"), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "scope without group key",
+			contextAttrs: []slog.Attr{contextAttr(slog.String("scope", "group"))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "group is not a string",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("group"), slog.IntValue(1), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "global with a group name",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("global"), slog.StringValue("backup"), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "group with a command name",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("group"), slog.StringValue("backup"), slog.StringValue("pg_dump"))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "command without a command name",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("command"), slog.StringValue("backup"), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name: "unknown sub-key",
+			contextAttrs: []slog.Attr{contextAttr(
+				slog.String("scope", "global"), slog.String("group", ""), slog.String("tenant", "backup"))},
+			wantScope:  "(scope: invalid)",
+			wantReason: reasonInvalidNotificationContext,
+		},
+		{
+			name: "duplicate scope inside the group",
+			contextAttrs: []slog.Attr{contextAttr(
+				slog.String("scope", "global"), slog.String("scope", "global"), slog.String("group", ""))},
+			wantScope:  "(scope: invalid)",
+			wantReason: reasonInvalidNotificationContext,
+		},
+		{
+			name:         "group name with no displayable character",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("group"), slog.StringValue("\x01\x02"), slog.StringValue(""))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "command name with no displayable character",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("command"), slog.StringValue("backup"), slog.StringValue("\u202e"))},
+			wantScope:    "(scope: invalid)",
+			wantReason:   reasonInvalidNotificationContext,
+		},
+		{
+			name:         "valid global",
+			contextAttrs: []slog.Attr{globalContextAttr()},
+			wantScope:    "(global)",
+		},
+		{
+			name:         "valid group",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("group"), slog.StringValue("backup"), slog.StringValue(""))},
+			wantScope:    "group=backup",
+		},
+		{
+			name: "valid group without a command key",
+			contextAttrs: []slog.Attr{contextAttr(
+				slog.String("scope", "group"), slog.String("group", "backup"))},
+			wantScope: "group=backup",
+		},
+		{
+			name:         "valid command",
+			contextAttrs: []slog.Attr{scopedContextAttr(slog.StringValue("command"), slog.StringValue("backup"), slog.StringValue("pg_dump"))},
+			wantScope:    "group=backup command=pg_dump",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var failureLog syncBuffer
+			rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+			handler := synchronousTestHandler(t, server, &failureLog)
+
+			record := slog.NewRecord(time.Now(), slog.LevelError, "pre execution error", 0)
+			record.AddAttrs(slog.Bool("slack_notify", true))
+			record.AddAttrs(slog.String("message_type", PreExecutionErrorNotification().typeName()))
+			record.AddAttrs(slog.String(common.PreExecErrorAttrs.ErrorType, "config_parsing_failed"))
+			record.AddAttrs(tt.contextAttrs...)
+
+			require.NoError(t, handler.Handle(context.Background(), record))
+
+			require.Equal(t, 1, rec.count(), "the declared type's message must still be sent")
+			rec.mu.Lock()
+			message := rec.messages[0]
+			rec.mu.Unlock()
+
+			require.Len(t, message.Attachments, 1)
+			assert.Contains(t, message.Text, "— "+tt.wantScope+" : ",
+				"the scope in the Text line must match the validity table")
+			assert.Equal(t, tt.wantScope, attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
+			assert.Contains(t, message.Text, "config_parsing_failed",
+				"an invalid context must not replace the declared type's own message part")
+
+			warnings := schemaViolationRecords(t, &failureLog)
+			if tt.wantReason == "" {
+				assert.Empty(t, warnings, "a valid context must not produce a schema violation")
+				return
+			}
+			require.Len(t, warnings, 1, "one WARN per malformed record")
+			assert.Equal(t, []any{tt.wantReason}, warnings[0]["reasons"])
+		})
+	}
+}
+
+// TestSlackHandler_UnknownMessageType verifies an unregistered type still
+// produces a generic message with a full envelope, and that the record earns a
+// single unknown_message_type WARN.
+func TestSlackHandler_UnknownMessageType(t *testing.T) {
+	tests := []struct {
+		name        string
+		messageType string
+	}{
+		{"empty type", ""},
+		{"made-up type", "no_such_type"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var failureLog syncBuffer
+			rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+			handler := synchronousTestHandler(t, server, &failureLog)
+
+			require.NoError(t, handler.Handle(context.Background(), genericNotificationRecordWithType(tt.messageType, "some message")))
+
+			require.Equal(t, 1, rec.count())
+			rec.mu.Lock()
+			message := rec.messages[0]
+			rec.mu.Unlock()
+
+			assert.Equal(t, "[go-safe-cmd-runner] ✅ *SUCCESS* — (global) : some message", message.Text)
+			require.Len(t, message.Attachments, 1)
+			assert.Equal(t, colorGood, message.Attachments[0].Color)
+			assertTrailingEnvelopeFields(t, message.Attachments[0])
+
+			warnings := schemaViolationRecords(t, &failureLog)
+			require.Len(t, warnings, 1)
+			assert.Equal(t, []any{reasonUnknownMessageType}, warnings[0]["reasons"])
+		})
+	}
+}
+
+// genericNotificationRecordWithType builds a record whose type may be empty.
+func genericNotificationRecordWithType(messageType, text string) slog.Record {
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, text, 0)
+	record.AddAttrs(slog.Bool("slack_notify", true))
+	record.AddAttrs(slog.String(msgTypeAttrKey, messageType))
+	record.AddAttrs(common.GlobalScope().LogAttr())
+	return record
+}
+
+// TestSlackHandler_ZeroValueToken verifies a zero Notification is not silently
+// dropped: it renders the generic message and records the unknown type.
+func TestSlackHandler_ZeroValueToken(t *testing.T) {
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "some message", 0)
+	record.AddAttrs(NotificationAttrs(Notification{}, common.GlobalScope())...)
+	require.NoError(t, handler.Handle(context.Background(), record))
+
+	assert.Equal(t, 1, rec.count(), "a zero token must still deliver a generic message")
+	warnings := schemaViolationRecords(t, &failureLog)
+	require.Len(t, warnings, 1)
+	assert.Equal(t, []any{reasonUnknownMessageType}, warnings[0]["reasons"])
+}
+
+// TestSlackHandler_SchemaViolationWarnIsSingle verifies unknown type and
+// invalid context are reported by one WARN whose reasons are ordered unknown
+// type first, then the context reason.
+func TestSlackHandler_SchemaViolationWarnIsSingle(t *testing.T) {
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, "body", 0)
+	record.AddAttrs(slog.Bool("slack_notify", true))
+	record.AddAttrs(slog.String(msgTypeAttrKey, "no_such_type"))
+	record.AddAttrs(contextAttr(slog.String("scope", "group")))
+
+	require.NoError(t, handler.Handle(context.Background(), record))
+
+	assert.Equal(t, 1, rec.count(), "the generic message is still sent")
+	warnings := schemaViolationRecords(t, &failureLog)
+	require.Len(t, warnings, 1, "one record earns at most one schema WARN")
+	assert.Equal(t, []any{reasonUnknownMessageType, reasonInvalidNotificationContext}, warnings[0]["reasons"])
+}
+
+// TestSlackHandler_SchemaViolationWarnDoesNotRecurse verifies the WARN goes to
+// the failure logger only. The default logger is replaced with a recorder, so a
+// WARN routed through slog.Default -- instead of the Slack-free failure logger
+// -- fails the last assertion rather than passing unnoticed.
+func TestSlackHandler_SchemaViolationWarnDoesNotRecurse(t *testing.T) {
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	defaultRecorder := tu.NewLogRecorder(nil)
+	originalDefault := slog.Default()
+	slog.SetDefault(slog.New(defaultRecorder))
+	t.Cleanup(func() { slog.SetDefault(originalDefault) })
+
+	require.NoError(t, handler.Handle(context.Background(), genericNotificationRecord("body")))
+
+	assert.Equal(t, 1, rec.count(), "the schema WARN must not produce a second Slack request")
+	assert.Len(t, schemaViolationRecords(t, &failureLog), 1)
+	assert.Empty(t, defaultRecorder.Records(), "the schema WARN must not go through the default logger")
+}
+
+// TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues verifies the WARN
+// carries no notification body, group name, command name or webhook URL.
+func TestSlackHandler_SchemaViolationWarnOmitsSensitiveValues(t *testing.T) {
+	const body = "unique notification body marker"
+
+	var failureLog syncBuffer
+	_, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, body, 0)
+	record.AddAttrs(slog.Bool("slack_notify", true))
+	record.AddAttrs(slog.String(msgTypeAttrKey, "no_such_type"))
+	record.AddAttrs(scopedContextAttr(
+		slog.StringValue("group"), slog.StringValue("secret-group"), slog.StringValue("secret-command")))
+
+	require.NoError(t, handler.Handle(context.Background(), record))
+
+	// An arbitrary scope word in a hand-built record must not be echoed into
+	// the WARN either: declaredScopeName reports "invalid" for it.
+	const scopeMarker = "secret-scope-marker"
+	markerRecord := slog.NewRecord(time.Now(), slog.LevelError, body, 0)
+	markerRecord.AddAttrs(slog.Bool(slackNotifyAttrKey, true))
+	markerRecord.AddAttrs(slog.String(msgTypeAttrKey, "no_such_type"))
+	markerRecord.AddAttrs(contextAttr(slog.String("scope", scopeMarker), slog.String("group", "")))
+	require.NoError(t, handler.Handle(context.Background(), markerRecord))
+
+	warnings := schemaViolationRecords(t, &failureLog)
+	require.Len(t, warnings, 2)
+	assert.NotContains(t, failureLog.String(), body)
+	assert.NotContains(t, failureLog.String(), "secret-group")
+	assert.NotContains(t, failureLog.String(), "secret-command")
+	assert.NotContains(t, failureLog.String(), scopeMarker)
+	assert.NotContains(t, failureLog.String(), server.URL)
+}
+
+// TestSlackHandler_SchemaViolationRecordedWithoutBuildingWhenClosed verifies
+// the definition check runs before the acceptance check: a closed sender still
+// records the schema WARN, but does not build the type-specific part.
+func TestSlackHandler_SchemaViolationRecordedWithoutBuildingWhenClosed(t *testing.T) {
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+
+	var failureLog syncBuffer
+	opts := slackOptionsFor(t, server)
+	opts.FailureHandlers = failureLogHandlers(&failureLog)
+	handler := newTestSlackHandler(t, opts)
+
+	// The builder is temporarily substituted on the shared registry entry. No
+	// test in this package calls t.Parallel, and the cleanup restores it, so the
+	// substitution cannot outlive this test; it is the only way to observe that
+	// a closed sender does not invoke the builder at all.
+	name := PreExecutionErrorNotification().typeName()
+	definition, ok := lookupNotification(name)
+	require.True(t, ok)
+	original := definition.build
+	definition.build = func(slog.Record) messageDetails {
+		panic("the builder must not run for a closed sender")
+	}
+	t.Cleanup(func() { definition.build = original })
+
+	handler.Flush(context.Background())
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, "body", 0)
+	record.AddAttrs(slog.Bool("slack_notify", true))
+	record.AddAttrs(slog.String(msgTypeAttrKey, name))
+	record.AddAttrs(contextAttr(slog.String("scope", "group")))
+
+	require.NoError(t, handler.Handle(context.Background(), record), "Handle must not panic on a closed sender")
+	assert.Equal(t, int64(1), handler.sender.counters.dropped.Load(), "the closed sender drops the request")
+	assert.Equal(t, 0, rec.count())
+	assert.Len(t, schemaViolationRecords(t, &failureLog), 1, "the definition defect is recorded even when closed")
+}
+
+// TestSlackHandler_UnknownTypeWarnUsesHighPriority verifies an unknown type at
+// WARN or above takes the reserved lane even while the normal queue is full.
+func TestSlackHandler_UnknownTypeWarnUsesHighPriority(t *testing.T) {
+	block, release := newBlock(t)
+	rec, server := newRecordingSlackServer(t, http.StatusOK, block)
+
+	var failureLog syncBuffer
+	opts := slackOptionsFor(t, server)
+	opts.NormalQueueSize = 1
+	opts.HighPriorityQueueSize = 4
+	opts.FailureHandlers = failureLogHandlers(&failureLog)
+	handler := newTestSlackHandler(t, opts)
+
+	ctx := context.Background()
+
+	// The first notification pins the worker inside a send.
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
+	waitForRequests(t, rec, 1)
+
+	// The normal queue (capacity 1) fills up and then overflows.
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "queued normal")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "dropped normal")))
+
+	// An unknown type at WARN is high priority and must bypass the full queue.
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelWarn, "unknown warn")))
+
+	release()
+	waitForRequests(t, rec, 3)
+	stats := handler.Flush(ctx)
+
+	texts := rec.texts()
+	require.Len(t, texts, 3, "the overflowing normal notification should have been dropped: %v", texts)
+	assert.Contains(t, texts[0], "in flight")
+	assert.Contains(t, texts[1], "unknown warn", "the unknown WARN record must precede the queued normal notification")
+	assert.Contains(t, texts[2], "queued normal")
+	assert.Equal(t, int64(1), stats.Dropped)
+}
+
+// TestSlackHandler_IdentifierIsNotTruncated verifies identifiers are rendered
+// whole: a name at the configuration length limit appears in full, and two
+// names sharing a long prefix stay distinguishable.
+func TestSlackHandler_IdentifierIsNotTruncated(t *testing.T) {
+	longGroup := strings.Repeat("a", common.MaxIdentifierBytes-1) + "b"
+
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	require.NoError(t, handler.Handle(context.Background(), commandGroupSummaryRecord(longGroup, "summary")))
+	require.Equal(t, 1, rec.count())
+	rec.mu.Lock()
+	message := rec.messages[0]
+	rec.mu.Unlock()
+	assert.Contains(t, message.Text, "group="+longGroup, "a full-length identifier must not be cut")
+	assert.Equal(t, "group="+longGroup, attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
+
+	// Two names that differ only in their last byte must stay distinguishable.
+	first := strings.Repeat("a", common.MaxIdentifierBytes-1) + "b"
+	second := strings.Repeat("a", common.MaxIdentifierBytes-1) + "c"
+	require.NoError(t, handler.Handle(context.Background(), commandGroupSummaryRecord(first, "first")))
+	require.NoError(t, handler.Handle(context.Background(), commandGroupSummaryRecord(second, "second")))
+	texts := rec.texts()
+	require.Len(t, texts, 3)
+	assert.Contains(t, texts[1], "group="+first)
+	assert.Contains(t, texts[2], "group="+second)
+	assert.NotEqual(t, texts[1], texts[2])
+}
+
+// TestSlackHandler_EnvelopeValueProperties verifies Hostname and Run ID pass
+// through the display-safe interpolation contract, by substituting a value
+// that contains every character the contract exists to handle.
+func TestSlackHandler_EnvelopeValueProperties(t *testing.T) {
+	nasty := "host\n<@U012345>&\x01\u202e" + strings.Repeat("x", 600)
+
+	originalHostname := slackHostname
+	slackHostname = func() string { return nasty }
+	t.Cleanup(func() { slackHostname = originalHostname })
+
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	opts := slackOptionsFor(t, server)
+	opts.RunID = nasty
+	opts.Synchronous = true
+	opts.FailureHandlers = failureLogHandlers(&failureLog)
+	handler := newTestSlackHandler(t, opts)
+
+	require.NoError(t, handler.Handle(context.Background(), genericNotificationRecord("message")))
+
+	require.Equal(t, 1, rec.count())
+	rec.mu.Lock()
+	attachment := rec.messages[0].Attachments[0]
+	rec.mu.Unlock()
+
+	hostname := attachmentFieldValue(t, attachment, fieldTitleHostname)
+	runID := attachmentFieldValue(t, attachment, fieldTitleRunID)
+	assertDisplaySafeProperties(t, hostname)
+	assertDisplaySafeProperties(t, runID)
+	assert.Less(t, len(hostname), len(nasty), "the long hostname must be truncated to the contract limit")
+	assert.Less(t, len(runID), len(nasty), "the long run ID must be truncated to the contract limit")
+}
+
+// TestSlackHandler_UserGroupCommandFailure verifies the dedicated builder:
+// the headline names the exit code, the fields carry the command name and exit
+// code, and Output and Error Output keep the existing stdout/stderr limits.
+func TestSlackHandler_UserGroupCommandFailure(t *testing.T) {
+	t.Run("with output", func(t *testing.T) {
+		longStdout := strings.Repeat("o", outputMaxLength+500)
+		longStderr := strings.Repeat("e", stderrMaxLength+300)
+
+		var failureLog syncBuffer
+		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+		handler := synchronousTestHandler(t, server, &failureLog)
+
+		require.NoError(t, handler.Handle(context.Background(),
+			userGroupCommandFailureRecord("pg_dump", 2, longStdout, longStderr)))
+
+		require.Equal(t, 1, rec.count())
+		rec.mu.Lock()
+		message := rec.messages[0]
+		rec.mu.Unlock()
+
+		assert.Equal(t,
+			"[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)",
+			message.Text)
+		require.Len(t, message.Attachments, 1)
+		attachment := message.Attachments[0]
+		assert.Equal(t, "pg_dump", attachmentFieldValue(t, attachment, "Command"))
+		assert.Equal(t, "2", attachmentFieldValue(t, attachment, "Exit Code"))
+
+		output := attachmentFieldValue(t, attachment, "Output")
+		errorOutput := attachmentFieldValue(t, attachment, "Error Output")
+		assert.True(t, strings.HasPrefix(output, "```\n") && strings.HasSuffix(output, "\n```"))
+		assert.True(t, strings.HasSuffix(output, truncationSuffix+"\n```"))
+		assert.True(t, strings.HasSuffix(errorOutput, truncationSuffix+"\n```"))
+		assert.Equal(t, outputMaxLength+len("```\n")+len("\n```"), len(output))
+		assert.Equal(t, stderrMaxLength+len("```\n")+len("\n```"), len(errorOutput))
+	})
+
+	t.Run("without output", func(t *testing.T) {
+		var failureLog syncBuffer
+		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+		handler := synchronousTestHandler(t, server, &failureLog)
+
+		require.NoError(t, handler.Handle(context.Background(),
+			userGroupCommandFailureRecord("pg_dump", 2, "", "")))
+
+		require.Equal(t, 1, rec.count())
+		rec.mu.Lock()
+		attachment := rec.messages[0].Attachments[0]
+		rec.mu.Unlock()
+
+		for _, field := range attachment.Fields {
+			assert.NotEqual(t, "Output", field.Title)
+			assert.NotEqual(t, "Error Output", field.Title)
+		}
+		assertTrailingEnvelopeFields(t, attachment)
+	})
+}
+
+// assertNotContainsControlCharacters fails when value contains a control or
+// format-control character.
+func assertNotContainsControlCharacters(t *testing.T, value string) {
+	t.Helper()
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			t.Fatalf("value contains control or format-control character %U: %q", r, value)
+		}
+	}
+}
+
+// TestSlackHandler_IdentifiersInOtherFields verifies the identifier contract is
+// applied wherever a command name is embedded, not only in the Scope display:
+// the dedicated Command field and the synthetic per-command summary field both
+// neutralize a fake line, a mention and a bidi reversal.
+func TestSlackHandler_IdentifiersInOtherFields(t *testing.T) {
+	const nastyName = "backup\n<!channel>&\u202eevil"
+
+	t.Run("user group command failure command field", func(t *testing.T) {
+		var failureLog syncBuffer
+		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+		handler := synchronousTestHandler(t, server, &failureLog)
+
+		require.NoError(t, handler.Handle(context.Background(),
+			userGroupCommandFailureRecord(nastyName, 0, "", "")))
+
+		require.Equal(t, 1, rec.count())
+		rec.mu.Lock()
+		message := rec.messages[0]
+		rec.mu.Unlock()
+
+		command := attachmentFieldValue(t, message.Attachments[0], "Command")
+		assert.Equal(t, "backup &lt;!channel&gt;&amp; evil", command)
+		assert.Contains(t, message.Text, "command=backup &lt;!channel&gt;&amp; evil")
+		assertNotContainsControlCharacters(t, message.Text)
+	})
+
+	t.Run("command group summary command field", func(t *testing.T) {
+		var failureLog syncBuffer
+		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+		handler := synchronousTestHandler(t, server, &failureLog)
+
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "summary", 0)
+		record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope("backup"))...)
+		record.AddAttrs(
+			slog.String(common.GroupSummaryAttrs.Status, "success"),
+			slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
+			slog.Any(common.GroupSummaryAttrs.Commands, common.CommandResults{
+				{CommandResultFields: common.CommandResultFields{Name: nastyName, ExitCode: 0}},
+			}),
+		)
+		require.NoError(t, handler.Handle(context.Background(), record))
+
+		require.Equal(t, 1, rec.count())
+		rec.mu.Lock()
+		message := rec.messages[0]
+		rec.mu.Unlock()
+
+		var command string
+		for _, field := range message.Attachments[0].Fields {
+			if field.Title == "Command" {
+				command = field.Value
+			}
+		}
+		require.NotEmpty(t, command, "the per-command field must be present")
+		assert.Contains(t, command, "backup &lt;!channel&gt;&amp; evil")
+		assert.Contains(t, command, "(exit: 0)", "the exit code and skeleton must survive the identifier processing")
+		assert.True(t, strings.HasPrefix(command, emojiSuccess))
+		assertNotContainsControlCharacters(t, command)
+	})
+}
+
+// TestSlackHandler_GenericMessageHasEnvelope verifies the generic path carries
+// the same envelope as registered types, including the product name.
+func TestSlackHandler_GenericMessageHasEnvelope(t *testing.T) {
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	handler := synchronousTestHandler(t, server, &failureLog)
+
+	require.NoError(t, handler.Handle(context.Background(), genericNotificationRecord("some message")))
+
+	require.Equal(t, 1, rec.count())
+	rec.mu.Lock()
+	message := rec.messages[0]
+	rec.mu.Unlock()
+
+	assert.Equal(t, "[go-safe-cmd-runner] ✅ *SUCCESS* — (global) : some message", message.Text)
+	require.Len(t, message.Attachments, 1)
+	assert.Equal(t, colorGood, message.Attachments[0].Color)
+	assertTrailingEnvelopeFields(t, message.Attachments[0])
+	assert.Equal(t, "(global)", attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
 }

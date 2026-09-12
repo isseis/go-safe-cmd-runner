@@ -495,11 +495,11 @@ func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
 	// Sending is asynchronous, so the sender worker appends to this slice
 	// while the test goroutine reads it.
 	var payloadMu sync.Mutex
-	var successPayloads []map[string]any
+	var successPayloads []logging.SlackMessage
 
 	successServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]any
+		var payload logging.SlackMessage
 		if err := json.Unmarshal(body, &payload); err == nil {
 			payloadMu.Lock()
 			successPayloads = append(successPayloads, payload)
@@ -571,16 +571,24 @@ func TestE2E_SlackWebhookSeparation_MessageFormat(t *testing.T) {
 	payloadMu.Lock()
 	defer payloadMu.Unlock()
 
-	// Verify message format
+	// Verify the unified format: a success notification starts with the
+	// product name, names the scope, and ends with Scope, Hostname, Run ID.
 	require.NotEmpty(t, successPayloads, "should receive at least one notification")
 
-	// Check that messages are properly formatted
 	for _, payload := range successPayloads {
-		if text, ok := payload["text"].(string); ok {
-			t.Logf("Message text: %s", text)
-			// Basic format verification - messages should contain readable text
-			assert.NotEmpty(t, text, "message text should not be empty")
-		}
+		t.Logf("Message text: %s", payload.Text)
+		assert.True(t, strings.HasPrefix(payload.Text, "[go-safe-cmd-runner] ✅ *SUCCESS* — "),
+			"the Text line must use the unified format: %q", payload.Text)
+		assert.Contains(t, payload.Text, "group=format-test-group")
+		assert.NotContains(t, payload.Text, "###")
+
+		require.Len(t, payload.Attachments, 1)
+		fields := payload.Attachments[0].Fields
+		require.GreaterOrEqual(t, len(fields), 3)
+		assert.Equal(t, "Scope", fields[len(fields)-3].Title)
+		assert.Equal(t, "group=format-test-group", fields[len(fields)-3].Value)
+		assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
+		assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
 	}
 
 	t.Logf("✓ Message format verification complete")

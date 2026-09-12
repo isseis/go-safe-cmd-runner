@@ -423,9 +423,11 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 
 			// Check if this is a verification error - if so, notify via Slack and continue
 			if verErr, ok := errors.AsType[*verification.Error](err); ok {
-				errorMsg := fmt.Sprintf("Group: %s, Total: %d, Verified: %d, Failed: %d, Error: %s",
-					verErr.Group, verErr.TotalFiles, verErr.VerifiedFiles,
-					verErr.FailedFiles, verErr.Err.Error())
+				// The group name is carried only by the notification scope; it
+				// is not repeated in the message body.
+				errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
+					verErr.TotalFiles, verErr.VerifiedFiles,
+					verErr.FailedFiles, verErr.Err)
 				logging.HandlePreExecutionError(&logging.PreExecutionError{
 					Type:                logging.ErrorTypeGroupFileVerification,
 					Message:             errorMsg,
@@ -532,10 +534,10 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 }
 
 // logGroupExecutionSummary emits a structured log record summarizing the
-// execution of a command group. This record includes attributes (such as
-// "slack_notify" and "message_type") that notification handlers (for
-// example `internal/logging.SlackHandler`) can use to send alerts. The
-// function itself only logs; it does not perform network I/O.
+// execution of a command group. The notification attributes come from
+// logging.NotificationAttrs, the single production path allowed to trigger a
+// Slack notification. The function itself only logs; it does not perform
+// network I/O.
 //
 // The log level is determined by the execution status:
 //   - Success: INFO level (sent to success webhook if configured)
@@ -547,10 +549,9 @@ func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, resu
 		slog.Any(common.GroupSummaryAttrs.Commands, result.commands),
 		slog.Int64(common.GroupSummaryAttrs.DurationMs, duration.Milliseconds()),
 		slog.String("run_id", r.runID),
-		slog.Bool("slack_notify", true),
-		slog.String("message_type", "command_group_summary"),
-		common.GroupScope(groupSpec.Name).LogAttr(),
 	}
+	attrs = append(attrs, logging.NotificationAttrs(
+		logging.CommandGroupSummaryNotification(), common.GroupScope(groupSpec.Name))...)
 
 	if result.status == GroupExecutionStatusError {
 		slog.LogAttrs(context.Background(), slog.LevelError, "Command group execution completed", attrs...)

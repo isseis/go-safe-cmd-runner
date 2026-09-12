@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -2349,6 +2350,9 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 
 		record := recorder.RequireRecord(t, slog.LevelInfo, "Command group execution completed")
 		record.AssertNotificationContext(t, common.GroupScope("test-group"))
+		record.AssertAttrs(t, map[string]any{
+			"message_type": logging.NotificationMessageType(logging.CommandGroupSummaryNotification()),
+		})
 	})
 
 	t.Run("error status logs at ERROR level", func(t *testing.T) {
@@ -2363,7 +2367,62 @@ func TestLogGroupExecutionSummary_LogLevel(t *testing.T) {
 
 		record := recorder.RequireRecord(t, slog.LevelError, "Command group execution completed")
 		record.AssertNotificationContext(t, common.GroupScope("test-group"))
+		record.AssertAttrs(t, map[string]any{
+			"message_type": logging.NotificationMessageType(logging.CommandGroupSummaryNotification()),
+		})
 	})
+}
+
+// TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage drives the
+// executeGroups verification-error branch through Execute: the group name must
+// appear only as the notification scope, and the Error Message must no longer
+// repeat it as a "Group: <name>, " prefix.
+func TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage(t *testing.T) {
+	recorder := tu.NewLogRecorder(nil)
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	slog.SetDefault(slog.New(recorder))
+
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout: new(int32(30)),
+		},
+		Groups: []runnertypes.GroupSpec{{Name: "backup"}},
+	}
+	runner, err := NewRunner(config,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-verification-scope"),
+		WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+	require.NoError(t, err)
+
+	mockGroupExecutor := &MockGroupExecutor{}
+	mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).
+		Return(&verification.Error{
+			Op:            "group",
+			Group:         "backup",
+			TotalFiles:    3,
+			VerifiedFiles: 2,
+			FailedFiles:   1,
+			Err:           errors.New("hash mismatch"),
+		})
+	runner.groupExecutor = mockGroupExecutor
+
+	require.NoError(t, runner.Execute(context.Background(), map[string]struct{}{"backup": {}}),
+		"a verification error is reported and the run continues")
+
+	record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
+	record.AssertNotificationContext(t, common.GroupScope("backup"))
+	record.AssertAttrs(t, map[string]any{
+		"message_type": logging.NotificationMessageType(logging.PreExecutionErrorNotification()),
+		"error_type":   string(logging.ErrorTypeGroupFileVerification),
+	})
+
+	message, ok := record.Attrs["error_message"].(string)
+	require.True(t, ok, "the record must carry the rendered error message")
+	assert.Contains(t, message, "Total: 3, Verified: 2, Failed: 1")
+	assert.NotContains(t, message, "Group: backup", "the group name belongs to the scope only")
+	assert.NotContains(t, message, "backup", "the group name must appear exactly once, in the notification context")
 }
 
 // TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager

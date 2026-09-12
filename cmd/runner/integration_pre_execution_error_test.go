@@ -3,14 +3,25 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -458,4 +469,118 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 		"the human-readable block should keep the remediation command")
 	assert.Contains(t, humanOutput, "To use the same webhook for both success and error notifications:",
 		"the human-readable block should keep the whole guidance, not just its first line")
+}
+
+// TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope drives
+// the production reporting boundary (mainWithExitCode) up to the global target
+// file verification failure. The config hash is recorded in a temporary hash
+// directory, so the failure comes from the unrecorded global verify file after
+// the Slack handler is registered -- the same call site main.go reports with a
+// global scope. The in-process handler-factory seam is used because a separate
+// process cannot be handed the mock server's TLS client.
+func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	unhashedFile := filepath.Join(tmpDir, "unhashed.txt")
+	require.NoError(t, os.WriteFile(unhashedFile, []byte("no hash record for this file"), 0o600))
+
+	var (
+		mu       sync.Mutex
+		payloads []logging.SlackMessage
+	)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var message logging.SlackMessage
+		if err := json.Unmarshal(body, &message); err == nil {
+			mu.Lock()
+			payloads = append(payloads, message)
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	configFile := filepath.Join(tmpDir, "config.toml")
+	configBody := fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+verify_files = [%q]
+
+[[groups]]
+name = "unused_group"
+
+[[groups.commands]]
+name = "unused-cmd"
+cmd = "/bin/true"
+`, serverURL.Hostname(), unhashedFile)
+	require.NoError(t, os.WriteFile(configFile, []byte(configBody), 0o600))
+	configFile, err = filepath.EvalSymlinks(configFile)
+	require.NoError(t, err)
+
+	// Record the config hash with the same validator the production manager
+	// builds, so the run gets past pre-registration verification and fails on
+	// the unrecorded global target file instead.
+	hashDir := tu.SafeTempDir(t)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(configFile, true)
+	require.NoError(t, err, "recording the config hash must succeed")
+
+	restoreHashDir := cmdcommon.DefaultHashDirectory
+	cmdcommon.DefaultHashDirectory = hashDir
+	t.Cleanup(func() { cmdcommon.DefaultHashDirectory = restoreHashDir })
+
+	t.Setenv(logging.SlackWebhookURLErrorEnvVar, "https://hooks.slack.com/services/error")
+
+	restoreFactory := bootstrap.SetSlackHandlerFactory(func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		opts.WebhookURL = server.URL
+		opts.AllowedHost = serverURL.Hostname()
+		opts.HTTPClient = server.Client()
+		return logging.NewSlackHandler(opts)
+	})
+	t.Cleanup(restoreFactory)
+
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	// The package-level flag values production reads.
+	originalConfigPath, originalLogLevel, originalLogDir := configPath, logLevel, logDir
+	originalDryRun, originalGroups, originalRunID := dryRun, groups, runID
+	t.Cleanup(func() {
+		configPath, logLevel, logDir = originalConfigPath, originalLogLevel, originalLogDir
+		dryRun, groups, runID = originalDryRun, originalGroups, originalRunID
+	})
+	configPath = configFile
+	logLevel = "info"
+	logDir = tu.SafeTempDir(t)
+	dryRun = false
+	groups = ""
+	runID = ""
+
+	const runIDValue = "test-global-scope-001"
+	require.Equal(t, 1, mainWithExitCode(runIDValue), "the global verification failure must exit non-zero")
+	bootstrap.FlushSlackNotifications()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, payloads, 1, "the global pre-execution error should reach Slack")
+	message := payloads[0]
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : file_access_failed", message.Text)
+
+	require.Len(t, message.Attachments, 1)
+	fields := message.Attachments[0].Fields
+	require.GreaterOrEqual(t, len(fields), 3, "the envelope always appends three fields")
+	assert.Equal(t, "Scope", fields[len(fields)-3].Title)
+	assert.Equal(t, "(global)", fields[len(fields)-3].Value)
+	assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
+	assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
+	assert.Equal(t, runIDValue, fields[len(fields)-1].Value)
 }

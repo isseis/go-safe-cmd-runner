@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -117,10 +118,9 @@ func (l *Logger) LogUserGroupExecution(
 		additionalAttrs := []slog.Attr{
 			slog.String(common.UserGroupCommandFailureAttrs.Stdout, l.redactor.RedactText(result.Stdout)),
 			slog.String(common.UserGroupCommandFailureAttrs.Stderr, l.redactor.RedactText(result.Stderr)),
-			slog.Bool("slack_notify", true), // Notify Slack for failed user/group commands
-			slog.String("message_type", "user_group_command_failure"),
-			common.CommandScope(cmd.GroupName(), cmd.Name()).LogAttr(),
 		}
+		additionalAttrs = append(additionalAttrs, logging.NotificationAttrs(
+			logging.UserGroupCommandFailureNotification(), common.CommandScope(cmd.GroupName(), cmd.Name()))...)
 		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
 		copy(errorAttrs, baseAttrs)
 		errorAttrs = append(errorAttrs, additionalAttrs...)
