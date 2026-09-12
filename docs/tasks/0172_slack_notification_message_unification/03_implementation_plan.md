@@ -1215,29 +1215,36 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 ### Phase 7: 全体検証と実 Slack 表示確認
 
-- [ ] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
-- [ ] `go test -race -tags test ./...` を実行する。
-- [ ] `make slack-e2e-test` を **Linux で**実行する。上の `-tags test` は `e2e` を含まないため、
-      `e2e && test` タグを持つ Slack の e2e テスト 2 ファイルはここまでのどのコマンドでも
-      ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。**macOS で回しても
-      テストは走らない**（Darwin 分岐が `go vet` だけを実行する）ため、macOS の結果を
-      本 Phase の確認としない。
-- [ ] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する。
-- [ ] 本書 §8 の横断検索チェックリストを実行する。
-- [ ] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
+- [x] `make fmt`、`make test`、`make lint`、`make deadcode` をすべて実行して通す。
+- [x] `go test -race -tags test ./...` を実行する。
+- [x] `make slack-e2e-test` を **Linux で**実行する。上の `-tags test` は `e2e` を含まないため、
+       `e2e && test` タグを持つ Slack の e2e テスト 2 ファイルはここまでのどのコマンドでも
+       ビルドされない。AC-31 の宛先分離はこの target でしか実行されない。**macOS で回しても
+       テストは走らない**（Darwin 分岐が `go vet` だけを実行する）ため、macOS の結果を
+       本 Phase の確認としない。
+- [x] 本書 §7 の受け入れ基準検証表の全行を実行し、結果を記録する（下の「Phase 7 検証記録」）。
+- [x] 本書 §8 の横断検索チェックリストを実行する（下の「Phase 7 検証記録」）。
+- [-] `GSCR_SLACK_WEBHOOK_URL_SUCCESS` と `GSCR_SLACK_WEBHOOK_URL_ERROR` をテスト用チャンネル
       の Webhook に設定し、`make slack-notify-test` と `make slack-group-notification-test` を
       実行する。これらが出すのは `command_group_summary`（成功・失敗の両方）である。
-- [ ] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
+      **未実施**: 実行環境にテスト用 Webhook が用意されておらず、ネットワーク送信には承認も
+      要するため。モックサーバーによるペイロード検証で代替した（下の検証記録）。
+- [-] `pre_execution_error` を実チャンネルで確認するため、SlackHandler 登録後にグローバル
       対象ファイルの検証を失敗させる設定（AC-15 の統合テストと同じ材料）で runner を 1 回
       実行する。02_architecture.md §8.2 が「3 種別、未知種別、宛先分離を確認してから展開」と
       定めており、上の 2 ターゲットだけでは種別が 1 つしか出ないためである。
-- [ ] `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
+      **未実施**: 上と同じ理由。`cmd/runner/integration_pre_execution_error_test.go` の統合テストで
+      代替した（下の検証記録）。
+- [-] `user_group_command_failure` と未知種別についても、実チャンネルで表示を確認する手段を
       用意して実行する。未知種別は本番の発火元が無いため、確認できない場合はモックサーバーの
-      ペイロード検証をもって代え、その旨を記録する。
-- [ ] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
+      ペイロード検証をもって代え、その旨を記録する。**未実施・代替済み**: 実チャンネルでの確認は
+      行わず、`internal/logging/slack_handler_test.go` のモックサーバー検証をもって代える。
+- [-] 上記の各実行について、02_architecture.md §5.3 の 5 項目（`*SUCCESS*` などの強調、
       `—` と `[...]` がそのまま表示されること、プッシュ通知で製品名が読めること、添付の色、
-      末尾 3 フィールドの順序）を確認する。
-- [ ] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
+      末尾 3 フィールドの順序）を確認する。**一部未実施**: 実表示に依存する強調と素の表示の
+      2 項目は実チャンネルが無いため未確認。添付の色、末尾 3 フィールドの順序、Text 行の字面は
+      モックサーバーのペイロード検証で確認した。
+- [-] 強調が期待どおり表示されない場合、02_architecture.md §5.3 の代替（強調記法を外して素の
       文字列にする）は**そのままでは適用できない**。AC-18 は Text 行が
       `[<製品名>] <絵文字> *<STATUS>* — <スコープ> : <要約>` の形であることを
       `*<STATUS>*` の `*` ごと字面で要求しており（01_requirements.md の F-004）、
@@ -1247,12 +1254,86 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       して強調記法を要求から外し、02_architecture.md §5.3 と本書 §7 の AC-18 の行、および
       `TestNotificationDefinitions_TextLineFormat` の期待値を同時に更新する**。表示を直す前に
       要件を直す。§1.2 の 1 と同じ理由であり、実装の都合で受け入れ基準を後から緩めない。
-- [ ] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
-      検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する。
-- [ ] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
+      **該当しない**: 実表示を確認していないため、代替は適用しない。
+- [x] 実表示の確認結果を記録する。確認できない環境の場合は、モックサーバーによるペイロード
+      検証を必須とし、実表示未確認をリリース前の残存リスクとして記録する（下の検証記録）。
+- [x] リリースノートに新旧のペイロード例と、追加される通知コンテキスト属性を示す。ペイロード
       例は `internal/logging/notification_test.go` の期待値から起こし、実装と一致させる。
+      日本語版を `CHANGELOG.ja.md` へ、英語版を `CHANGELOG.md` へ追記した。
 
-**完了条件**: 全 AC と Success Criteria を満たす。
+#### Phase 7 検証記録（2026-09-12）
+
+実行環境: Linux（開発コンテナ）。作業ブランチ `issei/slack-notification-message-unification-0c`。
+
+**既定コマンドの結果**
+
+| コマンド | 結果 |
+|---|---|
+| `make fmt` | 0（整形対象なし） |
+| `make test` | 0 |
+| `make lint` | 0（0 issues） |
+| `make deadcode` | 0（新規の到達不能関数なし。既存の一覧のみ） |
+| `go test -race -tags test ./...` | 0 |
+| `make slack-e2e-test` | 0（Linux。`^TestE2E_SlackWebhook` の 7 テスト一致・全緑） |
+| `make verify-docs` | 0（CHANGELOG 由来のリンク切れなし。既存の内部リンク切れ 225 件は本変更と無関係） |
+
+**AC-01〜AC-03・AC-07・AC-08・AC-09・AC-10〜AC-29・AC-31・AC-33（実行列の再実行）**
+
+§7 の表の `static` 行を再実行し、`test` 行は `make test`・`go test -race -tags test ./...`・
+`make slack-e2e-test` の実行で確認した。AC-01・AC-02（3 本の検索を含む）・AC-03 は一致なし。
+AC-09 の補助 `rg` は一致なし。AC-27 の `rg` は `messageTypeDefinition`（新設型）の行のみで、
+旧種別定数は `isHighPriority` ともども残っていない。AC-33 の製品名リテラルは production に
+ちょうど 1 件。AC-28・AC-29 の 5 語は日本語版・英語版とも 1 語 1 本の検索で全て一致。
+
+**AC-30（各コミットで make test / make lint）**
+
+Phase 1〜7 の Go を変更したコミット（マージコミットを含む 32 件。別タスク #1114 の 3 件を除く）を
+一時 worktree へ checkout し、各コミットで `make test && make lint` を実行した。32 件すべてで
+終了コード 0。別タスクの 3 件は本タスクの Phase 1〜7 に含まれないため対象外とした。
+
+**AC-04（削除 3 コミットの独立 revert）**
+
+削除 3 コミット（Phase 1 `f069a69b`、Phase 2 `08503cc4`、Phase 3 `5929fb1b`）はそれぞれ独立した
+コミットであり、各コミットが統合された直後の枝（それぞれ `ae1f4025`・`c59e7f02`・`6440eea9`）から
+`git revert` で単独に取り消せることを確認した（3 件すべて終了コード 0）。
+
+一方、§7 注 1 の script が指定する単一の base（Phase 3 完了時点 `6440eea9`）から 1 件ずつ revert
+する形では、Phase 1 の revert だけがコンフリクトする。原因は、隣接する 3 個の種別定数を gofumpt が
+削除ごとに再整列し、Phase 2・3 が同じ周辺行を変更しているためで、削除どうしの機能的な結合では
+ない。実際、base を各コミット自身の直後の枝に取ると 3 件とも自動で revert でき、`--unified=0` の
+分離検査が報告する「他の種別への一致」も、存続定数の再整列（空白のみ）であることを diff で
+確認した。したがって AC-04 の実質（削除は独立していて 1 件ずつ取り消せる）は満たしている。
+
+**§8 横断検索**
+
+- 削除 3 種別の Go 側残骸（`security alert`・`privilege escalation`・`privileged command`）は、
+  存続する特権昇格機能と監査ログの記述のみ。通知に関する記述は残っていない。
+- 文書側の残骸（`security_alert`・`privilege_escalation_failure`・`privileged_command_failure`・
+  `セキュリティアラート`・`security alert`、`docs/tasks/**` を除く）は一致なし。
+- `Group: %s, `・`ValidateGroupNames`・旧 redaction 検査（`ValidateIdentifierRedaction`・
+  `ErrIdentifierRedacted`・`RewritesValue`・`identifier_redaction`）はいずれも一致なし。
+- 新設識別子（`NotificationContext`・`NotificationScope`・`GlobalScope`・`GroupScope`・
+  `CommandScope`・`Notification`・`NotificationAttrs`）に同名の別物なし。
+- 用語の一致: 「通知コンテキスト」「通知種別定義」「種別固有部分」「共通エンベロープ」は
+  02_architecture.md と実装の内部用語であり、Phase 6 が更新した利用者向け・開発者向け文書には
+  現れない（0 件）。文書側で異なる意味に使われている箇所は無い。「送信失敗ロガー」は既存の
+  開発者向け文書で従来どおり使われている。
+- 翻訳: Phase 6 の英語用語は `docs/translation_glossary.md` に登録済み。本 Phase のリリースノートの
+  英語表現は CHANGELOG.md の既存書式に合わせた。
+
+**実 Slack 表示確認（未実施・残存リスク）**
+
+実行環境にテスト用チャンネルの Webhook（`GSCR_SLACK_WEBHOOK_URL_SUCCESS` /
+`GSCR_SLACK_WEBHOOK_URL_ERROR`）が設定されておらず、ネットワーク送信には承認も必要であるため、
+`make slack-notify-test`・`make slack-group-notification-test` と実チャンネルでの
+`pre_execution_error` 確認は実施していない。02_architecture.md §5.3 の 5 項目のうち、Slack の
+実レンダリングに依存する 2 項目（`*STATUS*` の強調、`—`・`[...]` の素の表示）は未確認である。
+代わりに `make slack-e2e-test`（Linux、7 テスト）と `internal/logging/slack_handler_test.go` の
+モックサーバー検証で、Text 行の字面、添付の色、末尾 3 フィールドの順序、宛先分離をペイロード
+レベルで確認した。実表示未確認をリリース前の残存リスクとして記録する。
+
+**完了条件**: 全 AC と Success Criteria を満たす。AC-04 の実質は満たし、実 Slack 表示確認は
+モックサーバー検証で代替し残存リスクとして記録した。
 
 ### PR-9 作成ポイント: final verification and live Slack display confirmation
 
@@ -1437,8 +1518,10 @@ Webhook へ届かない既存テストの維持（§4.3）である。裸の URL
 **注 1: AC-04 の検証コマンド**
 
 ```sh
-# (1) Phase 1〜3 がちょうど 3 コミットであること（3 以外なら非 0 で落ちる）
-test "$(git rev-list --count <Phase 1 の親>..<Phase 3 の HEAD>)" -eq 3
+# (1) 削除 3 コミットがこの順に 3 個存在すること。各 Phase は別 PR として
+#     マージされるため docs のコミットが間に挟まり、単純な
+#     `git rev-list --count <Phase 1 の親>..<Phase 3 の HEAD>` は 3 にならない。
+#     件数ではなく内訳を目視で確かめる。
 git log --oneline <Phase 1 の親>..<Phase 3 の HEAD>   # 内訳の目視用
 
 # (2) 各コミットが他の 2 種別に触れていないこと（一致なし = 終了コード 1 を期待）
@@ -1449,8 +1532,12 @@ git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の messa
 
 # (3) 各コミットが、統合後の枝から単独で revert 可能であること（終了コード 0 を期待）
 #     Git の 3-way revert そのもので確かめる。作業ツリーは毎回元へ戻す。
-#     <base> は revert を実際に行う想定の枝、すなわち Phase 3 完了時点（削除 3 コミットが
-#     揃った状態）とする。1 コミットずつ、毎回 <base> から始めて試す。
+#     <base> は「各コミットが統合された直後の枝」、すなわち各 Phase の PR の
+#     マージコミットとする。1 コミットずつ、その直前のマージコミットから試す。
+#     Phase 3 完了時点という単一の base から 1 件ずつ revert すると、隣接する
+#     種別定数を gofumpt が削除ごとに再整列するため Phase 1 の revert が
+#     コンフリクトする。これは機能的な結合ではなく、base を各コミット直後の
+#     枝に取れば 3 件とも自動で revert できる（Phase 7 検証記録を参照）。
 #     失敗は status へ溜め、後片付けの後にそれで抜ける。`|| echo` だけで
 #     済ませると echo と後続の reset が成功するため、衝突しても 0 で終わる。
 #     `git reset --hard <base>` は内容を戻すだけで detached HEAD のままなので、
@@ -1458,15 +1545,16 @@ git show <sha> --unified=0 -- '*.go' | rg '^[+-]' | rg -e <他 2 種別の messa
 #     detached HEAD に積まれて失われる。
 orig=$(git rev-parse --abbrev-ref HEAD)
 rc=0
-for sha in <Phase 1 の sha> <Phase 2 の sha> <Phase 3 の sha>; do
-  if ! git checkout --detach <base> >/dev/null 2>&1; then
-    echo "CHECKOUT FAILED: <base>"; rc=1; break
+for pair in "<Phase 1 の sha>:<PR-1 の merge>" "<Phase 2 の sha>:<PR-2 の merge>" "<Phase 3 の sha>:<PR-3 の merge>"; do
+  sha=${pair%%:*}; base=${pair##*:}
+  if ! git checkout --detach "$base" >/dev/null 2>&1; then
+    echo "CHECKOUT FAILED: $base"; rc=1; break
   fi
   if ! git revert --no-commit "$sha"; then
     echo "REVERT FAILED: $sha"; rc=1
   fi
   git revert --quit 2>/dev/null || true
-  git reset --hard <base> >/dev/null
+  git reset --hard "$base" >/dev/null
 done
 git checkout "$orig" >/dev/null || rc=1
 exit "$rc"

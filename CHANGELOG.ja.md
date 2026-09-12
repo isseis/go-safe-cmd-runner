@@ -150,6 +150,71 @@ done
 
 **切り戻し:** `CGO_ENABLED=0` でのビルドし直しでは回避できません。上記の非CGOビルドの項目のとおり非CGOビルドも同じ状況で既にfail-closedとなっているため、本変更を含まないバージョンへ戻す必要があります。設定やハッシュファイルの形式は変わらないため、追加の作業は不要です。
 
+#### Slack 通知の書式を統一し、発生箇所（Scope）を付与
+
+Slack に送られる通知の Text 行を `[<製品名>] <絵文字> *<STATUS>* — <Scope> : <要約>` の形に統一しました。絵文字・`*STATUS*`・添付の色はログレベルだけで決まり、種別ごとの裁量はなくなります。発生箇所は Scope として全種別に付与し、group に紐付かない通知は `(global)` と明示します。あわせて、本番で一度も発火していなかった 3 種別（`security_alert`、`privilege_escalation_failure`、`privileged_command_failure`）を production コードとテストから削除しました。
+
+Text 行の変更（旧 → 新）:
+
+| 旧 | 新 |
+|---|---|
+| `### ✅ SUCCESS backup` | `[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s` |
+| `🚨 Error: config_parsing_failed` | `[go-safe-cmd-runner] ❌ *ERROR* — (global) : config_parsing_failed` |
+| `ERROR: User/group command failed (Run ID: ...)` | `[go-safe-cmd-runner] ❌ *ERROR* — group=backup command=pg_dump : command failed (exit 2)` |
+
+`###` は Slack の mrkdwn では見出しにならず文字として表示されるため廃止し、強調は `*...*` に統一しました。`—` の直後は必ず Scope で、`group=<名前>`／`group=<名前> command=<名前>`／`(global)` のいずれかを表示します。group 名またはコマンド名が空など、scope と名前の組が矛盾するレコードは `(scope: invalid)` と表示し、Slack には送らず送信失敗ロガーに WARN を記録します。
+
+`command_group_summary` のペイロード（旧）:
+
+```json
+{
+  "text": "### ✅ SUCCESS backup",
+  "attachments": [
+    {
+      "color": "good",
+      "fields": [
+        {"title": "Command Count", "value": "3", "short": true},
+        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Hostname", "value": "host01", "short": true},
+        {"title": "Run ID", "value": "01J...", "short": true},
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false}
+      ]
+    }
+  ]
+}
+```
+
+`command_group_summary` のペイロード（新）:
+
+```json
+{
+  "text": "[go-safe-cmd-runner] ✅ *SUCCESS* — group=backup : 3 commands in 1.2s",
+  "attachments": [
+    {
+      "color": "good",
+      "fields": [
+        {"title": "Command Count", "value": "3", "short": true},
+        {"title": "Duration", "value": "1.2s", "short": true},
+        {"title": "Command", "value": "✅ `pg_dump` (exit: 0)", "short": false},
+        {"title": "Scope", "value": "group=backup", "short": true},
+        {"title": "Hostname", "value": "host01", "short": true},
+        {"title": "Run ID", "value": "01J...", "short": true}
+      ]
+    }
+  ]
+}
+```
+
+添付フィールドは種別固有のものを先に並べ、末尾 3 件を Scope・Hostname・Run ID の順に固定しました。旧版は Hostname と Run ID の位置が種別ごとに異なり、`command_group_summary` では種別固有フィールドより前に置かれていました。
+
+**影響範囲:** Text 行や添付フィールドの並びを文字列・位置で照合している監視ルールや連携スクリプトは、上記の新書式に更新してください。削除した 3 種別はいずれも本番の書き手が存在しなかったため、実運用で届いていた通知の種類は変わりません。group 実行中の検証エラー通知は、本文に埋め込まれていた `Group: <名前>, ` の接頭辞を廃止し、group 名を Scope に一度だけ表示するようになりました。
+
+#### 設定の group 名・コマンド名を起動時に検証
+
+起動時（ハッシュ検証・実行前）に、group 名とコマンド名の識別子を検証するようになりました。コマンド名については、空でないこと、制御文字（Unicode 一般カテゴリ Cc）と書式制御文字（同 Cf）を含まないこと、表示安全な補間契約を通した後に表示できる文字が 1 文字以上残ること、UTF-8 のバイト長が 128 byte 以内であることを検査します。長さは group 名とコマンド名の双方を対象とします。同じ group 内でコマンド名が重複する設定も拒否します。いずれも検査ごとに独立したエラーで拒否されます。
+
+**影響範囲:** 次のいずれかに当たる識別子を含む TOML は起動時に拒否されます。空のコマンド名、制御文字・書式制御文字を含む名前、半角空白だけの名前など表示できる文字が残らない名前、128 byte を超える名前、同一 group 内でのコマンド名の重複。group 名の文字種（`^[A-Za-z_][A-Za-z0-9_]*$`）の検査は従来どおりです。
+
 ### 変更
 
 #### ログファイル名のタイムスタンプが UTC になりました
