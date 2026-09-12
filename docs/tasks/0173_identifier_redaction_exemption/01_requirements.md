@@ -18,11 +18,11 @@
 
 ### 現行 redaction の構造
 
-`RedactingHandler` が Slack・JSON・text を含む全出力先を包み（[`bootstrap/logger.go:409`](../../../internal/runner/bootstrap/logger.go#L409)）、文字列属性に対して次の 3 層を順に適用する。
+`RedactingHandler` は Slack・JSON・text を含む全出力先を対象とし（[`bootstrap.AddSlackHandlers`](../../../internal/runner/bootstrap/logger.go)）、文字列属性に対して次の 3 層を順に適用する。
 
-1. **本文中の key=value 置換** — `RedactText` が `DefaultKeyValuePatterns`（[`sensitive_patterns.go:247`](../../../internal/redaction/sensitive_patterns.go#L247)）の各キーについて、`=`・`:` 区切り、引用値、`Bearer `/`Basic ` の次トークン、`Authorization` ヘッダを置換する（[`redactor.go:270`](../../../internal/redaction/redactor.go#L270)）。
-2. **値形式検出** — `RedactText` の後段で `ValueDetector.Mask`（[`value_detector.go:143`](../../../internal/redaction/value_detector.go#L143)）が AWS アクセスキー ID・GitHub/Slack トークン・JWT・URL 埋め込み認証情報・PEM・許可ホスト配下 URL を値の形式だけで置換する。
-3. **値まるごと判定** — 1・2 で変化が無かった場合、`SensitivePatterns.IsSensitiveValue`（[`sensitive_patterns.go:132`](../../../internal/redaction/sensitive_patterns.go#L132)）が未アンカーの部分一致 `(?i)(password|token|secret|key|api_key)` など（[`sensitive_patterns.go:41`](../../../internal/redaction/sensitive_patterns.go#L41)）で値全体を `[REDACTED]` に置き換える（[`redactor.go:326`](../../../internal/redaction/redactor.go#L326)）。
+1. **本文中の key=value 置換** — `RedactText` が [`DefaultKeyValuePatterns`](../../../internal/redaction/sensitive_patterns.go) の各キーについて、`=`・`:` 区切り、引用値、`Bearer `/`Basic ` の次トークン、`Authorization` ヘッダを置換する（[`Config.RedactText`](../../../internal/redaction/redactor.go)）。
+2. **値形式検出** — `RedactText` の後段で [`ValueDetector.Mask`](../../../internal/redaction/value_detector.go) が AWS アクセスキー ID・GitHub/Slack トークン・JWT・URL 埋め込み認証情報・PEM・許可ホスト配下 URL を値の形式だけで置換する。
+3. **値まるごと判定** — 1・2 で変化が無かった場合、[`SensitivePatterns.IsSensitiveValue`](../../../internal/redaction/sensitive_patterns.go) が未アンカーの部分一致 `(?i)(password|token|secret|key|api_key)` など（[`DefaultSensitivePatterns`](../../../internal/redaction/sensitive_patterns.go) が定義する）で値全体を `[REDACTED]` に置き換える（[`Config.RedactLogAttribute`](../../../internal/redaction/redactor.go) と [`RedactingHandler.redactLogAttributeWithContext`](../../../internal/redaction/redactor.go) の共通判定）。
 
 ### 識別子が書き換わる経路
 
@@ -30,25 +30,25 @@ group 名・コマンド名は属性値としてこの 3 層を通る。キー�
 
 | 層 | 識別子で発火する例 |
 |---|---|
-| key=value 置換 | コマンド名 `backup --password=x`。`key` の隣接 `=` 代替は境界を持たないため（[`redactor.go:491`](../../../internal/redaction/redactor.go#L491)）、`monkey="a b"` が `monkey=[REDACTED] b"` になる（[`redactor_test.go:503-509`](../../../internal/redaction/redactor_test.go#L503)） |
+| key=value 置換 | コマンド名 `backup --password=x`。[`buildKeyValueRegex`](../../../internal/redaction/redactor.go) の `key` の隣接 `=` 代替は境界を持たないため、`monkey="a b"` が `monkey=[REDACTED] b"` になる（[`TestRedactText_AlternativePriority`](../../../internal/redaction/redactor_test.go)） |
 | 値形式検出 | group 名 `AKIAIOSFODNN7EXAMPLE`、`ghp_` + 36 文字、`github_pat_` + 30 文字 |
 | 値まるごと判定 | group 名 `monkey`、`keyboard`、`rotate_api_key`、`basic_auth`、`my_github_token` |
 
 ### 実害
 
-1. **通知 Scope が発生箇所を指せなくなる。** `monkey` という group の通知は Scope が `[REDACTED]` になり、どの group で起きたのかを通知から判別できない。Task 0172 はこの挙動を §3.5 の残余リスクとして受け入れている（[`02_architecture.md:629-631`](../0172_slack_notification_message_unification/02_architecture.md)）。
-2. **エラー全文が失われうる。** `processError` は `error` 属性の文字列を `RedactText` に掛けたうえで `IsSensitiveValue` の全置換にも通す（[`redactor.go:1047-1049`](../../../internal/redaction/redactor.go#L1047)）。`failed to execute group monkey: ...` のように名前を含むエラーメッセージは、全文が `[REDACTED]` になりうる。Scope だけでなくエラーの内容そのものが消える。
+1. **通知 Scope が発生箇所を指せなくなる。** `monkey` という group の通知は Scope が `[REDACTED]` になり、どの group で起きたのかを通知から判別できない。Task 0172 はこの挙動を残余リスクとして受け入れている（[`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.5「表示安全な補間契約」）。
+2. **エラー全文が失われうる。** [`RedactingHandler.processError`](../../../internal/redaction/redactor.go) は `error` 属性の文字列を `RedactText` に掛けたうえで `IsSensitiveValue` の全置換にも通す。`failed to execute group monkey: ...` のように名前を含むエラーメッセージは、全文が `[REDACTED]` になりうる。Scope だけでなくエラーの内容そのものが消える。
 3. **JSON ログでも同じ。** 免除は Slack ハンドラ単体の話ではなく、全出力先に掛かる。
 
 ### 識別子は redaction の保護対象ではない
 
-group 名・コマンド名は TOML に人間が書くリテラルであり、変数展開も外部入力も経由しない。同じ文字列は設定ファイルに平文で存在し、名前に機密を書く経路が現実に無いことは Task 0172 が既に結論している（[`02_architecture.md:391`](../0172_slack_notification_message_unification/02_architecture.md)、[`03_implementation_plan.md:152-155`](../0172_slack_notification_message_unification/03_implementation_plan.md)）。したがって値ベース redaction が識別子を守る効果は薄く、通知の識別機能を壊す害の方が大きい。
+group 名・コマンド名は TOML に人間が書くリテラルであり、変数展開も外部入力も経由しない。同じ文字列は設定ファイルに平文で存在し、名前に機密を書く経路が現実に無いことは Task 0172 が既に結論している（[`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.1「識別子は設定境界で検査する」、[`03_implementation_plan.md`](../0172_slack_notification_message_unification/03_implementation_plan.md)「設定検証」節）。したがって値ベース redaction が識別子を守る効果は薄く、通知の識別機能を壊す害の方が大きい。
 
-Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（commit `8d0667c5`）。拒否は語の部分一致による誤検知で設定を実行不能にするだけであり、残った論点は「表示時に書き換えないこと」である。0172 は `internal/redaction` の適用範囲を変更せず、その見直しを別タスクと明記している（[`02_architecture.md:631`](../0172_slack_notification_message_unification/02_architecture.md)、[`02_architecture.md:762`](../0172_slack_notification_message_unification/02_architecture.md)）。本タスクがその別タスクである。
+Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（commit `8d0667c5`）。拒否は語の部分一致による誤検知で設定を実行不能にするだけであり、残った論点は「表示時に書き換えないこと」である。0172 は `internal/redaction` の適用範囲を変更せず、その見直しを別タスクと明記している（[`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) §3.5、同 §5.2「既存の保護との関係」）。本タスクがその別タスクである。
 
 ### キー名では除外できない
 
-キー `"command"` は TOML のコマンド名（[`group_executor.go:233`](../../../internal/runner/group_executor.go#L233)）と展開済みコマンド行（[`executor.go:191`](../../../internal/runner/base/executor/executor.go#L191)、[`command_lifecycle.go:301`](../../../internal/runner/base/executor/command_lifecycle.go#L301) ほか）の両方に使われる。キー `"name"` も group 名（[`group_executor.go:149`](../../../internal/runner/group_executor.go#L149)）・一時ファイル名（[`safe_file_linux.go:241`](../../../internal/safefileio/safe_file_linux.go#L241)）・コマンド結果の名前（[`logschema.go:120`](../../../internal/common/logschema.go#L120)）に使われる。キー単位の除外は、コマンド行の redaction を弱めるか、名前の一部を残すかのどちらかになり、両立しない。
+キー `"command"` は TOML のコマンド名（[`DefaultGroupExecutor.executeAllCommands`](../../../internal/runner/group_executor.go)）と展開済みコマンド行（[`DefaultExecutor.executeWithUserGroup`](../../../internal/runner/base/executor/executor.go)、[`DefaultExecutor.prepareCommand`](../../../internal/runner/base/executor/command_lifecycle.go) ほか）の両方に使われる。キー `"name"` も group 名（[`DefaultGroupExecutor.ExecuteGroup`](../../../internal/runner/group_executor.go)）・一時ファイル名（[`moveFileAnchored`](../../../internal/safefileio/safe_file_linux.go)）・コマンド結果の名前（[`CommandResult.LogValue`](../../../internal/common/logschema.go)）に使われる。キー単位の除外は、コマンド行の redaction を弱めるか、名前の一部を残すかのどちらかになり、両立しない。
 
 ## 目的
 
@@ -63,7 +63,7 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 1. 識別子を表す型の追加（`internal/common`。型名とメソッドは `02_architecture.md` で確定する）。
 2. `internal/redaction` に、宣言された識別子を値ベース変換の対象外として明示的に認識する経路を追加し、下流ハンドラには string として正規化して渡す。
 3. group 名・コマンド名を属性値として書く production の全経路を宣言型へ置き換える。少なくとも `group`、`command`、`command_name`、`name`、`notification_context` の名前値、`CommandResult`／`CommandResults` の名前が対象（約 13 ファイル・40 属性サイト）。
-4. 免除と対照（同じ内容の plain string は従来どおり redact される）を固定するテスト、コマンド行 redaction の維持を固定するテスト、Slack・JSON の表示を確認するテスト。
+4. 免除ケースと対照ケース（同じ内容の plain string は従来どおり redact される）を固定するテスト、コマンド行 redaction の維持を固定するテスト、Slack・JSON の表示を確認するテスト。
 5. `docs/dev/architecture_design/security-architecture.md` と `.ja.md`、`docs/user/security-risk-assessment.md` と `.ja.md` の更新。
 
 ### 対象外
@@ -118,19 +118,19 @@ key=value 置換・値形式検出・値まるごと判定のいずれも、宣�
 
 **Acceptance Criteria**:
 - **AC-07**: production コードで group 名・コマンド名をログ属性値として書く経路がすべて宣言型を使う。少なくとも次を含む。
-  - `notification_context` の `group`／`command`（[`notification_context.go:81-84`](../../../internal/common/notification_context.go#L81)）
-  - `CommandResult`／`CommandResults` の名前（[`logschema.go:120,164`](../../../internal/common/logschema.go#L120)）
-  - `group` 属性（[`runner.go:545`](../../../internal/runner/runner.go#L545)、[`group_executor.go:383,408,435,460,652`](../../../internal/runner/group_executor.go#L383)、[`tempdir_manager.go:67,92`](../../../internal/runner/base/executor/tempdir_manager.go#L67)、[`dryrun_manager.go:304,315`](../../../internal/runner/resource/dryrun_manager.go#L304)、[`verification/manager.go:223,279`](../../../internal/verification/manager.go#L223)）
-  - `command` 属性のうちコマンド名（[`group_executor.go:233,459,512,543,554,594,617`](../../../internal/runner/group_executor.go#L233)、[`security.go:24,33,42,52,57`](../../../internal/logging/security.go#L24)、[`dryrun_manager.go:303,314,430`](../../../internal/runner/resource/dryrun_manager.go#L303)、[`normal_manager.go:108,137`](../../../internal/runner/resource/normal_manager.go#L108)、[`privilege/unix.go:123,140,347,352`](../../../internal/runner/base/privilege/unix.go#L123)、[`executor.go:160,254`](../../../internal/runner/base/executor/executor.go#L160)、[`expansion.go:1101`](../../../internal/runner/config/expansion.go#L1101)）
-  - `command_name` 属性（[`audit/logger.go:79,145`](../../../internal/runner/base/audit/logger.go#L79)）
-  - `name` 属性のうち group 名（[`group_executor.go:149,151,218`](../../../internal/runner/group_executor.go#L149)）
-- **AC-08**: キー `"command"` に載る展開済みコマンド行・解決済みパス（[`executor.go:191,198,247,284,314,327`](../../../internal/runner/base/executor/executor.go#L191)、[`command_lifecycle.go`](../../../internal/runner/base/executor/command_lifecycle.go)、[`verification/manager.go:280`](../../../internal/verification/manager.go#L280) など）は宣言型にしない。コマンド行に `token=...` を含めると redact され、同名のコマンド名は redact されないことを固定するテストがある。
+  - `notification_context` の `group`／`command`: [`NotificationContext.LogValue`](../../../internal/common/notification_context.go)
+  - `CommandResult`／`CommandResults` の名前: [`CommandResult.LogValue`](../../../internal/common/logschema.go)、[`CommandResults.LogValue`](../../../internal/common/logschema.go)
+  - `group` 属性: [`Runner.logGroupExecutionSummary`](../../../internal/runner/runner.go)、[`DefaultGroupExecutor.verifyGroupFiles`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.outputDryRunDebugInfo`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.executeCommandInGroup`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.resolveGroupWorkDir`](../../../internal/runner/group_executor.go)、[`DefaultTempDirManager.Create`](../../../internal/runner/base/executor/tempdir_manager.go)、[`DryRunResourceManager.validateRunAsIdentity`](../../../internal/runner/resource/dryrun_manager.go)、[`Manager.VerifyGroupFiles`](../../../internal/verification/manager.go)、[`Manager.collectVerificationFiles`](../../../internal/verification/manager.go)
+  - `command` 属性のうちコマンド名: [`DefaultGroupExecutor.executeAllCommands`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.executeCommandInGroup`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.createCommandContext`](../../../internal/runner/group_executor.go)、[`buildCommandDebugLogArgs`](../../../internal/runner/group_executor.go)、[`DefaultGroupExecutor.executeSingleCommand`](../../../internal/runner/group_executor.go)、[`SecurityLogger.LogUnlimitedExecution`](../../../internal/logging/security.go)、[`SecurityLogger.LogLongRunningProcess`](../../../internal/logging/security.go)、[`SecurityLogger.LogTimeoutExceeded`](../../../internal/logging/security.go)、[`SecurityLogger.LogTimeoutConfiguration`](../../../internal/logging/security.go)、[`DryRunResourceManager.validateRunAsIdentity`](../../../internal/runner/resource/dryrun_manager.go)、[`DryRunResourceManager.evaluateCommandRisk`](../../../internal/runner/resource/dryrun_manager.go)、[`NormalResourceManager.ExecuteCommand`](../../../internal/runner/resource/normal_manager.go)、[`UnixPrivilegeManager.WithPrivileges`](../../../internal/runner/base/privilege/unix.go)、[`UnixPrivilegeManager.logElevationOutcome`](../../../internal/runner/base/privilege/unix.go)、[`DefaultExecutor.Execute`](../../../internal/runner/base/executor/executor.go)、[`DefaultExecutor.executeWithUserGroup`](../../../internal/runner/base/executor/executor.go)、[`resolveAndPrepareCommandSpec`](../../../internal/runner/config/expansion.go)
+  - `command_name` 属性: [`Logger.LogUserGroupExecution`](../../../internal/runner/base/audit/logger.go)、[`Logger.LogRiskProfile`](../../../internal/runner/base/audit/logger.go)
+  - `name` 属性のうち group 名: [`DefaultGroupExecutor.ExecuteGroup`](../../../internal/runner/group_executor.go)
+- **AC-08**: キー `"command"` に載る展開済みコマンド行・解決済みパス（[`DefaultExecutor.executeWithUserGroup`](../../../internal/runner/base/executor/executor.go)、[`DefaultExecutor.executeNormal`](../../../internal/runner/base/executor/executor.go)、[`DefaultExecutor.prepareCommand`](../../../internal/runner/base/executor/command_lifecycle.go)、[`Manager.collectVerificationFiles`](../../../internal/verification/manager.go) など）は宣言型にしない。コマンド行に `token=...` を含めると redact され、同名のコマンド名は redact されないことを固定するテストがある。
 - **AC-09**: 監査ログの `command_name` と、`command_group_summary` のコマンド一覧に載る名前が、redaction 後も残る。
 
 #### F-003: 既存の決定との整合
 
 **Acceptance Criteria**:
-- **AC-10**: 設定検証は識別子の中身を redaction と照合しない。`TestValidateIdentifiers` の受容行（[`validation_test.go:390-405`](../../../internal/runner/config/validation_test.go#L390)）と `TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`（[`integration_pre_execution_error_test.go:178`](../../../cmd/runner/integration_pre_execution_error_test.go#L178)）が引き続き通る。
+- **AC-10**: 設定検証は識別子の中身を redaction と照合しない。[`TestValidateIdentifiers`](../../../internal/runner/config/validation_test.go) の受容行と [`TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`](../../../cmd/runner/integration_pre_execution_error_test.go) が引き続き通る。
 - **AC-11**: Task 0172 の Scope 表示契約（空名・非表示名は `(scope: invalid)`、それ以外は名前を表示）を変えない。
 - **AC-12**: `SensitivePatterns`・`ValueDetector`・`DefaultKeyValuePatterns` のパターン集合が変更されていない。
 
