@@ -52,14 +52,6 @@ const (
 	defaultNormalQueueSize       = 128
 )
 
-// Message types carried by slack_notify records. They are named here because
-// the queue-priority decision below and Handle's message builder switch must
-// agree on the exact strings.
-const (
-	messageTypeCommandGroupSummary = "command_group_summary"
-	messageTypePreExecutionError   = "pre_execution_error"
-)
-
 // Reasons recorded for a notification that was never delivered.
 const (
 	dropReasonQueueFull     = "queue_full"
@@ -146,15 +138,16 @@ type slackSender struct {
 }
 
 // slackRequest is one queued notification. It carries only what the worker
-// needs: the payload to POST, and the fields the failure logger records when
-// the send fails or the notification is dropped. The record body is
-// deliberately absent from the failure path, so nothing beyond these fields is
-// retained for logging.
+// needs: the payload to POST, the finalized queue priority, and the fields the
+// failure logger records when the send fails or the notification is dropped.
+// The record body is deliberately absent from the failure path, so nothing
+// beyond these fields is retained for logging.
 type slackRequest struct {
 	message     *SlackMessage
 	messageType string
 	runID       string
 	level       slog.Level
+	priority    notificationPriority
 }
 
 // shutdownRequest tells the worker how to terminate. It is both the element of
@@ -276,21 +269,12 @@ func (sd *slackSender) isClosed() bool {
 	return sd.closed
 }
 
-// isHighPriority reports whether a message type goes to the high-priority
-// queue. Pre-execution errors must not be pushed out by a flood of ordinary
-// command notifications.
-func isHighPriority(messageType string) bool {
-	switch messageType {
-	case messageTypePreExecutionError:
-		return true
-	default:
-		return false
-	}
-}
-
-// queueFor selects the send queue for a request.
-func (sd *slackSender) queueFor(messageType string) chan slackRequest {
-	if isHighPriority(messageType) {
+// queueFor selects the send queue for a request. The priority is already
+// finalized by the handler: known types carry their definition's priority, and
+// unknown types are mapped from the log level. Pre-execution errors must not be
+// pushed out by a flood of ordinary command notifications.
+func (sd *slackSender) queueFor(req slackRequest) chan slackRequest {
+	if req.priority == priorityHigh {
 		return sd.highPriority
 	}
 	return sd.normal
@@ -329,7 +313,7 @@ func (sd *slackSender) tryEnqueue(req slackRequest) (string, bool) {
 	}
 
 	select {
-	case sd.queueFor(req.messageType) <- req:
+	case sd.queueFor(req) <- req:
 		sd.counters.enqueued.Add(1)
 		return "", true
 	default:
@@ -742,6 +726,25 @@ func (sd *slackSender) recordDrop(req slackRequest, reason string) {
 	sd.mu.Unlock()
 
 	sd.warnNotDelivered("Slack notification dropped", req, reason)
+}
+
+// recordSchemaViolation records the single WARN a malformed notification
+// record earns. It writes only to the failure logger, which is Slack-free by
+// construction, so the warning cannot recurse into a new Slack notification.
+// The declared scope is a scope word (or "missing"/"invalid"), never a group or
+// command name, so the record carries no user-supplied body.
+func (sd *slackSender) recordSchemaViolation(req slackRequest, reasons []string, declaredScope string) {
+	attrs := []slog.Attr{
+		slog.Any("reasons", reasons),
+		slog.String(msgTypeAttrKey, req.messageType),
+		slog.String("run_id", req.runID), //nolint:gosec // G706: run_id is an internal identifier, not user input
+		slog.String("level", req.level.String()),
+		slog.String("scope", declaredScope),
+	}
+	if sd.webhookLabel != "" {
+		attrs = append(attrs, slog.String("webhook_label", sd.webhookLabel))
+	}
+	sd.failureLogger.LogAttrs(context.Background(), slog.LevelWarn, "Slack notification schema violation", attrs...)
 }
 
 // recordUndelivered names a notification that entered a queue but was never

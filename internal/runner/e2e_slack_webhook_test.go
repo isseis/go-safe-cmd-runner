@@ -17,6 +17,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -165,16 +166,34 @@ func TestE2E_SlackWebhookWithMockServer(t *testing.T) {
 	defer payloadMu.Unlock()
 	require.NotEmpty(t, receivedPayloads, "should have sent HTTP requests to mock Slack endpoint")
 
-	var allPayloads strings.Builder
+	var messages []logging.SlackMessage
 	for i, payload := range receivedPayloads {
 		t.Logf("Payload %d: %s", i+1, payload)
-		allPayloads.WriteString(payload)
-		allPayloads.WriteByte('\n')
+		var message logging.SlackMessage
+		require.NoError(t, json.Unmarshal([]byte(payload), &message), "payload %d should be a Slack message", i+1)
+		messages = append(messages, message)
 	}
 
-	// Verify the HTTP flow worked
-	assert.Contains(t, allPayloads.String(), "e2e-mock-test-group", "payload should contain group name")
-	assert.Contains(t, allPayloads.String(), "SUCCESS", "payload should indicate success")
+	// Verify the HTTP flow and the unified envelope on the group summary.
+	require.NotEmpty(t, messages)
+	var foundSummary bool
+	for _, message := range messages {
+		if !strings.Contains(message.Text, "group=e2e-mock-test-group") {
+			continue
+		}
+		foundSummary = true
+		assert.True(t, strings.HasPrefix(message.Text, "[go-safe-cmd-runner] ✅ *SUCCESS* — "),
+			"the Text line must use the unified format: %q", message.Text)
+		assert.NotContains(t, message.Text, "###")
+		require.Len(t, message.Attachments, 1)
+		fields := message.Attachments[0].Fields
+		require.GreaterOrEqual(t, len(fields), 3)
+		assert.Equal(t, "Scope", fields[len(fields)-3].Title)
+		assert.Equal(t, "group=e2e-mock-test-group", fields[len(fields)-3].Value)
+		assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
+		assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
+	}
+	assert.True(t, foundSummary, "the payload should carry the group scope")
 
 	// Note: This test verifies the HTTP webhook flow works correctly.
 	// It does NOT verify command execution or redaction because the Runner

@@ -237,13 +237,17 @@ func waitForStopAccepting(t *testing.T, sd *slackSender) {
 	}, 5*time.Second, time.Millisecond, "Flush/Close should have stopped the sender accepting")
 }
 
-// slackRecord builds a record that SlackHandler will deliver.
-func slackRecord(level slog.Level, messageType, text string) slog.Record {
+// slackRecord builds a record that SlackHandler will deliver. The record
+// deliberately carries no message_type: an empty type is an unknown type, so
+// the body rides the generic builder and the record earns a schema-violation
+// WARN. Tests in this file rely on the body reaching SlackMessage.Text (the
+// typed builders ignore the record body), and the unknown path is covered by
+// its own tests. A test that needs a registered type builds the record through
+// NotificationAttrs and the type's accessor, as commandGroupSummaryRecord and
+// preExecutionErrorRecord do.
+func slackRecord(level slog.Level, text string) slog.Record {
 	record := slog.NewRecord(time.Now(), level, text, 0)
-	record.AddAttrs(slog.Bool("slack_notify", true))
-	if messageType != "" {
-		record.AddAttrs(slog.String("message_type", messageType))
-	}
+	record.AddAttrs(slog.Bool(slackNotifyAttrKey, true))
 	return record
 }
 
@@ -253,10 +257,19 @@ func slackRecord(level slog.Level, messageType, text string) slog.Record {
 // and ignores the record body, so the value has to travel there to be visible.
 func preExecutionErrorRecord(errorType string) slog.Record {
 	record := slog.NewRecord(time.Now(), slog.LevelError, "pre execution error", 0)
+	record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GlobalScope())...)
+	record.AddAttrs(slog.String(common.PreExecErrorAttrs.ErrorType, errorType))
+	return record
+}
+
+// commandGroupSummaryRecord builds a deliverable command_group_summary record.
+// The context defaults to a group scope, matching the production firing point.
+func commandGroupSummaryRecord(group, text string) slog.Record {
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, text, 0)
+	record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope(group))...)
 	record.AddAttrs(
-		slog.Bool("slack_notify", true),
-		slog.String("message_type", messageTypePreExecutionError),
-		slog.String(common.PreExecErrorAttrs.ErrorType, errorType),
+		slog.String(common.GroupSummaryAttrs.Status, "success"),
+		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
 	)
 	return record
 }
@@ -275,7 +288,7 @@ func TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer(t *testing.T) {
 
 	start := time.Now()
 	for range calls {
-		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 	}
 	elapsed := time.Since(start)
 
@@ -295,7 +308,7 @@ func TestSlackHandler_UnreachableSlackDoesNotDelayOtherHandlers(t *testing.T) {
 	// See TestSlackHandler_HandleDoesNotBlockOnUnresponsiveServer for the bound.
 	const limit = time.Second
 	start := time.Now()
-	require.NoError(t, multi.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "sibling handler must not wait")))
+	require.NoError(t, multi.Handle(context.Background(), slackRecord(slog.LevelInfo, "sibling handler must not wait")))
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, limit, "the non-Slack handler must not wait on Slack")
@@ -312,7 +325,7 @@ func TestSlackSender_SendTimeout(t *testing.T) {
 	opts.FailureHandlers = failureLogHandlers(&failureLog)
 	handler := newTestSlackHandler(t, opts)
 
-	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 
 	waitForFailureLog(t, &failureLog, "Slack notification not delivered")
 
@@ -332,9 +345,8 @@ func TestSlackHandler_MessageIdenticalToSynchronousMode(t *testing.T) {
 	syncHandler := newTestSlackHandler(t, syncOpts)
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Command group execution completed", 0)
+	record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.GroupScope("test-group"))...)
 	record.AddAttrs(
-		slog.Bool("slack_notify", true),
-		slog.String("message_type", messageTypeCommandGroupSummary),
 		slog.String(common.GroupSummaryAttrs.Status, "success"),
 		slog.String(common.GroupSummaryAttrs.Group, "test-group"),
 		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
@@ -387,7 +399,7 @@ func TestSlackHandler_DryRunCreatesNoSenderAndSendsNothing(t *testing.T) {
 	handler := newTestSlackHandler(t, opts)
 
 	require.Nil(t, handler.sender, "dry-run must not build a sender")
-	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 
 	assert.Equal(t, FlushStats{}, handler.Flush(context.Background()), "Flush on a dry-run handler returns the zero value")
 	assert.Equal(t, FlushStats{}, handler.Close(), "Close on a dry-run handler returns the zero value")
@@ -406,12 +418,12 @@ func TestSlackSender_HighPriorityBypassesFullNormalQueue(t *testing.T) {
 	ctx := context.Background()
 
 	// The first notification pins the worker inside a send.
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "in flight")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
 	waitForRequests(t, rec, 1)
 
 	// The normal queue (capacity 1) now fills up and then overflows.
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "queued normal")))
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "dropped normal")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "queued normal")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "dropped normal")))
 
 	// A full normal queue must not keep a pre-execution error out.
 	require.NoError(t, handler.Handle(ctx, preExecutionErrorRecord("intrusion")))
@@ -438,14 +450,14 @@ func TestSlackSender_QueueOverflowDropsAndRecords(t *testing.T) {
 		{
 			name:        "normal queue",
 			opts:        func(o *SlackHandlerOptions) { o.NormalQueueSize = 1 },
-			record:      func() slog.Record { return slackRecord(slog.LevelInfo, "", "normal") },
+			record:      func() slog.Record { return slackRecord(slog.LevelInfo, "normal") },
 			messageType: "",
 		},
 		{
 			name:        "high priority queue",
 			opts:        func(o *SlackHandlerOptions) { o.HighPriorityQueueSize = 1 },
 			record:      func() slog.Record { return preExecutionErrorRecord("intrusion") },
-			messageType: messageTypePreExecutionError,
+			messageType: PreExecutionErrorNotification().typeName(),
 		},
 	}
 
@@ -495,7 +507,7 @@ func TestSlackSender_RecordsOmitMessageBody(t *testing.T) {
 		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
-		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, secret)))
 		waitForRequests(t, rec, 1)
 		require.Contains(t, rec.texts()[0], secret, "the body assertions below would be vacuous otherwise")
 	})
@@ -513,7 +525,7 @@ func TestSlackSender_RecordsOmitMessageBody(t *testing.T) {
 			act: func(t *testing.T, handler *SlackHandler, _ *syncBuffer) string {
 				// After the flush the sender no longer accepts.
 				handler.Flush(context.Background())
-				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, secret)))
 				return dropReasonSenderClosed
 			},
 		},
@@ -521,7 +533,7 @@ func TestSlackSender_RecordsOmitMessageBody(t *testing.T) {
 			name:       "send failure record",
 			serverCode: http.StatusBadRequest,
 			act: func(t *testing.T, handler *SlackHandler, _ *syncBuffer) string {
-				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, "", secret)))
+				require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelWarn, secret)))
 				return failureReasonSendFailed
 			},
 		},
@@ -591,7 +603,7 @@ func TestSlackSender_FailureLogGoesToNonSlackDestination(t *testing.T) {
 	handler := newTestSlackHandler(t, opts)
 
 	ctx := context.Background()
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "message")))
 	waitForFailureLog(t, &failureLog, "Slack notification not delivered")
 
 	stats := handler.Flush(ctx)
@@ -611,7 +623,7 @@ func TestSlackSender_FlushLogsMessageTypeBreakdown(t *testing.T) {
 	handler := newTestSlackHandler(t, opts)
 
 	ctx := context.Background()
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, messageTypeCommandGroupSummary, "summary")))
+	require.NoError(t, handler.Handle(ctx, commandGroupSummaryRecord("test-group", "summary")))
 	require.NoError(t, handler.Handle(ctx, preExecutionErrorRecord("intrusion")))
 	waitForRequests(t, rec, 2)
 
@@ -620,8 +632,8 @@ func TestSlackSender_FlushLogsMessageTypeBreakdown(t *testing.T) {
 	aggregate := findFailureRecordByMessage(t, &failureLog, "Slack delivery summary")
 	assert.Equal(t, "run-breakdown", aggregate["run_id"], "the aggregate carries the sender's run ID")
 	assert.Equal(t, map[string]any{
-		messageTypeCommandGroupSummary: float64(1),
-		messageTypePreExecutionError:   float64(1),
+		CommandGroupSummaryNotification().typeName(): float64(1),
+		PreExecutionErrorNotification().typeName():   float64(1),
 	}, aggregate["sent_by_message_type"], "each delivered notification counts under its own type")
 	assert.Empty(t, aggregate["failed_by_message_type"])
 	assert.Empty(t, aggregate["dropped_by_message_type"])
@@ -639,7 +651,7 @@ func TestSlackHandler_SendContextIsDetachedFromTheLogCall(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	require.NoError(t, handler.Handle(cancelled, slackRecord(slog.LevelInfo, "", "issued under a cancelled context")))
+	require.NoError(t, handler.Handle(cancelled, slackRecord(slog.LevelInfo, "issued under a cancelled context")))
 
 	stats := handler.Flush(context.Background())
 	assert.Equal(t, int64(1), stats.Sent, "a cancelled log-call context must not abort the send")
@@ -657,7 +669,7 @@ func TestSlackHandler_FlushDeliversPendingAndReturnsStats(t *testing.T) {
 	ctx := context.Background()
 	const submitted = 5
 	for range submitted {
-		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "queued")))
+		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "queued")))
 	}
 	<-reached
 
@@ -689,9 +701,9 @@ func TestSlackHandler_FlushDeadlineReportsPending(t *testing.T) {
 	handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 	ctx := context.Background()
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "in flight")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
 	waitForRequests(t, rec, 1)
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "queued")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "queued")))
 
 	flushCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
@@ -715,7 +727,7 @@ func TestSlackHandler_FlushIsIdempotent(t *testing.T) {
 	handler := newTestSlackHandler(t, opts)
 
 	ctx := context.Background()
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "message")))
 	waitForRequests(t, rec, 1)
 
 	first := handler.Flush(ctx)
@@ -741,7 +753,7 @@ func TestSlackHandler_EnqueueAfterFlushIsDropped(t *testing.T) {
 
 	// No panic even though the worker is gone: the send queues are never
 	// closed, so this cannot be a send on a closed channel.
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "after flush")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "after flush")))
 
 	waitForFailureLog(t, &failureLog, dropReasonSenderClosed)
 	assert.Equal(t, int64(1), handler.sender.counters.submitted.Load())
@@ -766,7 +778,7 @@ func TestSlackHandler_FlushReturnsWhenWorkerIsIdle(t *testing.T) {
 		rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
-		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 		waitForRequests(t, rec, 1)
 
 		start := time.Now()
@@ -783,7 +795,7 @@ func TestSlackHandler_FlushCancelsInFlightSend(t *testing.T) {
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 		ctx := context.Background()
-		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "in flight")))
+		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
 		waitForRequests(t, rec, 1)
 
 		flushCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
@@ -810,7 +822,7 @@ func TestSlackHandler_FlushCancelsInFlightSend(t *testing.T) {
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 		ctx := context.Background()
-		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "in flight")))
+		require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
 		waitForRequests(t, rec, 1)
 
 		flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -844,7 +856,7 @@ func TestSlackSender_DequeueRegisterBoundary(t *testing.T) {
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 		reached, release := gateWorkerAtDequeue(handler.sender)
-		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "at the boundary")))
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "at the boundary")))
 		<-reached
 
 		statsCh := make(chan FlushStats, 1)
@@ -872,7 +884,7 @@ func TestSlackSender_DequeueRegisterBoundary(t *testing.T) {
 		handler := newTestSlackHandler(t, slackOptionsFor(t, server))
 
 		reached, release := gateWorkerAtDequeue(handler.sender)
-		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "at the boundary")))
+		require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "at the boundary")))
 		<-reached
 
 		statsCh := make(chan FlushStats, 1)
@@ -897,7 +909,7 @@ func TestSlackHandler_NilSenderHandleReturnsNil(t *testing.T) {
 	// log path is the worst possible failure mode, so it stays quiet instead.
 	handler := &SlackHandler{runID: "test-run", level: slog.LevelInfo}
 
-	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 	assert.Equal(t, FlushStats{}, handler.Flush(context.Background()))
 	assert.Equal(t, FlushStats{}, handler.Close())
 }
@@ -914,7 +926,7 @@ func TestSlackHandler_SynchronousMode(t *testing.T) {
 	assert.Nil(t, handler.sender.normal, "synchronous mode allocates no send queue")
 	assert.Nil(t, handler.sender.done, "synchronous mode starts no worker")
 
-	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "message")))
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "message")))
 
 	// No flush needed: Handle only returns once the request has been answered.
 	assert.Equal(t, 1, rec.count(), "synchronous mode sends inline")
@@ -925,7 +937,7 @@ func TestSlackHandler_SynchronousMode(t *testing.T) {
 
 	// Stopping accepting applies here too: without it a handler kept alive past
 	// its Close would go on making blocking HTTP calls.
-	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "", "after flush")))
+	require.NoError(t, handler.Handle(context.Background(), slackRecord(slog.LevelInfo, "after flush")))
 	assert.Equal(t, 1, rec.count(), "a closed synchronous sender must not send")
 }
 
@@ -940,14 +952,14 @@ func TestSlackSender_CounterInvariants(t *testing.T) {
 	ctx := context.Background()
 
 	// Pin the worker inside a send so the queue overflows for sure.
-	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "in flight")))
+	require.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "in flight")))
 	waitForRequests(t, rec, 1)
 
 	const concurrent = 20
 	var wg sync.WaitGroup
 	for range concurrent {
 		wg.Go(func() {
-			assert.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "concurrent")))
+			assert.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "concurrent")))
 		})
 	}
 	wg.Wait()
@@ -972,7 +984,7 @@ func TestSlackHandler_ConcurrentHandleAndFlush(t *testing.T) {
 	for range writers {
 		wg.Go(func() {
 			for range 10 {
-				assert.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "", "concurrent")))
+				assert.NoError(t, handler.Handle(ctx, slackRecord(slog.LevelInfo, "concurrent")))
 			}
 		})
 	}

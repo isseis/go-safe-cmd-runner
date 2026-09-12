@@ -844,98 +844,98 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
 
 #### 5.1 通知種別定義
 
-- [ ] `internal/logging/notification.go` を新規作成し、02_architecture.md §3.4 の
+- [x] `internal/logging/notification.go` を新規作成し、02_architecture.md §3.4 の
       `notificationPriority`、`messageDetails`、`messageBuilder`、`messageTypeDefinition`、
       `Notification`、`notificationDefinitions`、`registerNotification` を定義する。
       `messageBuilder` は `slog.Record` だけを受け取り、`*SlackHandler` は取らない。
-- [ ] 同ファイルで存続する 3 種別を `var` 初期化の 1 回きりの登録として宣言する
+- [x] 同ファイルで存続する 3 種別を `var` 初期化の 1 回きりの登録として宣言する
       （`command_group_summary` は通常優先度、`pre_execution_error` は高優先度、
       `user_group_command_failure` は通常優先度）。登録の呼び出しはこのファイル内に閉じる。
-- [ ] 同ファイルへ、発火元向けの公開アクセサ 3 個と `NotificationAttrs` を置く。
+- [x] 同ファイルへ、発火元向けの公開アクセサ 3 個と `NotificationAttrs` を置く。
       `NotificationAttrs` はゼロ値の `Notification` を受け取った場合、`slack_notify=true` と
       空の `message_type` を返す（通知を黙って落とさない）。
-- [ ] 同ファイルへ製品名の定数 `"go-safe-cmd-runner"` を置く。本番コードでの定義はこの 1 箇所
+- [x] 同ファイルへ製品名の定数 `"go-safe-cmd-runner"` を置く。本番コードでの定義はこの 1 箇所
       だけにする。
-- [ ] 同ファイルへ予約フィールド見出しの集合を置く。要素は既存の `fieldTitleHostname`・
+- [x] 同ファイルへ予約フィールド見出しの集合を置く。要素は既存の `fieldTitleHostname`・
       `fieldTitleRunID` と、新設する Scope の見出し定数の 3 個で、共通エンベロープの生成と
       ビルダー側の検査が同じ定数を読む。
 
 #### 5.2 共通エンベロープ
 
-- [ ] `internal/logging/slack_handler.go` へ、ホスト名取得を指す非公開のパッケージ変数
+- [x] `internal/logging/slack_handler.go` へ、ホスト名取得を指す非公開のパッケージ変数
       （初期値は `common.GetHostname`）を置く。書き方は `internal/common/system.go` の
       `osHostname` にならう。
-- [ ] `internal/logging/slack_handler.go` に残る 2 箇所の `common.GetHostname()` 直接呼び出し
+- [x] `internal/logging/slack_handler.go` に残る 2 箇所の `common.GetHostname()` 直接呼び出し
       を、共通エンベロープ経由に一本化して取り除く。
-- [ ] 共通エンベロープの生成を 1 箇所へ実装する。ログレベル、通知コンテキスト、種別固有部分
+- [x] 共通エンベロープの生成を 1 箇所へ実装する。ログレベル、通知コンテキスト、種別固有部分
       から `SlackMessage` を作り、Text 行を
       `[<製品名>] <絵文字> *<STATUS>* — <Scope> : <要約>` の形にする。添付フィールドは種別
       固有フィールドの後ろへ Scope、Hostname、Run ID をこの順で足す。埋め込む動的な値は、
       02_architecture.md §3.5「役割ごとの規則」の対応に従って §4.0 の補間契約を通す。
-- [ ] レベル対応表を 02_architecture.md §3.5 の 4 行として全域関数で実装する（上から順に
+- [x] レベル対応表を 02_architecture.md §3.5 の 4 行として全域関数で実装する（上から順に
       最初に一致した行を使い、INFO 未満は WARNING へ倒す）。色と絵文字は既存の
       `colorGood`／`colorWarning`／`colorDanger`、`emojiSuccess`／`emojiWarning`／
       `emojiFailure` を使う。
-- [ ] stdout／stderr の切り詰め（`outputMaxLength` 1000、`stderrMaxLength` 500）を
+- [x] stdout／stderr の切り詰め（`outputMaxLength` 1000、`stderrMaxLength` 500）を
       ヘルパー 1 個へ括り出す。現在 `slack_handler.go` の 621・635 行目付近にインラインで
       重複しており、新ビルダーでさらに増えるためである。上限値そのものは変更しない。
 
 #### 5.3 ビルダーの移行と `Handle` の再構成
 
-- [ ] `buildCommandGroupSummary` を、種別固有部分だけを返す `messageBuilder` へ書き換える。
+- [x] `buildCommandGroupSummary` を、種別固有部分だけを返す `messageBuilder` へ書き換える。
       Text 行、色、Hostname、Run ID の組み立てを取り除く。コマンド結果ごとの `Command`
       フィールドは合成値のままとし、`cmd.Name` の部分だけを識別子の役割で補間してから合成
       する（終了コードは自由文、バッククォートと `(exit: ...)` は骨格）。切り詰めは §5.2 の
       ヘルパーを使う。
-- [ ] `buildPreExecutionError` を同じく種別固有部分だけを返す形へ書き換える。要約は
+- [x] `buildPreExecutionError` を同じく種別固有部分だけを返す形へ書き換える。要約は
       `error_type`、固有フィールドは Error Message と Component とする。
-- [ ] `user_group_command_failure` のビルダーを新規に書く。要約は
+- [x] `user_group_command_failure` のビルダーを新規に書く。要約は
       `command failed (exit <終了コード>)`、固有フィールドは Command、Exit Code、存在する
       場合の Output と Error Output とする。属性名は `common.UserGroupCommandFailureAttrs`
       から引き、文字列リテラルを複製しない。**Output と Error Output には §5.2 のヘルパーで
       stdout 1000 文字・stderr 500 文字の上限を適用する**。発火元は切り詰めていないため、
       ここで適用しないと 02_architecture.md §3.5 の「大量出力」役割の既存規則が守られない。
-- [ ] `buildGenericMessage` を、レコードの `Message` を要約とする汎用の種別固有部分を返す形へ
+- [x] `buildGenericMessage` を、レコードの `Message` を要約とする汎用の種別固有部分を返す形へ
       書き換える。共通エンベロープは他種別と同じ経路で付ける。
-- [ ] `internal/logging/slack_handler.go` の `Handle` を 02_architecture.md §6.1 の処理順へ
+- [x] `internal/logging/slack_handler.go` の `Handle` を 02_architecture.md §6.1 の処理順へ
       再構成する。`message_type` の `switch` は通知種別定義の参照へ置き換える。
-- [ ] 未知種別と不正な通知コンテキストの WARN を実装する。メッセージは
+- [x] 未知種別と不正な通知コンテキストの WARN を実装する。メッセージは
       `Slack notification schema violation` に固定し、理由コードを `reasons` 属性へ
       「未知種別 → 通知コンテキスト」の順で列挙する。1 レコードにつき WARN は 1 件とする。
       属性は `message_type`、`run_id`、ログレベル、宣言された scope、`webhook_label` とし、
       通知本文・Webhook URL・group 名・command 名は含めない。出力先は既存の送信失敗ロガー
       だけとする。WARN は受付停止判定より前に出すため、`SlackHandler` からその出力先へ届く
       経路を用意する（現在 `failureLogger` は `slackSender` が持つ）。
-- [ ] `slackRequest` へ確定済みの優先度を持たせ、`queueFor` がそれを読む形へ変える。
+- [x] `slackRequest` へ確定済みの優先度を持たせ、`queueFor` がそれを読む形へ変える。
       未知種別の優先度は 02_architecture.md §3.6 の表に従い、`level >= slog.LevelWarn` を
       高優先度、**それ未満（INFO と、§3.5 の対応表が WARNING へ倒す INFO 未満の値）はすべて
       通常優先度**とする。閾値で書き、`level == slog.LevelInfo` を通常・それ以外を高とする
       書き方はしない。後者は DEBUG の未知種別を予約レーンへ入れる（§3.6 の理由）。
       既知の 3 種別はレベルを見ず、通知種別定義の確定値をそのまま使う。
-- [ ] `internal/logging/slack_sender.go` から `isHighPriority` と、種別定数
+- [x] `internal/logging/slack_sender.go` から `isHighPriority` と、種別定数
       `messageTypeCommandGroupSummary`・`messageTypePreExecutionError` を削除する。種別名は
       通知種別定義だけが持つ。定数を参照している既存テストは通知種別定義の公開アクセサ経由
       へ移す。
-- [ ] `internal/logging/slack_handler.go` から、使われなくなった `emojiAlert` を削除する。
+- [x] `internal/logging/slack_handler.go` から、使われなくなった `emojiAlert` を削除する。
 
 #### 5.4 発火元の属性生成関数への移行
 
-- [ ] `internal/logging/pre_execution_error.go` の `HandlePreExecutionError` を、Phase 4 の
+- [x] `internal/logging/pre_execution_error.go` の `HandlePreExecutionError` を、Phase 4 の
       中間実装から `NotificationAttrs(PreExecutionErrorNotification(), preExecErr.NotificationContext)`
       の返す属性を渡す形へ差し替える。
-- [ ] `internal/runner/runner.go` の `logGroupExecutionSummary` を
+- [x] `internal/runner/runner.go` の `logGroupExecutionSummary` を
       `NotificationAttrs(CommandGroupSummaryNotification(), ...)` 経由へ移し、
       `"slack_notify"` と `"message_type"` の文字列リテラルを取り除く。
-- [ ] `internal/runner/base/audit/logger.go` の `LogUserGroupExecution` を
+- [x] `internal/runner/base/audit/logger.go` の `LogUserGroupExecution` を
       `NotificationAttrs(UserGroupCommandFailureNotification(), ...)` 経由へ移し、
       `"slack_notify"` と `"message_type"` の文字列リテラルを取り除く。
-- [ ] `internal/runner/runner.go` の検証エラー本文から `Group: %s, ` の接頭辞を取り除く。
+- [x] `internal/runner/runner.go` の検証エラー本文から `Group: %s, ` の接頭辞を取り除く。
       除去後の本文は `Total: %d, Verified: %d, Failed: %d, Error: %s` とし、group 名の
       唯一の表示場所を Scope にする。
 
 #### 5.5 テスト
 
-- [ ] **発火元が「正しい」token を選んでいることを、発火元ごとに assert する。** 構文木ガードの
+- [x] **発火元が「正しい」token を選んでいることを、発火元ごとに assert する。** 構文木ガードの
       (b) が見るのは第 1 引数が**登録済みアクセサのいずれか**であることだけで、どの発火元が
       どの token を渡すかは見ない。したがって `LogUserGroupExecution` が
       `UserGroupCommandFailureNotification()` の代わりに
@@ -947,9 +947,9 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       **捕捉したレコードの `message_type` 属性が期待する種別名であること**を assert する。
       期待値は公開アクセサ経由で引き、文字列リテラルを書かない。token を取り違える変更を
       入れると、その発火元のテストだけが落ちる形にする。
-- [ ] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
+- [x] リポジトリ全体を歩く走査ヘルパー（`internal/testutil/identitymutationguard/helpers.go`）
       は Phase 4 で括り出し済みである（§4.3）。本 Phase では追加せず、そのまま呼ぶ。
-- [ ] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
+- [x] `internal/logging/notification_contract_guard_test.go` へ、Phase 4 で入れた
       `PreExecutionError` リテラルの検査に加えて、(a) **`slack_notify` を `true` で構築して
       よいのは `notification.go` の `NotificationAttrs` だけであること**（`internal/logging` を
       含むすべての本番ファイルが対象。パッケージ単位の除外にしない）。**値が `false` の構築は
@@ -977,7 +977,7 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       `pre_execution_error.go` に `slack_notify=true` を手で組ませ（§4.3 の中間実装）、Phase 5 で
       `NotificationAttrs` へ移す（§5.4）。パッケージ単位の除外のままだと、**この移行をやり残しても
       どの検査も鳴らない**。移行の完了を見張るのが (a) の主目的である。
-- [ ] (c) だけでは足りないため、(d) を追加する。**`notification.go` 以外の本番コードが
+- [x] (c) だけでは足りないため、(d) を追加する。**`notification.go` 以外の本番コードが
       `Notification` 値を得る経路は、`NotificationAttrs` の第 1 引数位置での公開アクセサ
       呼び出し 1 つだけである。** 具体的には次をすべて拒否する。
       (d-1) 公開アクセサの、その位置以外での呼び出し。
@@ -1016,39 +1016,39 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       走査は Phase 4 のヘルパーを使い、対象ディレクトリを書き並べない。
       このファイルを `notification_test.go` と分けるのは、`cmd/runner/startup_order_guard_test.go`
       と同じく、構文木ガードを独立したファイルに置く既存の慣行に合わせるためである。
-- [ ] `internal/logging/notification_test.go` を新規作成する。まず、登録済みの各種別について
+- [x] `internal/logging/notification_test.go` を新規作成する。まず、登録済みの各種別について
       代表となる `slog.Record` を作る**フィクスチャ表**を同ファイル内に置く。range する
       テストはこの表からレコードを取り、ビルダーを実際に呼ぶ。表が無いと range テストは
       メタデータしか見られない。
-- [ ] 同ファイルで `notificationDefinitions` を range し、02_architecture.md §7.1 の
+- [x] 同ファイルで `notificationDefinitions` を range し、02_architecture.md §7.1 の
       「共通エンベロープ」「予約フィールド見出し」「単一定義」「製品名」の観点を検証する。
       種別名の一意性、公開アクセサが返す token と定義の同一性、どのビルダーも予約見出しを
       使わないこと、静的な部分に `###` が無いこと、末尾 3 フィールドの順序、Text 行が製品名で
       始まることを含める。
-- [ ] 同ファイルへ、`notificationDefinitions` を range して**各種別固有ビルダーが返す
+- [x] 同ファイルへ、`notificationDefinitions` を range して**各種別固有ビルダーが返す
       フィールドの値がすべて 02_architecture.md §3.5「動的な値の一覧」のいずれかの行に対応
       すること**を検証するテストを置く。一覧に無いフィールドを足すと失敗する形にする。
       これが §3.5 の 2 つの一覧を将来にわたって噛み合わせ続ける仕掛けである。
-- [ ] `internal/logging/slack_handler_test.go` へ、02_architecture.md §7.1 の次の観点を
+- [x] `internal/logging/slack_handler_test.go` へ、02_architecture.md §7.1 の次の観点を
       追加する。レベル表示の全域性（全レベルに対して絵文字・STATUS・色が定義されていること）、
       レベル表示の内容が全種別で一致すること、ゼロ値トークン、構築の遅延、未知種別、WARN の
       件数、不正な通知コンテキスト（`(scope: invalid)` と WARN）、ユーザー／グループ指定
       コマンドの失敗、識別子を載せる他フィールド、エンベロープ値の出力の性質（ホスト名の
       継ぎ目を差し替える）。
-- [ ] 同ファイルへ、未知種別で**レベルが WARN 以上のレコードは通常キューが満杯でも高優先度で
+- [x] 同ファイルへ、未知種別で**レベルが WARN 以上のレコードは通常キューが満杯でも高優先度で
       送られる**ことを検証するケースを追加する（02_architecture.md §7.1「未知種別」）。
-- [ ] 同ファイルへ、識別子を切り詰めないことを検証するケースを追加する。長さ上限ちょうどの
+- [x] 同ファイルへ、識別子を切り詰めないことを検証するケースを追加する。長さ上限ちょうどの
       group 名が Scope と Text 行に全体として現れること、および**先頭が長く一致する 2 つの
       group 名が異なる Scope として表示される**ことを行として持つ。後者が無いと、接頭辞で
       切り詰める実装でも短い名前の assert は通ってしまう。
-- [ ] 同ファイルへ、02_architecture.md §7.3 の負の検証を 2 件追加する。(a) 未知種別と不正
+- [x] 同ファイルへ、02_architecture.md §7.3 の負の検証を 2 件追加する。(a) 未知種別と不正
       スコープの WARN が送信失敗ロガーだけへ届き、新しい Slack 通知を再帰的に発生させない
       こと。(b) WARN に通知本文、group 名、command 名、Webhook URL が含まれないこと。
       前者は通知のループを、後者は秘匿値の漏れを防ぐ検証であり、WARN の件数を数えるだけの
       テストでは代替できない。
-- [ ] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` を
+- [x] `internal/logging/slack_handler_test.go` の `TestSlackHandler_Handle_WithMockServer` を
       新しい書式に合わせて更新する。
-- [ ] **空の `message_type` を使う既存テストの一括見直し。** `internal/logging/slack_sender_test.go`
+- [x] **空の `message_type` を使う既存テストの一括見直し。** `internal/logging/slack_sender_test.go`
       には `slackRecord(level, "", text)` が 29 箇所ある（§1.3）。Phase 5 以降これらは未知種別
       として WARN を 1 件増やす。共有ヘルパー `slackRecord` の側で、既定を登録済み種別と
       通知コンテキスト付きに変えるのか、未知種別のまま WARN を織り込むのかを一度に決め、
@@ -1057,10 +1057,10 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       478 行目と 726 行目付近の出現数の assert、および「失敗の記録自体が Slack 要求を
       生まないこと」を見る assert である。`internal/logging/slack_handler_test.go` にも同じ
       形が無いか確認する。
-- [ ] `internal/logging/slack_sender_test.go` の高優先度・キュー溢れ・種別別集計のテストを、
+- [x] `internal/logging/slack_sender_test.go` の高優先度・キュー溢れ・種別別集計のテストを、
       確定済み優先度を持つ `slackRequest` の形に合わせて更新する。優先度を通常へ倒すと
       `TestSlackSender_HighPriorityBypassesFullNormalQueue` が失敗することを確認する。
-- [ ] `internal/logging/slack_handler_test.go` へ、未知種別の優先度が全域であることを
+- [x] `internal/logging/slack_handler_test.go` へ、未知種別の優先度が全域であることを
       検証する行を追加する（02_architecture.md §7.1）。**レベルから優先度を返す写像を関数
       として直接呼ぶ表**とし、ERROR・WARN・INFO に加えて INFO と WARN の中間値
       （`slog.LevelInfo + 2`）と DEBUG の行を持つ。`level == slog.LevelInfo` だけを通常と
@@ -1069,7 +1069,7 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       `LevelModeWarnAndAbove`（同 `:379`）だけで、どちらも中間値と INFO 未満を弾くため、
       `Handle` 経由で緑にすると 02_architecture.md §3.2 が禁じる形になる。`Handle` を通す
       行は本番に到達する INFO・WARN・ERROR だけとする。
-- [ ] `internal/runner/runner_test.go` の**グループ集計**については、通知コンテキスト属性が
+- [x] `internal/runner/runner_test.go` の**グループ集計**については、通知コンテキスト属性が
       載ることの検証は Phase 4（§4.3）で済んでいる。本 Phase では
       `TestLogGroupExecutionSummary_LogLevel` が `NotificationAttrs` 経由へ移した後も同じ属性
       を出し続けることを確認するだけでよく、新しい assert は要らない。
@@ -1077,29 +1077,29 @@ PR-6 は 02_architecture.md の旧設計どおりに、redaction の変換が識
       `runner.runID` が設定されていることしか assert しておらず、宣言だけされて未使用の
       `expectedStatus`／`expectedCalls` フィールドが残っている。通知レコードを一切見ないため、
       拡張は実質的な新規作成になる。
-- [ ] **検証エラー経路のテストは新規に書く。** `Group: <name>, ` を出す分岐は
+- [x] **検証エラー経路のテストは新規に書く。** `Group: <name>, ` を出す分岐は
       `runner.go:429`、すなわち `executeGroups`（`Execute` 経由）の中にある。
       `TestSlackNotification` が呼ぶのは `ExecuteGroup`（`runner.go:493`）であり、この分岐へは
       到達しない。`verification.Error` を返す検証マネージャを与えて `Execute` を通し、Scope に
       group 名が一度だけ現れること、Error Message から `Group: <name>, ` が消えていることを
       検証するテストを追加する。既存テストの表に行を足す形では到達経路が変わらない。
-- [ ] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` は、
+- [x] `internal/runner/base/audit/logger_test.go` の `TestLogger_LogUserGroupExecution` は、
       コマンドスコープの通知コンテキストを持つことの検証を Phase 4（§4.3）で済ませてある。
       本 Phase では `NotificationAttrs` 経由への移行後も同じ属性が載ることを確認する。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` へ、SlackHandler の登録後に起きる
+- [x] `cmd/runner/integration_pre_execution_error_test.go` へ、SlackHandler の登録後に起きる
       グローバルな起動前エラー（グローバル対象ファイルの検証失敗）で Scope が `(global)` に
       なることを検証するケースを追加する。設定ファイルの読み込み・解析の失敗は登録前に起きて
       通知が発生しないため使わない。
-- [ ] `internal/runner/e2e_slack_webhook_separation_test.go` を新書式に合わせて更新し、
+- [x] `internal/runner/e2e_slack_webhook_separation_test.go` を新書式に合わせて更新し、
       INFO は成功用、WARN 以上はエラー用という宛先分離が変わらないことを確認する。
-- [ ] `internal/runner/e2e_slack_webhook_test.go` の `TestE2E_SlackWebhookWithMockServer` を、
+- [x] `internal/runner/e2e_slack_webhook_test.go` の `TestE2E_SlackWebhookWithMockServer` を、
       新しいペイロード全体を検証する形へ更新する。
-- [ ] `cmd/runner/integration_slack_flush_test.go` の
+- [x] `cmd/runner/integration_slack_flush_test.go` の
       `TestIntegration_RunnerFlushesSlackOnNormalExit` を、通知コンテキストを持つレコードと
       新書式に合わせて更新する。
-- [ ] `go test -race -tags test ./internal/logging/...` を実行し、通知種別定義の参照と既存の
+- [x] `go test -race -tags test ./internal/logging/...` を実行し、通知種別定義の参照と既存の
       並行投入・flush に競合が無いことを確認する。
-- [ ] 追加・変更した各テストについて、対象の実装（コンストラクタ呼び出し、共通エンベロープ、
+- [x] 追加・変更した各テストについて、対象の実装（コンストラクタ呼び出し、共通エンベロープ、
       通知種別定義の要素、優先度、補間契約の置き換え集合の 1 文字）を一時的に壊すと失敗する
       ことを確認し、その旨をコミットメッセージへ記す（AC-32）。
 

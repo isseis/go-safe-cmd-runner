@@ -33,15 +33,31 @@ const (
 	emojiSuccess = "✅"
 	emojiFailure = "❌"
 	emojiWarning = "⚠️"
-	emojiAlert   = "🚨"
 
 	// Special character constants
 	arrowIndent = "  ↳"
 
-	// Slack attachment field titles reused across message builders
+	// Slack attachment field titles reused across message builders. Scope,
+	// Hostname and Run ID are reserved: the common envelope appends them last
+	// and no type-specific builder may reuse their titles.
+	fieldTitleScope    = "Scope"
 	fieldTitleHostname = "Hostname"
 	fieldTitleRunID    = "Run ID"
+
+	// scopeInvalidDisplay is the Scope text of a record whose notification
+	// context is missing or invalid.
+	scopeInvalidDisplay = "(scope: invalid)"
+
+	// envelopeFieldCount is the number of fields the common envelope appends
+	// after the type-specific ones: Scope, Hostname and Run ID.
+	envelopeFieldCount = 3
 )
+
+// slackHostname resolves the hostname embedded in the common envelope. It is a
+// package variable so tests can substitute a value with the characters the
+// display-safe interpolation contract must handle, rather than depending on the
+// test machine's hostname.
+var slackHostname = common.GetHostname
 
 // BackoffConfig defines the retry backoff configuration
 type BackoffConfig struct {
@@ -289,7 +305,16 @@ func (s *SlackHandler) Enabled(_ context.Context, level slog.Level) bool {
 	}
 }
 
-// Handle processes the log record and sends it to Slack if appropriate
+// Handle processes the log record and sends it to Slack if appropriate.
+//
+// The processing order is fixed: look up the notification type and validate
+// the notification context first -- recording one schema-violation WARN if
+// either is wrong -- then check whether the sender still accepts, and only then
+// build the message. The validation comes before the acceptance check so a
+// definition defect is recorded even when shutdown races it; the build stays
+// after it so a closed sender does not pay for a message it will drop. Dry-run
+// and nil-sender handlers return before any of this, so they construct no
+// message and emit no schema diagnostics.
 func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Apply accumulated attributes and groups to the record
 	r = s.applyAccumulatedContext(r)
@@ -300,11 +325,11 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
-		case "slack_notify":
+		case slackNotifyAttrKey:
 			if attr.Value.Kind() == slog.KindBool && attr.Value.Bool() {
 				shouldSend = true
 			}
-		case "message_type":
+		case msgTypeAttrKey:
 			if attr.Value.Kind() == slog.KindString {
 				messageType = attr.Value.String()
 			}
@@ -321,17 +346,37 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 	// a log path is the worst possible failure mode, so this returns quietly.
 	if s.sender == nil {
 		if s.isDryRun {
-			slog.Debug("Skipping Slack notification in dry-run mode", slog.String("message_type", messageType))
+			slog.Debug("Skipping Slack notification in dry-run mode", slog.String(msgTypeAttrKey, messageType))
 		}
 		return nil
 	}
 
+	definition, known := lookupNotification(messageType)
+	contextCheck := checkNotificationContext(r)
+
+	var reasons []string
+	if !known {
+		reasons = append(reasons, reasonUnknownMessageType)
+	}
+	if contextCheck.reason != "" {
+		reasons = append(reasons, contextCheck.reason)
+	}
+	if len(reasons) > 0 {
+		s.sender.recordSchemaViolation(slackRequest{
+			messageType: messageType,
+			runID:       s.runID,
+			level:       r.Level,
+		}, reasons, contextCheck.declaredScope)
+	}
+
+	priority := priorityForNotification(definition, r.Level)
+
 	// A closed sender drops every request it receives (see enqueue/sendSync),
-	// so building the message here -- e.g. buildCommandGroupSummary iterating
-	// every command result -- would only be discarded work on the shutdown
-	// path where the process wants to exit quickly.
+	// so building the message here -- e.g. a group summary iterating every
+	// command result -- would only be discarded work on the shutdown path
+	// where the process wants to exit quickly.
 	if s.sender.isClosed() {
-		req := slackRequest{messageType: messageType, runID: s.runID, level: r.Level}
+		req := slackRequest{messageType: messageType, runID: s.runID, level: r.Level, priority: priority}
 		if s.sender.synchronous {
 			return s.sender.sendSync(ctx, req)
 		}
@@ -339,22 +384,20 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 		return nil
 	}
 
-	var message SlackMessage
-	switch messageType {
-	case messageTypeCommandGroupSummary:
-		message = s.buildCommandGroupSummary(r)
-	case messageTypePreExecutionError:
-		message = s.buildPreExecutionError(r)
-	default:
-		// Generic message
-		message = s.buildGenericMessage(r)
+	var details messageDetails
+	if known {
+		details = definition.build(r)
+	} else {
+		details = buildGenericMessage(r)
 	}
+	message := s.buildEnvelope(r.Level, contextCheck.display(), details)
 
 	req := slackRequest{
 		message:     &message,
 		messageType: messageType,
 		runID:       s.runID,
 		level:       r.Level,
+		priority:    priority,
 	}
 
 	if s.sender.synchronous {
@@ -363,6 +406,161 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	s.sender.enqueue(req)
 	return nil
+}
+
+// notificationContextCheck is the outcome of reading the notification context
+// attribute from a record. reason is empty exactly when the context is valid.
+type notificationContextCheck struct {
+	context       common.NotificationContext
+	valid         bool
+	declaredScope string
+	reason        string
+}
+
+// Scope-name values recorded for a context that cannot yield a valid one.
+const (
+	scopeNameMissing = "missing"
+	scopeNameInvalid = "invalid"
+)
+
+// checkNotificationContext extracts and validates the notification context
+// attribute. A missing attribute, a duplicate one, a non-group value, and any
+// value the decoder rejects are all invalid; only a valid context yields a
+// display.
+func checkNotificationContext(r slog.Record) notificationContextCheck {
+	var (
+		raw   slog.Value
+		count int
+	)
+	r.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == common.NotificationContextAttrs.Key {
+			count++
+			raw = attr.Value.Resolve()
+		}
+		return true
+	})
+
+	switch {
+	case count == 0:
+		return notificationContextCheck{declaredScope: scopeNameMissing, reason: reasonMissingNotificationContext}
+	case count > 1:
+		return notificationContextCheck{declaredScope: declaredScopeName(raw), reason: reasonDuplicateNotificationContext}
+	}
+
+	check := notificationContextCheck{declaredScope: declaredScopeName(raw)}
+	ctx, err := common.DecodeNotificationContext(raw)
+	if err != nil {
+		check.reason = reasonInvalidNotificationContext
+		return check
+	}
+	check.context = ctx
+	check.valid = true
+	return check
+}
+
+// declaredScopeName returns the scope name carried by the raw context value,
+// for the schema-violation WARN. It reports "invalid" whenever the value is
+// not a group or does not carry a string scope sub-key; group and command
+// names are never read here.
+func declaredScopeName(value slog.Value) string {
+	if value.Kind() != slog.KindGroup {
+		return scopeNameInvalid
+	}
+	for _, attr := range value.Group() {
+		if attr.Key != common.NotificationContextAttrs.Scope {
+			continue
+		}
+		if attr.Value.Kind() != slog.KindString {
+			return scopeNameInvalid
+		}
+		return attr.Value.String()
+	}
+	return scopeNameInvalid
+}
+
+// display returns the Scope text for the record: the declared scope when the
+// context is valid, and the invalid marker otherwise. Group and command names
+// pass through the interpolation contract as identifiers.
+func (c notificationContextCheck) display() string {
+	if !c.valid {
+		return scopeInvalidDisplay
+	}
+	switch c.context.Scope() {
+	case common.ScopeGroup:
+		return "group=" + common.Interpolate(c.context.GroupName(), common.InterpolationRoleIdentifier)
+	case common.ScopeCommand:
+		return "group=" + common.Interpolate(c.context.GroupName(), common.InterpolationRoleIdentifier) +
+			" command=" + common.Interpolate(c.context.CommandName(), common.InterpolationRoleIdentifier)
+	default:
+		return "(global)"
+	}
+}
+
+// levelDisplay maps a log level to its notification display. It is total: the
+// first matching row wins and any level below INFO falls back to WARNING, so an
+// unexpected level is never shown as success.
+func levelDisplay(level slog.Level) (emoji, status, color string) {
+	switch {
+	case level >= slog.LevelError:
+		return emojiFailure, "ERROR", colorDanger
+	case level >= slog.LevelWarn:
+		return emojiWarning, "WARNING", colorWarning
+	case level >= slog.LevelInfo:
+		return emojiSuccess, "SUCCESS", colorGood
+	default:
+		return emojiWarning, "WARNING", colorWarning
+	}
+}
+
+// buildEnvelope adds the common parts every notification carries: the Text
+// line (product name, level display, Scope, headline) and the trailing Scope,
+// Hostname, Run ID fields. The headline and fields of details already passed
+// through the interpolation contract in the builder, so the envelope does not
+// transform them again.
+func (s *SlackHandler) buildEnvelope(level slog.Level, scopeDisplay string, details messageDetails) SlackMessage {
+	emoji, status, color := levelDisplay(level)
+
+	text := fmt.Sprintf("[%s] %s *%s* — %s : %s", productName, emoji, status, scopeDisplay, details.headline)
+
+	fields := make([]SlackAttachmentField, 0, len(details.fields)+envelopeFieldCount)
+	fields = append(fields, details.fields...)
+	fields = append(fields,
+		SlackAttachmentField{
+			Title: fieldTitleScope,
+			Value: scopeDisplay,
+			Short: true,
+		},
+		SlackAttachmentField{
+			Title: fieldTitleHostname,
+			Value: common.Interpolate(slackHostname(), common.InterpolationRoleEnvelopeValue),
+			Short: true,
+		},
+		SlackAttachmentField{
+			Title: fieldTitleRunID,
+			Value: common.Interpolate(s.runID, common.InterpolationRoleEnvelopeValue),
+			Short: true,
+		},
+	)
+
+	return SlackMessage{
+		Text: text,
+		Attachments: []SlackAttachment{
+			{
+				Color:  color,
+				Fields: fields,
+			},
+		},
+	}
+}
+
+// truncateOutput applies an existing output length limit to a value before it
+// is embedded in an attachment field. The limits and suffix are unchanged from
+// the original builders.
+func truncateOutput(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit-len(truncationSuffix)] + truncationSuffix
 }
 
 // WithAttrs returns a new SlackHandler with the given attributes
@@ -520,9 +718,13 @@ func extractFromAttrs(attrs []slog.Attr) commandResultInfo {
 	return cmdInfo
 }
 
-// buildCommandGroupSummary builds a Slack message for command group summary
-func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
-	var status, group string
+// buildCommandGroupSummary returns the type-specific part of a group summary:
+// command count, duration, and every command's result. The per-command value is
+// a synthetic string whose dynamic parts are the command name (identifier role)
+// and the exit code (free-text role); the backticks and "(exit: ...)" are the
+// builder's own skeleton.
+func buildCommandGroupSummary(r slog.Record) messageDetails {
+	var status string
 	var duration time.Duration
 	var commandsAttr slog.Attr
 	var hasCommandsAttr bool
@@ -531,8 +733,6 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		switch attr.Key {
 		case common.GroupSummaryAttrs.Status:
 			status = attr.Value.String()
-		case common.GroupSummaryAttrs.Group:
-			group = attr.Value.String()
 		case common.GroupSummaryAttrs.DurationMs:
 			if attr.Value.Kind() == slog.KindInt64 {
 				duration = time.Duration(attr.Value.Int64()) * time.Millisecond
@@ -551,44 +751,29 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 		commands = extractCommandResults(commandsAttr.Value)
 	}
 
-	var color string
-	var titleIcon string
-	switch status {
-	case "success":
-		color = colorGood
-		titleIcon = emojiSuccess
-	case "error":
-		color = colorDanger
-		titleIcon = emojiFailure
-	default:
-		color = colorWarning
-		titleIcon = emojiWarning
+	failed := 0
+	for _, cmd := range commands {
+		if cmd.ExitCode != 0 {
+			failed++
+		}
 	}
 
-	title := fmt.Sprintf("### %s %s %s", titleIcon, strings.ToUpper(status), group)
+	var headline string
+	if status == "error" {
+		headline = fmt.Sprintf("%d commands, %d failed in %s", len(commands), failed, duration)
+	} else {
+		headline = fmt.Sprintf("%d commands in %s", len(commands), duration)
+	}
 
-	hostname := common.GetHostname()
-
-	// Build fields for the attachment
 	fields := []SlackAttachmentField{
 		{
 			Title: "Command Count",
-			Value: fmt.Sprintf("%d", len(commands)),
+			Value: common.Interpolate(fmt.Sprintf("%d", len(commands)), common.InterpolationRoleFreeText),
 			Short: true,
 		},
 		{
 			Title: "Duration",
-			Value: duration.String(),
-			Short: true,
-		},
-		{
-			Title: fieldTitleHostname,
-			Value: hostname,
-			Short: true,
-		},
-		{
-			Title: fieldTitleRunID,
-			Value: s.runID,
+			Value: common.Interpolate(duration.String(), common.InterpolationRoleFreeText),
 			Short: true,
 		},
 	}
@@ -600,59 +785,44 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 			statusIcon = emojiFailure
 		}
 
-		// Build command summary
-		cmdSummary := fmt.Sprintf("%s `%s` (exit: %d)", statusIcon, cmd.Name, cmd.ExitCode)
+		commandName := common.Interpolate(cmd.Name, common.InterpolationRoleIdentifier)
+		exitCode := common.Interpolate(fmt.Sprintf("%d", cmd.ExitCode), common.InterpolationRoleFreeText)
 
 		fields = append(fields, SlackAttachmentField{
 			Title: "Command",
-			Value: cmdSummary,
+			Value: fmt.Sprintf("%s `%s` (exit: %s)", statusIcon, commandName, exitCode),
 			Short: false,
 		})
 
-		// Add output if present and not too long
+		// Add output if present, keeping the existing length limit.
 		if cmd.Output != "" {
-			output := cmd.Output
-			if len(output) > outputMaxLength {
-				truncationPoint := outputMaxLength - len(truncationSuffix)
-				output = output[:truncationPoint] + truncationSuffix
-			}
 			fields = append(fields, SlackAttachmentField{
 				Title: arrowIndent + " Output",
-				Value: fmt.Sprintf("```\n%s\n```", output),
+				Value: fmt.Sprintf("```\n%s\n```", truncateOutput(cmd.Output, outputMaxLength)),
 				Short: false,
 			})
 		}
 
-		// Add stderr if present and command failed
+		// Add stderr if present, keeping the existing length limit.
 		if cmd.Stderr != "" && cmd.ExitCode != 0 {
-			stderr := cmd.Stderr
-			if len(stderr) > stderrMaxLength {
-				truncationPoint := stderrMaxLength - len(truncationSuffix)
-				stderr = stderr[:truncationPoint] + truncationSuffix
-			}
 			fields = append(fields, SlackAttachmentField{
 				Title: arrowIndent + " Error",
-				Value: fmt.Sprintf("```\n%s\n```", stderr),
+				Value: fmt.Sprintf("```\n%s\n```", truncateOutput(cmd.Stderr, stderrMaxLength)),
 				Short: false,
 			})
 		}
 	}
 
-	message := SlackMessage{
-		Text: title,
-		Attachments: []SlackAttachment{
-			{
-				Color:  color,
-				Fields: fields,
-			},
-		},
+	return messageDetails{
+		headline: common.Interpolate(headline, common.InterpolationRoleFreeText),
+		fields:   fields,
 	}
-
-	return message
 }
 
-// buildPreExecutionError builds a Slack message for pre-execution errors
-func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
+// buildPreExecutionError returns the type-specific part of a pre-execution
+// error: the error type as the headline and the detail and component as
+// fields.
+func buildPreExecutionError(r slog.Record) messageDetails {
 	var errorType, errorMsg, component string
 
 	r.Attrs(func(attr slog.Attr) bool {
@@ -667,46 +837,91 @@ func (s *SlackHandler) buildPreExecutionError(r slog.Record) SlackMessage {
 		return true
 	})
 
-	hostname := common.GetHostname()
-
-	message := SlackMessage{
-		Text: fmt.Sprintf("%s Error: %s", emojiAlert, errorType),
-		Attachments: []SlackAttachment{
+	return messageDetails{
+		headline: common.Interpolate(errorType, common.InterpolationRoleFreeText),
+		fields: []SlackAttachmentField{
 			{
-				Color: colorDanger,
-				Fields: []SlackAttachmentField{
-					{
-						Title: "Error Message",
-						Value: errorMsg,
-						Short: false,
-					},
-					{
-						Title: "Component",
-						Value: component,
-						Short: true,
-					},
-					{
-						Title: fieldTitleHostname,
-						Value: hostname,
-						Short: true,
-					},
-					{
-						Title: fieldTitleRunID,
-						Value: s.runID,
-						Short: true,
-					},
-				},
+				Title: "Error Message",
+				Value: common.Interpolate(errorMsg, common.InterpolationRoleFreeText),
+				Short: false,
+			},
+			{
+				Title: "Component",
+				Value: common.Interpolate(component, common.InterpolationRoleFreeText),
+				Short: true,
 			},
 		},
 	}
-
-	return message
 }
 
-// buildGenericMessage builds a generic Slack message
-func (s *SlackHandler) buildGenericMessage(r slog.Record) SlackMessage {
-	return SlackMessage{
-		Text: fmt.Sprintf("%s: %s (Run ID: %s)", r.Level.String(), r.Message, s.runID),
+// buildUserGroupCommandFailure returns the type-specific part of a failed
+// user/group command: the command name, its exit code, and the output when
+// present. Attribute keys come from common.UserGroupCommandFailureAttrs, the
+// same constants the firing point writes. Output and Error Output keep the
+// existing stdout/stderr length limits, which the firing point does not apply.
+func buildUserGroupCommandFailure(r slog.Record) messageDetails {
+	var (
+		commandName string
+		exitCode    int64
+		stdout      string
+		stderr      string
+	)
+
+	r.Attrs(func(attr slog.Attr) bool {
+		switch attr.Key {
+		case common.UserGroupCommandFailureAttrs.CommandName:
+			commandName = attr.Value.String()
+		case common.UserGroupCommandFailureAttrs.ExitCode:
+			if attr.Value.Kind() == slog.KindInt64 {
+				exitCode = attr.Value.Int64()
+			}
+		case common.UserGroupCommandFailureAttrs.Stdout:
+			stdout = attr.Value.String()
+		case common.UserGroupCommandFailureAttrs.Stderr:
+			stderr = attr.Value.String()
+		}
+		return true
+	})
+
+	fields := []SlackAttachmentField{
+		{
+			Title: "Command",
+			Value: common.Interpolate(commandName, common.InterpolationRoleIdentifier),
+			Short: false,
+		},
+		{
+			Title: "Exit Code",
+			Value: common.Interpolate(fmt.Sprintf("%d", exitCode), common.InterpolationRoleFreeText),
+			Short: true,
+		},
+	}
+	if stdout != "" {
+		fields = append(fields, SlackAttachmentField{
+			Title: "Output",
+			Value: fmt.Sprintf("```\n%s\n```", truncateOutput(stdout, outputMaxLength)),
+			Short: false,
+		})
+	}
+	if stderr != "" {
+		fields = append(fields, SlackAttachmentField{
+			Title: "Error Output",
+			Value: fmt.Sprintf("```\n%s\n```", truncateOutput(stderr, stderrMaxLength)),
+			Short: false,
+		})
+	}
+
+	return messageDetails{
+		headline: common.Interpolate(fmt.Sprintf("command failed (exit %d)", exitCode), common.InterpolationRoleFreeText),
+		fields:   fields,
+	}
+}
+
+// buildGenericMessage returns the type-specific part of an unknown message
+// type: the record body as the headline, with no fields. The common envelope is
+// added by the same path as for known types.
+func buildGenericMessage(r slog.Record) messageDetails {
+	return messageDetails{
+		headline: common.Interpolate(r.Message, common.InterpolationRoleFreeText),
 	}
 }
 

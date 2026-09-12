@@ -3,14 +3,22 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -458,4 +466,88 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 		"the human-readable block should keep the remediation command")
 	assert.Contains(t, humanOutput, "To use the same webhook for both success and error notifications:",
 		"the human-readable block should keep the whole guidance, not just its first line")
+}
+
+// TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope verifies
+// that a global pre-execution failure raised after the Slack handler is
+// registered reaches Slack with the (global) scope and the unified format. It
+// drives the logging path in-process through the handler-factory seam (as
+// integration_slack_flush_test.go does): a separate process cannot be handed
+// the mock server's TLS client.
+func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		payloads []logging.SlackMessage
+	)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var message logging.SlackMessage
+		if err := json.Unmarshal(body, &message); err == nil {
+			mu.Lock()
+			payloads = append(payloads, message)
+			mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	restoreFactory := bootstrap.SetSlackHandlerFactory(func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
+		opts.WebhookURL = server.URL
+		opts.AllowedHost = serverURL.Hostname()
+		opts.HTTPClient = server.Client()
+		return logging.NewSlackHandler(opts)
+	})
+	t.Cleanup(restoreFactory)
+
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+	const runID = "test-global-scope-001"
+	require.NoError(t, bootstrap.SetupLoggerWithConfig(bootstrap.LoggerConfig{
+		Level:         slog.LevelInfo,
+		LogDir:        t.TempDir(),
+		RunID:         runID,
+		ConsoleWriter: io.Discard,
+	}, false, true))
+
+	_, err = bootstrap.AddSlackHandlers(bootstrap.SlackLoggerConfig{
+		WebhookURLError: "https://hooks.slack.com/services/error",
+		AllowedHost:     "hooks.slack.com",
+		RunID:           runID,
+	})
+	require.NoError(t, err, "the Slack handler must be registered before the error is reported")
+	t.Cleanup(bootstrap.FlushSlackNotifications)
+
+	// The global target-file verification failure path from main.go.
+	logging.HandlePreExecutionError(&logging.PreExecutionError{
+		Type:                logging.ErrorTypeFileAccess,
+		Message:             "Failed to verify target file",
+		Component:           "filevalidator",
+		RunID:               runID,
+		NotificationContext: common.GlobalScope(),
+	})
+
+	bootstrap.FlushSlackNotifications()
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, payloads, 1, "the global pre-execution error should reach Slack")
+	message := payloads[0]
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : file_access_failed", message.Text)
+
+	require.Len(t, message.Attachments, 1)
+	fields := message.Attachments[0].Fields
+	require.GreaterOrEqual(t, len(fields), 3, "the envelope always appends three fields")
+	assert.Equal(t, "Scope", fields[len(fields)-3].Title)
+	assert.Equal(t, "(global)", fields[len(fields)-3].Value)
+	assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
+	assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
+	assert.Equal(t, runID, fields[len(fields)-1].Value)
 }

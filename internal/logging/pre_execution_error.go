@@ -160,12 +160,9 @@ func HandlePreExecutionError(preExecErr *PreExecutionError) {
 		component:     preExecErr.Component,
 		runID:         preExecErr.RunID,
 		slogMessage:   "Pre-execution error occurred",
-		summaryStatus: "pre_execution_error",
-		notificationAttrs: []slog.Attr{
-			slog.Bool("slack_notify", true),
-			slog.String("message_type", "pre_execution_error"),
-			preExecErr.NotificationContext.LogAttr(),
-		},
+		summaryStatus: preExecutionErrorSummaryStatus(),
+		notificationAttrs: NotificationAttrs(
+			PreExecutionErrorNotification(), preExecErr.NotificationContext),
 	})
 }
 
