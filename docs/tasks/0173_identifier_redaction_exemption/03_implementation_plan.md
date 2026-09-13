@@ -34,7 +34,9 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
 1. 02_architecture.md の設計に従い、本書では設計判断を作り直さない。設計に無い判断が
    必要になった場合は、実装を止めて 02_architecture.md を先に改訂する。
 2. `internal/identifier` は内部パッケージを import しない leaf パッケージとする。
-   `Identifier` の構築は `NewIdentifier` に限られる（02_architecture.md §3.1）。
+   `Identifier` の構築は、定義パッケージ外ではコンパイラが、定義パッケージ内では
+   `identifier_guard_test.go` の AST 制限が `NewIdentifier` に限定する
+   （02_architecture.md §3.1、§7.3）。
 3. Go のコメント・識別子・文字列リテラルはすべて英語で書く。本書の説明文だけが日本語である。
 4. 各 Phase の終わりに `make fmt`（Go を変更した場合）、`make test`、`make lint` を通す。
 5. `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターン集合と、
@@ -187,6 +189,11 @@ internal/ cmd/ -g '*.go'` で確認）。`buildCommandDebugLogArgs`
   （`helpers.go:111`）が、非修飾形の値参照は報告されない（`helpers.go:341`）。後者は
   guard 自身が AST を走査して拒否する。
 - `ResolveLocalImports`（`helpers.go:378`）は import の別名解決に再利用する。
+- `ProductionGoFilesInRepo` が返すファイルのうち `internal/identifier` の production
+  ファイルも guard の走査対象に含め、`Identifier` の `name` フィールドを設定する複合
+  リテラルとフィールド代入が `NewIdentifier` の本体内だけに現れることを AST で検証する
+  （02_architecture.md §3.1）。これにより、定義パッケージ外を守るコンパイラでは塞げない
+  パッケージ内の別コンストラクタ・代入を拒否する。
 
 #### 文書の該当箇所
 
@@ -325,41 +332,30 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 **完了条件**: 追加テストが通り、既存のパターンテストが変更なく通る。
 
-### Phase 3: `NotificationContext` の符号化と復号
+### Phase 3: `NotificationContext` の復号受理
 
 **対象ファイル**: `internal/common/notification_context.go`、
-`internal/common/notification_context_test.go`、`internal/logging/notification_context_test.go`、
-`internal/logging/slack_handler_test.go`
+`internal/common/notification_context_test.go`
 
-- [ ] `NotificationContext.LogValue`（`notification_context.go:78`）の `group`・`command` の
-      下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
-      `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
 - [ ] `decodeNotificationContextParts`（`notification_context.go:136`）の `group`・`command` を、
       `KindString` に加えて `value.Any()` が `identifier.Identifier` である値も受けるように
       する。汎用の `Value.Resolve` は使わず、`scope` は従来どおり `KindString` だけを受ける。
       どちらでもない値（`slog.Int`、宣言型以外の `LogValuer`）は従来どおり拒否する。
-- [ ] `notification_context_test.go` の `groupAttr`／`commandAttr` ヘルパーから期待値を作り
-      直し、`TestNotificationContext_LogValueEncoding` を宣言型の期待値へ更新する。復号の
-      正規化後経路（plain string）を検証するヘルパーは残し、生の宣言型を受ける経路と
-      正規化後の string 経路の両方を検証する（`TestDecodeNotificationContext_Validity` の
-      行は両形式を持つ）。
+      この Phase では `NotificationContext.LogValue` の符号化を変えない。宣言を伴う符号化の
+      変更は、guard・目録・アサーションを同じコミットに含めるため Phase 4 で行う
+      （02_architecture.md §3.4、§5.2、§8.1）。
+- [ ] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
+      `identifier.Identifier` である行を足す。期待値は
+      `slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier(…))` の形でその場に
+      組み立て、正規化後の string 経路（既存の `groupAttr`／`commandAttr`）と生の宣言型経路の
+      両方を検証する。`TestNotificationContext_LogValueEncoding` は符号化が変わる Phase 4 まで
+      変更しない。
 - [ ] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
       `identifier.Identifier` 以外の `LogValuer` である行を足し、`ErrInvalidNotificationContext`
       になることを検証する。これは設計が汎用の `Resolve` を採らない根拠（02_architecture.md
       §3.3）を固定する行であり、文字列を受ける任意の `LogValuer` を通す実装を落とす。
-- [ ] `internal/logging/notification_context_test.go` の
-      `TestRedactingHandler_ResolvesNotificationContextLogValue` に `monkey` を group、
-      `rotate_api_key` を command とするケースを足す。RedactingHandler を通した後の復号が
-      元の名前を返すことを検証する（AC-01、AC-02）。
-- [ ] `internal/logging/slack_handler_test.go` に
-      `TestSlackHandler_IdentifierScopeSurvivesRedaction` を追加する。
-      `TestSlackHandler_WithRedactingHandler` と同じ配線（RedactingHandler →
-      SlackHandler → モックサーバー）で group `monkey`・command `rotate_api_key` の通知を
-      送り、Text 行に `group=monkey command=rotate_api_key` が現れ、`(scope: invalid)` に
-      ならないこと、Scope・Command フィールドが `[REDACTED]` でないことを検証する。
-- [ ] AC-19 の確認: 復号の宣言型受理を外すと
-      `TestDecodeNotificationContext_Validity` の宣言型行が、`TestRedactingHandler_ResolvesNotificationContextLogValue`
-      の `monkey` ケースを外すと同テストが失敗することを確認し、コミットメッセージに記す。
+- [ ] AC-19 の確認: 復号の宣言型受理を外すと `TestDecodeNotificationContext_Validity` の
+      宣言型行が失敗することを確認し、コミットメッセージに記す。
 
 **完了条件**: `internal/common`・`internal/logging`・`internal/redaction` のテストが通る。
 
@@ -394,12 +390,18 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 #### 4.3 残りの宣言サイト
 
-**対象ファイル**: `internal/runner/group_executor.go`、`internal/runner/runner.go`、
+**対象ファイル**: `internal/common/notification_context.go`、
+`internal/runner/group_executor.go`、`internal/runner/runner.go`、
 `internal/runner/config/expansion.go`、`internal/runner/base/executor/executor.go`、
 `internal/runner/base/executor/tempdir_manager.go`、`internal/runner/base/privilege/unix.go`、
 `internal/runner/base/audit/logger.go`、`internal/runner/resource/normal_manager.go`、
 `internal/runner/resource/dryrun_manager.go`、`internal/verification/manager.go`
 
+- [ ] `NotificationContext.LogValue`（`notification_context.go:78`）の `group`・`command` の
+      下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
+      `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
+      この符号化は Phase 4.5 の guard が守る宣言サイトの 1 つであり、guard の目録・
+      アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。
 - [ ] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
       または可変長引数への `identifier.NewIdentifier(値の式)` へ置き換える。`slog.Attr` を
       取る位置は `slog.Any` を使う。`internal/identifier` を各パッケージで import する。
@@ -416,7 +418,8 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 **対象ファイル**: §1.3「既存テストの更新が必要な箇所」の表に挙げたファイル、
 `internal/runner/integration_command_results_test.go`、`internal/logging/slack_handler_test.go`、
-`internal/runner/base/audit/logger_test.go`
+`internal/runner/base/audit/logger_test.go`、`internal/common/notification_context_test.go`、
+`internal/logging/notification_context_test.go`
 
 - [ ] `group_executor_test.go` の 4 つの期待値（`:2473`・`:2486`・`:2598`・`:2674`）と
       呼び出し 1 箇所（`:2880`）を `identifier.NewIdentifier(…)` を用いる形へ更新する。
@@ -430,7 +433,21 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 - [ ] `audit/logger_test.go:117` の `command_name` 期待値を
       `identifier.NewIdentifier(tt.cmd.Name())` にする。
 - [ ] `security_test.go` の呼び出しを §4.2 のとおり更新する。
-- [ ] `internal/common/notification_context_test.go` の期待値を §Phase 3 のとおり更新する。
+- [ ] `internal/common/notification_context_test.go` の `groupAttr`／`commandAttr` ヘルパーを
+      `identifier.NewIdentifier` で構築する形に直し、`TestNotificationContext_LogValueEncoding`
+      の期待値を宣言型へ更新する。復号が生の宣言型と正規化後の string の両形式を受けることの
+      検証は Phase 3 の `TestDecodeNotificationContext_Validity` が担う。
+- [ ] `internal/logging/notification_context_test.go` の
+      `TestRedactingHandler_ResolvesNotificationContextLogValue` に `monkey` を group、
+      `rotate_api_key` を command とするケースを足す。RedactingHandler を通した後の復号が
+      元の名前を返すことを検証する（AC-01、AC-02）。
+- [ ] `internal/logging/slack_handler_test.go` に
+      `TestSlackHandler_IdentifierScopeSurvivesRedaction` を追加する。
+      `TestSlackHandler_WithRedactingHandler` と同じ配線（RedactingHandler →
+      SlackHandler → モックサーバー）で group `monkey`・command `rotate_api_key` の通知を
+      送り、Text 行に `group=monkey command=rotate_api_key` が現れ、`(scope: invalid)` に
+      ならないこと、Scope・Command フィールドが `[REDACTED]` でないことを検証する
+      （AC-01、AC-02）。
 - [ ] `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`
       を拡張し、redaction を発火させる名前（`rotate_api_key` など）を `CommandResults` に
       載せて、JSON の `name` が元の文字列のままであること、同じ文字列が output／stderr に
@@ -475,16 +492,24 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       あることを要求し、非修飾形は guard 自身が AST を走査し、`func NewIdentifier` の宣言名と
       直接呼び出しの被呼び出しを除いて、値位置に `NewIdentifier` 識別子が残っていれば
       失敗させる。
+- [ ] `internal/identifier` の production ファイルを AST 走査し、`Identifier` の `name`
+      フィールドを設定する複合リテラルとフィールド代入が `NewIdentifier` の本体内だけに
+      現れることを要求する。`FromString` のような別コンストラクタや `id.name = …` の代入が
+      パッケージ内に現れれば失敗させる（02_architecture.md §3.1、§7.3）。定義パッケージ外は
+      コンパイラが拒否するため、この検査は `internal/identifier` に限定する。
 - [ ] 対照テスト `TestIdentifierDeclarationCatalog_Control` を置く。合成ソースに対して、
-      次の 4 入力で検査が失敗することを確認する（CLAUDE.md 「Every test must be able to
+      次の 5 入力で検査が失敗することを確認する（CLAUDE.md 「Every test must be able to
       fail for its stated reason」）。
   - 目録外の宣言を 1 件足した入力
   - 目録にある宣言を 1 件欠いた入力
   - `makeID := identifier.NewIdentifier` の形の修飾エイリアス
   - 同じ組の件数を保ったまま、囲むログ呼び出しを別のものへ移した入力
+  - `internal/identifier` 内に `Identifier{name: "free text"}` を返す別コンストラクタを
+    足した入力
 - [ ] AC-19 の確認: 宣言サイトを 1 件削除すると guard が失敗すること、展開済みコマンド行を
-      `identifier.NewIdentifier` で包むと guard が失敗することを確認し、コミットメッセージに
-      記す。
+      `identifier.NewIdentifier` で包むと guard が失敗すること、`internal/identifier` 内に
+      `name` を設定する別コンストラクタを足すと guard が失敗することを確認し、コミット
+      メッセージに記す。
 
 **完了条件**: `make test` が通り、AC-07〜AC-09 のテストと guard が通る。
 
@@ -535,8 +560,8 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` が成功する。
 |---|---|---|---|
 | M1: 宣言型 | Phase 1 | `internal/identifier` の型と単体テスト | 型のテストが緑。leaf 条件を確認 |
 | M2: 免除 | Phase 2 | 3 挿入点、redaction テスト、パターン集合の固定テスト | AC-03・AC-04・AC-05・AC-12 が緑。AC-08 はテスト側が緑（guard 側は M4） |
-| M3: 符号化 | Phase 3 | `NotificationContext` の符号化・復号、Slack 表示テスト | AC-01・AC-02・AC-11 が緑。AC-06 は Slack 読み取り分まで緑（JSON 経路は M4） |
-| M4: 宣言と guard | Phase 4 | 12 ファイルの宣言サイト、既存テスト更新、`identifier_guard_test.go` | AC-06・AC-07・AC-08・AC-09 が緑。AC-10 の既存テストが無変更で通る。`make test` が緑 |
+| M3: 復号受理 | Phase 3 | `NotificationContext` の復号受理と復号テスト | AC-11 が緑。符号化を伴う AC-01・AC-02 は M4 で確認する |
+| M4: 宣言と guard | Phase 4 | 12 ファイルの宣言サイト（`NotificationContext.LogValue` の符号化を含む）、既存テスト更新、`identifier_guard_test.go` | AC-01・AC-02・AC-06・AC-07・AC-08・AC-09 が緑。AC-10 の既存テストが無変更で通る。`make test` が緑 |
 | M5: 文書 | Phase 5 | 日英 4 文書、用語集、検証スクリプト | AC-13〜AC-17 が緑。`make verify-docs` 成功 |
 | M6: 全体検証 | Phase 6 | 全体の green gate、AC-19 の記録 | AC-18・AC-19 が緑 |
 
@@ -554,10 +579,11 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
   `internal/redaction/redactor_test.go` の免除・対照テストと `TestDefaultPatternSets_AreUnchanged`
   （Phase 2）、`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`
   （Phase 4）、`internal/identifier/identifier_guard_test.go`（Phase 4）。
-- **拡張**: `internal/common/notification_context_test.go`（符号化期待値・復号の両形式・
-  宣言型以外の `LogValuer` の拒否）、`internal/common/logschema_test.go`（`name` の宣言型
-  符号化）、`internal/logging/notification_context_test.go`（`monkey`／`rotate_api_key` の
-  往復）、`internal/logging/slack_handler_test.go`（Scope 表示、`command_group_summary` の
+- **拡張**: `internal/common/notification_context_test.go`（復号の両形式・宣言型以外の
+  `LogValuer` の拒否は Phase 3、符号化期待値は Phase 4）、`internal/common/logschema_test.go`
+  （`name` の宣言型符号化、Phase 4）、`internal/logging/notification_context_test.go`
+  （`monkey`／`rotate_api_key` の往復、Phase 4）、`internal/logging/slack_handler_test.go`
+  （Scope 表示、`command_group_summary` の
   コマンド一覧）、`internal/runner/integration_command_results_test.go`（JSON 出力での
   名前残存）。
 - **更新**: §1.3「既存テストの更新が必要な箇所」の表のテストを `identifier.NewIdentifier`
@@ -629,12 +655,12 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 
 - [ ] Phase 1: `internal/identifier` の型・単体テスト・leaf 条件確認
 - [ ] Phase 2: 3 挿入点・免除／対照テスト・パターン集合の固定テスト
-- [ ] Phase 3: `NotificationContext` の符号化・復号・Slack 表示テスト
+- [ ] Phase 3: `NotificationContext` の復号受理と復号テスト
 - [ ] Phase 4.1: `CommandResult`／`CommandResults` の宣言
 - [ ] Phase 4.2: `SecurityLogger` の引数型と 3 呼び出し元
-- [ ] Phase 4.3: 02_architecture.md §3.4 の残り宣言サイト（12 ファイル・43 件）
+- [ ] Phase 4.3: 02_architecture.md §3.4 の残り宣言サイト（12 ファイル・43 件。`NotificationContext.LogValue` の符号化を含む）
 - [ ] Phase 4.4: 既存テストの更新、統合テストの追加、AC-10 の既存テスト確認、全 `*_test.go` の再検索
-- [ ] Phase 4.5: `TestIdentifierDeclarationCatalog` と対照テスト
+- [ ] Phase 4.5: `TestIdentifierDeclarationCatalog`・`name` フィールドのパッケージ内 AST 制限・対照テスト
 - [ ] Phase 5: 日英 4 文書の更新、用語集、`check_identifier_exemption_docs.sh`、`make verify-docs`
 - [ ] Phase 6: 全体の green gate、AC-19 の記録確認、`make deadcode`
 - [ ] 全 Phase: 各コミットで `make test`・`make lint` が緑
@@ -650,14 +676,14 @@ Phase 5 の完了ゲートで実行する。このスクリプトの語は `b2d2
 
 | AC | 種別 | 検証（実行する成果物） | 実装 Phase |
 |---|---|---|---|
-| AC-01 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Text 行に `group=monkey`）と `internal/logging/notification_context_test.go::TestRedactingHandler_ResolvesNotificationContextLogValue`（`monkey` ケース） | Phase 3 |
-| AC-02 | test | 同上の `rotate_api_key` ケース（`command=rotate_api_key`） | Phase 3 |
+| AC-01 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Text 行に `group=monkey`）と `internal/logging/notification_context_test.go::TestRedactingHandler_ResolvesNotificationContextLogValue`（`monkey` ケース） | Phase 4 |
+| AC-02 | test | 同上の `rotate_api_key` ケース（`command=rotate_api_key`） | Phase 4 |
 | AC-03 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_IdentifierExemption` の値形式層（02_architecture.md §7.1 の表の 2 行目の入力） | Phase 2 |
 | AC-04 | test | 同テストの 3 層（key=value 置換・値形式検出・値まるごと判定） | Phase 2 |
 | AC-05 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（識別子と同じ入力集合の plain string が redact される）、`TestRedactingHandler_Handle_MessageRedaction`、`TestRedactingHandler_ErrorValue` | Phase 2 |
-| AC-06 | test | `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（拡張後。JSON 出力で `name` が元の string、同じ文字列は output／stderr で redact）、`internal/common/logschema_test.go::TestCommandResults_LogValue`（`KindLogValuer` ＋ `Value.String()`）、`internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Slack 読み取り） | Phase 3・4 |
+| AC-06 | test | `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（拡張後。JSON 出力で `name` が元の string、同じ文字列は output／stderr で redact）、`internal/common/logschema_test.go::TestCommandResults_LogValue`（`KindLogValuer` ＋ `Value.String()`）、`internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Slack 読み取り） | Phase 4 |
 | AC-07 | static | `internal/identifier/identifier_guard_test.go::TestIdentifierDeclarationCatalog`（目録と走査結果の双方向照合。12 ファイル・43 件） | Phase 4.5 |
-| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗する） | Phase 2・4.5 |
+| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗し、`internal/identifier` 内に `name` を設定する別コンストラクタを足すと AST 制限で失敗する） | Phase 2・4.5 |
 | AC-09 | test | `internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`（新規。redaction を発火させる名前の `command_name` が残る）と `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler`（拡張後。`command_group_summary` のコマンド一覧の名前が残る） | Phase 4 |
 | AC-10 | test | `internal/runner/config/validation_test.go::TestValidateIdentifiers` と `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`。Phase 4.4 と Phase 6 で実行する | Phase 4.4・6 |
 | AC-11 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`（無変更で表示契約を固定）と `internal/common/notification_context_test.go::TestDecodeNotificationContext_Validity`（宣言型と正規化後の string の両形式を受ける更新後の行） | Phase 3 |
