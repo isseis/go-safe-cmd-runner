@@ -8,7 +8,7 @@
 | Created | 2026-09-12 |
 | Review date | 2026-09-13 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-09-13: §5.2「運用上の扱い（kill switch と rollback）」に、rollback コミットが宣言サイトの削除と同じコミットで `identifier_guard_test.go` の目録エントリも削除し、guard を緑に保つ旨を追記（編集上の補正。決定変更なし） |
 
 本設計書で既存挙動について述べる箇所は、特に断りのない限り commit `88624849`（`docs(0173): Approved the requirements document`）時点のコードで検証した。
 
@@ -534,7 +534,7 @@ flowchart LR
 - **コマンド行の redaction は維持される。** 展開済みコマンド行は plain string であり、`--password=x` や `token=…` を含めば従来どおり redact される。同名のコマンド名は免除される。この対照がキー名除外を採らない理由そのものであり、AC-08 のテストで固定する。
 - **パターン集合を変更しない。** `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターンは変更しない（AC-12）。自由文の検出挙動は不変である。
 - **キー `command_path` の誤った値。** `normal_manager.go:143` はキー `command_path` に group 名を載せている。キー名の是正はログスキーマを変えるため本タスクでは行わず、値だけを識別子として免除する。
-- **運用上の扱い（kill switch と rollback）。** 免除を止める専用の実行時スイッチは設けない。免除された値は正規化後の string としてそのままログ・通知に現れるため、オンコールは通知に出た名前を TOML と照合すれば「宣言済みで免除された」ことを確認できる。免除は失敗ではないため `RedactingHandler.ErrorCollector` には記録しない。漏洩が疑われる場合は、該当する宣言サイトを plain string へ戻すコミットで免除を解除する（型は common に残る）。この手順を `security-architecture.ja.md`／`.md` に記す。
+- **運用上の扱い（kill switch と rollback）。** 免除を止める専用の実行時スイッチは設けない。免除された値は正規化後の string としてそのままログ・通知に現れるため、オンコールは通知に出た名前を TOML と照合すれば「宣言済みで免除された」ことを確認できる。免除は失敗ではないため `RedactingHandler.ErrorCollector` には記録しない。漏洩が疑われる場合は、該当する宣言サイトを plain string へ戻すコミットで免除を解除する（型は common に残る）。この rollback コミットでは、同じコミットで `identifier_guard_test.go` の宣言サイト目録（§7.3）から対応するエントリも削除する。目録は宣言サイトと双方向に照合されるため、宣言だけを戻すと「目録にある宣言の欠落」として guard が失敗し、CI が緑にならない。この手順を `security-architecture.ja.md`／`.md` に記す。
 
 ### 5.3 Task 0172 の Scope 表示契約
 

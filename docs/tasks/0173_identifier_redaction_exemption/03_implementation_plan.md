@@ -10,7 +10,7 @@
 | Reviewer | - |
 | Comments | - |
 
-本計画書で既存コードについて述べる箇所は、特に断りのない限り commit `26cf9564`（本計画書作成時点の HEAD。`docs(0173): Approved the architecture document`）で確認した。行番号は編集でずれるため、guard（§1.3 で説明する構文木テスト）は宣言サイト（§1.1 で説明する production の記述行）の合否を行番号ではなくファイル・関数・引数式・件数で判定する（§Phase 4）。本文が引用する検索コマンドは、すべて本書作成時に commit `26cf9564` で実行し、その結果を §7 の注に記録した。
+本計画書で既存コードについて述べる箇所は、特に断りのない限り commit `26cf9564`（本計画書作成時点の HEAD。`docs(0173): Approved the architecture document`）で確認した。行番号は編集でずれるため、guard（§1.3 で説明する構文木テスト）は宣言サイト（§1.1 で説明する production の記述行）の合否を行番号ではなくファイル・関数・囲むログ呼び出し／文・属性キー・引数式・件数で判定する（§Phase 4）。本文が引用する検索コマンドは、すべて本書作成時に commit `26cf9564` で実行し、その結果を §7 の注に記録した。
 
 ## 関連文書
 
@@ -31,7 +31,7 @@ group 名・コマンド名を `common.Identifier` という型で宣言し、`i
 2. **免除は値ベース redaction の手前で行う。** `slog.Attr` を扱う層で型を見て string へ正規化し、`RedactText` へは識別子を渡さない（`RedactText` は呼び出し時点で型情報を失う）。
 3. **免除は宣言だけに基づかせる。** `SensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターン集合は変更しない（設計 §1.1 原則 6）。
 4. **下流は string を受け取る。** 免除経路は `slog.StringValue(name)` を返し、JSON・text・Slack の読み取りコードと `message_formatter` を変更しない（AC-06）。
-5. **宣言サイトは目録と双方向に照合する。** 本番コードの `NewIdentifier` 呼び出しは設計 §3.4 の目録と一致しなければならず、目録外の宣言も目録の欠落も guard テストが失敗させる（AC-07、AC-08）。
+5. **宣言サイトは目録と双方向に照合する。** 本番コードの `NewIdentifier` 呼び出しは設計 §3.4 の目録と一致しなければならず、目録外の宣言も目録の欠落も guard テストが失敗させる（AC-07、AC-08）。宣言の追加・削除・rollback は、同じコミットで目録の追加・削除を行う一体の手順として扱う（§1.3、注 1）。
 6. **フェーズごとに green gate を通す。** 各コミットで `make fmt`・`make test`・`make lint` を通し、挙動を壊して失敗を確認したテストをコミットメッセージに記す（AC-18、AC-19）。
 
 ### 1.3 既存コード調査結果
@@ -68,11 +68,11 @@ commit `26cf9564` で次を確認した。
 - `buildCommandDebugLogArgs`（[`internal/runner/group_executor.go:553`](../../../internal/runner/group_executor.go)）は `cmdName string` を `logArgs` にそのまま詰める。設計 §3.4 のとおり引数型を `common.Identifier` にし、宣言は呼び出し元（[`:612`](../../../internal/runner/group_executor.go)）で行う。
 - キー `"command"` は識別子と展開済みコマンド行の両方に載る。`DefaultExecutor.executeWithUserGroup` は同一関数内で `cmd.Name()`（[`internal/runner/base/executor/executor.go:254`](../../../internal/runner/base/executor/executor.go)）と `cmd.ExpandedCmd`（[`:191`](../../../internal/runner/base/executor/executor.go)、`:198`、`:247`、`:284`）を書き分けるため、guard はファイル・関数だけでなく引数式まで照合する必要がある（設計 §7.3）。
 - キー `"name"` は複数用途を持つ。`logschema.go` の `name`（[`internal/common/logschema.go:120`](../../../internal/common/logschema.go)、`:164`）と group 名（[`internal/runner/group_executor.go:149`](../../../internal/runner/group_executor.go) ほか）は宣言型にし、一時ファイル名（[`internal/safefileio/safe_file_linux.go:241`](../../../internal/safefileio/safe_file_linux.go)）は plain string のままとする（設計 §3.5）。
-- `internal/runner/group_executor.go` の `executeSingleCommand` は、`LogTimeoutExceeded`（`:585`）・`[]any` の `"command"`（`:594`、`:617`）・`buildCommandDebugLogArgs`（`:612`）の 4 箇所で `cmd.Name()` を宣言する。`createCommandContext` は `LogUnlimitedExecution`（`:537`）と `slog.Debug`（`:543`）の 2 箇所である。guard の目録は同一 `(ファイル, 関数, 引数式)` の組を件数で持つため、これらの重複を集合ではなく件数で照合する。
+- `internal/runner/group_executor.go` の `executeSingleCommand` は、`LogTimeoutExceeded`（`:585`）・`[]any` の `"command"`（`:594`、`:617`）・`buildCommandDebugLogArgs`（`:612`）の 4 箇所で `cmd.Name()` を宣言する。`createCommandContext` は `LogUnlimitedExecution`（`:537`）と `slog.Debug`（`:543`）の 2 箇所である。これらの宣言は同じファイル・関数・引数式を共有するため、guard の目録は各サイトを囲むログ呼び出し／文と属性キーで特定し、なお同一の組が残る場合は件数で照合する。`executeSingleCommand` の 4 箇所（キーはすべて `command`）も、囲む呼び出し（`LogTimeoutExceeded`・`buildCommandDebugLogArgs`・2 つの `slog.Error` 文）で区別できる。
 
 **guard の既存基盤**
 
-- `internal/testutil/identitymutationguard`（[`helpers.go`](../../../internal/testutil/identitymutationguard/helpers.go)）が、`ProductionGoFilesInRepo`（`:207`）・`ReadProductionSource`（`:241`）・`Options.Extra`（`:101`）・`ExtraTrackedFunc`（`:94`）・`RefsInSourceWithOptions`（`:342`）・`ValueRef`（`:111`）を提供する。修飾形の値参照は `ValueRef` として報告される（`:523-536`）が、空 `ImportPath` の非修飾エントリは呼び出しサイトだけに一致する（`:337-341`）。`CallSite`（`:70`）は `FuncName`（レシーバ修飾済みの囲み関数名）・`CallExpr`（引数を含まない `Func(...)` 表記）・`File`・`Pos` を持ち、引数式は返さない。目録の `(ファイル, 関数, 引数式, 件数)` を照合するには、guard 自身が production ソースを AST 走査して各 `NewIdentifier` 呼び出しの第 1 引数式を取り出す必要がある。
+- `internal/testutil/identitymutationguard`（[`helpers.go`](../../../internal/testutil/identitymutationguard/helpers.go)）が、`ProductionGoFilesInRepo`（`:207`）・`ReadProductionSource`（`:241`）・`Options.Extra`（`:101`）・`ExtraTrackedFunc`（`:94`）・`RefsInSourceWithOptions`（`:342`）・`ValueRef`（`:111`）を提供する。修飾形の値参照は `ValueRef` として報告される（`:523-536`）が、空 `ImportPath` の非修飾エントリは呼び出しサイトだけに一致する（`:337-341`）。`CallSite`（`:70`）は `FuncName`（レシーバ修飾済みの囲み関数名）・`CallExpr`（引数を含まない `Func(...)` 表記）・`File`・`Pos` を持ち、引数式は返さない。目録の `(ファイル, 関数, 囲むログ呼び出し／文, 属性キー, 引数式, 件数)` を照合するには、guard 自身が production ソースを AST 走査して各 `NewIdentifier` 呼び出しの第 1 引数式と、それを含む呼び出し・文・属性キーを取り出す必要がある。宣言サイトの削除を目録に反映しないと「目録にある宣言の欠落」として失敗するため、宣言の追加・削除・rollback は目録の更新と同じコミットで行う（注 1）。
 - guard テストの書き方は `internal/runner/resource/identity_mutation_guard_test.go`（パッケージ内の走査と失敗メッセージ）と `internal/logging/notification_contract_guard_test.go`（`ProductionGoFilesInRepo` を回し、非修飾と修飾の両方を数える）を踏襲できる。
 - `make lint` は `--build-tags test`、`make test` は `-tags test` で走る（`Makefile:24`、`:480`）。`//go:build test` の guard と `internal/testutil` の補助はこの構成でコンパイルされる。
 
@@ -107,7 +107,7 @@ commit `26cf9564` で次を確認した。
 ### 1.4 テストヘルパーの方針
 
 - 新規のテストヘルパーファイルは追加しない。`identifier_guard_test.go` が使う構文木走査と引数式抽出の補助関数は同ファイル内に閉じる（利用者が 1 テストだけのため、`test_helpers.go` へ切り出さない。test_organization.md の分類 B は複数テストで共有する場合や非公開 API を使う場合の置き場である。既存の `internal/logging/notification_contract_guard_test.go` も走査ヘルパーを同じ `_test.go` 内に持つ）。
-- 既存の `internal/testutil/identitymutationguard` を走査の土台として再利用する。ただし同ヘルパーは引数式を返さないため、引数式の抽出だけは guard 内の AST 走査で補う（同等の呼び出し検出を再実装しない）。
+- 既存の `internal/testutil/identitymutationguard` を走査の土台として再利用する。ただし同ヘルパーは引数式・囲むログ呼び出し／文・属性キーを返さないため、これらサイト文脈の抽出だけは guard 内の AST 走査で補う（同等の呼び出し検出を再実装しない）。
 - テストの期待値を組み立てる `common.NewIdentifier(…)` は `_test.go` にだけ書く。`internal/testutil` など `//go:build test` を必須としない補助パッケージに置くと、guard が目録外の宣言として失敗させる。
 
 ## 2. 実装ステップ
@@ -123,7 +123,7 @@ commit `26cf9564` で次を確認した。
 - [ ] 設計 §3.1 の型を実装する。フィールドは非公開の `name string` とし、`NewIdentifier(name string) Identifier`・`(Identifier).Name() string`・`(Identifier).String() string`・`(Identifier).LogValue() slog.Value` を値レシーバで定義する。`LogValue` は `slog.StringValue(i.name)` を返す。
 - [ ] `var _ slog.LogValuer = Identifier{}` のコンパイル時ガードを置く（設計 §3.1）。
 - [ ] `identifier_test.go` を追加する。`Name()`／`String()` が名前を返すこと、`LogValue()` の `Kind` が `slog.KindString` で値が名前であること、ゼロ値が空名として扱われること、`fmt.Stringer` を満たすことを検証する。
-- [ ] AC-19 の確認: 値レシーバと各メソッドを一時的に壊し、単体テストが失敗することを確認してコミットメッセージに記す。
+- [ ] AC-19 の確認: 値レシーバと各メソッドを一時的に壊し、`identifier_test.go` の対応するテストが失敗することを確認してコミットメッセージに記す。
 
 **完了条件**: `go test -tags test ./internal/common/` が通る。
 
@@ -146,7 +146,8 @@ commit `26cf9564` で次を確認した。
   - `TestRedactingHandler_IdentifierNormalizedToString`: 免除経路の下流ハンドラが受け取る属性値の `Kind` が `slog.KindString` であること（AC-06 の正規化）。
   - `TestRedactingHandler_IdentifierSliceElementsExempt`: `[]common.Identifier` と `[]*common.Identifier` を `slog.Any` で載せ、JSON 出力に名前が string として現れ、`[{}]` にならないこと。
   - `TestRedactingHandler_TypedNilIdentifierFailsClosed`: `slog.Any("command", (*common.Identifier)(nil))` がパニックせず `RedactionFailurePlaceholder` になること。
-- [ ] AC-19 の確認: 3 挿入点を 1 つずつ外し、対応するテストが失敗することを確認する。あわせて plain string 側の `RedactText` 呼び出しを外して `TestRedactingHandler_SameStringsStillRedactedAsFreeText` が失敗すること（AC-05）、`DefaultKeyValuePatterns` を 1 件削除して `TestDefaultKeyValuePatterns_AreValid`・`TestKeyBoundaryGroup_Classification` が失敗することを確認する（AC-12）。結果をコミットメッセージに記す。
+- [ ] `redactor_test.go` に `TestDefaultKeyValuePatterns_MembershipAndCardinality` を追加する。`DefaultKeyValuePatterns()` が返す全リテラルの集合と件数を、テスト内で独立に列挙した期待値と照合し、エントリの削除と追加を検出する。既存の `TestDefaultKeyValuePatterns_AreValid`・`TestKeyBoundaryGroup_Classification` は残ったエントリだけを走査するため、エントリの削除を検出できない（AC-12）。
+- [ ] AC-19 の確認: 3 挿入点を 1 つずつ外し、対応するテストが失敗することを確認する。あわせて plain string 側の `RedactText` 呼び出しを外して `TestRedactingHandler_SameStringsStillRedactedAsFreeText` が失敗すること（AC-05）、`DefaultKeyValuePatterns` を 1 件削除して `TestDefaultKeyValuePatterns_MembershipAndCardinality` が失敗することを確認する（AC-12。既存の `TestDefaultKeyValuePatterns_AreValid`・`TestKeyBoundaryGroup_Classification` は残ったエントリだけを走査するため、削除の検出には追加した目録テストを使う）。結果をコミットメッセージに記す。
 
 **完了条件**: 追加したテストが通り、既存のパターン集合テスト（`sensitive_patterns_test.go`、`value_detector_test.go`）に変更が無い。
 
@@ -163,7 +164,7 @@ commit `26cf9564` で次を確認した。
 - [ ] `TestDecodeNotificationContext_RejectsUnsupportedForms` を追加する。`scope` に `Identifier` を載せた値、`group`／`command` に `Identifier` 以外の `LogValuer` を載せた値、`group` に非 nil の `*Identifier` を載せた値が、いずれも `ErrInvalidNotificationContext` で拒否されることを検証する（`Resolve` を使った受け入れに緩めない。設計 §3.3、AC-11）。
 - [ ] `internal/logging/slack_handler_test.go` に `TestSlackHandler_IdentifierScopeSurvivesRedaction` を追加する。`TestSlackHandler_WithRedactingHandler`（`:1003`）と同じく `RedactingHandler` → `SlackHandler`（モックサーバー、同期または `Flush`）で配線し、`common.GroupScope("monkey")` と `common.CommandScope("monkey", "rotate_api_key")` の通知で Scope に `monkey`・`rotate_api_key` が現れ、`[REDACTED]` や `(scope: invalid)` にならないことを検証する（AC-01、AC-02）。
 - [ ] 既存の `TestSlackHandler_InvalidNotificationContext` がそのまま通ることを確認する（AC-11）。
-- [ ] AC-19 の確認: `LogValue` を `slog.String` に戻し Scope テストと復号テストが失敗すること、`decodeNotificationContextParts` の判定を汎用の `Resolve` に置き換えて `TestDecodeNotificationContext_RejectsUnsupportedForms` が失敗することを確認してコミットメッセージに記す。
+- [ ] AC-19 の確認: `LogValue` を `slog.String` に戻し `TestSlackHandler_IdentifierScopeSurvivesRedaction` と `TestDecodeNotificationContext_AcceptsIdentifierAndString` が失敗すること、`decodeNotificationContextParts` の判定を汎用の `Resolve` に置き換えて `TestDecodeNotificationContext_RejectsUnsupportedForms` が失敗することを確認してコミットメッセージに記す。
 
 **完了条件**: `notification_context_test.go` と追加した Slack テストが通る。
 
@@ -181,11 +182,11 @@ commit `26cf9564` で次を確認した。
 - [ ] `internal/common/logschema_test.go` の `TestCommandResults_LogValue` に、`name` の下位値が `KindLogValuer` で `Identifier` を保持することを固定する行を足す（`Value.String()` の既存アサーションはそのまま残す）。
 - [ ] `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration` を拡張し、値ベース redaction が掛かる名前（`rotate_api_key` など）を持つ `CommandResult` が `RedactingHandler` → JSON ハンドラの出力で元の文字列のまま現れることを検証する（AC-06、AC-09）。
 - [ ] `internal/runner/base/audit/logger_test.go` に `TestLogUserGroupExecution_CommandNameSurvivesRedaction` を追加する。`RedactingHandler` でラップした JSON ロガーに、値ベース redaction が掛かる名前の監査レコードを通し、`command_name` が元の文字列で残ることを検証する（AC-09）。
-- [ ] `internal/common/identifier_guard_test.go`（`//go:build test`）を追加する。設計 §7.3 のとおり、`ProductionGoFilesInRepo` の全 production ファイルを `identitymutationguard.RefsInSourceWithOptions` に `Options.Extra`（修飾形 `ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/common"` + `FuncName: "NewIdentifier"`、非修飾形 `ImportPath: ""` + `FuncName: "NewIdentifier"`）で走査し、`NewIdentifier` の呼び出しを設計 §3.4 の目録（ファイル・関数・引数式・件数）と双方向に照合する。目録外の宣言と目録にある宣言の欠落の双方を失敗させる。
-  - `identitymutationguard.CallSite` は引数式を返さないため、guard 自身が各 production ファイルを AST 走査し、各 `NewIdentifier` 呼び出しの第 1 引数式をソースから復元して、囲む関数名（`identitymutationguard` と同じレシーバ修飾形。例: `(*DefaultGroupExecutor).executeSingleCommand`）と組にして目録と照合する。抽出器は合成ソースのテーブル（別名 import、括弧付き呼び出し、`cmd.Name()` と `cmd.ExpandedCmd` の対照）で検証し、引数式の比較がファイル・関数・件数だけに劣化しないようにする。
+- [ ] `internal/common/identifier_guard_test.go`（`//go:build test`）を追加する。設計 §7.3 のとおり、`ProductionGoFilesInRepo` の全 production ファイルを `identitymutationguard.RefsInSourceWithOptions` に `Options.Extra`（修飾形 `ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/common"` + `FuncName: "NewIdentifier"`、非修飾形 `ImportPath: ""` + `FuncName: "NewIdentifier"`）で走査し、`NewIdentifier` の呼び出しを設計 §3.4 の目録（ファイル・関数・囲むログ呼び出し／文・属性キー・引数式・件数）と双方向に照合する。目録外の宣言と目録にある宣言の欠落の双方を失敗させる。各サイトを安定した囲み文脈で特定するため、件数だけでは検出できない移設も失敗させる。
+  - `identitymutationguard.CallSite` は引数式を返さないため、guard 自身が各 production ファイルを AST 走査し、各 `NewIdentifier` 呼び出しの第 1 引数式と、その呼び出しを囲むログ呼び出し／文および属性キーをソースから復元して、囲む関数名（`identitymutationguard` と同じレシーバ修飾形。例: `(*DefaultGroupExecutor).executeSingleCommand`）と組にして目録と照合する。抽出器は合成ソースのテーブル（別名 import、括弧付き呼び出し、`cmd.Name()` と `cmd.ExpandedCmd` の対照、同一の引数式を異なるログ呼び出し・キーへ載せた対照）で検証し、サイトの特定がファイル・関数・件数だけに劣化しないようにする。
   - `NewIdentifier` の値参照（修飾形は `ValueRef`、非修飾形は自前の AST 走査）が 0 件であることも要求する。
   - guard を書く前に、`rg` で production の宣言を洗い出して目録の件数を再確認し、目録と実装が食い違わない状態にしてから固定する。
-- [ ] AC-19 の確認: 次の 4 つを順に試し、guard が失敗することを確認してコミットメッセージに記す。(1) 目録エントリを 1 件削除する、(2) 目録に無い宣言を 1 件追加する、(3) `makeID := common.NewIdentifier` 相当の束縛を加える、(4) 目録にあるサイトの引数を `cmd.Name()` から `cmd.ExpandedCmd` に差し替える（引数式の照合が働くことの確認。設計 §5.1 T2）。
+- [ ] AC-19 の確認: 次の 5 つを順に試し、guard（`identifier_guard_test.go::TestNewIdentifierCallSitesMatchCatalog`）が失敗することを確認してコミットメッセージに記す。(1) 目録エントリを 1 件削除する、(2) 目録に無い宣言を 1 件追加する、(3) `makeID := common.NewIdentifier` 相当の束縛を加える、(4) 目録にあるサイトの引数を `cmd.Name()` から `cmd.ExpandedCmd` に差し替える（引数式の照合が働くことの確認。設計 §5.1 T2）、(5) 同一ファイル・関数・引数式を共有する別のサイトへ `NewIdentifier` を移し、元のサイトを plain string に戻して包んだ呼び出しの合計件数を補償で保つ（ファイル・関数・引数式・件数だけの照合では通ってしまう移設。囲むログ呼び出し／文と属性キーの照合が働くことの確認。例: `executeSingleCommand` の `cmd.Name()` 宣言 4 件のうち 1 件を別の囲みへ移す）。
 - [ ] AC-10 の確認: `go test -tags test -run 'TestValidateIdentifiers|TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted' ./internal/runner/config/ ./cmd/runner/` が通ることを確認する。
 
 **完了条件**: `make test` が通り、`identifier_guard_test.go` と AC-06〜AC-09 のテストが緑である。
@@ -196,9 +197,9 @@ commit `26cf9564` で次を確認した。
 
 **作業内容**:
 
-- [ ] `security-architecture.ja.md` の redaction 層の説明（「セキュアログと機密データ保護」節。第 2 層の説明の付近）へ、宣言型の識別子を値ベース redaction から免除することを追記する。免除を止める専用の実行時スイッチが無いことと、漏洩が疑われる場合の rollback 手順（該当する宣言サイトを plain string へ戻すコミットで免除を解除する）も記す（設計 §5.2、AC-15）。
+- [ ] `security-architecture.ja.md` の redaction 層の説明（「セキュアログと機密データ保護」節。第 2 層の説明の付近）へ、宣言型の識別子を値ベース redaction から免除することを追記する。免除を止める専用の実行時スイッチが無いことと、漏洩が疑われる場合の rollback 手順（該当する宣言サイトを plain string へ戻し、同じコミットで宣言サイト目録から対応エントリを削除して guard を緑に保つ）も記す（設計 §5.2、AC-15。目録の手順は注 1）。
 - [ ] `security-risk-assessment.ja.md` の Limitations（`:295` の `**限界**` 段落の末尾）へ、識別子を redact しない帰結（設定の名前に機密を書いた場合は通知・ログにそのまま出る）を追記する（AC-14、AC-16）。error 文字列に埋め込まれた名前が免除されない残余リスク（設計 §5.2）は、設計文書側の記載を確認し、利用者向け文書へは持ち込まない。
-- [ ] 追記した 2 文を設計 §5.2 の記述と 1 文ずつ対照し、記述が実装（免除の範囲は設計 §3.2 の 3 挿入点、rollback は免除経路が `common.Identifier` の型だけに依存すること）と矛盾しないことを確認する。対照結果（突き合わせた文と設計の節）を Phase 5 のコミットメッセージに記す（AC-14、AC-15、AC-16）。
+- [ ] 追記した 2 文を設計 §5.2 の記述と 1 文ずつ対照し、記述が実装（免除の範囲は設計 §3.2 の 3 挿入点、rollback は免除経路が `common.Identifier` の型だけに依存し、宣言の削除時は目録エントリの削除を同じコミットで行うこと）と矛盾しないことを確認する。対照結果（突き合わせた文と設計の節）を Phase 5 のコミットメッセージに記す（AC-14、AC-15、AC-16）。
 - [ ] 日本語版 2 ファイルをコミットする。
 - [ ] `/mktrans` で `security-architecture.md`・`security-risk-assessment.md` へ翻訳を反映する。日英を直接両方編集しない。
 - [ ] 翻訳後、日英の該当節を対照し、記述の過不足・用語の不一致が無いことを確認する。対照結果を翻訳コミットのメッセージに記す（`make verify-docs` は `--docs=docs/user` のみを対象とし、見出しの訳文の対応を合否判定に用いないため、日英の構造・内容の照合は目視で行い、その記録をコミットメッセージに残す。`make verify-docs` を本タスクの判定には使わない）。
@@ -246,7 +247,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 - `internal/redaction/redactor_test.go`: 3 層の免除と対照、コマンド行の維持、キー名マスクの優先、string 正規化、スライス要素、型付き nil の fail-closed（設計 §7.1、§7.3）。
 - `internal/common/notification_context_test.go`: 符号化が宣言型であることと、生の宣言型・正規化後の string の両方を復号できること（設計 §7.1）。
 - `internal/common/logschema_test.go`: `CommandResult`／`CommandResults` の `name` が宣言型で符号化されること（設計 §7.1）。
-- 既存のパターン集合テスト（`internal/redaction/sensitive_patterns_test.go`、`value_detector_test.go`、`redactor_test.go::TestKeyBoundaryGroup_Classification`・`::TestDefaultKeyValuePatterns_AreValid`）は変更せず、AC-12 の検出挙動の基準として使う。
+- 既存のパターン集合テスト（`internal/redaction/sensitive_patterns_test.go`、`value_detector_test.go`、`redactor_test.go::TestKeyBoundaryGroup_Classification`・`::TestDefaultKeyValuePatterns_AreValid`）は変更せず、AC-12 の検出挙動の基準として使う。`DefaultKeyValuePatterns` のリテラル集合と件数を固定する `redactor_test.go::TestDefaultKeyValuePatterns_MembershipAndCardinality` を新規に追加する（既存の 2 テストは残ったエントリだけを走査し、エントリの削除を検出できない）。
 
 ### 4.2 統合テスト
 
@@ -272,7 +273,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 
 | リスク | 影響 | 対策 |
 |---|---|---|
-| コマンド行を誤って `Identifier` と宣言する | 値ベース redaction が掛からず `token=…` が露出する | 目録を引数式・件数まで持つ guard を Phase 4 で追加し、双方向に照合する。`executeWithUserGroup` のような混在関数も引数式で区別する（設計 §5.1 T2） |
+| コマンド行を誤って `Identifier` と宣言する | 値ベース redaction が掛からず `token=…` が露出する | 目録を囲むログ呼び出し／文・キー・引数式・件数まで持つ guard を Phase 4 で追加し、双方向に照合する。`executeWithUserGroup` のような混在関数も引数式で区別し、同一引数式が複数ある関数の移設も囲み文脈で検出する（設計 §5.1 T2） |
 | 免除経路の挿入点が 1 つ漏れる | 特定の値の種別（スライス要素など）だけ免除が効かず、`[]Identifier` が `[{}]` 描画になる | 3 挿入点を同じヘルパーに集約し、`TestRedactingHandler_IdentifierSliceElementsExempt` と `TestRedactingHandler_IdentifierNormalizedToString` で固定する（設計 §3.2） |
 | 型付き nil の `*Identifier` がパニックする | ログ呼び出しがプロセスを落とす | ヘルパーが nil を免除せず、既存のパニック回復が `RedactionFailurePlaceholder` を代入することを `TestRedactingHandler_TypedNilIdentifierFailsClosed` で固定する |
 | 既存テストの更新漏れ | `make test` が落ちる、または期待値が緩む | §1.3 の一覧を Phase 4 で消化し、実装時に全 `*_test.go` を検索し直す |
@@ -299,6 +300,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 
 - [ ] 判定ヘルパーを追加し、3 挿入点を実装した
 - [ ] 免除・対照・コマンド行維持・キー名優先・正規化・スライス・型付き nil のテストを追加した
+- [ ] `DefaultKeyValuePatterns` の集合と件数を固定するテストを追加した
 - [ ] AC-19 の確認結果をコミットメッセージに記した
 
 ### Phase 3
@@ -316,7 +318,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 - [ ] `SecurityLogger` 4 メソッドと `buildCommandDebugLogArgs` の引数型を変えた
 - [ ] `CommandResult`／`CommandResults` の符号化を変えた
 - [ ] §1.3 の既存テスト更新を消化した
-- [ ] `identifier_guard_test.go` を追加し、目録・引数式・エイリアス・非修飾値参照を検証した
+- [ ] `identifier_guard_test.go` を追加し、目録（囲む呼び出し／文・キー・引数式・件数）・エイリアス・非修飾値参照を検証した
 - [ ] AC-06〜AC-10 のテストを追加・更新した
 - [ ] AC-19 の確認結果をコミットメッセージに記した
 
@@ -349,23 +351,25 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 | AC-04 | test | 同上。3 層それぞれの免除行と、同じ文字列の plain string 対照行を同じテスト内に持つ |
 | AC-05 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_SameStringsStillRedactedAsFreeText`。`--password=x`、`token=...`、`Bearer ...`、AWS/GitHub/Slack トークン形が plain string では redact されること。既存のパターン集合テストも `make test` で走る |
 | AC-06 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_IdentifierNormalizedToString`（下流へ渡る値が `KindString`）、`internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（JSON 出力で `name` が元の文字列）、`internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Slack Scope）。`message_formatter` は読み取りコードを変更しないため、既存テストがそのまま通ることを `make test` で確認する |
-| AC-07 | test | `internal/common/identifier_guard_test.go::TestNewIdentifierCallSitesMatchCatalog`。設計 §3.4 の目録（ファイル・関数・引数式・件数）と production の `NewIdentifier` 呼び出しを双方向に照合し、目録外の宣言と目録の欠落の双方を失敗させる |
-| AC-08 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_CommandKeyIdentifierVsCommandLine`（同じキー `command` で、宣言型のコマンド名は残り、plain string のコマンド行は redact される）と `::TestRedactingHandler_IdentifierKeyMaskTakesPrecedence`（キー名マスクが免除より先）。guard は `cmd.ExpandedCmd` を包む誤宣言を目録外として拒否する |
+| AC-07 | test | `internal/common/identifier_guard_test.go::TestNewIdentifierCallSitesMatchCatalog`。設計 §3.4 の目録（ファイル・関数・囲むログ呼び出し／文・属性キー・引数式・件数）と production の `NewIdentifier` 呼び出しを双方向に照合し、目録外の宣言と目録の欠落の双方を失敗させる。同じ引数式・件数のまま囲むログ呼び出し／文とキーだけを入れ替えた移設も不一致として失敗させる |
+| AC-08 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_CommandKeyIdentifierVsCommandLine`（同じキー `command` で、宣言型のコマンド名は残り、plain string のコマンド行は redact される）と `::TestRedactingHandler_IdentifierKeyMaskTakesPrecedence`（キー名マスクが免除より先）。guard は `cmd.ExpandedCmd` を包む誤宣言を目録外として拒否し、囲むログ呼び出し／文と属性キーが目録と一致しない移設も拒否する |
 | AC-09 | test | `internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`（監査ログの `command_name`）と `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（グループ集計のコマンド一覧の `name`） |
 | AC-10 | test | `internal/runner/config/validation_test.go::TestValidateIdentifiers` と `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted` が無変更で通ること（`test` タグを付ける `make test` に含まれる） |
 | AC-11 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`（`(scope: invalid)` の判定表）と `internal/common/notification_context_test.go::TestDecodeNotificationContext_Validity`・`::TestDecodeNotificationContext_AcceptsIdentifierAndString`（受ける型の範囲） |
-| AC-12 | test + static | test: `internal/redaction/sensitive_patterns_test.go::TestSensitivePatterns_CombinedPatterns`、`internal/redaction/value_detector_test.go::TestValueDetector_Mask_PositiveCases`、`internal/redaction/redactor_test.go::TestKeyBoundaryGroup_Classification`（`DefaultKeyValuePatterns` を全件 range する。`:626`）と `::TestDefaultKeyValuePatterns_AreValid`。static: Phase 6 で `internal/redaction/sensitive_patterns.go` と `value_detector.go` の設計基準からの差分が空であること（注 5 の 4 番目を Phase 6 の base で再実行する）。あわせて Phase 2 の AC-19 確認として `DefaultKeyValuePatterns` を 1 件削除し、上記テストが失敗することを確認する |
+| AC-12 | test + static | test: `internal/redaction/sensitive_patterns_test.go::TestSensitivePatterns_CombinedPatterns`、`internal/redaction/value_detector_test.go::TestValueDetector_Mask_PositiveCases`、`internal/redaction/redactor_test.go::TestKeyBoundaryGroup_Classification`（`DefaultKeyValuePatterns` を全件 range する。`:626`）と `::TestDefaultKeyValuePatterns_AreValid`、および新規の `::TestDefaultKeyValuePatterns_MembershipAndCardinality`（`DefaultKeyValuePatterns()` が返す全リテラルの集合と件数を、テスト内で独立に列挙した期待値と照合し、エントリの削除・追加を検出する。既存の 2 テストは残ったエントリだけを走査するため削除を検出できない）。static: Phase 6 で `internal/redaction/sensitive_patterns.go` と `value_detector.go` の設計基準からの差分が空であること（注 5 の 4 番目を Phase 6 の base で再実行する）。あわせて Phase 2 の AC-19 確認として `DefaultKeyValuePatterns` を 1 件削除し、`::TestDefaultKeyValuePatterns_MembershipAndCardinality` が失敗することを確認する |
 | AC-13 | static | 残余リスクが設計文書に記載されていること。`rg -n -F -e 'record.Message' -e 'IsSensitiveValue' docs/tasks/0173_identifier_redaction_exemption/02_architecture.md` が §5.2（`:533`）に一致することを Phase 5 で再確認する。本書作成時に同コマンドを commit `26cf9564` で実行し、`:28`・`:106`・`:112`・`:120`・`:533`・`:562`・`:742` の一致を確認済み（うち `:533` が AC-13 の記載） |
 | AC-14 | static + manual | static: `docs/user/security-risk-assessment.ja.md` に `免除` が、`docs/user/security-risk-assessment.md` に `exempt` が現れること（注 5 の 2 番目・3 番目の検索を Phase 5 完了後に再実行する）。語の出現は存在確認であり内容の保証ではないため、Phase 5 で追記文を設計 §5.2 と 1 文ずつ対照し、その結果をコミットメッセージに記録する（manual の記録が内容の検証、`rg` は見落とし防止の補助） |
-| AC-15 | static + manual | static: `docs/dev/architecture_design/security-architecture.ja.md` に `識別子` と `ロールバック` が、`docs/dev/architecture_design/security-architecture.md` に `identifier` と `rollback` が現れること（注 5 の 5 番目を Phase 5 完了後に再実行する）。manual: 免除範囲を設計 §3.2、rollback 手順を設計 §5.2 と対照し、日英の対応を Phase 5 のコミットメッセージに記録する。`make verify-docs` は `--docs=docs/user` のみを対象とし、見出しの訳文の対応を合否判定に用いないため、本 AC の判定には使わない |
+| AC-15 | static + manual | static: `docs/dev/architecture_design/security-architecture.ja.md` に `識別子` と `ロールバック` が、`docs/dev/architecture_design/security-architecture.md` に `identifier` と `rollback` が現れること（注 5 の 5 番目を Phase 5 完了後に再実行する）。manual: 免除範囲を設計 §3.2、rollback 手順を設計 §5.2 と対照し、日英の対応を Phase 5 のコミットメッセージに記録する。rollback 手順は、該当する宣言サイトを plain string へ戻す同じコミットで宣言サイト目録（注 1）の対応エントリを削除し、guard を緑に保つことを含む。`make verify-docs` は `--docs=docs/user` のみを対象とし、見出しの訳文の対応を合否判定に用いないため、本 AC の判定には使わない |
 | AC-16 | static + manual | AC-14 と同じ検索を Phase 5 完了後に再実行し、日英両方に記述があること。manual: 日英の記述の対応を Phase 5 のコミットメッセージに記録する（AC-15 と同じ理由で `make verify-docs` は使わない） |
 | AC-17 | static | `rg -n -F '0172' docs/tasks/0173_identifier_redaction_exemption/01_requirements.md docs/tasks/0173_identifier_redaction_exemption/02_architecture.md docs/tasks/0173_identifier_redaction_exemption/03_implementation_plan.md` が一致し、0172 の残余リスクを置き換える記述（設計 §5.2、§5.4）を参照できること |
 | AC-18 | static | 各フェーズの完了時に `make test`・`make lint` を実行し、各コミットで終了コード 0 であることを記録する。記録先は各フェーズの PR（`.github/workflows/ci.yml` が `pull_request` で `make test`・`make lint` を実行する）と、PR 本文またはコミットメッセージに書くローカル実行の結果である。Phase 6 のタスクで全フェーズ分を確認する |
-| AC-19 | static | 各フェーズのコミットメッセージ（`git log --format=%B`）に、壊した対象と失敗したテストの記述があること。Phase 4 では 4 種の操作（目録エントリの削除・追加、`NewIdentifier` の値束縛、引数式を `cmd.ExpandedCmd` へ差し替え）をそれぞれ記録する。Phase 6 のタスクで全フェーズ分を確認する |
+| AC-19 | static | 各フェーズのコミットメッセージ（`git log --format=%B`）に、壊した対象と失敗したテストの記述があること。Phase 2 では `DefaultKeyValuePatterns` の 1 件削除が `TestDefaultKeyValuePatterns_MembershipAndCardinality` を失敗させることを記録する。Phase 4 では 5 種の操作（目録エントリの削除・追加、`NewIdentifier` の値束縛、引数式を `cmd.ExpandedCmd` へ差し替え、件数を保つ宣言サイトの移設）をそれぞれ記録する。Phase 6 のタスクで全フェーズ分を確認する |
 
 **注 1: AC-07 の guard が固定する目録**
 
-目録は設計 §3.4 の表を出発点とする。guard は行番号ではなく `(ファイル, 関数, 引数式, 件数)` で照合し、同じ組が複数回現れる宣言（例: `ExecuteGroup` の `groupSpec.Name` 3 件、`executeSingleCommand` の `cmd.Name()` 4 件）を件数で区別する。guard 作成前に `rg` で production の宣言を洗い出し、件数を確定してから目録を固定する。
+目録は設計 §3.4 の表を出発点とする。guard は行番号ではなく `(ファイル, 関数, 囲むログ呼び出し／文, 属性キー, 引数式, 件数)` で照合し、各サイトを安定した囲み文脈で特定する。同じ `(ファイル, 関数, 引数式)` の組が複数回現れる宣言（例: `ExecuteGroup` の `groupSpec.Name` 3 件、`executeSingleCommand` の `cmd.Name()` 4 件）は、囲む呼び出し／文とキーで区別し、なお同一になる組だけを件数で照合する。同じ引数式のまま囲む呼び出し／文とキーだけを入れ替えて件数を保つ移設は、囲み文脈が目録と一致しなくなるため失敗する。guard 作成前に `rg` で production の宣言を洗い出し、件数を確定してから目録を固定する。
+
+目録の追加・削除は宣言の追加・削除と一体の手順とする。宣言サイトを追加・削除するコミットでは、同じコミットで対応する目録エントリを追加・削除する。目録への反映を忘れると「目録にある宣言の欠落」または「目録外の宣言」として guard が失敗する。漏洩が疑われる場合の rollback も、該当宣言を plain string に戻す同じコミットで対応する目録エントリを削除して行う（Phase 5、AC-15、設計 §5.2）。
 
 **注 2: AC-19 の確認方法**
 
@@ -421,7 +425,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2〜4 すべての前提�
 
 ### 9.4 文書
 
-- `security-architecture.{ja,}.md` に識別子免除・スイッチ無し・rollback 手順が、日英で記述されている。
+- `security-architecture.{ja,}.md` に識別子免除・スイッチ無し・rollback 手順（宣言サイトの削除と同じコミットでの目録エントリ削除を含む）が、日英で記述されている。
 - `security-risk-assessment.{ja,}.md` の Limitations に、名前に機密を書いた場合の帰結が日英で記述されている。
 - Task 0172 の残余リスクを置き換えることが本タスクの文書から参照できる。
 
