@@ -6,9 +6,9 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | 202-09-12 |
+| Review date | 2026-09-12 |
 | Reviewer | isseis |
-| Comments | `-` |
+| Comments | Editorial correction only (no decision changed): fixed the Review date typo (`202-09-12` → `2026-09-12`) and repointed two `02_architecture.md` cross-references from Task 0172 to this task's own document. |
 
 ## 関連 Issue
 
@@ -60,7 +60,7 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 
 ### 対象
 
-1. 識別子を表す型の追加（`internal/common`。型名とメソッドは [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) で確定する）。
+1. 識別子を表す型の追加（`internal/common`。型名とメソッドは [`02_architecture.md`](02_architecture.md) で確定する）。
 2. `internal/redaction` に、宣言された識別子を値ベース変換の対象外として明示的に認識する経路を追加し、下流ハンドラには string として正規化して渡す。
 3. group 名・コマンド名を属性値として書く production の全経路を宣言型へ置き換える。少なくとも `group`、`command`、`command_name`、`name`、`notification_context` の名前値、`CommandResult`／`CommandResults` の名前が対象（約 13 ファイル・40 属性サイト）。
 4. 免除ケースと対照ケース（同じ内容の plain string は従来どおり redact される）を固定するテスト、コマンド行 redaction の維持を固定するテスト、Slack・JSON の表示を確認するテスト。
@@ -96,7 +96,7 @@ key=value 置換・値形式検出・値まるごと判定のいずれも、宣�
 
 ### 下流ハンドラには string として正規化する
 
-`RedactingHandler` の免除経路は宣言された識別子を string 値として後続へ渡す。Slack ハンドラ・JSON ハンドラ・`message_formatter` の読み取りコードは変更しない。テスト用の捕捉ヘルパーが値の型に依存している場合の扱いは [`02_architecture.md`](../0172_slack_notification_message_unification/02_architecture.md) で決める。
+`RedactingHandler` の免除経路は宣言された識別子を string 値として後続へ渡す。Slack ハンドラ・JSON ハンドラ・`message_formatter` の読み取りコードは変更しない。テスト用の捕捉ヘルパーが値の型に依存している場合の扱いは [`02_architecture.md`](02_architecture.md) で決める。
 
 ### 0172 の残余リスクを置き換える
 

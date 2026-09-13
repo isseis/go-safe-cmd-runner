@@ -109,7 +109,7 @@ flowchart LR
 
 #### 既存の単純な案を採らない理由
 
-**キー名による除外は成立しない。** キー `"command"` は、TOML のコマンド名（識別子）と展開済みコマンド行（自由文）の両方に載る。実際に `DefaultExecutor.executeWithUserGroup` は同一関数内で `"command"` に `cmd.Name()` を載せる行（[`internal/runner/base/executor/executor.go:254`](../../../internal/runner/base/executor/executor.go)）と、`cmd.ExpandedCmd` を載せる行（[`internal/runner/base/executor/executor.go:191`](../../../internal/runner/base/executor/executor.go)、[`:247`](../../../internal/runner/base/executor/executor.go)、[`:284`](../../../internal/runner/base/executor/executor.go)）を持つ。キー単位の除外は、コマンド名を救うためにコマンド行の redaction を同時に弱めるか、コマンド行を守るためにコマンド名を redact し続けるかのどちらかになり、両立しない。キー `"name"` も group 名（[`internal/runner/group_executor.go:149`](../../../internal/runner/group_executor.go)）、一時ファイル名（[`internal/safefileio/safe_file_linux.go:241`](../../../internal/safefileio/safe_file_linux.go)）、コマンド結果の名前（[`internal/common/logschema.go:120`](../../../internal/common/logschema.go)）という複数の用途で使われる。
+**キー名による除外は成立しない。** キー `"command"` は、TOML のコマンド名（識別子）と展開済みコマンド行（自由文）の両方に載る。実際に `DefaultExecutor.executeWithUserGroup` は同一関数内で `"command"` に `cmd.Name()` を載せる行（[`internal/runner/base/executor/executor.go:254`](../../../internal/runner/base/executor/executor.go)）と、`cmd.ExpandedCmd` を載せる行（[`internal/runner/base/executor/executor.go:191`](../../../internal/runner/base/executor/executor.go)、[`:198`](../../../internal/runner/base/executor/executor.go)、[`:247`](../../../internal/runner/base/executor/executor.go)、[`:284`](../../../internal/runner/base/executor/executor.go)）を持つ。キー単位の除外は、コマンド名を救うためにコマンド行の redaction を同時に弱めるか、コマンド行を守るためにコマンド名を redact し続けるかのどちらかになり、両立しない。キー `"name"` も group 名（[`internal/runner/group_executor.go:149`](../../../internal/runner/group_executor.go)）、一時ファイル名（[`internal/safefileio/safe_file_linux.go:241`](../../../internal/safefileio/safe_file_linux.go)）、コマンド結果の名前（[`internal/common/logschema.go:120`](../../../internal/common/logschema.go)）という複数の用途で使われる。
 
 **パターン集合の調整では救えない。** `IsSensitiveValue` を語境界付きにすれば `monkey` は救えるが、`AKIA…` 形の値形式一致（`ValueDetector` 経由）と `monkey=` の隣接形（key=value 置換の境界なし代替、[`internal/redaction/redactor.go:491`](../../../internal/redaction/redactor.go)）は救えず、しかも自由文の検出挙動まで変わる。免除は宣言だけに基づかせ、パターン集合は据え置く（AC-12）。
 
@@ -178,8 +178,8 @@ flowchart LR
     VC --> DOWN
 
     class RECORD data
-    class RUNNER,RESOURCE,AUDIT,VERIFY,LOGSEC,CFGPKG,DOWN process
-    class COMMON,EXECPKG,PRIVPKG,Redaction,RH,EX,VC enhanced
+    class DOWN process
+    class COMMON,RUNNER,RESOURCE,AUDIT,VERIFY,LOGSEC,CFGPKG,EXECPKG,PRIVPKG,Redaction,RH,EX,VC enhanced
     class ID newpkg
 ```
 
@@ -226,7 +226,7 @@ flowchart LR
 | `internal/common/identifier.go` | 新規 | 宣言型 `Identifier`、コンストラクタ `NewIdentifier`、参照メソッド `Name`、`String`、`LogValue` を定義する | - |
 | `internal/common/identifier_test.go` | 新規 | `LogValue` が string を返すこと、`String` が名前を返すこと、ゼロ値と空名の扱いを検証する | - |
 | `internal/common/identifier_guard_test.go` | 新規（`//go:build test`） | production の `common.NewIdentifier(` 呼び出しが §3.4 の宣言サイト許可リストの外に現れないことを構文木で検証する（§7.3） | - |
-| `internal/common/notification_context.go` | 変更 | `LogValue` の `group`／`command` を `Identifier` で符号化する。`decodeNotificationContextParts` は下位値を `Resolve` してから種別を検査する（§3.3） | `internal/common/notification_context_test.go` の符号化期待値 |
+| `internal/common/notification_context.go` | 変更 | `LogValue` の `group`／`command` を `Identifier` で符号化する。`decodeNotificationContextParts` は下位値が `Identifier` の場合に名前を読む（§3.3） | `internal/common/notification_context_test.go` の符号化期待値 |
 | `internal/common/notification_context_test.go` | 変更 | `groupAttr`／`commandAttr` を `Identifier` で構築し、復号が両形式（生の宣言型と正規化後の string）を受けることを検証する | - |
 | `internal/common/logschema.go` | 変更 | `CommandResult.LogValue` と `CommandResults.LogValue` の `name` を `Identifier` で符号化する | `internal/common/logschema_test.go` は `Value.String()` 比較のため原則そのまま通る（§7.1） |
 | `internal/common/logschema_test.go` | 変更 | 必要なら `Identifier` を明示する行を足す | - |
@@ -242,7 +242,7 @@ flowchart LR
 | `internal/runner/resource/normal_manager.go` | 変更 | `ExecuteCommand` の `command` 宣言と、`command_path` に載る group 名の宣言（§3.4） | 該当テスト |
 | `internal/runner/resource/dryrun_manager.go` | 変更 | `validateRunAsIdentity`・`evaluateCommandRisk` の `command`／`group` 宣言 | 該当テスト |
 | `internal/verification/manager.go` | 変更 | `VerifyGroupFiles`・`collectVerificationFiles` の `group` 宣言 | 該当テスト |
-| `internal/logging/security.go` | 変更 | `SecurityLogger` の 4 メソッドの `command` 宣言 | `security_test.go` |
+| `internal/logging/security.go` | 変更 | `SecurityLogger` の 4 メソッドの `command` 宣言 | `security_test.go` は JSON ハンドラの出力を解析するため変更不要（§7.4） |
 | `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | redaction 層の説明へ識別子免除を追記し、kill switch が無いことと rollback 手順を記す（AC-15、§5.2） | - |
 | `docs/user/security-risk-assessment.ja.md`・`.md` | 変更 | Limitations へ AC-14 の帰結を追記する（AC-16） | - |
 
@@ -269,7 +269,7 @@ sequenceDiagram
         R->>R: 値ベース 3 層を適用
     end
     R->>D: 正規化済みレコード
-    D-->>D: 元の文字列を描画
+    D->>D: 元の文字列を描画
 ```
 
 **凡例（Legend）**
@@ -286,7 +286,7 @@ flowchart LR
     class L2 process
 ```
 
-矢印 A → B は「処理の呼び出し、またはデータの受け渡し」を表し、破線の矢印 A ⇢ B は「A 自身が行う処理」を表す。参加者を囲む色付きボックスの色は上の凡例に対応する。
+矢印 A → B は「処理の呼び出し、またはデータの受け渡し」を表し、A → A は「A 自身が行う処理」を表す。参加者を囲む色付きボックスの色は上の凡例に対応する。
 
 ### 2.4 副作用の境界
 
@@ -361,10 +361,11 @@ func (i Identifier) LogValue() slog.Value
 | `group` | string | `Identifier` | 常に |
 | `command` | string | `Identifier` | 空でないときだけ |
 
-`decodeNotificationContextParts`（[`internal/common/notification_context.go:136`](../../../internal/common/notification_context.go)）は、下位キーの値の種別を検査する前に `slog.Value.Resolve()` する。`slog.Value.Resolve()` はトップレベルの `LogValuer` だけを解決し、グループの下位値までは再帰しない（Go 1.26 の `log/slog` `Value.Resolve`）。したがって復元側で下位値ごとに `Resolve` する必要がある。
+`decodeNotificationContextParts`（[`internal/common/notification_context.go:136`](../../../internal/common/notification_context.go)）は、`group`／`command` の下位値として `KindString` に加え、`value.Any()` が `Identifier` である値を受け、その `Name()` を名前として読む。`slog.Value.Resolve()` はトップレベルの `LogValuer` だけを解決し、グループの下位値までは再帰しない（Go 1.26 の `log/slog` `Value.Resolve`）ため、復元側で下位値を見る必要があるが、汎用の `Resolve` は使わない。`Resolve` は string を返す任意の `LogValuer` を受け入れてしまい、「符号化が固定する値の型」という `DecodeNotificationContext` の契約を緩める（CLAUDE.md「Reject, don't normalize」）。受け入れるのは `LogValue` が生成する 2 形式だけである。
 
 - 正規化前の生のレコード（`Identifier` の `LogValuer`）と、`RedactingHandler` が正規化した string のレコードの両方が復号できる。
-- `scope`・`group`・`command` のいずれかの値が真に string でない場合（例: `slog.Int`）は、`Resolve` 後も `KindInt64` のままであり、従来どおり拒否する。
+- `scope` は `LogValue` が常に string で符号化するため、従来どおり `KindString` だけを受ける。
+- `scope`・`group`・`command` のいずれかの値が string でも `Identifier` でもない場合（例: `slog.Int`、`Identifier` 以外の `LogValuer`）は従来どおり拒否する。
 - `display`（[`internal/logging/slack_handler.go:491`](../../../internal/logging/slack_handler.go)）は復号済みの `GroupName()`／`CommandName()` を補間するため、変更しない。Scope 表示契約（AC-11）は保たれる。
 
 これにより、Scope に `monkey` が `monkey` として表示される（AC-01、AC-02）。
@@ -420,7 +421,7 @@ group 名・コマンド名を属性値として書く production の経路を `
 | ファイル | 関数 | 行 | キー | 値の式 |
 |---|---|---|---|---|
 | `internal/runner/group_executor.go` | `verifyGroupFiles` | 409 | `command` | `resolvedPath`（解決済みパス） |
-| `internal/runner/base/executor/executor.go` | `executeWithUserGroup` | 191、247、284 | `command` | `cmd.ExpandedCmd` |
+| `internal/runner/base/executor/executor.go` | `executeWithUserGroup` | 191、198、247、284 | `command` | `cmd.ExpandedCmd` |
 | `internal/runner/base/executor/executor.go` | `executeNormal` | 314、327 | `command` | `cmd.ExpandedCmd` |
 | `internal/runner/base/executor/executor.go` | `executeWithUserGroup` | 215、247、254、286 | `group` | `cmd.RunAsGroup()`（OS グループ名） |
 | `internal/runner/base/executor/command_lifecycle.go` | `prepareCommand` | 301 | `command` | `cmdLine`（展開済みコマンド行） |
@@ -432,6 +433,7 @@ group 名・コマンド名を属性値として書く production の経路を `
 | `internal/runner/resource/normal_manager.go` | `ExecuteCommand` | 138 | `cmd_binary` | `cmd.ExpandedCmd` |
 | `internal/runner/resource/dryrun_manager.go` | `analyzeCommand` | 236 | マップキー `command` | `cmd.ExpandedCmd` |
 | `internal/runner/resource/dryrun_manager.go` | `analyzeOutput` | 721 | マップキー `command` | `cmd.ExpandedCmd` |
+| `internal/verification/manager.go` | `collectVerificationFiles` | 280 | `command` | `command.ExpandedCmd`（§3.4 の行 279 `group` と同じ呼び出し内） |
 | `internal/safefileio/safe_file_linux.go` | `moveFileAnchored` | 241 | `name` | `tmpName`（一時ファイル名） |
 
 `executor.go` の行 247 と 254 は同じ関数内でキー `"group"`（OS グループ名）とキー `"command"`（コマンド名）を同時に書くことに注意する。キーではなく値の式で判断する。
@@ -448,7 +450,7 @@ group 名・コマンド名を属性値として書く production の経路を `
 |---|---|
 | 識別子の構築 | エラーを返さない。`NewIdentifier` は全域関数であり、名前の検査は設定境界が担う |
 | `Identifier` の `LogValue` | パニックしない。`slog.Value` を返すだけ |
-| 復号時の `Resolve` | `LogValuer` がパニックしても `slog.Value.Resolve` がエラー値へ変換し、`KindString` でないため `ErrInvalidNotificationContext` になる。既存の扱いを変えない |
+| 復号時の `Identifier` 読み取り | `Name()` はフィールドを返すだけでパニックしない。`Identifier` 以外の `LogValuer` は `LogValue` を呼ばずに拒否するため、`LogValuer` のパニックが復号に持ち込まれる経路は無い。既存のエラー契約を変えない |
 | 免除判定後の転送 | `RedactingHandler` の既存のパニック回復・失敗時プレースホルダを変更しない |
 
 ### 4.2 エラー型
@@ -672,7 +674,7 @@ flowchart LR
 
 - 展開済みコマンド行・引数・環境変数値・message・error 文字列の redaction が本タスクの前後で変わらないこと（AC-05）。`--password=x`、`token=…`、`Bearer …`、AWS/GitHub/Slack トークン形を、識別子と同じテスト入力集合で固定する。
 - 同じキー `"command"` に、コマンド名（宣言型）とコマンド行（plain string）を載せ、後者だけが redact されること（AC-08）。
-- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`common.NewIdentifier(` の呼び出しが §3.4 の許可リスト（ファイルと関数）の外に現れないことを検証する。許可リスト外の宣言はビルド時に失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（脅威2 の実際の対策）。
+- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`common.NewIdentifier(` の呼び出しが §3.4 の許可リスト（ファイルと関数）の外に現れないことを検証する。許可リスト外の宣言はテストで失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（脅威2 の実際の対策）。`ProductionGoFilesInRepo` は `//go:build test || performance` のようにタグ `test` を必須としない制約のファイル（`internal/testutil`、`internal/runner/base/executor/testutil`）も production として走査する。テストの期待値を `common.NewIdentifier` で組み立てるコードは `_test.go` に置き、これらの補助パッケージには置かない。
 - 設定検証が識別子の中身を redaction と照合しないこと。既存の [`TestValidateIdentifiers`](../../../internal/runner/config/validation_test.go) と [`TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`](../../../cmd/runner/integration_pre_execution_error_test.go) をそのまま通す（AC-10）。
 - `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターン集合が変更されていないこと（AC-12）。該当ファイルを変更しないことと、既存のパターンテストが通ることで確認する。
 - `[]Identifier` の要素が免除されること（§3.2 の挿入点を固定する。人工的な `[]common.Identifier` を用意する）。
@@ -701,7 +703,7 @@ flowchart LR
 |---|---|---|
 | Phase 1 | `internal/common/identifier.go` と `identifier_test.go` を追加する | `Identifier` の単体テストが通る |
 | Phase 2 | `internal/redaction` に免除経路を追加し、免除・対照・コマンド行維持・`[]Identifier` のテストを書く | 新規テストが通り、意図的に壊すと失敗する |
-| Phase 3 | `NotificationContext.LogValue` を宣言型で符号化し、`decodeNotificationContextParts` の `Resolve` を追加する | `notification_context_test.go` が通る |
+| Phase 3 | `NotificationContext.LogValue` を宣言型で符号化し、`decodeNotificationContextParts` に `Identifier` の受理を追加する | `notification_context_test.go` が通る |
 | Phase 4 | 宣言サイト（§3.4）を `common.NewIdentifier` へ置き換え、`CommandResult`／`CommandResults` を更新し、既存テストを更新し、`identifier_guard_test.go` を追加する | `make test` が通り、AC-07〜AC-09 のテストと guard が通る |
 | Phase 5 | `security-architecture.ja.md`・`.md`、`security-risk-assessment.ja.md`・`.md` を更新し、Task 0172 への相互参照を確認する | AC-15〜AC-17 の static 検証が通る |
 | Phase 6 | 全体の green gate を再実行し、コミットメッセージに AC-19 の確認を記す | `make test`・`make lint` |
