@@ -35,7 +35,7 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
    必要になった場合は、実装を止めて 02_architecture.md を先に改訂する。
 2. `internal/identifier` は内部パッケージを import しない leaf パッケージとする。
    `Identifier` の構築は、定義パッケージ外ではコンパイラが、定義パッケージ内では
-   `identifier_guard_test.go` の AST 制限が `NewIdentifier` に限定する
+   `identifier_guard_test.go` の `go/types` 検査が `NewIdentifier` に限定する
    （02_architecture.md §3.1、§7.3）。
 3. Go のコメント・識別子・文字列リテラルはすべて英語で書く。本書の説明文だけが日本語である。
 4. 各 Phase の終わりに `make fmt`（Go を変更した場合）、`make test`、`make lint` を通す。
@@ -47,9 +47,10 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
    （4.1〜4.5）を 1 コミットにまとめ、宣言・目録・アサーションを同時に導入する。これにより
    rollback は Phase 4 のコミットの revert を単位にできる（02_architecture.md §5.2）。
    以後の宣言サイトの追加・削除も同じコミット規約に従う。
-7. 既存の実装・テスト・ヘルパーを優先して再利用する。とくに構文木の走査は
+7. 既存の実装・テスト・ヘルパーを優先して再利用する。とくに呼び出しサイトの走査は
    `internal/testutil/identitymutationguard` の既存ヘルパーを使い、走査対象ファイルの定義を
-   複製しない。
+   複製しない。定義パッケージ内の型検査は、既存の `privileged_window_guard_test.go` と
+   同じ `go/types` の用法を踏襲する（x/tools は依存に追加しない）。
 
 ### 1.3 既存コード調査結果
 
@@ -175,9 +176,14 @@ internal/ cmd/ -g '*.go'` で確認）。`buildCommandDebugLogArgs`
 実装時には、この表を起点に全 `*_test.go` を検索し、宣言型になる値を string と比較する
 期待値を洗い出す（02_architecture.md §7.4）。
 
-#### 構文木ガードの再利用先
+#### 識別子ガードの実装方式
 
-`internal/testutil/identitymutationguard` の既存ヘルパーを使う。
+guard は守る範囲で 2 つの機構に分ける。パッケージ境界を越える呼び出しは Go の言語仕様が
+パッケージ修飾を強制するため、呼び出しサイトの目録は既存ヘルパーの AST 走査で足りる。
+一方、定義パッケージ内ではコンパイラの保護が無く、構文の綴りを列挙すると抜け道が残る
+ため、`go/types` で解決したシンボルと型だけを見る。
+
+**1. 呼び出しサイトの目録（定義パッケージ外）**
 
 - `ProductionGoFilesInRepo(t)`（`helpers.go:207`）は `internal/` と `cmd/` の production
   `.go` を列挙する。`//go:build test || performance` のように `test` タグを必須としない
@@ -187,23 +193,47 @@ internal/ cmd/ -g '*.go'` で確認）。`buildCommandDebugLogArgs`
   `identifier.NewIdentifier` で組み立てるコードは `_test.go` に置き、これら `test` タグを
   必須としない非 `_test.go` のファイルには置かない。対象集合の定義は
   `ProductionGoFilesInRepo` に委ね、列挙を本書へ写さない。
-- `Options.Extra`（`helpers.go:101`）は修飾形と呼び出し元パッケージ内の非修飾形の両方を
-  追跡できる。修飾形の値参照（エイリアス）は `ValueRef` として報告される
-  （`helpers.go:111`）が、非修飾形の値参照は報告されない（`helpers.go:341`）。後者は
-  guard 自身が AST を走査して拒否する。非修飾形の追跡は宣言パッケージを解決できず名前
-  だけで一致するため、`ImportPath` を空にする指定は `internal/identifier` 配下のファイル
-  に限定して適用し、他パッケージの同名関数を `NewIdentifier` と誤認しない。修飾形は
-  リポジトリ全体に適用する。
-- `ResolveLocalImports`（`helpers.go:378`）は import の別名解決に再利用する。
-- `ProductionGoFilesInRepo` が返すファイルのうち `internal/identifier` の production
-  ファイルも guard の走査対象に含め、`name` フィールドを設定する複合リテラルとフィールド
-  代入が `NewIdentifier` の本体内だけに現れることを AST で検証する（02_architecture.md
-  §3.1）。複合リテラルは綴られた型名に依存せず、パッケージ内の型エイリアス
-  （`type Alias = Identifier`）と定義型（`type Alias Identifier`）の宣言を解決し、
-  `Identifier` に由来する型なら `name` を設定するリテラルとして拒否する。これにより、
-  `type Alias = Identifier; func FromString(s string) Identifier { return Alias{name: s} }`
-  のように綴りを変えただけの構築経路も落ちる。定義パッケージ外を守るコンパイラでは
-  塞げないパッケージ内の別コンストラクタ・代入を拒否する。
+- `Options.Extra`（`helpers.go:101`）には修飾形
+  （`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/identifier"`、
+  `FuncName: "NewIdentifier"`）だけを渡し、非修飾形は渡さない。定義パッケージ外の Go
+  コードは、dot import を除いて `identifier.NewIdentifier` と修飾して書くことが言語仕様で
+  強制される。したがって dot import を拒否すれば、修飾形の走査で呼び出しサイトを漏れなく
+  見つけられる。修飾形の値参照（エイリアス）は `ValueRef` として報告される
+  （`helpers.go:111`）。目録との照合前に呼び出しと値参照を `NewIdentifier` に限定して
+  絞り込む。
+- `ResolveLocalImports`（`helpers.go:378`）は import の別名解決に再利用する。同関数は
+  `rejectDotImport` 述語に一致するパスへの dot import をテスト失敗にする
+  （`helpers.go:385-388`）。guard はこの述語で組み込みの追跡対象（syscall／unix）に加えて
+  `github.com/isseis/go-safe-cmd-runner/internal/identifier` を拒否する。dot import は
+  `NewIdentifier` を非修飾にし、パッケージ外からの修飾形の走査に現れない呼び出しを許す
+  ため、これが無いと他パッケージの自由文が目録外のまま免除される。
+- 修飾形の `NewIdentifier` の値参照（エイリアス）は 0 件であることを要求する。
+  `makeID := identifier.NewIdentifier` のように束縛して `makeID(cmd.ExpandedCmd)` と
+  呼ぶと、呼び出しサイト比較には何も現れずに免除が掛かるため、束縛自体を失敗させる。
+
+**2. 定義パッケージ内の構築と参照（`internal/identifier`）**
+
+- `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ方式で
+  パッケージを型検査する。`build.ImportDir` で production ファイルを選び、
+  `parser.ParseFile(..., parser.SkipObjectResolution)` で解析し、
+  `types.Config{Importer: importer.ForCompiler(fset, "source", nil)}` の `Check` に
+  `types.Info{Defs, Uses, Types}` を渡す。golang.org/x/tools はこのモジュールの依存に
+  無く、この検査のために追加しない（同ファイル `:63-65` と同じ理由）。
+- 型検査の結果から `Identifier` の `*types.Named`、その下層構造体の `name` フィールド
+  （`*types.Var`）、`NewIdentifier` の `*types.Func` をパッケージスコープから引く。
+- `name` フィールドへの書き込みは、セレクタの解決結果（`info.Uses[sel.Sel]`）がその
+  `*types.Var` と一致するかで判定する。これによりフィールド名の綴りではなくフィールド
+  オブジェクトの同一性で判定でき、値変数形 `id.name = …` とポインタ変数形
+  `p.name = …`、型エイリアス越しの書き込みが同じ規則で落ちる。
+- `Identifier` に由来する型の複合リテラルと型変換は、`NewIdentifier` の本体以外での出現を
+  失敗させる。由来の判定は `types.Unalias` と `types.Identical` で行い、別名
+  （`type Alias = Identifier`）と定義型（`type Alias Identifier`）を型検査器に解決させる。
+  綴り（キーの有無・別名の名前）は見ないため、`Identifier{s}`・`Alias{name: s}`・
+  `Identifier(Alias{…})` のような変種を列挙する必要がない。下層型が `Identifier` と同一の
+  無関係な構造体を誤検知しうるが、その方向は fail-closed である。
+- `NewIdentifier` の `*types.Func` の使用は、直接の呼び出しの被呼び出しに限る。値位置の
+  使用（非修飾の `makeID := NewIdentifier` を含む）は失敗させる。非修飾参照の走査も
+  シンボル解決で行うため、名前の一致に依存しない。
 
 #### 文書の該当箇所
 
@@ -225,11 +255,14 @@ internal/ cmd/ -g '*.go'` で確認）。`buildCommandDebugLogArgs`
 文書でしか確認できない AC を、文書に書くだけの `rg` コマンドで検証すると、そのコマンドは
 実行されないまま陳腐化する。そこで Phase 5 で `scripts/verification/check_identifier_exemption_docs.sh` を
 追加し、AC-13〜AC-17 の検証をこの 1 ファイルに集約する。追加したスクリプトは `Makefile` の
-`verify-docs`（および `verify-docs-full`）ターゲットから実行し、非ゼロ終了を make の失敗と
-して伝播させる。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、ターゲット側で
-直接実行する。これにより `make verify-docs` が AC-13〜AC-17 の完了ゲートになる。スクリプトは
-語ごとに独立した終了コードで判定し、次の組を要求する（AND を要素の並びで表現し、いずれか
-1 語の一致で全体を緑にしない）。
+`verify-docs-checks` ターゲットが `scripts/verification/check_*.sh` を自動列挙して実行し、
+非ゼロ終了を make の失敗として伝播させる（`verify-docs`／`verify-docs-full` はこの
+ターゲットに依存する）。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
+検査の合否は自動列挙側で判定する。スクリプト名を Makefile に列挙しないので、将来追加する
+`check_*.sh` も配線漏れなく `make verify-docs` に組み込まれる。これにより
+`make verify-docs` が AC-13〜AC-17 の完了ゲートになる。スクリプトは語ごとに独立した
+終了コードで判定し、次の組を要求する（AND を要素の並びで表現し、いずれか 1 語の一致で
+全体を緑にしない）。
 
 | 対象ファイル | 要求する語 |
 |---|---|
@@ -258,9 +291,10 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 `docs/dev/developer_guide/test_organization.md` に照らし、新しいテストヘルパーファイルは
 必要としない。
 
-- 構文木ガードは既存の `internal/testutil/identitymutationguard` を再利用し、目録の照合
-  ロジックとカタログは `internal/identifier/identifier_guard_test.go`（`//go:build test` を
-  持つ `_test.go`）に置く。新しい `testutil/` パッケージや `test_helpers.go` は作らない。
+- ガードの呼び出しサイト走査は既存の `internal/testutil/identitymutationguard` を再利用し、
+  目録の照合ロジックとカタログ、および `internal/identifier` の `go/types` 検査は
+  `internal/identifier/identifier_guard_test.go`（`//go:build test` を持つ `_test.go`）に
+  置く。新しい `testutil/` パッケージや `test_helpers.go` は作らない。
 - 免除のテストは `internal/redaction/redactor_test.go`（package `redaction` の内部テスト）に
   追加する。テスト専用の小さなヘルパーが要る場合も同ファイル内に置く。
 - `identifier.NewIdentifier` で期待値を組み立てるコードは `_test.go` に置く。
@@ -376,7 +410,7 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 **完了条件**: `internal/common`・`internal/logging`・`internal/redaction` のテストが通る。
 
-### Phase 4: 宣言サイトの置き換えと構文木ガード
+### Phase 4: 宣言サイトの置き換えと識別子ガード
 
 #### 4.1 `CommandResult` / `CommandResults`
 
@@ -508,7 +542,7 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 - [ ] 全 `*_test.go` を検索し、宣言型として捕捉される値を string と比較する期待値が
       残っていないことを確認する。追加の更新が生じた場合は §1.3 の表を更新する。
 
-#### 4.5 構文木ガード
+#### 4.5 識別子ガード
 
 **対象ファイル**: `internal/identifier/identifier_guard_test.go`（新規、`//go:build test`）
 
@@ -517,76 +551,110 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       「囲むログ呼び出し／文」・「属性キー」・「引数式」の組と出現数から成る。走査結果に
       目録の外の宣言があれば失敗し、目録のエントリが走査結果に無ければ（宣言の省略・
       削除）も失敗する。
-- [ ] `Options.Extra` に修飾形（`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/identifier"`、
-      `FuncName: "NewIdentifier"`）と非修飾形（`ImportPath` を空にする）の 2 件を渡す。
-      ファイル列挙は `ProductionGoFilesInRepo`、import 解決は `ResolveLocalImports` を
-      再利用する。修飾形はリポジトリ全体に適用する。非修飾形は宣言パッケージを解決できず
-      名前だけで一致するため、`internal/identifier` 配下のファイルを走査するときにだけ
-      有効化する。他パッケージが自前の同名 `NewIdentifier` を定義・呼び出しても、目録外の
-      宣言として失敗させない。`identitymutationguard` は組み込みの syscall 関数も併せて
-      報告するため、目録との照合前に呼び出しと値参照を `NewIdentifier` に限定して絞り込む。
-      対照テストで syscall の呼び出しが混ざっていても検査が失敗しないことを確認する。
+- [ ] 呼び出しサイトの走査は `Options.Extra` に修飾形
+      （`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/identifier"`、
+      `FuncName: "NewIdentifier"`）だけを渡し、非修飾形は渡さない。ファイル列挙は
+      `ProductionGoFilesInRepo`、import 解決は `ResolveLocalImports` を再利用する。
+      定義パッケージ外の Go コードは dot import を除いてパッケージ修飾を強制されるため、
+      dot import の拒否と組にすると修飾形の走査で呼び出しサイトを漏れなく見つけられる。
+      `identitymutationguard` は組み込みの syscall 関数も併せて報告するため、目録との
+      照合前に呼び出しと値参照を `NewIdentifier` に限定して絞り込む。対照テストで
+      syscall の呼び出しが混ざっていても検査が失敗しないことを確認する。
+- [ ] 各 production ファイルを再解析する際は `ResolveLocalImports` に
+      `internal/identifier`（および組み込みの追跡対象である syscall／unix）を拒否する
+      dot import 述語を渡し、他パッケージが `internal/identifier` を dot import した時点で
+      失敗させる。`identitymutationguard` の組み込み import 解決は syscall／unix の dot
+      import だけを拒否するため、guard 自身が述語を渡して identifier パッケージの
+      dot import を塞ぐ。dot import は `NewIdentifier` を非修飾にし、パッケージ外からの
+      修飾形の走査に現れない呼び出しを許すため、これが無いと他パッケージの自由文が
+      目録外のまま免除される。
 - [ ] 目録の組のうち「囲むログ呼び出し／文」と「引数式」は、`identitymutationguard` の
       `CallSite` が持たないため、guard 自身がファイルを再解析して復元する。呼び出し位置から
       囲む文を求め、`[]any` に詰めて後続の `slog` 呼び出しへ渡す形（`group_executor.go:594`・
       `:617`）では、消費側の `slog` 呼び出しまで辿って文脈を定める。引数式はソースから
       復元する。
-- [ ] `NewIdentifier` の値参照（エイリアス）を拒否する。修飾形は
-      `identitymutationguard` が報告する `ValueRef` のうち `NewIdentifier` のものが 0 件で
-      あることを要求し、非修飾形は `internal/identifier` 配下のファイルだけを対象に
-      guard 自身が AST を走査し、`func NewIdentifier` の宣言名と直接呼び出しの被呼び出しを
-      除いて、値位置に `NewIdentifier` 識別子が残っていれば失敗させる。
-- [ ] `internal/identifier` の production ファイルを AST 走査し、`Identifier` の `name`
-      フィールドを設定する複合リテラルとフィールド代入（構造体変数の `id.name = …` と
-      ポインタ変数の `p.name = …` の両方）が `NewIdentifier` の本体内だけに現れることを
-      要求する。複合リテラルは綴られた型名が `Identifier` かに依存せず、パッケージ内の型
-      エイリアス（`type Alias = Identifier`）と定義型（`type Alias Identifier`）の宣言を
-      解決し、`Identifier` に由来する型なら `name` を設定するリテラルとして拒否する。これに
-      より `type Alias = Identifier; func FromString(s string) Identifier { return Alias{name: s} }`
-      のように別名を経由した構築経路も落ちる。`FromString` のような別コンストラクタや
-      フィールド代入がパッケージ内に現れれば失敗させる（02_architecture.md §3.1、§7.3）。
-      定義パッケージ外はコンパイラが拒否するため、この検査は `internal/identifier` に
-      限定する。
+- [ ] `internal/identifier` の production ファイルを `go/types` で型検査する。
+      `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ方式
+      （`build.ImportDir`・`parser.ParseFile(..., parser.SkipObjectResolution)`・
+      `types.Config{Importer: importer.ForCompiler(fset, "source", nil)}`・
+      `types.Info{Defs, Uses, Types}`）を使い、型検査の結果から `Identifier` の
+      `*types.Named`、その `name` フィールドの `*types.Var`、`NewIdentifier` の
+      `*types.Func` をパッケージスコープから引く。golang.org/x/tools は依存に無く、
+      この検査のために追加しない。
+- [ ] `name` フィールドへの書き込みを、セレクタの解決結果（`info.Uses[sel.Sel]`）がその
+      `*types.Var` と一致するかで判定し、`NewIdentifier` の本体以外での書き込みを失敗
+      させる。値変数形 `id.name = …`・ポインタ変数形 `p.name = …`・型エイリアス越しの
+      書き込みは同じ判定で落ちる。
+- [ ] `Identifier` に由来する型（`types.Unalias` と `types.Identical` で解決する別名・
+      定義型）の複合リテラルと型変換が `NewIdentifier` の本体以外に現れれば失敗させる。
+      キーの有無・綴られた型名は判定に使わないため、`Identifier{name: s}`・`Identifier{s}`・
+      `Alias{name: s}`・`Alias{s}`・`Identifier(Alias{…})` のような変種を列挙する必要が
+      ない。要素の無い `Identifier{}` も `NewIdentifier` の本体内だけに許す（ゼロ値の
+      特例を作らず、規則を 1 本にする）。下層型が `Identifier` と同一の無関係な構造体を
+      誤検知しうるが、その方向は fail-closed である。定義パッケージ外はコンパイラが
+      拒否するため、この検査は `internal/identifier` に限定する（02_architecture.md §3.1、
+      §7.3）。
+- [ ] `NewIdentifier` の `*types.Func` の使用は直接の呼び出しの被呼び出しに限る。値位置の
+      使用（非修飾の `makeID := NewIdentifier` を含む）は失敗させる。非修飾参照の走査も
+      シンボル解決で行うため、名前の一致に依存しない。
+- [ ] 修飾形の `NewIdentifier` の値参照（エイリアス）は `identitymutationguard` が報告する
+      `ValueRef` のうち `NewIdentifier` のものが 0 件であることを要求する。
 - [ ] 対照テスト `TestIdentifierDeclarationCatalog_Control` を置く。合成ソースに対して、
-      次の 9 入力で検査の合否を確認する（CLAUDE.md 「Every test must be able to fail for
-      its stated reason」）。
+      次のカテゴリで検査の合否を確認する（CLAUDE.md 「Every test must be able to fail for
+      its stated reason」）。カテゴリは Go の値生成式ごとに 1 入力を置き、綴りの変種を
+      列挙しない。
   - 目録外の宣言を 1 件足した入力
   - 目録にある宣言を 1 件欠いた入力
   - `makeID := identifier.NewIdentifier` の形の修飾エイリアス
   - 同じ組の件数を保ったまま、囲むログ呼び出しを別のものへ移した入力
-  - `internal/identifier` 内に `Identifier{name: "free text"}` を返す別コンストラクタを
-    足した入力
-  - `internal/identifier` 内に `makeID := NewIdentifier` の形の非修飾エイリアスを足した
-    入力。修飾形の `ValueRef` 報告には現れないため、guard 自身の AST 走査が拒否することを
-    確認する
-  - `internal/identifier` 内に `Identifier.name` へフィールド代入する別コンストラクタを
-    足した入力。`var id Identifier; id.name = s; return id` と、ポインタ変数形
+  - `internal/identifier` 内に複合リテラルで別コンストラクタを足した入力。
+    `Identifier{name: s}`・`Identifier{s}`・`Alias{name: s}`・`Alias{s}` を置き、キーの
+    有無と型エイリアス・定義型のすべてが同じ判定で拒否されることを確認する
+  - `internal/identifier` 内に型変換で別コンストラクタを足した入力。
+    `type Alias = Identifier; func FromString(s string) Identifier { return Identifier(Alias{s}) }`
+    を置き、綴られた型名ではなく解決済みの型で拒否されることを確認する
+  - `internal/identifier` 内に `name` へフィールド代入する別コンストラクタを足した入力。
+    `var id Identifier; id.name = s; return id` と、ポインタ変数形
     `id := &Identifier{}; id.name = s; return *id` の両方を含める
-  - `internal/identifier` 内に型エイリアス・定義型を介して `name` を設定する別コンストラクタを
-    足した入力。`type Alias = Identifier; func FromString(s string) Identifier { return Alias{name: s} }`
-    と、定義型 `type Alias Identifier; func FromString(s string) Identifier { return Identifier(Alias{name: s}) }`
-    を置き、綴られた型名ではなく `Identifier` に由来する型として拒否されることを確認する
+  - `internal/identifier` 内に `makeID := NewIdentifier` の形の非修飾エイリアスを足した
+    入力。シンボル解決が値位置の使用として拒否することを確認する
   - `internal/identifier` 以外のパッケージが自前の `func NewIdentifier(s string) string`
-    を定義して呼び出す入力。非修飾形の追跡を `internal/identifier` に限定しているため、
-    この入力では検査が失敗しない（同名関数を誤検知しない）ことを確認する
-- [ ] AC-19 の確認: 宣言サイトを 1 件削除すると guard が失敗すること、展開済みコマンド行を
-      `identifier.NewIdentifier` で包むと guard が失敗すること、`internal/identifier` 内に
-      複合リテラル・フィールド代入・型エイリアス／定義型で `name` を設定する別コンストラクタを
-      足すと guard が失敗することを確認し、コミットメッセージに記す。
+    を定義して呼び出す入力。修飾形だけを追跡するため、この入力では検査が失敗しない
+    （同名関数を誤検知しない）ことを確認する
+  - `internal/identifier` 以外のパッケージが `internal/identifier` を dot import し、
+    非修飾の `NewIdentifier(cmd.ExpandedCmd)` を呼ぶ入力。`ResolveLocalImports` の
+    dot import 拒否述語が検査を失敗させ、同一の呼び出しが他パッケージで免除を作れない
+    ことを確認する
+  - `internal/identifier` 以外のパッケージが import 別名
+    （`import id "…/internal/identifier"`）を付けて `id.NewIdentifier(cmd.Name())` を
+    呼ぶ入力。修飾形の走査が別名を解決し、目録に無ければ失敗することを確認する
+- [ ] AC-19 の確認: 次の production mutation を行い、対応するテストの失敗を確認して復元し、
+      壊した対象と失敗したテスト名をコミットメッセージに記す。テスト入力を削除・無効化
+      する操作は mutation に数えない（入力を消しても同じテストは失敗せず、挙動を検証
+      しなくなるだけである）。
+  - 宣言サイトを 1 件削除すると `TestIdentifierDeclarationCatalog` が失敗する
+  - 展開済みコマンド行を `identifier.NewIdentifier` で包むと目録不一致で失敗する
+  - `internal/identifier` 内に複合リテラル・型変換・フィールド代入・エイリアスの別
+    コンストラクタを足すと `TestIdentifierDeclarationCatalog_Control` または
+    `TestIdentifierDeclarationCatalog` が失敗する
+  - 他パッケージが `internal/identifier` を dot import して非修飾の `NewIdentifier` を
+    呼ぶと失敗する
 
 **分岐と証拠の対応。** Phase 4 が主張する分岐・変換ごとに、その分岐を欠いた実装では
 通らない証拠を次の表で固定する。guard の対照入力は
-`TestIdentifierDeclarationCatalog_Control` が、production mutation は Phase 4.4 の
-AC-19 確認が担う。
+`TestIdentifierDeclarationCatalog_Control` が、production mutation は Phase 4.4 と
+Phase 4.5 の AC-19 確認が担う。
 
 | 分岐・変換 | 失敗させる証拠 | 対応するテスト |
 |---|---|---|
 | 修飾エイリアス `makeID := identifier.NewIdentifier` の拒否 | 対照入力: 修飾エイリアスを足した合成ソース | `TestIdentifierDeclarationCatalog_Control` |
 | 非修飾エイリアス `makeID := NewIdentifier` の拒否（`internal/identifier` 内） | 対照入力: 非修飾エイリアスを足した合成ソース | 同上 |
-| 複合リテラル `Identifier{name: …}` の拒否（`internal/identifier` 内） | 対照入力: `Identifier{name: "free text"}` を返す別コンストラクタ | 同上 |
+| 複合リテラルの拒否（`internal/identifier` 内。キーの有無・型エイリアス・定義型を含む） | 対照入力: `Identifier{name: …}`／`Identifier{s}`／`Alias{…}` を返す別コンストラクタ | 同上 |
+| 型変換による構築の拒否（`internal/identifier` 内。別名・定義型を含む） | 対照入力: `Identifier(Alias{…})` を返す別コンストラクタ | 同上 |
 | フィールド代入 `id.name = …` の拒否（`internal/identifier` 内。ポインタ変数形を含む） | 対照入力: フィールド代入する別コンストラクタ | 同上 |
-| 型エイリアス・定義型を介した `name` 設定の拒否（`internal/identifier` 内） | 対照入力: `type Alias = Identifier`／`type Alias Identifier` の `Alias{name: …}` を返す別コンストラクタ | 同上 |
-| 非修飾形 `NewIdentifier` 追跡の `internal/identifier` 限定 | 対照入力: 他パッケージが自前の同名 `NewIdentifier` を定義しても検査が失敗しない（同名衝突の誤検知防止） | 同上 |
+| 非修飾名の誤検知防止（他パッケージの同名関数） | 対照入力: 他パッケージが自前の同名 `NewIdentifier` を定義しても検査が失敗しない | 同上 |
+| 他パッケージによる `internal/identifier` の dot import の拒否 | 対照入力: `internal/identifier` を dot import して非修飾の `NewIdentifier` を呼ぶ合成ソース | 同上 |
+| import 別名 `id "…/internal/identifier"` を介した呼び出しの検出 | 対照入力: 別名付きの `id.NewIdentifier` 呼び出しが目録不一致で失敗する | 同上 |
 | `SecurityLogger` 4 メソッドの `command` 属性の生型 | 4 メソッド（`LogTimeoutConfiguration` は両分岐）の `command` を `LogRecorder.AssertAttrs` で `identifier.Identifier` と比較し、`RedactingHandler` 通過後も名前が残ることを確認する | `TestSecurityLogger_LogMethods` |
 | `NotificationContext.LogValue` の `group`／`command` 符号化 | AC-19 mutation: 下位値を一時的に `slog.String` へ戻す | `TestRedactingHandler_ResolvesNotificationContextLogValue`（`monkey` ケース） |
 | `buildCommandDebugLogArgs` の `cmdName` の宣言型変換 | AC-19 mutation: 戻り値に `cmdName.Name()` を載せる | `TestCommandDebugLogArgs_StdoutTruncation` |
@@ -596,7 +664,7 @@ AC-19 確認が担う。
 ### Phase 5: 文書の更新と翻訳
 
 **対象ファイル**: §1.3「文書の該当箇所」の 4 文書、`docs/translation_glossary.md`、
-`Makefile`（`verify-docs`／`verify-docs-full` ターゲット）
+`Makefile`（`verify-docs-checks` と、それが依存する `verify-docs`／`verify-docs-full` ターゲット）
 
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の
       「セキュアログと機密データ保護」の第 2 層の説明に、group 名・コマンド名が宣言型
@@ -615,12 +683,16 @@ AC-19 確認が担う。
 - [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する。§1.3「文書内容の
       検証スクリプト」の表の語をファイルごとに独立して検査し、1 語でも欠ければ非ゼロで
       終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
-- [ ] `Makefile` の `verify-docs` と `verify-docs-full` ターゲットに
-      `@./scripts/verification/check_identifier_exemption_docs.sh` を追加し、スクリプトの
-      非ゼロ終了を make の失敗として伝播させる。`run_all.sh` は検査結果にかかわらず終了
-      コード 0 を返すため、`make verify-docs` はターゲット側で実行したスクリプトの結果で
-      失敗する。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に強制される
-      （配線を怠ると、スクリプトを追加しても呼び出されず文書の退行を検出できない）。
+- [ ] `Makefile` に `verify-docs-checks` ターゲットを追加し、
+      `scripts/verification/check_*.sh` を自動列挙して 1 つずつ実行し、いずれかの非ゼロ
+      終了を make の失敗として伝播させる。glob が一致しない場合にリテラルのパスを実行
+      しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
+      `verify-docs-full` は `verify-docs-checks` に依存させ、`run_all.sh` の実行と組み合わせる。
+      `run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
+      判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を追加しても
+      配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を検出できないまま
+      ゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に
+      強制される。
 - [ ] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
       `make verify-docs` も実行し、日本語版と英語版の構造が一致することと、スクリプトが
       `make verify-docs` から実行され、失敗時に make が失敗することを確認する。
@@ -651,7 +723,7 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 | M2: 免除 | Phase 2 | 3 挿入点、redaction テスト、パターン集合の固定テスト | AC-03・AC-04・AC-05・AC-12 が緑。AC-08 はテスト側が緑（guard 側は M4） |
 | M3: 復号受理 | Phase 3 | `NotificationContext` の復号受理と復号テスト | AC-11 が緑。符号化を伴う AC-01・AC-02 は M4 で確認する |
 | M4: 宣言と guard | Phase 4 | 12 ファイルの宣言サイト（`NotificationContext.LogValue` の符号化を含む）、既存テスト更新、`identifier_guard_test.go` | AC-01・AC-02・AC-06・AC-07・AC-08・AC-09 が緑。AC-10 の既存テストが無変更で通る。`make test` が緑 |
-| M5: 文書 | Phase 5 | 日英 4 文書、用語集、検証スクリプト、`verify-docs` ターゲットへの配線 | AC-13〜AC-17 が緑。`make verify-docs` がスクリプトの失敗を伝播する |
+| M5: 文書 | Phase 5 | 日英 4 文書、用語集、検証スクリプト、`verify-docs-checks` による自動列挙 | AC-13〜AC-17 が緑。`make verify-docs` がスクリプトの失敗を伝播する |
 | M6: 全体検証 | Phase 6 | 全体の green gate、AC-19 の記録 | AC-18・AC-19 が緑 |
 
 Phase 1 を最初に置く理由、Phase 2 を Phase 3 より先に置く理由、Phase 4 を最後の実装
@@ -726,6 +798,7 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 |---|---|---|
 | 宣言サイトの置き換えが 1 件でも漏れると、その名前は redaction で書き換わり続ける（02_architecture.md §5.1 の T3 方向） | 通知・監査で一部の名前が `[REDACTED]` のまま残る | 置き換えは 02_architecture.md §3.4 の表に従い、Phase 4 で全 43 件を処理する。guard の目録は表と双方向に照合するため、表にある宣言の欠落も検出される |
 | guard の目録が実装の移設に追随できず、件数だけ保った移動を見逃す | 過剰免除（02_architecture.md §5.1 の T2）の検出漏れ | 目録に「囲むログ呼び出し／文」・「属性キー」・「引数式」と出現数を持たせ、同一の組が複数回現れる場合も件数で検出する（02_architecture.md §7.3）。`TestIdentifierDeclarationCatalog_Control` が、件数を保った移動と `NewIdentifier` のエイリアスを拒否することを固定する |
+| 構築ガードを構文の綴りで列挙すると、キーなしリテラル・型エイリアス・定義型・型変換の順に抜け道が残る | 過剰免除（T2）の検出漏れ | `internal/identifier` を `go/types` で型検査し、解決済みの型とフィールドオブジェクトで判定する（02_architecture.md §7.3）。対照テストはカテゴリごとに 1 入力を持つ |
 | `LogRecorder` 系の生値比較の更新漏れ | `make test` が失敗するが、原因の特定に時間がかかる | §1.3 の表を起点に全 `*_test.go` を検索する。コンパイルエラーになる型変更（`SecurityLogger`）は別に扱う |
 | 免除経路の挿入順を誤り、キー名判定より先に免除してしまう | 機密キーの下の値が免除され、漏洩方向の縮小が崩れる | キー名判定を先に置く。`TestRedactingHandler_SensitiveKeyMaskPrecedesExemption` で固定する |
 | `processSlice` で生の `Identifier` を append する | JSON に `[{}]` と描画され、§1.1 の string 正規化と AC-06 に反する | `Name()` の string に正規化する。`TestRedactingHandler_IdentifierSliceElements` が下流の描画を検証する |
@@ -749,7 +822,7 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 - [ ] Phase 4.2: `SecurityLogger` の引数型と 3 呼び出し元
 - [ ] Phase 4.3: 02_architecture.md §3.4 の残り宣言サイト（12 ファイル・43 件。`NotificationContext.LogValue` の符号化を含む）
 - [ ] Phase 4.4: 既存テストの更新、統合テストの追加、AC-10 の既存テスト確認、全 `*_test.go` の再検索
-- [ ] Phase 4.5: `TestIdentifierDeclarationCatalog`・`name` フィールドのパッケージ内 AST 制限・対照テスト
+- [ ] Phase 4.5: `TestIdentifierDeclarationCatalog`・`internal/identifier` の `go/types` 検査・対照テスト
 - [ ] Phase 5: 日英 4 文書の更新、用語集、`check_identifier_exemption_docs.sh`、`make verify-docs`
 - [ ] Phase 6: 全体の green gate、AC-19 の記録確認、`make deadcode`
 - [ ] 全 Phase: 各コミットで `make test`・`make lint` が緑
@@ -760,8 +833,9 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 `make` ターゲット、または Phase 5 で追加する検証スクリプト）、`manual`（PR、コミット
 メッセージ、追加した段落の読解での観察）を表す。文書の語句検証は、文書内にしか無い
 コマンドではなく `scripts/verification/check_identifier_exemption_docs.sh` に集約し、
-Phase 5 の完了ゲートで実行する。スクリプトは `verify-docs`／`verify-docs-full` ターゲット
-から実行され、非ゼロ終了は `make verify-docs` の失敗として伝播する。このスクリプトの語は
+Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` は `verify-docs-checks`
+ターゲットが自動列挙して実行し、非ゼロ終了は `make verify-docs`／`make verify-docs-full`
+の失敗として伝播する。このスクリプトの語は
 `b2d2f744` 時点の `rg` と同じ組であり、実装前は新しい語が未記載のため失敗する。
 
 | AC | 種別 | 検証（実行する成果物） | 実装 Phase |
@@ -772,8 +846,8 @@ Phase 5 の完了ゲートで実行する。スクリプトは `verify-docs`／`
 | AC-04 | test | 同テストの 3 層（key=value 置換・値形式検出・値まるごと判定） | Phase 2 |
 | AC-05 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（識別子と同じ入力集合の plain string が redact される）、`TestRedactingHandler_Handle_MessageRedaction`、`TestRedactingHandler_ErrorValue` | Phase 2 |
 | AC-06 | test | `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（拡張後。JSON 出力で `name` が元の string、同じ文字列は output／stderr で redact）、`internal/common/logschema_test.go::TestCommandResults_LogValue`（`KindLogValuer` ＋ `Value.String()`）、`internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Slack 読み取り） | Phase 4 |
-| AC-07 | static | `internal/identifier/identifier_guard_test.go::TestIdentifierDeclarationCatalog`（目録と走査結果の双方向照合。12 ファイル・43 件） | Phase 4.5 |
-| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗し、`internal/identifier` 内に `name` を設定する別コンストラクタを足すと AST 制限で失敗する） | Phase 2・4.5 |
+| AC-07 | static | `internal/identifier/identifier_guard_test.go::TestIdentifierDeclarationCatalog`（呼び出しサイトの目録と走査結果の双方向照合、12 ファイル・43 件。定義パッケージ内は `go/types` 検査） | Phase 4.5 |
+| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗し、`internal/identifier` 内に `name` を設定する別コンストラクタを足すと `go/types` 検査で失敗する） | Phase 2・4.5 |
 | AC-09 | test | `internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`（新規。redaction を発火させる名前の `command_name` が残る）と `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler`（拡張後。`command_group_summary` のコマンド一覧の名前が残る） | Phase 4 |
 | AC-10 | test | `internal/runner/config/validation_test.go::TestValidateIdentifiers` と `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`。Phase 4.4 と Phase 6 で実行する | Phase 4.4・6 |
 | AC-11 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`（無変更で表示契約を固定）と `internal/common/notification_context_test.go::TestDecodeNotificationContext_Validity`（宣言型と正規化後の string の両形式を受ける更新後の行） | Phase 3 |
@@ -784,7 +858,7 @@ Phase 5 の完了ゲートで実行する。スクリプトは `verify-docs`／`
 | AC-16 | static | 同上のスクリプト（`docs/user/security-risk-assessment.md` の `identifier` と `exempt` を検査）と `make verify-docs` | Phase 5 |
 | AC-17 | static | 同上のスクリプト（`01_requirements.md` の `0172` と `置き換え` を検査）と、Task 0172 の承認済み文書に差分が無いこと（Phase 6 で `git diff` を確認する manual） | 設計済み・6 |
 | AC-18 | static | 各 Phase のコミットで `make test` と `make lint`（`make` ターゲット） | 全 Phase |
-| AC-19 | test + manual | Phase 1〜4 のタスクに列挙した mutation（実装を一時的に壊し、対応するテストの失敗を確認して復元）を `make test` 後の状態で行う。test: 各 AC 行が指すテスト。manual: `git log -1 --format=%B <sha>` に壊した対象と失敗したテスト名が含まれることを Phase 6 で確認する | Phase 1〜4・6 |
+| AC-19 | test + manual | Phase 1〜4 のタスクに列挙した mutation（production コードを一時的に壊し、対応するテストの失敗を確認して復元）を `make test` 後の状態で行う。テストケースの削除・無効化は、同じテストが失敗せず挙動を検証しなくなるだけなので mutation に数えない。test: 各 AC 行が指すテスト。manual: `git log -1 --format=%B <sha>` に壊した対象と失敗したテスト名が含まれることを Phase 6 で確認する | Phase 1〜4・6 |
 
 補足: AC-13・AC-17 は設計文書が `approved` である時点で内容が固定されているため、`rg` を
 `b2d2f744` で実行して一致を確認し、その組をスクリプトの検査に含める。AC-13 の
@@ -804,9 +878,9 @@ Phase 5 の完了ゲートで実行する。スクリプトは `verify-docs`／`
 - [ ] Phase 5 の日英文書について `make verify-docs` を実行し、構造比較のレポート
       （`build/verification-reports/structure_comparison_report.txt`）に見出し構造の差分が
       無いことを確認する。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
-      構造比較は終了コードだけでは判定しない。一方、`verify-docs`／`verify-docs-full`
-      ターゲットに追加する `check_identifier_exemption_docs.sh` の失敗は make の終了
-      コードへ伝播するため、AC-13〜AC-17 の語句検証は `make verify-docs` の成否で判定する。
+      構造比較は終了コードだけでは判定しない。一方、`verify-docs-checks` ターゲットが
+      自動列挙して実行する `scripts/verification/check_*.sh` の失敗は make の終了コードへ
+      伝播するため、AC-13〜AC-17 の語句検証は `make verify-docs` の成否で判定する。
 
 ## 9. 成功基準
 
