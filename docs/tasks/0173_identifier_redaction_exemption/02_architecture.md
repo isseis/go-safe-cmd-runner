@@ -59,7 +59,7 @@ flowchart LR
     REC[("slog.Record")]
     RH["RedactingHandler"]
     EX["string 正規化"]
-    VC["RedactText / IsSensitiveValue"]
+    VC["値ベース 3 層"]
     OUT["MultiHandler"]
 
     CFG --> PROD
@@ -68,8 +68,8 @@ flowchart LR
     ID --> REC
     MSG --> REC
     REC --> RH
-    RH --> EX
-    RH --> VC
+    RH -->|"属性値が common.Identifier"| EX
+    RH -->|"属性値が common.Identifier でない"| VC
     EX --> OUT
     VC --> OUT
 
@@ -99,7 +99,13 @@ flowchart LR
     class L4 newpkg
 ```
 
-矢印 A → B は「A が B へデータを渡す、または A を起点として B の処理が始まる」ことを表す。同じ `slog.Record` に識別子と自由文が同居し、`RedactingHandler` が値の型で経路を分ける。
+矢印 A → B は「A が B へデータを渡す、または A を起点として B の処理が始まる」ことを表す。同じ `slog.Record` に識別子と自由文が同居し、`RedactingHandler` は属性ごとに次の順で経路を決める。
+
+1. キー名が機密（`IsSensitiveKey`）に一致する属性は常にマスクする（本図では省略）。
+2. 属性値が `common.Identifier` のときは免除経路（`string 正規化`）へ進み、値ベース 3 層を通さない。
+3. それ以外の属性は値ベース 3 層へ進み、従来どおり redact される。値ベース 3 層は key=value 置換（`Config.RedactText`）、値形式検出（`ValueDetector.Mask`）、値まるごと判定（`SensitivePatterns.IsSensitiveValue`）の順に適用される。対象は string だけでなく、再帰の結果として現れる文字列属性を含む。グループ値・`LogValuer` は再帰し、その各文字列属性が同じ 2・3 の判定で振り分けられる。
+
+`common.Identifier` を構築しない限り、同じ内容の文字列でも 3 へ進む。これが免除が宣言型だけに掛かることの意味である。
 
 ### 1.3 現在の仕組みと変更後の境界
 
