@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 決定変更（要再承認）: スコープ対象 1 の配置先を `internal/common` から leaf パッケージ `internal/identifier` へ変更した。`02_architecture.md` の再設計（型の構築を `NewIdentifier` にコンパイラで限定し、guard の構築形検査を削除）に追随するもので、受け入れ基準は変更しない。 |
+| Review date | 2026-09-13 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
