@@ -231,7 +231,7 @@ flowchart LR
 |---|---|---|---|
 | `internal/common/identifier.go` | 新規 | 宣言型 `Identifier`、コンストラクタ `NewIdentifier`、参照メソッド `Name`、`String`、`LogValue` を定義する | - |
 | `internal/common/identifier_test.go` | 新規 | `LogValue` が string を返すこと、`String` が名前を返すこと、ゼロ値と空名の扱いを検証する | - |
-| `internal/common/identifier_guard_test.go` | 新規（`//go:build test`） | production の `NewIdentifier` 呼び出し（修飾形と `internal/common` 内の非修飾形の両方）が §3.4 の宣言サイト許可リスト（ファイル・関数・引数式）の外に現れないことを構文木で検証する（§7.3） | - |
+| `internal/common/identifier_guard_test.go` | 新規（`//go:build test`） | production の `NewIdentifier` 呼び出し（修飾形と `internal/common` 内の非修飾形の両方）が §3.4 の宣言サイト目録（ファイル・関数・引数式と出現数）と双方向に一致することを構文木で検証する。目録外の宣言と目録にある宣言の欠落の双方を検出する（§7.3） | - |
 | `internal/common/notification_context.go` | 変更 | `LogValue` の `group`／`command` を `Identifier` で符号化する。`decodeNotificationContextParts` は下位値が `Identifier` の場合に名前を読む（§3.3） | `internal/common/notification_context_test.go` の符号化期待値 |
 | `internal/common/notification_context_test.go` | 変更 | `groupAttr`／`commandAttr` を `Identifier` で構築し、復号が両形式（生の宣言型と正規化後の string）を受けることを検証する | - |
 | `internal/common/logschema.go` | 変更 | `CommandResult.LogValue` と `CommandResults.LogValue` の `name` を `Identifier` で符号化する | `internal/common/logschema_test.go` は `Value.String()` 比較のため原則そのまま通る（§7.1） |
@@ -248,7 +248,7 @@ flowchart LR
 | `internal/runner/resource/normal_manager.go` | 変更 | `ExecuteCommand` の `command` 宣言と、`command_path` に載る group 名の宣言（§3.4） | 該当テスト |
 | `internal/runner/resource/dryrun_manager.go` | 変更 | `validateRunAsIdentity`・`evaluateCommandRisk` の `command`／`group` 宣言 | 該当テスト |
 | `internal/verification/manager.go` | 変更 | `VerifyGroupFiles`・`collectVerificationFiles` の `group` 宣言 | 該当テスト |
-| `internal/logging/security.go` | 変更 | `SecurityLogger` の 4 メソッドの `command` 宣言 | `security_test.go` は JSON ハンドラの出力を解析するため変更不要（§7.4） |
+| `internal/logging/security.go` | 変更 | `SecurityLogger` の 4 メソッドの引数を `common.Identifier` にする。`command` の宣言はヘルパー内ではなく呼び出し元で行う | `security_test.go` は 4 メソッドの引数を `common.NewIdentifier(…)` で構築するよう更新する（§7.4） |
 | `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | redaction 層の説明へ識別子免除を追記し、kill switch が無いことと rollback 手順を記す（AC-15、§5.2） | - |
 | `docs/user/security-risk-assessment.ja.md`・`.md` | 変更 | Limitations へ AC-14 の帰結を追記する（AC-16） | - |
 
@@ -337,11 +337,11 @@ func (i Identifier) LogValue() slog.Value
 
 **`String` を併せて実装する理由。** `slog.Value.String()` は `KindLogValuer` の値を解決せず `fmt.Append` で整形する（Go 1.26 の `log/slog` `Value.append`）。`Identifier` が `fmt.Stringer` を実装していれば、`attr.Value.String()` を直接呼ぶ既存コード（例: [`internal/logging/slack_handler.go:717`](../../../internal/logging/slack_handler.go) の `extractFromAttrs`、[`internal/common/logschema_test.go:72`](../../../internal/common/logschema_test.go)）は、redaction を通さない経路でも名前を得る。これにより Slack ハンドラと `message_formatter` の読み取りコードを変更しない（AC-06）。
 
-コンストラクタは正規化も検証もしない。名前の検査は設定境界（Task 0172 の `ValidateIdentifiers`）が担い、表示境界は補間契約が担う。`Identifier` は「これは識別子である」という宣言だけを持つ。コンストラクタが任意の string を受けるため、呼び出しサイトを §3.4 に固定し、`identifier_guard_test.go`（§7.3）で許可リスト外の宣言を検出する。
+コンストラクタは正規化も検証もしない。名前の検査は設定境界（Task 0172 の `ValidateIdentifiers`）が担い、表示境界は補間契約が担う。`Identifier` は「これは識別子である」という宣言だけを持つ。コンストラクタが任意の string を受けるため、呼び出しサイトを §3.4 に固定し、`identifier_guard_test.go`（§7.3）で目録との双方向の不一致を検出する。
 
 ### 3.2 免除経路
 
-`internal/redaction` に、`slog.Value` が宣言型かを判定する非公開ヘルパーを 1 つ置く。判定は値の型だけで行い、キー名・値の内容・値の長さは見ない。`Identifier` のメソッドは値レシーバで定義するため `*Identifier` も `slog.LogValuer` を満たし、`slog.Any` にポインタを渡した場合は `KindLogValuer` の具象型が `*common.Identifier` として現れる。したがってヘルパーは `common.Identifier` と `*common.Identifier` の両方を宣言型として認識する。3 つの挿入点はいずれもこの 1 つのヘルパーを使うため、ポインタ値も同じ判定で免除される。
+`internal/redaction` に、`slog.Value` が宣言型かを判定する非公開ヘルパーを 1 つ置く。判定は値の型だけで行い、キー名・値の内容・値の長さは見ない。`Identifier` のメソッドは値レシーバで定義するため `*Identifier` も `slog.LogValuer` を満たし、`slog.Any` にポインタを渡した場合は `KindLogValuer` の具象型が `*common.Identifier` として現れる。したがってヘルパーは `common.Identifier` と非 nil の `*common.Identifier` を宣言型として認識する。3 つの挿入点はいずれもこの 1 つのヘルパーを使うため、非 nil のポインタ値も同じ判定で免除される。一方、型付き nil の `*common.Identifier`（例: `slog.Any("command", (*common.Identifier)(nil))`）は免除しない。ヘルパーは `Name()` を呼ばずに false を返し、値は通常経路へ進む。`KindLogValuer` として `processLogValuer` に達すると nil ポインタ経由の `LogValue()` がパニックするが、既存のパニック回復が `RedactionFailurePlaceholder`（[`redactor.go:260`](../../../internal/redaction/redactor.go)）を代入するため、ログ呼び出しはプロセスを落とさず fail-closed の表示になる。
 
 免除を挿入する箇所は次の 3 つである。いずれも「値ベースの変換に入る前」に置く。
 
@@ -349,7 +349,7 @@ func (i Identifier) LogValue() slog.Value
 |---|---|---|
 | `Config.RedactLogAttribute` | [`redactor.go:301`](../../../internal/redaction/redactor.go) | キー名判定の後、string／group 判定の前に宣言型を見て string へ正規化する。この関数は production では `redactLogAttributeWithContext` と違い group 再帰でしか呼ばれないが、`slog.Attr` を走査する 2 つ目の公開実装であり、免除を両実装で一致させ、テストで固定する |
 | `RedactingHandler.redactLogAttributeWithContext` | [`redactor.go:764`](../../../internal/redaction/redactor.go) | キー名判定の後、`switch value.Kind()` の前に宣言型を見る。これが本番の主要経路であり、group の再帰・`processMap`・`processStruct`・`processKindAny` へ至る前に免除する |
-| `RedactingHandler.processSlice` | [`redactor.go:1264`](../../../internal/redaction/redactor.go) | 要素を `slog.LogValuer` として解決する前（[`redactor.go:1330`](../../../internal/redaction/redactor.go) の型アサーションの前）にヘルパーで要素の型を見る。ヘルパーは `common.Identifier` と `*common.Identifier` の両方を認識するため、`[]*Identifier` の要素も免除される。免除した要素は属性経路と同じく `Name()` の string に正規化して `processedElements` へ append する（生の `Identifier` を append すると `[{}]` 描画になる。後述）。スライス要素に対しては `redactor.go:1368` で `LogValue()` が直接呼ばれ、解決済みの string が `redactor.go:1374` の再帰へ渡るため、先頭判定では宣言型を見られない。ここを塞がないと、`[]Identifier` の要素だけが免除を失う |
+| `RedactingHandler.processSlice` | [`redactor.go:1264`](../../../internal/redaction/redactor.go) | 要素を `slog.LogValuer` として解決する前（[`redactor.go:1330`](../../../internal/redaction/redactor.go) の型アサーションの前）にヘルパーで要素の型を見る。ヘルパーは `common.Identifier` と非 nil の `*common.Identifier` を認識するため、`[]*Identifier` の非 nil 要素も免除される（型付き nil は免除せず通常経路のパニック回復に委ねる。§3.2）。免除した要素は属性経路と同じく `Name()` の string に正規化して `processedElements` へ append する（生の `Identifier` を append すると `[{}]` 描画になる。後述）。スライス要素に対しては `redactor.go:1368` で `LogValue()` が直接呼ばれ、解決済みの string が `redactor.go:1374` の再帰へ渡るため、先頭判定では宣言型を見られない。ここを塞がないと、`[]Identifier` の要素だけが免除を失う |
 
 `processLogValuer` が解決した値が宣言型の場合（`LogValue` が `Identifier` を返すラッパー）も、再帰先の `redactLogAttributeWithContext` の先頭判定で免除される。`processMap`・`processStruct` は値ごとに `redactLogAttributeWithContext` へ再帰するため追加の挿入点を要しない。
 
@@ -393,9 +393,9 @@ group 名・コマンド名を属性値として書く production の経路を `
 | `internal/runner/group_executor.go` | `outputDryRunDebugInfo` | 435 | `group` | `groupSpec.Name` |
 | `internal/runner/group_executor.go` | `executeCommandInGroup` | 459、512 | `command` | `cmd.Name()` |
 | `internal/runner/group_executor.go` | `executeCommandInGroup` | 460 | `group` | `groupSpec.Name` |
-| `internal/runner/group_executor.go` | `createCommandContext` | 543 | `command` | `cmd.Name()` |
-| `internal/runner/group_executor.go` | `buildCommandDebugLogArgs` | 554 | `command` | `cmdName` |
-| `internal/runner/group_executor.go` | `executeSingleCommand` | 594、617 | `command` | `cmd.Name()` |
+| `internal/runner/group_executor.go` | `createCommandContext` | 537、543 | `command` | `cmd.Name()`（537 は `LogUnlimitedExecution` の引数） |
+| `internal/runner/group_executor.go` | `executeSingleCommand` | 585 | `command` | `cmd.Name()`（`LogTimeoutExceeded` の引数） |
+| `internal/runner/group_executor.go` | `executeSingleCommand` | 594、612、617 | `command` | `cmd.Name()`（612 は `buildCommandDebugLogArgs` の引数） |
 | `internal/runner/group_executor.go` | `resolveGroupWorkDir` | 652 | `group` | `runtimeGroup.Spec.Name` |
 | `internal/runner/runner.go` | `logGroupExecutionSummary` | 547 | `group` | `groupSpec.Name` |
 | `internal/runner/config/expansion.go` | `resolveAndPrepareCommandSpec` | 1101 | `command` | `spec.Name` |
@@ -413,14 +413,10 @@ group 名・コマンド名を属性値として書く production の経路を `
 | `internal/runner/resource/dryrun_manager.go` | `evaluateCommandRisk` | 430 | `command` | `cmd.Name()` |
 | `internal/verification/manager.go` | `VerifyGroupFiles` | 223 | `group` | `groupName`（`input.Name` のローカル値） |
 | `internal/verification/manager.go` | `collectVerificationFiles` | 279 | `group` | `input.Name` |
-| `internal/logging/security.go` | `SecurityLogger.LogUnlimitedExecution` | 24 | `command` | `cmdName` |
-| `internal/logging/security.go` | `SecurityLogger.LogLongRunningProcess` | 33 | `command` | `cmdName` |
-| `internal/logging/security.go` | `SecurityLogger.LogTimeoutExceeded` | 42 | `command` | `cmdName` |
-| `internal/logging/security.go` | `SecurityLogger.LogTimeoutConfiguration` | 52、57 | `command` | `cmdName` |
 
 `RuntimeCommand.Name()`・`GroupSpec.Name` 等のフィールド型は変えない。宣言はログを書く行で行う。`normal_manager.go:143` はキー `command_path` に group 名を載せており、値の型は識別子である。キー名の是正は本タスクのスコープ外とし、値だけを宣言する（§5.2）。
 
-`SecurityLogger` の 4 メソッドは引数 `cmdName` を関数内で `NewIdentifier` に包む。呼び出し元（[`internal/runner/group_executor.go:537`](../../../internal/runner/group_executor.go) ほか）は変更しない。`buildCommandDebugLogArgs(cmdName string, …)`（[`internal/runner/group_executor.go:553`](../../../internal/runner/group_executor.go)）も同様に、関数内で包む。引数の型変更は呼び出し元へ波及する割に得るものが無い。
+`SecurityLogger` の 4 メソッド（[`internal/logging/security.go`](../../../internal/logging/security.go)）は引数 `cmdName` の型を `string` から `common.Identifier` へ変え、`buildCommandDebugLogArgs`（[`internal/runner/group_executor.go:553`](../../../internal/runner/group_executor.go)）も `cmdName common.Identifier` を受ける。宣言（`common.NewIdentifier(…)`）は各呼び出し元で行う。実呼び出し元は `LogUnlimitedExecution` が [`group_executor.go:537`](../../../internal/runner/group_executor.go)、`LogTimeoutExceeded` が [`:585`](../../../internal/runner/group_executor.go)、`buildCommandDebugLogArgs` が [`:612`](../../../internal/runner/group_executor.go) である。ヘルパーが内部で `NewIdentifier(cmdName)` を呼ぶ形だと、そのヘルパー 1 箇所が目録に載るだけで、将来の呼び出し元が `cmd.ExpandedCmd` のような自由文を渡しても guard に新しい宣言が見えずに免除されてしまう。引数型を宣言型にすれば呼び出し元が `common.NewIdentifier(…)` を書くことが guard の引数式照合の対象になり、目録外の呼び出しはテストで拒否される（「Enforce invariants with the type, not with convention」）。`LogLongRunningProcess` と `LogTimeoutConfiguration` には現時点で production の呼び出し元が無いが、同じく `common.Identifier` を受けるため、将来の呼び出し元は呼び出しサイトで宣言し、§7.3 の目録へ追加しなければならない。この型変更に伴い `internal/logging/security_test.go` と `internal/runner/group_executor_test.go:2880` の呼び出しを `common.NewIdentifier(…)` を渡す形へ更新する（§7.4）。
 
 ### 3.5 宣言型にしないサイト
 
@@ -524,7 +520,7 @@ flowchart LR
 | 脅威 | 発生条件 | 影響 | 対策 | 残るリスク | AC |
 |---|---|---|---|---|---|
 | T1 名前に書いた機密が露出 | 運用者が group 名・コマンド名に機密を書く | その文字列が通知・ログにそのまま出る | 名前は設定リテラルで外部入力経路が無いことを前提に、漏洩の帰結を受容して文書化する。設定境界検査は空名・制御文字・長さを弾き、表示境界の補間契約は Slack の書式としての注入を防ぐ（いずれも機密の秘匿は担わない） | 名前に機密を書いた場合は露出する（AC-14） | AC-14、AC-16 |
-| T2 コマンド行の誤宣言 | 実装者が展開済みコマンド行・自由文を `common.NewIdentifier` で包む | 値ベース redaction が掛からず、`token=…` や `--password=x` が露出する | 宣言サイトを §3.4 に列挙し、`identifier_guard_test.go` で許可リスト外の宣言を検出する。許可リストはファイル・関数・引数式の組で照合する。`executeWithUserGroup` のように同一関数内でコマンド名 `cmd.Name()` とコマンド行 `cmd.ExpandedCmd` が混在するため、ファイルと関数だけではコマンド行の誤宣言を検出できない。§7.3 の対照テストでコマンド行が redact されることを固定する | なし（テストで固定） | AC-08 |
+| T2 コマンド行の誤宣言 | 実装者が展開済みコマンド行・自由文を `common.NewIdentifier` で包む | 値ベース redaction が掛からず、`token=…` や `--password=x` が露出する | 宣言サイトを §3.4 に列挙し、`identifier_guard_test.go` で走査結果と目録を双方向に照合する。目録はファイル・関数・引数式の組に出現数を添えて持ち、目録外の宣言だけでなく、目録にある宣言が走査に見つからない場合（宣言の省略・削除）も失敗させる。`executeWithUserGroup` のように同一関数内でコマンド名 `cmd.Name()` とコマンド行 `cmd.ExpandedCmd` が混在するため、ファイルと関数だけではコマンド行の誤宣言を検出できない。§7.3 の対照テストでコマンド行が redact されることを固定する | なし（テストで固定） | AC-08 |
 | T3 error 中の識別子が redact | 識別子が error メッセージなどの自由文に連結される | 識別子が `[REDACTED]` になり、どの group／command か判別できない | 型では自由文の部分文字列を宣言できないため対策を設けず、残余リスクとして記録する | error 全文が `[REDACTED]` になりうる | AC-13 |
 
 免除は表示と監査相関（Slack の Scope と `Command` フィールド、監査ログの `command_name`）にだけ作用し、権限判断やコマンド実行を変えない。したがって免除が悪用されても実行権限は拡大しない。
@@ -697,21 +693,24 @@ flowchart LR
 
 - 展開済みコマンド行・引数・環境変数値・message・error 文字列の redaction が本タスクの前後で変わらないこと（AC-05）。`--password=x`、`token=…`、`Bearer …`、AWS/GitHub/Slack トークン形を、識別子と同じテスト入力集合で固定する。
 - 同じキー `"command"` に、コマンド名（宣言型）とコマンド行（plain string）を載せ、後者だけが redact されること（AC-08）。
-- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`NewIdentifier` の呼び出しが §3.4 の許可リストの外に現れないことを検証する。許可リストはファイル・関数・引数式の組で持ち、`NewIdentifier` に渡された引数をソースから復元した式（例: `cmd.Name()`）と照合する。`DefaultExecutor.executeWithUserGroup` のように同一関数が `cmd.Name()`（識別子）と `cmd.ExpandedCmd`（コマンド行）を混在させるため、ファイルと関数だけの照合では `cmd.ExpandedCmd` を包む誤宣言が通ってしまう。走査は `Options.Extra` に `ExtraTrackedFunc` を 2 件渡し、他パッケージからのパッケージ修飾呼び出し（`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/common"`、`FuncName: "NewIdentifier"`）と、`internal/common` 内の非修飾呼び出し（`ImportPath` を空にし `FuncName: "NewIdentifier"`）の両方に一致させる。修飾形だけを見ると `notification_context.go:81,84` と `logschema.go:120,164` の in-package 宣言が許可リストの外にあっても検出されない。許可リスト外の宣言はテストで失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（T2 の実際の対策）。`ProductionGoFilesInRepo` は `//go:build test || performance` のようにタグ `test` を必須としない制約のファイル（`internal/testutil`、`internal/runner/base/executor/testutil`）も production として走査する。テストの期待値を `common.NewIdentifier` で組み立てるコードは `_test.go` に置き、これらの補助パッケージには置かない。
+- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`NewIdentifier` の呼び出しと §3.4 の宣言サイト目録を双方向に照合する。目録はファイル・関数・引数式の組をキーとして出現数とともに持ち、`NewIdentifier` に渡された引数をソースから復元した式（例: `cmd.Name()`）と照合する。走査結果に目録の外の呼び出しが現れれば失敗し、逆に目録のエントリが走査結果に現れなければ（宣言の省略・削除）失敗する。出現数を要するのは、§3.4 に同一の `(ファイル, 関数, 引数式)` の組が複数回現れるためである。例えば `ExecuteGroup` の行 149・151・218 は 3 件とも `groupSpec.Name` であり、集合としての照合ではどれか 1 件が残っていれば差分を検出できないが、件数を照合すれば 1 件の欠落も検出できる。行番号は編集でずれるため、合否は件数で判定し、行番号は対応づけの参考として持つ（代わりにサイトごとの出現位置を固定して照合してもよい）。これにより、宣言の付け忘れや削除を局所的な統合テストに頼らず検出でき、AC-07 の「すべての宣言サイトが列挙どおりに変換されている」ことを guard が固定する。`DefaultExecutor.executeWithUserGroup` のように同一関数が `cmd.Name()`（識別子）と `cmd.ExpandedCmd`（コマンド行）を混在させるため、ファイルと関数だけの照合では `cmd.ExpandedCmd` を包む誤宣言が通ってしまう。走査は `Options.Extra` に `ExtraTrackedFunc` を 2 件渡し、他パッケージからのパッケージ修飾呼び出し（`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/common"`、`FuncName: "NewIdentifier"`）と、`internal/common` 内の非修飾呼び出し（`ImportPath` を空にし `FuncName: "NewIdentifier"`）の両方に一致させる。修飾形だけを見ると `notification_context.go:81,84` と `logschema.go:120,164` の in-package 宣言が目録の外にあっても検出されない。目録外の宣言も目録の欠落もテストで失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（T2 の実際の対策）。`ProductionGoFilesInRepo` は `//go:build test || performance` のようにタグ `test` を必須としない制約のファイル（`internal/testutil`、`internal/runner/base/executor/testutil`）も production として走査する。テストの期待値を `common.NewIdentifier` で組み立てるコードは `_test.go` に置き、これらの補助パッケージには置かない。
 - 設定検証が識別子の中身を redaction と照合しないこと。既存の [`TestValidateIdentifiers`](../../../internal/runner/config/validation_test.go) と [`TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`](../../../cmd/runner/integration_pre_execution_error_test.go) をそのまま通す（AC-10）。
 - `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターン集合が変更されていないこと（AC-12）。該当ファイルを変更しないことと、既存のパターンテストが通ることで確認する。
 - `[]Identifier` と `[]*Identifier` の要素が免除されること（§3.2 の挿入点を固定する。人工的な `[]common.Identifier`・`[]*common.Identifier` を用意し、下流ハンドラが描画した JSON／text に名前が string として現れることを検証する。生の `Identifier` を `KindAny` のまま流すと `[{}]` と描画されるため、この描画結果の検証で正規化漏れを捉える）。
+- 型付き nil の `*common.Identifier` がパニックせず fail-closed になること（§3.2）。`slog.Any("command", (*common.Identifier)(nil))` を直接属性として載せたときに、ヘルパーが免除せず（`Name()` を呼ばず false を返し）、既存の `processLogValuer` のパニック回復が代入する `RedactionFailurePlaceholder`（[`redactor.go:260`](../../../internal/redaction/redactor.go)）が出力に現れることを検証する。識別子名でも panic でもないことをアサートする。
 
 ### 7.4 既存テストの更新
 
-宣言サイトを変えると、redaction を通さず生の属性を捕捉して名前を string と比較するテストが失敗する。`internal/testutil.LogRecorder` は `a.Value.Any()` を保存し `Resolve` しないため、型を宣言した値は `common.Identifier` として捕捉される。次のテストを `common.NewIdentifier(…)` との比較へ更新する。
+宣言サイトや helper の引数型を変えると、redaction を通さず生の属性を捕捉して名前を string と比較するテスト、および helper に string を直接渡しているテストが失敗する。`internal/testutil.LogRecorder` は `a.Value.Any()` を保存し `Resolve` しないため、型を宣言した値は `common.Identifier` として捕捉される。次のテストを `common.NewIdentifier(…)` との比較または引数渡しへ更新する。
 
 | テスト | 箇所 | 宣言されるキー |
 |---|---|---|
 | `internal/runner/group_executor_test.go` | タイムアウト・無制限実行の属性検査 | `command` |
+| `internal/runner/group_executor_test.go:2880` | `buildCommandDebugLogArgs` の呼び出し引数 | `command` |
 | `internal/runner/group_executor_timeout_test.go` | `Attrs["command"]` の比較 | `command` |
 | `internal/runner/base/privilege/unix_privilege_test.go` | 昇格結果の属性検査 | `command` |
 | `internal/runner/base/audit/logger_test.go` | `command_name` の期待値 | `command_name` |
+| `internal/logging/security_test.go` | `SecurityLogger` 4 メソッドの呼び出し引数 | `command` |
 | `internal/common/notification_context_test.go` | `LogValue` の符号化期待値 | `group`／`command` |
 
 `Value.String()` を比較するテスト（例: `internal/common/logschema_test.go:72`）と、JSON ハンドラの出力を解析するテスト（例: `internal/runner/resource/audit_wiring_test.go:85`）は、`String` の実装と免除経路の正規化により変更を要さない。実装時に全 `*_test.go` を検索し、宣言型を比較する期待値を洗い出す。
@@ -739,7 +738,7 @@ Phase 1 を最初に置くのは、宣言型が Phase 2・3・4 すべての前�
 
 ## 9. 将来の拡張性
 
-- 新しい設定由来の識別子をログへ載せるときは、そのサイトで `common.NewIdentifier` を使い、`identifier_guard_test.go` の許可リストへファイル・関数・引数式の組を追加する。`internal/redaction` にサイト固有の分岐を足す必要はない。
+- 新しい設定由来の識別子をログへ載せるときは、そのサイトで `common.NewIdentifier` を使い、`identifier_guard_test.go` の目録へファイル・関数・引数式の組と出現数を追加する。宣言を削除するときは目録からも取り除く（取り除かなければ、目録にある宣言が走査に見つからず guard が失敗する）。`internal/redaction` にサイト固有の分岐を足す必要はない。
 - `IsSensitiveValue` の語境界化や `ValueDetector` のパターン調整を将来行っても、宣言済みの識別子は免除のままである。免除はパターン集合に依存しない。
 - ファイルパス・OS グループ名・一時ファイル名など、識別子でない値は引き続き plain string とし、redaction を適用する。免除の対象を広げる場合は、その値が本当に「人間が設定に書く識別子」かを先に確認する。
 - `internal/common` が肥大化して redaction の依存が重くなった場合は、`Identifier` を小さな leaf パッケージへ切り出せる。`internal/redaction` の依存先がそのパッケージへ変わるだけで、免除の判定は同じである。
