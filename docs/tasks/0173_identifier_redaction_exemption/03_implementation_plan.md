@@ -50,7 +50,10 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
 7. 既存の実装・テスト・ヘルパーを優先して再利用する。とくに呼び出しサイトの走査は
    `internal/testutil/identitymutationguard` の既存ヘルパーを使い、走査対象ファイルの定義を
    複製しない。定義パッケージ内の型検査は、既存の `privileged_window_guard_test.go` と
-   同じ `go/types` の用法を踏襲する（x/tools は依存に追加しない）。
+   同じ `go/types` の用法（`types.Config`・`importer.ForCompiler`）を踏襲する。ただし
+   ファイル選択だけは `build.ImportDir` ではなく `ProductionGoFiles` による明示列挙に
+   置き換え、ホスト GOOS／GOARCH のビルド制約で除外される production ファイルを検査から
+   落とさない（Phase 4.5）。x/tools は依存に追加しない。
 
 ### 1.3 既存コード調査結果
 
@@ -207,18 +210,32 @@ guard は守る範囲で 2 つの機構に分ける。パッケージ境界を�
   `github.com/isseis/go-safe-cmd-runner/internal/identifier` を拒否する。dot import は
   `NewIdentifier` を非修飾にし、パッケージ外からの修飾形の走査に現れない呼び出しを許す
   ため、これが無いと他パッケージの自由文が目録外のまま免除される。
+- 目録の組は（ファイル、関数、囲むログ呼び出し／文、属性キー、引数式、結果の使用、件数）と
+  し、「結果の使用」で `NewIdentifier` の戻り値がそのまま属性値・ヘルパー引数になることを
+  要求する。戻り値に `.Name()` や `string(…)` を適用した式（例:
+  `slog.String("command_name", identifier.NewIdentifier(entry.CommandName).Name())`）は、
+  引数式が `NewIdentifier` の引数と一致していても失敗させる。`[]any` に詰めて後続の
+  `slog` 呼び出しへ渡す形では、渡る要素そのものが戻り値であることを確認する。
 - 修飾形の `NewIdentifier` の値参照（エイリアス）は 0 件であることを要求する。
   `makeID := identifier.NewIdentifier` のように束縛して `makeID(cmd.ExpandedCmd)` と
   呼ぶと、呼び出しサイト比較には何も現れずに免除が掛かるため、束縛自体を失敗させる。
 
 **2. 定義パッケージ内の構築と参照（`internal/identifier`）**
 
-- `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ方式で
-  パッケージを型検査する。`build.ImportDir` で production ファイルを選び、
-  `parser.ParseFile(..., parser.SkipObjectResolution)` で解析し、
-  `types.Config{Importer: importer.ForCompiler(fset, "source", nil)}` の `Check` に
-  `types.Info{Defs, Uses, Types}` を渡す。golang.org/x/tools はこのモジュールの依存に
-  無く、この検査のために追加しない（同ファイル `:63-65` と同じ理由）。
+- `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ
+  `parser.ParseFile(..., parser.SkipObjectResolution)`・
+  `types.Config{Importer: importer.ForCompiler(fset, "source", nil)}`・
+  `types.Info{Defs, Uses, Types}` の用法でパッケージを型検査する。ただしファイル選択は
+  同テストと意図的に変え、`build.ImportDir` は使わない。`build.ImportDir` はホスト
+  GOOS／GOARCH のビルド制約で除外されるファイルを黙って落とすため、
+  `identifier_windows.go` のような platform-tagged な別コンストラクタが検査をすり抜ける。
+  代わりに `ProductionGoFiles(t, dir)`（`helpers.go:153`。`_test.go` と `test` タグを必須と
+  するファイルを除く production ファイルの定義元）で `internal/identifier` の production
+  ファイルを明示的に全数列挙し、ホストの GOOS に依存せず 1 つのパッケージ集合として型検査
+  する。明示列挙が拾った宣言が単一集合の型検査を成立させない場合（例: プラットフォーム別の
+  同一シンボル宣言）は、その時点で検査が失敗するため fail-closed である。
+  golang.org/x/tools はこのモジュールの依存に無く、この検査のために追加しない
+  （同ファイル `:63-65` と同じ理由）。
 - 型検査の結果から `Identifier` の `*types.Named`、その下層構造体の `name` フィールド
   （`*types.Var`）、`NewIdentifier` の `*types.Func` をパッケージスコープから引く。
 - `name` フィールドへの書き込みは、セレクタの解決結果（`info.Uses[sel.Sel]`）がその
@@ -231,6 +248,15 @@ guard は守る範囲で 2 つの機構に分ける。パッケージ境界を�
   綴り（キーの有無・別名の名前）は見ないため、`Identifier{s}`・`Alias{name: s}`・
   `Identifier(Alias{…})` のような変種を列挙する必要がない。下層型が `Identifier` と同一の
   無関係な構造体を誤検知しうるが、その方向は fail-closed である。
+- `NewIdentifier` 以外の、`internal/identifier` 内で宣言された関数・メソッドの
+  `Signature().Results()` が `Identifier` に由来する型（値・ポインタ、名前付き・無名を
+  問わない）である場合、その宣言を失敗させる。関数オブジェクトは
+  `info.Defs[funcDecl.Name].(*types.Func)` で引き、結果型は `types.Unalias` と
+  `types.Identical` で解決する。`func FromString(s string) Identifier { return NewIdentifier(s) }`
+  のような転送ラッパーは複合リテラルも型変換も書かないため、上のリテラル・変換の検査を
+  すり抜ける。パッケージ外の呼び出し側は目録が追う `NewIdentifier` ではなくラッパーを
+  呼ぶため、呼び出しサイトの目録に `NewIdentifier` の呼び出しが現れないまま免除が掛かる。
+  許すのは `NewIdentifier` 自身の結果だけとする。
 - `NewIdentifier` の `*types.Func` の使用は、直接の呼び出しの被呼び出しに限る。値位置の
   使用（非修飾の `makeID := NewIdentifier` を含む）は失敗させる。非修飾参照の走査も
   シンボル解決で行うため、名前の一致に依存しない。
@@ -536,6 +562,12 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       `LogUserGroupExecution` を呼び、出力 JSON の `command_name` が元の名前のままである
       ことを検証する（AC-09）。既存の `TestLogger_LogUserGroupExecution` は生値捕捉の
       期待値更新に留め、免除後の表示はこの新テストが担う。
+- [ ] `internal/runner/base/audit/logger_test.go` に
+      `TestLogRiskProfile_CommandNameSurvivesRedaction` を追加する。同じ配線で
+      `LogRiskProfile` の `command_name`（`entry.CommandName`）が redaction を発火させる
+      名前でも元の名前のまま出力されることを検証する（AC-09）。`LogUserGroupExecution` と
+      `LogRiskProfile` はどちらも `command_name` に宣言型を載せるため、宣言サイトごとに
+      end-to-end の残存証拠を揃える。
 - [ ] `internal/runner/config/validation.go` を変更しない。`TestValidateIdentifiers` と
       `TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted` をこのコミットで実行し、
       設定境界の挙動が変わっていないことを確認する（AC-10）。
@@ -548,7 +580,9 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 - [ ] `identifier_guard_test.go` に `TestIdentifierDeclarationCatalog` を追加する。
       02_architecture.md §3.4 の表から導いた目録を持ち、これはファイル・関数・
-      「囲むログ呼び出し／文」・「属性キー」・「引数式」の組と出現数から成る。走査結果に
+      「囲むログ呼び出し／文」・「属性キー」・「引数式」・「結果の使用」の組と出現数から
+      成る。「結果の使用」は `NewIdentifier` の戻り値がそのまま属性値・ヘルパー引数に
+      なっていることを要求し、`.Name()` や `string(…)` を適用した式は失敗させる。走査結果に
       目録の外の宣言があれば失敗し、目録のエントリが走査結果に無ければ（宣言の省略・
       削除）も失敗する。
 - [ ] 呼び出しサイトの走査は `Options.Extra` に修飾形
@@ -568,19 +602,30 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       dot import を塞ぐ。dot import は `NewIdentifier` を非修飾にし、パッケージ外からの
       修飾形の走査に現れない呼び出しを許すため、これが無いと他パッケージの自由文が
       目録外のまま免除される。
-- [ ] 目録の組のうち「囲むログ呼び出し／文」と「引数式」は、`identitymutationguard` の
-      `CallSite` が持たないため、guard 自身がファイルを再解析して復元する。呼び出し位置から
-      囲む文を求め、`[]any` に詰めて後続の `slog` 呼び出しへ渡す形（`group_executor.go:594`・
-      `:617`）では、消費側の `slog` 呼び出しまで辿って文脈を定める。引数式はソースから
-      復元する。
+- [ ] 目録の組のうち「囲むログ呼び出し／文」・「引数式」・「結果の使用」は、
+      `identitymutationguard` の `CallSite` が持たないため、guard 自身がファイルを再解析して
+      復元する。呼び出し位置から囲む文を求め、`[]any` に詰めて後続の `slog` 呼び出しへ
+      渡す形（`group_executor.go:594`・`:617`）では、消費側の `slog` 呼び出しまで辿って
+      文脈を定める。引数式はソースから復元する。「結果の使用」は、`NewIdentifier` の戻り値を
+      囲む式が属性値・ヘルパー引数そのものか、`[]any` などの複合リテラルの要素かを判定し、
+      戻り値へ `.Name()`・`string(…)` など操作を適用した式は失敗させる。
 - [ ] `internal/identifier` の production ファイルを `go/types` で型検査する。
-      `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ方式
-      （`build.ImportDir`・`parser.ParseFile(..., parser.SkipObjectResolution)`・
+      `internal/runner/base/executor/privileged_window_guard_test.go:977-1023` と同じ
+      `parser.ParseFile(..., parser.SkipObjectResolution)`・
       `types.Config{Importer: importer.ForCompiler(fset, "source", nil)}`・
-      `types.Info{Defs, Uses, Types}`）を使い、型検査の結果から `Identifier` の
-      `*types.Named`、その `name` フィールドの `*types.Var`、`NewIdentifier` の
-      `*types.Func` をパッケージスコープから引く。golang.org/x/tools は依存に無く、
-      この検査のために追加しない。
+      `types.Info{Defs, Uses, Types}` の用法を使う。ただしファイル選択だけは同テストと
+      意図的に変え、`build.ImportDir` は使わない。`build.ImportDir` はホスト GOOS／GOARCH
+      のビルド制約で除外されるファイルを黙って落とすため、`identifier_windows.go` の
+      ような platform-tagged な別コンストラクタが検査をすり抜ける。代わりに
+      `ProductionGoFiles(t, dir)`（`internal/testutil/identitymutationguard/helpers.go:153`。
+      `_test.go` と `test` タグを必須とするファイルを除く production ファイルの定義元）で
+      `internal/identifier` の production ファイルを全数列挙し、ホストの GOOS に依存せず
+      1 つのパッケージ集合として型検査する。明示列挙が拾った宣言が単一集合の型検査を
+      成立させない場合（例: プラットフォーム別の同一シンボル宣言）は、その時点で検査が
+      失敗するため fail-closed である。型検査の結果から `Identifier` の `*types.Named`、
+      その `name` フィールドの `*types.Var`、`NewIdentifier` の `*types.Func` を
+      パッケージスコープから引く。golang.org/x/tools は依存に無く、この検査のために
+      追加しない。
 - [ ] `name` フィールドへの書き込みを、セレクタの解決結果（`info.Uses[sel.Sel]`）がその
       `*types.Var` と一致するかで判定し、`NewIdentifier` の本体以外での書き込みを失敗
       させる。値変数形 `id.name = …`・ポインタ変数形 `p.name = …`・型エイリアス越しの
@@ -594,6 +639,15 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       誤検知しうるが、その方向は fail-closed である。定義パッケージ外はコンパイラが
       拒否するため、この検査は `internal/identifier` に限定する（02_architecture.md §3.1、
       §7.3）。
+- [ ] `NewIdentifier` 以外の、`internal/identifier` 内で宣言された関数・メソッドが
+      `Identifier` に由来する型を結果に持つ宣言を失敗させる。関数オブジェクトは
+      `info.Defs[funcDecl.Name].(*types.Func)` で引き、`Signature().Results()` の各結果を
+      `types.Unalias`・`types.Identical` で解決した `Identifier`（値・ポインタ、名前付き・
+      無名を問わない）と比較する。`func FromString(s string) Identifier { return NewIdentifier(s) }`
+      のような転送ラッパーは複合リテラルも型変換も書かないため、上のリテラル・変換の検査を
+      すり抜ける。パッケージ外の呼び出し側は目録が追う `NewIdentifier` ではなくラッパーを
+      呼ぶため、呼び出しサイトの目録に `NewIdentifier` の呼び出しが現れないまま免除が掛かる。
+      許すのは `NewIdentifier` 自身の結果だけとする。
 - [ ] `NewIdentifier` の `*types.Func` の使用は直接の呼び出しの被呼び出しに限る。値位置の
       使用（非修飾の `makeID := NewIdentifier` を含む）は失敗させる。非修飾参照の走査も
       シンボル解決で行うため、名前の一致に依存しない。
@@ -607,6 +661,9 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
   - 目録にある宣言を 1 件欠いた入力
   - `makeID := identifier.NewIdentifier` の形の修飾エイリアス
   - 同じ組の件数を保ったまま、囲むログ呼び出しを別のものへ移した入力
+  - 目録にある組のまま `NewIdentifier` の戻り値へ `.Name()` を適用した入力。
+    `slog.String("command_name", identifier.NewIdentifier(entry.CommandName).Name())` を
+    置き、引数式が一致していても「結果の使用」の検査で失敗することを確認する
   - `internal/identifier` 内に複合リテラルで別コンストラクタを足した入力。
     `Identifier{name: s}`・`Identifier{s}`・`Alias{name: s}`・`Alias{s}` を置き、キーの
     有無と型エイリアス・定義型のすべてが同じ判定で拒否されることを確認する
@@ -616,6 +673,9 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
   - `internal/identifier` 内に `name` へフィールド代入する別コンストラクタを足した入力。
     `var id Identifier; id.name = s; return id` と、ポインタ変数形
     `id := &Identifier{}; id.name = s; return *id` の両方を含める
+  - `internal/identifier` 内に転送ラッパーを足した入力。
+    `func FromString(s string) Identifier { return NewIdentifier(s) }` を置き、複合リテラルも
+    型変換も書かないラッパーが関数・メソッドの結果型の検査で拒否されることを確認する
   - `internal/identifier` 内に `makeID := NewIdentifier` の形の非修飾エイリアスを足した
     入力。シンボル解決が値位置の使用として拒否することを確認する
   - `internal/identifier` 以外のパッケージが自前の `func NewIdentifier(s string) string`
@@ -628,6 +688,11 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
   - `internal/identifier` 以外のパッケージが import 別名
     （`import id "…/internal/identifier"`）を付けて `id.NewIdentifier(cmd.Name())` を
     呼ぶ入力。修飾形の走査が別名を解決し、目録に無ければ失敗することを確認する
+  - 非ホスト向けの platform-tagged production ファイルを含む一時ディレクトリの入力。
+    合成した `identifier_windows.go`（別コンストラクタを含む）を一時ディレクトリに置き、
+    型検査のファイル列挙がホスト GOOS のビルド制約で除外されるファイルも含めること
+    （`ProductionGoFiles` の明示列挙）と、その別コンストラクタで検査が失敗することを
+    確認する。`build.ImportDir` のホスト選別ではこのファイルが列挙から落ちる
 - [ ] AC-19 の確認: 次の production mutation を行い、対応するテストの失敗を確認して復元し、
       壊した対象と失敗したテスト名をコミットメッセージに記す。テスト入力を削除・無効化
       する操作は mutation に数えない（入力を消しても同じテストは失敗せず、挙動を検証
@@ -639,6 +704,16 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
     `TestIdentifierDeclarationCatalog` が失敗する
   - 他パッケージが `internal/identifier` を dot import して非修飾の `NewIdentifier` を
     呼ぶと失敗する
+  - `internal/identifier` に転送ラッパー
+    `func FromString(s string) Identifier { return NewIdentifier(s) }` を足すと、関数・
+    メソッドの結果型の検査で `TestIdentifierDeclarationCatalog` が失敗する
+  - `internal/runner/base/audit/logger.go` の `LogRiskProfile` の `command_name` を
+    `identifier.NewIdentifier(entry.CommandName).Name()` に変えると、結果の使用の検査で
+    目録不一致になり `TestIdentifierDeclarationCatalog` が失敗する（確認後は元に戻す）
+  - `internal/identifier` に一時的な platform-tagged production ファイル
+    （例: `identifier_windows.go` に別コンストラクタを書く）を足すと、ホスト GOOS に
+    依存しない全 production ファイルの列挙により `TestIdentifierDeclarationCatalog` が
+    失敗する（確認後は削除する）
 
 **分岐と証拠の対応。** Phase 4 が主張する分岐・変換ごとに、その分岐を欠いた実装では
 通らない証拠を次の表で固定する。guard の対照入力は
@@ -652,9 +727,12 @@ Phase 4.5 の AC-19 確認が担う。
 | 複合リテラルの拒否（`internal/identifier` 内。キーの有無・型エイリアス・定義型を含む） | 対照入力: `Identifier{name: …}`／`Identifier{s}`／`Alias{…}` を返す別コンストラクタ | 同上 |
 | 型変換による構築の拒否（`internal/identifier` 内。別名・定義型を含む） | 対照入力: `Identifier(Alias{…})` を返す別コンストラクタ | 同上 |
 | フィールド代入 `id.name = …` の拒否（`internal/identifier` 内。ポインタ変数形を含む） | 対照入力: フィールド代入する別コンストラクタ | 同上 |
+| 転送ラッパーの拒否（`internal/identifier` 内。`NewIdentifier` 以外の結果型） | 対照入力: `func FromString(s string) Identifier { return NewIdentifier(s) }` を足した合成ソース。AC-19 mutation: 実パッケージに転送ラッパーを足す | `TestIdentifierDeclarationCatalog_Control`・`TestIdentifierDeclarationCatalog` |
 | 非修飾名の誤検知防止（他パッケージの同名関数） | 対照入力: 他パッケージが自前の同名 `NewIdentifier` を定義しても検査が失敗しない | 同上 |
 | 他パッケージによる `internal/identifier` の dot import の拒否 | 対照入力: `internal/identifier` を dot import して非修飾の `NewIdentifier` を呼ぶ合成ソース | 同上 |
 | import 別名 `id "…/internal/identifier"` を介した呼び出しの検出 | 対照入力: 別名付きの `id.NewIdentifier` 呼び出しが目録不一致で失敗する | 同上 |
+| 結果の使用の固定（`.Name()` など戻り値の派生式の拒否） | 対照入力: `NewIdentifier(…).Name()` を目録サイトに置いた合成ソース。AC-19 mutation: `LogRiskProfile` の `command_name` を `NewIdentifier(entry.CommandName).Name()` に変える | `TestIdentifierDeclarationCatalog_Control`・`TestIdentifierDeclarationCatalog` |
+| 全 production ファイルの型検査（非ホスト platform-tagged ファイルを含む） | 対照入力: 合成した `identifier_windows.go` を含む一時ディレクトリのファイル列挙。AC-19 mutation: `internal/identifier` に platform-tagged な別コンストラクタを足す | `TestIdentifierDeclarationCatalog_Control`・`TestIdentifierDeclarationCatalog` |
 | `SecurityLogger` 4 メソッドの `command` 属性の生型 | 4 メソッド（`LogTimeoutConfiguration` は両分岐）の `command` を `LogRecorder.AssertAttrs` で `identifier.Identifier` と比較し、`RedactingHandler` 通過後も名前が残ることを確認する | `TestSecurityLogger_LogMethods` |
 | `NotificationContext.LogValue` の `group`／`command` 符号化 | AC-19 mutation: 下位値を一時的に `slog.String` へ戻す | `TestRedactingHandler_ResolvesNotificationContextLogValue`（`monkey` ケース） |
 | `buildCommandDebugLogArgs` の `cmdName` の宣言型変換 | AC-19 mutation: 戻り値に `cmdName.Name()` を載せる | `TestCommandDebugLogArgs_StdoutTruncation` |
@@ -738,8 +816,9 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 
 - **新規**: `internal/identifier/identifier_test.go`（Phase 1）、
   `internal/redaction/redactor_test.go` の免除・対照テストと `TestDefaultPatternSets_AreUnchanged`
-  （Phase 2）、`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`
-  （Phase 4）、`internal/identifier/identifier_guard_test.go`（Phase 4）。
+  （Phase 2）、`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`・
+  `TestLogRiskProfile_CommandNameSurvivesRedaction`（Phase 4）、
+  `internal/identifier/identifier_guard_test.go`（Phase 4）。
 - **拡張**: `internal/common/notification_context_test.go`（復号の両形式・宣言型以外の
   `LogValuer` の拒否は Phase 3、符号化期待値は Phase 4）、`internal/common/logschema_test.go`
   （`name` の宣言型符号化、Phase 4）、`internal/logging/notification_context_test.go`
@@ -764,7 +843,8 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 - `command_group_summary` のコマンド一覧の名前が RedactingHandler 通過後も残ること
   （`internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler` の拡張）。
 - 監査ログの `command_name` が redaction 後も元の名前であること
-  （`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`）。
+  （`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`
+  と `TestLogRiskProfile_CommandNameSurvivesRedaction`）。
 
 ### 4.3 セキュリティテスト
 
@@ -797,8 +877,8 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 | リスク | 影響 | 対応 |
 |---|---|---|
 | 宣言サイトの置き換えが 1 件でも漏れると、その名前は redaction で書き換わり続ける（02_architecture.md §5.1 の T3 方向） | 通知・監査で一部の名前が `[REDACTED]` のまま残る | 置き換えは 02_architecture.md §3.4 の表に従い、Phase 4 で全 43 件を処理する。guard の目録は表と双方向に照合するため、表にある宣言の欠落も検出される |
-| guard の目録が実装の移設に追随できず、件数だけ保った移動を見逃す | 過剰免除（02_architecture.md §5.1 の T2）の検出漏れ | 目録に「囲むログ呼び出し／文」・「属性キー」・「引数式」と出現数を持たせ、同一の組が複数回現れる場合も件数で検出する（02_architecture.md §7.3）。`TestIdentifierDeclarationCatalog_Control` が、件数を保った移動と `NewIdentifier` のエイリアスを拒否することを固定する |
-| 構築ガードを構文の綴りで列挙すると、キーなしリテラル・型エイリアス・定義型・型変換の順に抜け道が残る | 過剰免除（T2）の検出漏れ | `internal/identifier` を `go/types` で型検査し、解決済みの型とフィールドオブジェクトで判定する（02_architecture.md §7.3）。対照テストはカテゴリごとに 1 入力を持つ |
+| guard の目録が実装の移設に追随できず、件数だけ保った移動を見逃す | 過剰免除（02_architecture.md §5.1 の T2）の検出漏れ | 目録に「囲むログ呼び出し／文」・「属性キー」・「引数式」・「結果の使用」と出現数を持たせ、同一の組が複数回現れる場合も件数で検出する（02_architecture.md §7.3）。`NewIdentifier` の戻り値に `.Name()` を適用した派生式も「結果の使用」で拒否する。`TestIdentifierDeclarationCatalog_Control` が、件数を保った移動と `NewIdentifier` のエイリアスを拒否することを固定する |
+| 構築ガードを構文の綴りで列挙すると、キーなしリテラル・型エイリアス・定義型・型変換・転送ラッパーの順に抜け道が残る | 過剰免除（T2）の検出漏れ | `internal/identifier` を `go/types` で型検査し、解決済みの型とフィールドオブジェクト、および `NewIdentifier` 以外の関数・メソッドの結果型で判定する（02_architecture.md §7.3）。ファイル選択は `ProductionGoFiles` による全 production ファイルの明示列挙とし、platform-tagged な別コンストラクタも対象にする。対照テストはカテゴリごとに 1 入力を持つ |
 | `LogRecorder` 系の生値比較の更新漏れ | `make test` が失敗するが、原因の特定に時間がかかる | §1.3 の表を起点に全 `*_test.go` を検索する。コンパイルエラーになる型変更（`SecurityLogger`）は別に扱う |
 | 免除経路の挿入順を誤り、キー名判定より先に免除してしまう | 機密キーの下の値が免除され、漏洩方向の縮小が崩れる | キー名判定を先に置く。`TestRedactingHandler_SensitiveKeyMaskPrecedesExemption` で固定する |
 | `processSlice` で生の `Identifier` を append する | JSON に `[{}]` と描画され、§1.1 の string 正規化と AC-06 に反する | `Name()` の string に正規化する。`TestRedactingHandler_IdentifierSliceElements` が下流の描画を検証する |
@@ -847,8 +927,8 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 | AC-05 | test | `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（識別子と同じ入力集合の plain string が redact される）、`TestRedactingHandler_Handle_MessageRedaction`、`TestRedactingHandler_ErrorValue` | Phase 2 |
 | AC-06 | test | `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`（拡張後。JSON 出力で `name` が元の string、同じ文字列は output／stderr で redact）、`internal/common/logschema_test.go::TestCommandResults_LogValue`（`KindLogValuer` ＋ `Value.String()`）、`internal/logging/slack_handler_test.go::TestSlackHandler_IdentifierScopeSurvivesRedaction`（Slack 読み取り） | Phase 4 |
 | AC-07 | static | `internal/identifier/identifier_guard_test.go::TestIdentifierDeclarationCatalog`（呼び出しサイトの目録と走査結果の双方向照合、12 ファイル・43 件。定義パッケージ内は `go/types` 検査） | Phase 4.5 |
-| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗し、`internal/identifier` 内に `name` を設定する別コンストラクタを足すと `go/types` 検査で失敗する） | Phase 2・4.5 |
-| AC-09 | test | `internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`（新規。redaction を発火させる名前の `command_name` が残る）と `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler`（拡張後。`command_group_summary` のコマンド一覧の名前が残る） | Phase 4 |
+| AC-08 | test + static | test: `internal/redaction/redactor_test.go::TestRedactingHandler_PlainStringIsStillRedacted`（同じ `command` キーのコマンド名とコマンド行）。static: 同上の guard（§3.5 の値を包むと目録不一致で失敗し、`internal/identifier` 内に `name` を設定する別コンストラクタ・転送ラッパー・platform-tagged な別コンストラクタを足すと `go/types` 検査で失敗する） | Phase 2・4.5 |
+| AC-09 | test | `internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_CommandNameSurvivesRedaction`・`TestLogRiskProfile_CommandNameSurvivesRedaction`（新規。redaction を発火させる名前の `command_name` が残る）と `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler`（拡張後。`command_group_summary` のコマンド一覧の名前が残る） | Phase 4 |
 | AC-10 | test | `internal/runner/config/validation_test.go::TestValidateIdentifiers` と `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`。Phase 4.4 と Phase 6 で実行する | Phase 4.4・6 |
 | AC-11 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`（無変更で表示契約を固定）と `internal/common/notification_context_test.go::TestDecodeNotificationContext_Validity`（宣言型と正規化後の string の両形式を受ける更新後の行） | Phase 3 |
 | AC-12 | test | `internal/redaction/redactor_test.go::TestDefaultPatternSets_AreUnchanged`（新規。`DefaultKeyValuePatterns` の集合と件数、`DefaultSensitivePatterns` の `AllowedEnvVars` の集合と結合正規表現のソース、`valueDetectorPatterns` の各正規表現ソースを固定）と、`internal/redaction/sensitive_patterns_test.go`・`internal/redaction/value_detector_test.go` の既存テストが無変更で通ること | Phase 2 |
