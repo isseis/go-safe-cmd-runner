@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | `-` |
-| Reviewer | `-` |
-| Comments | `-` |
+| Review date | 2026-09-13 |
+| Reviewer | isseis |
+| Comments | - |
 
 本設計書で既存挙動について述べる箇所は、特に断りのない限り commit `88624849`（`docs(0173): Approved the requirements document`）時点のコードで検証した。
 
