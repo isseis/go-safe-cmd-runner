@@ -94,7 +94,7 @@ Work in the following order.
 - [ ] Every `static` verification names an artifact that will be executed (guard test, `make` target, committed script) rather than a shell command that exists only in the document. Any command quoted in the document was actually run while writing the plan, with its output and commit recorded.
 - [ ] Test tasks cover non-trivial logic, error paths, and boundary values where applicable.
 - [ ] Every mutation or negative check names a test that exercises the code path the mutation breaks; an "unchanged vs changed" comparison asserts the artifact that path produces (e.g. the returned kind/type or the partial replacement), and a set-invariance criterion pins membership/cardinality or an equivalent detectable assertion.
-- [ ] A design that dispatches on a concrete type compiler-enforces its construction (a leaf package with unexported fields) or enumerates every same-package construction/mutation form in the guard with a mutation for each; the plan states which.
+- [ ] A design that dispatches on a concrete type enforces its construction at compile time (a leaf package with unexported fields) or enumerates every same-package construction/mutation form in the guard with a mutation for each; the plan states which.
 - [ ] Creation tasks (new prose, tables, command examples, runbooks, translations) each have a verification task that checks the content against ground truth, not only an absence-search.
 - [ ] The plan does not duplicate tests or re-test behavior that existing tests already cover without reason.
 - [ ] The plan reuses existing implementations, tests, and helper utilities where appropriate.
