@@ -272,8 +272,12 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 - [ ] `internal/identifier/identifier_test.go` に、`NewIdentifier(name).Name()` と
       `.String()` が名前を返すこと、`LogValue()` が `KindString` で名前を返すこと、ゼロ値
       `Identifier{}` が空名として扱われることを検証するテーブルテストを書く。
-- [ ] `go list -deps ./internal/identifier` が標準ライブラリだけを返すことを確認する
-      （leaf パッケージの条件）。
+- [ ] `internal/identifier` が内部パッケージを import しないことを確認する。`go list
+      -deps ./internal/identifier` は対象パッケージ自身を必ず含むため、返り値をそのまま
+      「標準ライブラリだけ」と比較しない。`go list -f '{{join .Imports "\n"}}'
+      ./internal/identifier` で直接 import を列挙し、または `-deps` の出力から対象
+      パッケージを除外して、標準ライブラリ以外が無いこと（leaf パッケージの条件）を
+      確認する。
 - [ ] AC-19 の確認: `LogValue` を名前ではなく固定文字列へ変えるなど、テストが検証対象と
       する挙動を一時的に壊して `internal/identifier/identifier_test.go` が失敗することを
       確認し、結果をコミットメッセージに記す。
@@ -401,7 +405,8 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
       `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
       この符号化は Phase 4.5 の guard が守る宣言サイトの 1 つであり、guard の目録・
-      アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。
+      アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。この符号化の
+      AC-19 mutation（下位値を一時的に `slog.String` へ戻す）は Phase 4.4 に記す。
 - [ ] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
       または可変長引数への `identifier.NewIdentifier(値の式)` へ置き換える。`slog.Attr` を
       取る位置は `slog.Any` を使う。`internal/identifier` を各パッケージで import する。
@@ -423,6 +428,13 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 - [ ] `group_executor_test.go` の 4 つの期待値（`:2473`・`:2486`・`:2598`・`:2674`）と
       呼び出し 1 箇所（`:2880`）を `identifier.NewIdentifier(…)` を用いる形へ更新する。
+      `TestCommandDebugLogArgs_StdoutTruncation` は呼び出し側の更新だけでは
+      `buildCommandDebugLogArgs` が型付きの値を返すことを確認できないため、戻り値の
+      `command` 要素が `identifier.Identifier` であることもアサートする。
+- [ ] AC-19 の確認: `buildCommandDebugLogArgs`（`group_executor.go`）の `command` に
+      一時的に `cmdName.Name()`（plain string）を載せ、
+      `TestCommandDebugLogArgs_StdoutTruncation` が失敗することを確認して復元する。
+      破壊と復元の対象・テスト名をコミットメッセージに記す。
 - [ ] `group_executor_timeout_test.go:94` の比較を
       `identifier.NewIdentifier("sleeps-past-its-timeout")` との比較へ更新する。
 - [ ] `runner_test.go::TestCommandResult_LogValue` の期待値マップ（`:2010`・`:2027`・`:2044`）
@@ -441,6 +453,12 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       `TestRedactingHandler_ResolvesNotificationContextLogValue` に `monkey` を group、
       `rotate_api_key` を command とするケースを足す。RedactingHandler を通した後の復号が
       元の名前を返すことを検証する（AC-01、AC-02）。
+- [ ] AC-19 の確認: `NotificationContext.LogValue`（`notification_context.go`）の
+      `group`・`command` の下位値を一時的に `slog.String` へ戻し、
+      `TestRedactingHandler_ResolvesNotificationContextLogValue` の `monkey` ケースが
+      失敗することを確認して復元する。テストケースを削除しても、そのケースが挙動を
+      検証しなくなるだけで同じ失敗は確認できないため、production の符号化を壊す。破壊と
+      復元の対象・テスト名をコミットメッセージに記す。
 - [ ] `internal/logging/slack_handler_test.go` に
       `TestSlackHandler_IdentifierScopeSurvivesRedaction` を追加する。
       `TestSlackHandler_WithRedactingHandler` と同じ配線（RedactingHandler →
@@ -493,12 +511,13 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       直接呼び出しの被呼び出しを除いて、値位置に `NewIdentifier` 識別子が残っていれば
       失敗させる。
 - [ ] `internal/identifier` の production ファイルを AST 走査し、`Identifier` の `name`
-      フィールドを設定する複合リテラルとフィールド代入が `NewIdentifier` の本体内だけに
-      現れることを要求する。`FromString` のような別コンストラクタや `id.name = …` の代入が
-      パッケージ内に現れれば失敗させる（02_architecture.md §3.1、§7.3）。定義パッケージ外は
-      コンパイラが拒否するため、この検査は `internal/identifier` に限定する。
+      フィールドを設定する複合リテラルとフィールド代入（構造体変数の `id.name = …` と
+      ポインタ変数の `p.name = …` の両方）が `NewIdentifier` の本体内だけに現れることを
+      要求する。`FromString` のような別コンストラクタやフィールド代入がパッケージ内に
+      現れれば失敗させる（02_architecture.md §3.1、§7.3）。定義パッケージ外はコンパイラが
+      拒否するため、この検査は `internal/identifier` に限定する。
 - [ ] 対照テスト `TestIdentifierDeclarationCatalog_Control` を置く。合成ソースに対して、
-      次の 5 入力で検査が失敗することを確認する（CLAUDE.md 「Every test must be able to
+      次の 7 入力で検査が失敗することを確認する（CLAUDE.md 「Every test must be able to
       fail for its stated reason」）。
   - 目録外の宣言を 1 件足した入力
   - 目録にある宣言を 1 件欠いた入力
@@ -506,10 +525,30 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
   - 同じ組の件数を保ったまま、囲むログ呼び出しを別のものへ移した入力
   - `internal/identifier` 内に `Identifier{name: "free text"}` を返す別コンストラクタを
     足した入力
+  - `internal/identifier` 内に `makeID := NewIdentifier` の形の非修飾エイリアスを足した
+    入力。修飾形の `ValueRef` 報告には現れないため、guard 自身の AST 走査が拒否することを
+    確認する
+  - `internal/identifier` 内に `Identifier.name` へフィールド代入する別コンストラクタを
+    足した入力。`var id Identifier; id.name = s; return id` と、ポインタ変数形
+    `id := &Identifier{}; id.name = s; return *id` の両方を含める
 - [ ] AC-19 の確認: 宣言サイトを 1 件削除すると guard が失敗すること、展開済みコマンド行を
       `identifier.NewIdentifier` で包むと guard が失敗すること、`internal/identifier` 内に
-      `name` を設定する別コンストラクタを足すと guard が失敗することを確認し、コミット
-      メッセージに記す。
+      複合リテラルまたはフィールド代入で `name` を設定する別コンストラクタを足すと guard が
+      失敗することを確認し、コミットメッセージに記す。
+
+**分岐と証拠の対応。** Phase 4 が主張する分岐・変換ごとに、その分岐を欠いた実装では
+通らない証拠を次の表で固定する。guard の対照入力は
+`TestIdentifierDeclarationCatalog_Control` が、production mutation は Phase 4.4 の
+AC-19 確認が担う。
+
+| 分岐・変換 | 失敗させる証拠 | 対応するテスト |
+|---|---|---|
+| 修飾エイリアス `makeID := identifier.NewIdentifier` の拒否 | 対照入力: 修飾エイリアスを足した合成ソース | `TestIdentifierDeclarationCatalog_Control` |
+| 非修飾エイリアス `makeID := NewIdentifier` の拒否（`internal/identifier` 内） | 対照入力: 非修飾エイリアスを足した合成ソース | 同上 |
+| 複合リテラル `Identifier{name: …}` の拒否（`internal/identifier` 内） | 対照入力: `Identifier{name: "free text"}` を返す別コンストラクタ | 同上 |
+| フィールド代入 `id.name = …` の拒否（`internal/identifier` 内。ポインタ変数形を含む） | 対照入力: フィールド代入する別コンストラクタ | 同上 |
+| `NotificationContext.LogValue` の `group`／`command` 符号化 | AC-19 mutation: 下位値を一時的に `slog.String` へ戻す | `TestRedactingHandler_ResolvesNotificationContextLogValue`（`monkey` ケース） |
+| `buildCommandDebugLogArgs` の `cmdName` の宣言型変換 | AC-19 mutation: 戻り値に `cmdName.Name()` を載せる | `TestCommandDebugLogArgs_StdoutTruncation` |
 
 **完了条件**: `make test` が通り、AC-07〜AC-09 のテストと guard が通る。
 
