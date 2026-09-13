@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 決定変更（要再承認）: 宣言型 `Identifier` を `internal/common` から leaf パッケージ `internal/identifier` へ移す。`internal/common` をはじめすべての消費者が型の定義パッケージ外になるため、名前を設定する構築（要素を持つ複合リテラル `identifier.Identifier{name: …}` とフィールド代入 `id.name = …`）はコンパイラが拒否する（ゼロ値 `identifier.Identifier{}` は空名として構築できるが、名前は設定できない）。これに伴い、旧設計で guard に追加していた複合リテラル検査・フィールド書き込み検査と対応する AC-19 mutation は削除し、guard は宣言サイト目録（`identifier.NewIdentifier` 呼び出し）と値参照（エイリアス）の拒否に絞る。構築経路をソース走査で列挙する方式はレビュー 3 ラウンドで抜け道（件数を保つ移設・複合リテラル・フィールド代入）が順次見つかったため、コンパイラによる強制へ切り替える（CLAUDE.md「Enforce invariants with the type, not with convention」）。あわせて §5.2 の rollback を、宣言サイトを個別に戻す手順から、その宣言を導入したコミットを revert する手順（同一コミットの目録・固定アサーションごと戻す）へ改めた（§3.4 に同一コミット規約を追加）。 |
+| Review date | 2026-09-13 |
+| Reviewer | isseis |
+| Comments | - |
 
 本設計書で既存挙動について述べる箇所は、特に断りのない限り commit `88624849`（`docs(0173): Approved the requirements document`）時点のコードで検証した。
 
