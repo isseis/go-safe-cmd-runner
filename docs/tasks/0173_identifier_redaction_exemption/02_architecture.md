@@ -8,7 +8,7 @@
 | Created | 2026-09-12 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 決定変更（要再承認）: 宣言型 `Identifier` を `internal/common` から leaf パッケージ `internal/identifier` へ移す。`internal/common` をはじめすべての消費者が型の定義パッケージ外になるため、名前を設定する構築（要素を持つ複合リテラル `identifier.Identifier{name: …}` とフィールド代入 `id.name = …`）はコンパイラが拒否する（ゼロ値 `identifier.Identifier{}` は空名として構築できるが、名前は設定できない）。これに伴い、旧設計で guard に追加していた複合リテラル検査・フィールド書き込み検査と対応する AC-19 mutation は削除し、guard は宣言サイト目録（`identifier.NewIdentifier` 呼び出し）と値参照（エイリアス）の拒否に絞る。構築経路をソース走査で列挙する方式はレビュー 3 ラウンドで抜け道（件数を保つ移設・複合リテラル・フィールド代入）が順次見つかったため、コンパイラによる強制へ切り替える（CLAUDE.md「Enforce invariants with the type, not with convention」） |
+| Comments | 決定変更（要再承認）: 宣言型 `Identifier` を `internal/common` から leaf パッケージ `internal/identifier` へ移す。`internal/common` をはじめすべての消費者が型の定義パッケージ外になるため、名前を設定する構築（要素を持つ複合リテラル `identifier.Identifier{name: …}` とフィールド代入 `id.name = …`）はコンパイラが拒否する（ゼロ値 `identifier.Identifier{}` は空名として構築できるが、名前は設定できない）。これに伴い、旧設計で guard に追加していた複合リテラル検査・フィールド書き込み検査と対応する AC-19 mutation は削除し、guard は宣言サイト目録（`identifier.NewIdentifier` 呼び出し）と値参照（エイリアス）の拒否に絞る。構築経路をソース走査で列挙する方式はレビュー 3 ラウンドで抜け道（件数を保つ移設・複合リテラル・フィールド代入）が順次見つかったため、コンパイラによる強制へ切り替える（CLAUDE.md「Enforce invariants with the type, not with convention」）。あわせて §5.2 の rollback を、宣言サイトを個別に戻す手順から、その宣言を導入したコミットを revert する手順（同一コミットの目録・固定アサーションごと戻す）へ改めた（§3.4 に同一コミット規約を追加）。 |
 
 本設計書で既存挙動について述べる箇所は、特に断りのない限り commit `88624849`（`docs(0173): Approved the requirements document`）時点のコードで検証した。
 
@@ -418,7 +418,7 @@ group 名・コマンド名を属性値として書く production の経路を `
 | `internal/verification/manager.go` | `VerifyGroupFiles` | 223 | `group` | `groupName`（`input.Name` のローカル値） |
 | `internal/verification/manager.go` | `collectVerificationFiles` | 279 | `group` | `input.Name` |
 
-`RuntimeCommand.Name()`・`GroupSpec.Name` 等のフィールド型は変えない。宣言はログを書く行で行う。`normal_manager.go:143` はキー `command_path` に group 名を載せており、値の型は識別子である。キー名の是正は本タスクのスコープ外とし、値だけを宣言する（§5.2）。
+`RuntimeCommand.Name()`・`GroupSpec.Name` 等のフィールド型は変えない。宣言はログを書く行で行う。`normal_manager.go:143` はキー `command_path` に group 名を載せており、値の型は識別子である。キー名の是正は本タスクのスコープ外とし、値だけを宣言する（§5.2）。宣言サイトの追加・削除は、`identifier_guard_test.go` の目録（§7.3）と、その宣言に固定する型・挙動アサーション（該当があれば。§5.2）の更新を同じコミットに含める。免除の rollback はこのコミットを単位に戻す（§5.2）。
 
 `SecurityLogger` の 4 メソッド（[`internal/logging/security.go`](../../../internal/logging/security.go)）は引数 `cmdName` の型を `string` から `identifier.Identifier` へ変え、`buildCommandDebugLogArgs`（[`internal/runner/group_executor.go:553`](../../../internal/runner/group_executor.go)）も `cmdName identifier.Identifier` を受ける。宣言（`identifier.NewIdentifier(…)`）は各呼び出し元で行う。実呼び出し元は `LogUnlimitedExecution` が [`group_executor.go:537`](../../../internal/runner/group_executor.go)、`LogTimeoutExceeded` が [`:585`](../../../internal/runner/group_executor.go)、`buildCommandDebugLogArgs` が [`:612`](../../../internal/runner/group_executor.go) である。ヘルパーが内部で `NewIdentifier(cmdName)` を呼ぶ形だと、そのヘルパー 1 箇所が目録に載るだけで、将来の呼び出し元が `cmd.ExpandedCmd` のような自由文を渡しても guard に新しい宣言が見えずに免除されてしまう。引数型を宣言型にすれば呼び出し元が `identifier.NewIdentifier(…)` を書くことが guard の引数式照合の対象になり、目録外の呼び出しはテストで拒否される（「Enforce invariants with the type, not with convention」）。`LogLongRunningProcess` と `LogTimeoutConfiguration` には現時点で production の呼び出し元が無いが、同じく `identifier.Identifier` を受けるため、将来の呼び出し元は呼び出しサイトで宣言し、§7.3 の目録へ追加しなければならない。この型変更に伴い `internal/logging/security_test.go` と `internal/runner/group_executor_test.go:2880` の呼び出しを `identifier.NewIdentifier(…)` を渡す形へ更新する（§7.4）。
 
@@ -538,7 +538,7 @@ flowchart LR
 - **コマンド行の redaction は維持される。** 展開済みコマンド行は plain string であり、`--password=x` や `token=…` を含めば従来どおり redact される。同名のコマンド名は免除される。この対照がキー名除外を採らない理由そのものであり、AC-08 のテストで固定する。
 - **パターン集合を変更しない。** `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターンは変更しない（AC-12）。自由文の検出挙動は不変である。
 - **キー `command_path` の誤った値。** `normal_manager.go:143` はキー `command_path` に group 名を載せている。キー名の是正はログスキーマを変えるため本タスクでは行わず、値だけを識別子として免除する。
-- **運用上の扱い（kill switch と rollback）。** 免除を止める専用の実行時スイッチは設けない。免除された値は正規化後の string としてそのままログ・通知に現れるため、オンコールは通知に出た名前を TOML と照合すれば「宣言済みで免除された」ことを確認できる。免除は失敗ではないため `RedactingHandler.ErrorCollector` には記録しない。漏洩が疑われる場合は、該当する宣言サイトを plain string へ戻すコミットで免除を解除する（型は `internal/identifier` に残る）。この rollback コミットでは、同じコミットで `identifier_guard_test.go` の宣言サイト目録（§7.3）から対応するエントリも削除する。目録は宣言サイトと双方向に照合されるため、宣言だけを戻すと「目録にある宣言の欠落」として guard が失敗し、CI が緑にならない。さらに、宣言を plain string へ戻すとその宣言に固定された型・挙動アサーション（例: `TestNotificationContext_LogValueEncoding`、`TestSlackHandler_IdentifierScopeSurvivesRedaction`、`logschema` の `KindLogValuer` アサーション、`TestLogUserGroupExecution_CommandNameSurvivesRedaction`・`TestCommandResults_E2E_Integration`。該当があれば）も崩れるため、同じコミットで revert または更新する。この手順を `security-architecture.ja.md`／`.md` に記す。
+- **運用上の扱い（kill switch と rollback）。** 免除を止める専用の実行時スイッチは設けない。免除された値は正規化後の string としてそのままログ・通知に現れるため、オンコールは通知に出た名前を TOML と照合すれば「宣言済みで免除された」ことを確認できる。免除は失敗ではないため `RedactingHandler.ErrorCollector` には記録しない。漏洩が疑われる場合は、その宣言を導入したコミットを revert して免除を解除する（型は `internal/identifier` に残る）。宣言サイトの追加・削除は、`identifier_guard_test.go` の目録（§7.3）と、その宣言に固定する型・挙動アサーション（例: `TestNotificationContext_LogValueEncoding`、`TestSlackHandler_IdentifierScopeSurvivesRedaction`、`logschema` の `KindLogValuer` アサーション、`TestLogUserGroupExecution_CommandNameSurvivesRedaction`・`TestCommandResults_E2E_Integration`。該当があれば）の更新を同じコミットに含める規約なので（§3.4）、導入コミットの revert が宣言・目録・アサーションを同時に戻し、CI は緑のままになる。同じコミットに別の宣言サイトが混在し、漏洩したサイトだけを戻す場合は、`git revert -n <commit>` で revert を保留して不要な hunk を戻し、そのコミット内で `make test` を実行して guard と CI の green を確認する。この手順を `security-architecture.ja.md`／`.md` に記す。
 
 ### 5.3 Task 0172 の Scope 表示契約
 
@@ -778,4 +778,5 @@ Phase 1 を最初に置くのは、宣言型が Phase 2・3・4 すべての前�
 - **`Identifier` に `LogValue` と `String` の両方を持たせる理由**は §3.1 に記した。前者は redaction 非経由の解決系ハンドラ向け、後者は `slog.Value.String()` を直接呼ぶ既存コード向けである。
 - **`RedactText` ではなく属性レベルで免除する理由。** `RedactText` は string を受け取るため、呼び出し時点で型情報が失われる。免除は `slog.Attr` を扱う層で行う必要がある。
 - **`CommandResultFields.Name` を型変更せず `LogValue` で宣言する理由。** フィールド型を変えると構築サイト全体と抽出コードへ波及する。要件の対象は `LogValue` の符号化であり、フィールドは string のまま宣言サイトだけを変える。
-- **免除に対する専用の kill switch を作らない理由。** 免除は失敗ではなく表示方針であり、実行時スイッチを足すと「redaction が効いているかどうか」が環境依存になる。rollback は該当宣言サイトの revert とし、§5.2 に記した。
+- **免除に対する専用の kill switch を作らない理由。** 免除は失敗ではなく表示方針であり、実行時スイッチを足すと「redaction が効いているかどうか」が環境依存になる。rollback はその宣言を導入したコミットの revert（宣言・目録・固定アサーションをまとめて戻す）とし、§5.2 に記した。
+- **rollback を導入コミット単位にする理由。** 免除状態は宣言サイト・guard の目録・型／挙動アサーションの 3 つが同時に固定しており、宣言だけを戻すと残り 2 つが CI を落とす。3 つを人手で列挙して直す手順は更新漏れを生むため、同一コミットに含める規約（§3.4）とその revert を rollback の単位にした（§5.2）。
