@@ -25,8 +25,8 @@
 | 用語 | 意味 |
 |---|---|
 | 識別子 | group 名またはコマンド名。TOML に人間が書くリテラルであり、変数展開も外部入力も経由しない |
-| 値ベース 3 層 | `RedactingHandler` が文字列属性へ順に適用する 3 つの値ベース変換。key=value 置換（`Config.RedactText` 内の `keyValuePatterns`）、値形式検出（`ValueDetector.Mask`）、値まるごと判定（`IsSensitiveValue`） |
-| 免除 | 宣言された識別子に対して値ベース 3 層をすべて適用しないこと |
+| 値ベース redaction | 文字列属性の値に含まれる機密情報を検出してマスクする処理。実装は key=value 置換（`Config.RedactText` 内の `keyValuePatterns`）、値形式検出（`ValueDetector.Mask`）、値まるごと判定（`IsSensitiveValue`）の 3 層 |
+| 免除 | 宣言された識別子に対して値ベース redaction を適用しないこと |
 | 宣言型 | 識別子であることを型で示す `common.Identifier` |
 | 宣言サイト | group 名・コマンド名をログ属性値として書く production の各行 |
 | Scope | Slack 通知がどの group／command で起きたかを示すフィールド。Task 0172 で導入された |
@@ -36,7 +36,7 @@
 ### 1.1 設計原則
 
 1. 識別子を免除するかどうかは、属性キーでも値の内容でもなく、値の型で宣言する（Declare, don't infer）。production コードが `common.Identifier` を構築した値だけを免除する。
-2. 免除は値ベース 3 層すべてに及ぶ。key=value 置換・値形式検出・値まるごと判定のいずれも識別子には適用しない。
+2. 免除は値ベース redaction のすべての層に及ぶ。key=value 置換・値形式検出・値まるごと判定のいずれも識別子には適用しない。
 3. 自由文（stdout・stderr・コマンド行・引数・環境変数値・message・error 文字列）の redaction は一切弱めない。同じ文字列でも、宣言型でない限り従来どおり redact される。
 4. 下流ハンドラには string として正規化して渡す。`RedactingHandler` の免除経路が `common.Identifier` を `slog.StringValue` に変換してから転送するため、JSON ハンドラ・text ハンドラ・`SlackHandler`・`message_formatter` の読み取りコードは変更しない。
 5. Task 0172 の決定（識別子の中身を設定検証で redaction と照合しない）を維持する。本タスクは表示時に書き換えないことを保証する。
@@ -59,7 +59,7 @@ flowchart LR
     REC[("slog.Record")]
     RH["RedactingHandler"]
     EX["string 正規化"]
-    VC["値ベース 3 層"]
+    VC["値ベース redaction"]
     OUT["MultiHandler"]
 
     CFG --> PROD
@@ -101,9 +101,9 @@ flowchart LR
 
 矢印 A → B は「A が B へデータを渡す、または A を起点として B の処理が始まる」ことを表す。同じ `slog.Record` に識別子と自由文が同居し、`RedactingHandler` は属性ごとに次の順で経路を決める。
 
-1. キー名が機密（`IsSensitiveKey`）に一致する属性は常にマスクする（本図では省略）。
-2. 属性値が `common.Identifier` のときは免除経路（`string 正規化`）へ進み、値ベース 3 層を通さない。
-3. それ以外の属性は値ベース 3 層へ進み、従来どおり redact される。値ベース 3 層は key=value 置換（`Config.RedactText`）、値形式検出（`ValueDetector.Mask`）、値まるごと判定（`SensitivePatterns.IsSensitiveValue`）の順に適用される。対象は string だけでなく、再帰の結果として現れる文字列属性を含む。グループ値・`LogValuer` は再帰し、その各文字列属性が同じ 2・3 の判定で振り分けられる。
+1. キー名が機密（`IsSensitiveKey`）に一致する属性は値まるごとマスクする（本図では省略）。本タスクが識別子を載せるキー（`group`・`command`・`command_name`・`name`・`notification_context`）はいずれもこのパターンに一致しないため、識別子にこの処理は適用されない。
+2. 属性値が `common.Identifier` のときは免除経路（`string 正規化`）へ進み、値に含まれる機密情報をマスクする値ベース redaction を適用しない。
+3. それ以外の属性は、値に含まれる機密情報をマスクする値ベース redaction の対象になり、従来どおり redact される。実装は key=value 置換（`Config.RedactText`）、値形式検出（`ValueDetector.Mask`）、値まるごと判定（`SensitivePatterns.IsSensitiveValue`）の 3 層から成る。対象は string だけでなく、再帰の結果として現れる文字列属性を含む。グループ値・`LogValuer` は再帰し、その各文字列属性が同じ 2・3 の判定で振り分けられる。
 
 `common.Identifier` を構築しない限り、同じ内容の文字列でも 3 へ進む。これが免除が宣言型だけに掛かることの意味である。
 
@@ -111,7 +111,7 @@ flowchart LR
 
 現在の `RedactingHandler.redactLogAttributeWithContext` は、文字列属性に対して key=value 置換（`Config.RedactText`）を行い、変化が無ければ値まるごと判定（`IsSensitiveValue`）を行う（[`internal/redaction/redactor.go:764`](../../../internal/redaction/redactor.go)、[`internal/redaction/redactor.go:775`](../../../internal/redaction/redactor.go)）。`RedactText` はさらに値形式検出（`ValueDetector.Mask`）を内包する（[`internal/redaction/redactor.go:289`](../../../internal/redaction/redactor.go)）。キー名によるマスク（`IsSensitiveKey`）はこの手前にあり、`group`・`command`・`command_name`・`name`・`notification_context` はいずれも一致しない（[`internal/redaction/sensitive_patterns.go:127`](../../../internal/redaction/sensitive_patterns.go)）。
 
-変更後は、`common.Identifier` 型の値が属性に現れたときだけ、値ベース 3 層を通さず string へ正規化して転送する。それ以外の値の扱いは変えない。
+変更後は、`common.Identifier` 型の値が属性に現れたときだけ、値ベース redaction を適用せず string へ正規化して転送する。それ以外の値の扱いは変えない。
 
 #### 既存の単純な案を採らない理由
 
@@ -152,7 +152,7 @@ flowchart LR
     subgraph Redaction["internal/redaction（common を新たに import）"]
         RH["RedactingHandler"]
         EX["string 正規化"]
-        VC["値ベース 3 層"]
+        VC["値ベース redaction"]
     end
 
     RECORD[("slog.Record")]
@@ -223,7 +223,7 @@ flowchart LR
 
 `internal/runner`・`internal/runner/resource`・`internal/runner/base/audit`・`internal/runner/config`・`internal/verification`・`internal/logging` は既に `internal/common` を直接 import しているため、新しい辺は増えない。`internal/common` は `internal/` パッケージを 1 つも import しない（`go list -f '{{join .Imports "\n"}}' ./internal/common` の内部パッケージは空）。したがって新しい辺はいずれも非循環である。
 
-`internal/redaction` は「宣言型を知らなくても値ベース 3 層を適用できる」低レベルな primitive である。`common` への依存は primitive の独立性を少し下げるが、免除の判断主体は redaction 側にあり、宣言型は common が持つため、この 1 本は受け入れる。将来 `common` が肥大化した場合は、識別子型を小さな leaf パッケージへ切り出す余地がある（§9）。
+`internal/redaction` は「宣言型を知らなくても値ベース redaction を適用できる」低レベルな primitive である。`common` への依存は primitive の独立性を少し下げるが、免除の判断主体は redaction 側にあり、宣言型は common が持つため、この 1 本は受け入れる。将来 `common` が肥大化した場合は、識別子型を小さな leaf パッケージへ切り出す余地がある（§9）。
 
 ### 2.2 コンポーネント配置
 
@@ -237,7 +237,7 @@ flowchart LR
 | `internal/common/logschema.go` | 変更 | `CommandResult.LogValue` と `CommandResults.LogValue` の `name` を `Identifier` で符号化する | `internal/common/logschema_test.go` は `Value.String()` 比較のため原則そのまま通る（§7.1） |
 | `internal/common/logschema_test.go` | 変更 | 必要なら `Identifier` を明示する行を足す | - |
 | `internal/redaction/redactor.go` | 変更 | `common.Identifier` を認識して string へ正規化する免除経路を `RedactLogAttribute`、`redactLogAttributeWithContext`、`processSlice` に追加する | 免除・対照の新規テスト。既存のパターン集合テストは変更しない |
-| `internal/redaction/redactor_test.go` | 変更 | 免除 3 層、対照（plain string は redact）、コマンド行維持、`notification_context` 正規化を検証する | - |
+| `internal/redaction/redactor_test.go` | 変更 | 3 層すべての免除、対照（plain string は redact）、コマンド行維持、`notification_context` 正規化を検証する | - |
 | `internal/runner/group_executor.go` | 変更 | `group`／`command` の識別子宣言（§3.4） | `internal/runner/group_executor_test.go`、`group_executor_timeout_test.go` |
 | `internal/runner/runner.go` | 変更 | `logGroupExecutionSummary` の `group` 宣言 | グループ集計の属性検査 |
 | `internal/runner/config/expansion.go` | 変更 | `resolveAndPrepareCommandSpec` の `command` 宣言 | 該当テスト |
@@ -272,7 +272,7 @@ sequenceDiagram
     alt Identifier
         R->>R: string へ正規化
     else それ以外
-        R->>R: 値ベース 3 層を適用
+        R->>R: 値ベース redaction を適用
     end
     R->>D: 正規化済みレコード
     D->>D: 元の文字列を描画
@@ -422,7 +422,7 @@ group 名・コマンド名を属性値として書く production の経路を `
 
 ### 3.5 宣言型にしないサイト
 
-キー `"command"`・`"group"`・`"name"` に載っていても、展開済みコマンド行・解決済みパス・OS グループ名・プロセス引数・一時ファイル名は識別子ではない。これらは plain string のままとし、値ベース 3 層を従来どおり適用する。
+キー `"command"`・`"group"`・`"name"` に載っていても、展開済みコマンド行・解決済みパス・OS グループ名・プロセス引数・一時ファイル名は識別子ではない。これらは plain string のままとし、値ベース redaction を従来どおり適用する。
 
 | ファイル | 関数 | 行 | キー | 値の式 |
 |---|---|---|---|---|
@@ -591,7 +591,7 @@ flowchart LR
     class L3 problem
 ```
 
-矢印 A → B は「A の判定結果に応じて B へ進む」ことを表す。`Identifier` はキー名判定の後、種別判定の前に short-circuit するため、値ベース 3 層はいずれも実行されない。
+矢印 A → B は「A の判定結果に応じて B へ進む」ことを表す。`Identifier` はキー名判定の後、種別判定の前に short-circuit するため、値ベース redaction のどの層も実行されない。
 
 ### 6.2 書き込みから表示までの伝播
 
@@ -660,7 +660,7 @@ flowchart LR
 | `internal/common/notification_context_test.go` | `LogValue` の下位値が `Identifier` であること、`DecodeNotificationContext` が生の宣言型と正規化後の string の両方を復号すること（AC-06、AC-11） |
 | `internal/common/logschema_test.go` | `CommandResult.LogValue`／`CommandResults.LogValue` の `name` が宣言型で符号化され、`Value.String()` が名前を返すこと（AC-06、AC-09） |
 
-免除のテストは次の値ベース 3 層それぞれの一致形を用意する（AC-04）。
+免除のテストは次の 3 層それぞれの一致形を用意する（AC-04）。
 
 | 層 | 識別子の例 | 対照（plain string） |
 |---|---|---|
