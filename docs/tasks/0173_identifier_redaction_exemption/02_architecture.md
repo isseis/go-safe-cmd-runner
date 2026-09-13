@@ -475,23 +475,29 @@ flowchart TD
 
     NAME[("宣言された識別子")]
     LINE[("展開済みコマンド行<br>標準出力・引数")]
-    T1["脅威1<br>名前に書いた機密が露出"]
-    T2["脅威2<br>コマンド行の誤宣言"]
-    T3["脅威3<br>error 中の識別子が redact"]
-    C1["設定境界検査<br>+ 表示安全な補間契約"]
-    C2["宣言サイトの列挙<br>+ guard テスト"]
-    C3["残余リスクの文書化"]
 
-    NAME --> T1
-    LINE --> T2
-    NAME --> T3
-    C1 -.-> T1
-    C2 -.-> T2
-    C3 -.-> T3
+    subgraph Leak["過剰免除（漏洩方向）"]
+        T1["T1<br>名前に書いた機密が露出"]
+        T2["T2<br>コマンド行の誤宣言で漏洩"]
+        C1["受容と文書化<br>（名前は設定リテラル）"]
+        C2["宣言サイトの列挙<br>+ guard テスト"]
+    end
+
+    subgraph Loss["免除不足（診断性喪失方向）"]
+        T3["T3<br>error 中の識別子が redact"]
+        C3["残余リスクとして文書化"]
+    end
+
+    NAME -->|"名前に機密がある"| T1
+    NAME -->|"自由文に連結される"| T3
+    LINE -->|"誤って Identifier と宣言される"| T2
+    T1 -.->|"対策"| C1
+    T2 -.->|"対策"| C2
+    T3 -.->|"対策"| C3
 
     class NAME,LINE data
-    class C1,C2,C3 enhanced
     class T1,T2,T3 problem
+    class C1,C2,C3 enhanced
 ```
 
 **凡例（Legend）**
@@ -511,7 +517,15 @@ flowchart LR
     class L3 problem
 ```
 
-矢印 A → B は「A から B が生じる（原因）」、破線の矢印 A ⇢ B は「A が B を抑制する（対策）」を表す。`problem` クラスは本図では脅威を表す。識別子は権限判断やコマンド実行には使わず、表示と監査相関にだけ使うため、免除されても実行権限は拡大しない。**脅威2 の実際の対策は「型でのみ免除する」ことではなく、宣言サイトを §3.4 に列挙し `identifier_guard_test.go` で許可リスト外の宣言を検出することである**。`NewIdentifier` は任意の string を受けるため、型だけではコマンド行の誤宣言を防げない。
+実線の矢印 入力データ → 脅威 のラベルは、その入力にこの条件が成り立つと脅威が生じることを表す（発生条件）。破線の矢印 脅威 ⇢ 対策 は、その脅威に対応する対策を表す。入力データを上、脅威を中央、対策を下に置き、入力と対策を分けている。`data` は入力データ、`problem` は脅威、`enhanced` は対策である。脅威は方向が逆の 2 系統に分かれる。T1・T2 は免除が過剰に働いて redaction が漏れる方向、T3 は免除が不足して識別子の診断情報が失われる方向である。
+
+| 脅威 | 発生条件 | 影響 | 対策 | 残るリスク | AC |
+|---|---|---|---|---|---|
+| T1 名前に書いた機密が露出 | 運用者が group 名・コマンド名に機密を書く | その文字列が通知・ログにそのまま出る | 名前は設定リテラルで外部入力経路が無いことを前提に、漏洩の帰結を受容して文書化する。設定境界検査は空名・制御文字・長さを弾き、表示境界の補間契約は Slack の書式としての注入を防ぐ（いずれも機密の秘匿は担わない） | 名前に機密を書いた場合は露出する（AC-14） | AC-14、AC-16 |
+| T2 コマンド行の誤宣言 | 実装者が展開済みコマンド行・自由文を `common.NewIdentifier` で包む | 値ベース redaction が掛からず、`token=…` や `--password=x` が露出する | 宣言サイトを §3.4 に列挙し、`identifier_guard_test.go` で許可リスト外の宣言を検出する。§7.3 の対照テストでコマンド行が redact されることを固定する | なし（テストで固定） | AC-08 |
+| T3 error 中の識別子が redact | 識別子が error メッセージなどの自由文に連結される | 識別子が `[REDACTED]` になり、どの group／command か判別できない | 型では自由文の部分文字列を宣言できないため対策を設けず、残余リスクとして記録する | error 全文が `[REDACTED]` になりうる | AC-13 |
+
+免除は表示と監査相関（Slack の Scope と `Command` フィールド、監査ログの `command_name`）にだけ作用し、権限判断やコマンド実行を変えない。したがって免除が悪用されても実行権限は拡大しない。
 
 ### 5.2 既存の保護との関係と残余リスク
 
@@ -680,7 +694,7 @@ flowchart LR
 
 - 展開済みコマンド行・引数・環境変数値・message・error 文字列の redaction が本タスクの前後で変わらないこと（AC-05）。`--password=x`、`token=…`、`Bearer …`、AWS/GitHub/Slack トークン形を、識別子と同じテスト入力集合で固定する。
 - 同じキー `"command"` に、コマンド名（宣言型）とコマンド行（plain string）を載せ、後者だけが redact されること（AC-08）。
-- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`common.NewIdentifier(` の呼び出しが §3.4 の許可リスト（ファイルと関数）の外に現れないことを検証する。許可リスト外の宣言はテストで失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（脅威2 の実際の対策）。`ProductionGoFilesInRepo` は `//go:build test || performance` のようにタグ `test` を必須としない制約のファイル（`internal/testutil`、`internal/runner/base/executor/testutil`）も production として走査する。テストの期待値を `common.NewIdentifier` で組み立てるコードは `_test.go` に置き、これらの補助パッケージには置かない。
+- 宣言サイトの限定。`internal/common/identifier_guard_test.go` が、既存の `internal/testutil/identitymutationguard` で production の Go ファイルを走査し、`common.NewIdentifier(` の呼び出しが §3.4 の許可リスト（ファイルと関数）の外に現れないことを検証する。許可リスト外の宣言はテストで失敗するため、コマンド行の誤宣言はレビューを経ない限り入らない（T2 の実際の対策）。`ProductionGoFilesInRepo` は `//go:build test || performance` のようにタグ `test` を必須としない制約のファイル（`internal/testutil`、`internal/runner/base/executor/testutil`）も production として走査する。テストの期待値を `common.NewIdentifier` で組み立てるコードは `_test.go` に置き、これらの補助パッケージには置かない。
 - 設定検証が識別子の中身を redaction と照合しないこと。既存の [`TestValidateIdentifiers`](../../../internal/runner/config/validation_test.go) と [`TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`](../../../cmd/runner/integration_pre_execution_error_test.go) をそのまま通す（AC-10）。
 - `DefaultSensitivePatterns`・`DefaultKeyValuePatterns`・`ValueDetector` のパターン集合が変更されていないこと（AC-12）。該当ファイルを変更しないことと、既存のパターンテストが通ることで確認する。
 - `[]Identifier` の要素が免除されること（§3.2 の挿入点を固定する。人工的な `[]common.Identifier` を用意する）。
