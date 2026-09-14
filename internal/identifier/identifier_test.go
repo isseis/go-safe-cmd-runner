@@ -30,6 +30,10 @@ func TestIdentifier(t *testing.T) {
 			attrValue := slog.Any("command", tt.identifier).Value
 			assert.Equal(t, slog.KindLogValuer, attrValue.Kind())
 			assert.Equal(t, tt.want, attrValue.String())
+
+			resolved := attrValue.Resolve()
+			assert.Equal(t, slog.KindString, resolved.Kind())
+			assert.Equal(t, tt.want, resolved.String())
 		})
 	}
 }
