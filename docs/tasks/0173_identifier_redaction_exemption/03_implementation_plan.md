@@ -1139,8 +1139,10 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 
 ### 9.2 品質
 
-- `make test`・`make lint` が各コミットで通り、`make verify-docs` の構造比較レポートに
-  日英文書の見出し差分が無い。
+- `make test`・`make lint` が各コミットで通り、`make verify-docs` の構造比較レポートで、
+  本タスクが変更した文書（`security-risk-assessment.ja.md`／`.md`、
+  `security-architecture.ja.md`／`.md`）に見出し差分が無い。本タスクが未変更の文書に
+  残る着手前からの差分は本基準の対象外とする。
 - 新規・更新テストが AC-01〜AC-11 を覆い、AC-19 の mutation 確認が記録されている。
 
 ### 9.3 セキュリティ
@@ -1155,7 +1157,8 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 - `security-architecture.ja.md` / `.md` と `security-risk-assessment.ja.md` / `.md` が
   更新され、Task 0172 の残余リスクを置き換えたことが追跡できる（AC-15〜AC-17）。
 
-**成功基準の検証結果（Phase 6、2026-09-14）**: 上記の各項目を最終状態で確認した。
+**成功基準の検証結果（Phase 6、2026-09-14）**: 上記の各項目を最終状態で確認した（9.2 の
+構造比較基準は本タスクが変更した文書を対象とする）。
 
 - 9.1: 通知 Scope の `TestSlackHandler_IdentifierScopeSurvivesRedaction`・
   `TestRedactingHandler_ResolvesNotificationContextLogValue`、JSON の
@@ -1167,12 +1170,12 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
   （12 ファイル・43 サイト）と一致する。
 - 9.2: Go を変更した各 Phase のコミットは pre-commit フックが `go test` を実行し、
   計画書の各 Phase 記録も `make test`・`make lint` の通過を記録している。AC-01〜AC-11 の
-  テストが存在して通過し、AC-19 の mutation 記録は各コミットに存在する。構造比較は、
-  本タスクが変更した `security-risk-assessment` の `mismatches` が空（見出し 49/49）で、
-  `security-architecture` も ad hoc 実行で `mismatches` が空（見出し 102/102）。レポート
-  全体では本タスクが未変更の 5 文書（`runner_command.ja.md` と `toml_config/04〜06・08`）
-  に着手前からの見出し・コードブロック件数差が残るが、`88624849..HEAD` でこれらの
-  ファイルに差分は無く、本タスクの影響ではない。
+  テストが存在して通過し、AC-19 の mutation 記録は各コミットに存在する。9.2 の構造比較
+  基準（本タスクが変更した文書）は、`security-risk-assessment` の `mismatches` が空
+  （見出し 49/49）で、`security-architecture` も ad hoc 実行で `mismatches` が空
+  （見出し 102/102）。レポート全体では本タスクが未変更の 5 文書（`runner_command.ja.md`
+  と `toml_config/04〜06・08`）に着手前からの見出し・コードブロック件数差が残るが、
+  `88624849..HEAD` でこれらのファイルに差分は無く、本タスクの影響ではない。
 - 9.3: `TestRedactingHandler_PlainStringIsStillRedacted`・`TestRedactingHandler_ErrorValue`・
   `TestRedactingHandler_Handle_MessageRedaction` が通過し、展開済みコマンド行・OS グループ
   名・`cmdLine`・一時ファイル名を `NewIdentifier` で包む式は存在しない。キー名判定は
@@ -1187,5 +1190,5 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 ## 10. 次のステップ
 
 1. `/runplan` による Phase 1〜5 の実装と、Phase 6 の検証・記録（green gate、`make deadcode`、
-   AC-17 の差分確認、AC-19 の記録、§6〜§8 の進捗）は完了している。PR-1〜PR-5 はマージ済み。
-2. 残る作業は PR-6 の作成とマージだけである。
+   AC-17 の差分確認、AC-19 の記録、§6〜§8 の進捗）は完了している。PR-1〜PR-6 はマージ済み。
+2. 計画された PR はすべてマージ済みで、残る作業は無い。
