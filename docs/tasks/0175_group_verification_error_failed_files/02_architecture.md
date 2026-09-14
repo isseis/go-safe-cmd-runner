@@ -55,7 +55,7 @@ errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
 
 失敗ファイルのパスは設定と実ファイルシステムに由来する任意の文字列である。これを既存の自由文 `Message` へ連結すると、次の 2 つの障害を招く。
 
-- `Message` は redaction の外にある stderr・stdout へそのまま書かれる（`internal/logging/pre_execution_error.go:120-151`）。パスの改行・制御文字が端末出力の行を偽装し、生のパスが露出しうる。
+- `Message` は redaction の外にある stderr へそのまま書かれる（`internal/logging/pre_execution_error.go:120-151`。stdout には `handleErrorCommon` は `Error: <type>` と `RUN_SUMMARY` 行だけを書き、`Message` は書かない）。パスの改行・制御文字が端末出力の行を偽装し、生のパスが露出しうる。
 - `RedactingHandler` の値全体置換は未アンカーの `(?i)(password|token|secret|key|api_key)` の部分一致であり（`internal/redaction/redactor.go:819-823`。パターンは `internal/redaction/sensitive_patterns.go:41`、判定は `:131-134`）、`key` を普通に含むパス（例: `/opt/monkey/data`）が `Message`（自由文、`KindString`）にあるとフィールド全体を消す。この置換は `KindString` にのみ適用され、文字列スライス要素には適用されない（`internal/redaction/redactor.go:1436-1439`）。
 
 本設計は、失敗ファイル一覧を自由文の `error_message` へ連結せず、**専用の構造化属性 `failed_file_paths` として運び、通知ビルダーが `Error Message` フィールドへ描画する**。これにより、人間向け `Message` の経路からこの 2 つの障害を取り除く（構造化属性は他のログ属性と同様に console ハンドラへも描画される。残余は §5.2）。
@@ -318,15 +318,15 @@ type PreExecutionError struct {
 
 **グローバル（`cmd/runner/main.go`）**
 
-- `VerifyGlobalFiles` の失敗で `*verification.Error`（`Details` 付き）が返るとき、`FailedFilePaths` に `Details` の昇順コピーを設定する。
-- `Message` からはパスを除く。`verification.Error` の `Op`・`FailedFiles`・`TotalFiles` から `"%s verification failed: %d of %d files failed"` の形で組み立てる（例: `global verification failed: 1 of 2 files failed`。§7.4 で固定する）。`verification.Error.Error()` は `Details` を連結するため、そのままではパスが二重になる。`*verification.Error` でない失敗は従来どおり `err.Error()` を `Message` に渡し、`FailedFilePaths` を設定しない。
+- `VerifyGlobalFiles` の失敗で `*verification.Error` が返り、かつ `len(Details) > 0` のとき、`FailedFilePaths` に `Details` の昇順コピーを設定する。
+- `Message` からはパスを除く。`verification.Error` の `Op`・`FailedFiles`・`TotalFiles` から `"%s verification failed: %d of %d files failed"` の形で組み立てる（例: `global verification failed: 1 of 2 files failed`。§7.4 で固定する）。`verification.Error.Error()` は `Details` を連結するため、そのままではパスが二重になる。それ以外（`*verification.Error` でない失敗、または `Details` が空の `*verification.Error`）は従来どおり `err.Error()` を `Message` に渡し、`FailedFilePaths` を設定しない。分岐の条件は型だけでなく `Details` の有無で決める。`Details` が空のまま件数書式へ倒すと `0 of N files failed` となり `Err` が落ちるためである（現在の `VerifyGlobalFiles` は `Details` 付きの `*verification.Error` しか返さないが、条件を型だけにすると将来の発火元がこの形に流れ込む）。両発火元とも `PreExecutionError.Err` は設定しない（`Detail()` は `Message` と等しい）。
 - `Type` は `logging.ErrorTypeFileAccess`、`NotificationContext` は `common.GlobalScope()`（いずれも既存）。
 
 並べ替えは両発火元が同じ規則（`Details` をコピーして昇順）で行い、ビルダーは順序を変えない。group の `Details` は `for file := range allFiles`（map）に由来し順序が変わりうる（`internal/verification/manager.go:218`。map の構築は `:260-291`）。グローバルの `Details` は `input.ExpandedVerifyFiles`（スライス）に由来する（`manager.go:146-157`）が、同じ規則で揃える。
 
 失敗ファイル一覧を `Message` へ連結しない理由:
 
-- `Message` は redaction の外にある stderr・stdout へ直接書かれる（`internal/logging/pre_execution_error.go:120-151`）。自由文のパスを入れないことで、`Message` 自体を使った端末出力の偽装を避ける。
+- `Message` は redaction の外にある stderr へ直接書かれる（`internal/logging/pre_execution_error.go:120-151`）。自由文のパスを入れないことで、`Message` 自体を使った端末出力の偽装を避ける。
 - `Message` は `KindString` の自由文であり、値全体置換のヒューリスティクスでフィールド全体が消えうる。パスを入れないことでこれを避ける。
 
 なお、`failed_file_paths` 属性は record の一部であり、非対話実行では `ConditionalTextHandler`（`slog.TextHandler`）が全属性を console へ描画する（`internal/runner/bootstrap/logger.go:219-235`）。端末出力にパスが現れる点は残存リスクとして §5.2 に記録する。
@@ -362,7 +362,7 @@ type PreExecutionError struct {
 | `verification.Error` の型・`Error()` | 01 §対象外。既存の表現を使う。グローバルは発行元でパスを含まない `Message` を組み立てる |
 | 共通エンベロープ・通知種別定義・`error_type`・Slack フィールド集合 | 0172 §3.4・§3.5 を維持する。変えるのは既存 `Error Message` の値だけ。グローバルの `error_type` は `file_access_failed` のまま |
 | redaction の適用範囲 | 変更しない。`failed_file_paths` の要素は既存の `processSlice` が `RedactText` のみを適用する（`internal/redaction/redactor.go:1436-1439`） |
-| `handleErrorCommon` の stderr・stdout の書式 | パスを含まない `Message` をそのまま書く（既存のまま） |
+| `handleErrorCommon` の stderr・stdout の書式 | stderr にはパスを含まない `Message` をそのまま書き、stdout には `Message` を書かない（既存のまま） |
 
 ### 3.5 既存テストへの影響
 
@@ -427,7 +427,7 @@ type PreExecutionError struct {
 
 | 脅威 | 対策 |
 |---|---|
-| パスの改行・制御文字が stderr・stdout の行や端末エスケープを偽装する | パスを `Message` に入れない。stderr・stdout は件数とセンチネルだけを書く（§3.2） |
+| パスの改行・制御文字が stderr の行や端末エスケープを偽装する | パスを `Message` に入れない。stderr は件数とセンチネルだけを書く（§3.2） |
 | パスの `&`・`<`・`>` で Slack のメンション・偽装リンクを作る | `Error Message` への埋め込みは既存の表示安全な補間契約（実体参照化）を通る（§3.3） |
 | パスの `key`・`token` の部分一致で未アンカーな値全体置換が発火し、通知全体が消える | パスを自由文 `Message` へ入れない。`failed_file_paths` の要素は文字列スライス要素であり値全体置換の対象外（既存挙動、§5.4） |
 | パスの生の機密（トークン等）がログ・Slack へ漏れる | `failed_file_paths` の要素に既存の `RedactText`（値形式検出と key=value 置換）が適用される（§5.4） |
@@ -453,7 +453,7 @@ flowchart TD
     RED --> BUILD["buildPreExecutionError<br>丸ごと優先・省略記号付き切り詰め"]
     BUILD --> INT["Interpolate（自由文）<br>1 行・実体参照化・500 byte"]
     INT --> SLACK["Slack Error Message"]
-    MSG["error_message<br>件数とセンチネル"] --> STDERR["stderr・stdout<br>（redaction の外）"]
+    MSG["error_message<br>件数とセンチネル"] --> STDERR["stderr<br>（redaction の外）"]
     PATH -.->|"Message に入れると"| T1["脅威: 端末出力の偽装"]
     PATH -.->|"Message の自由文なら"| T2["脅威: 通知全体の消去"]
 
@@ -489,7 +489,7 @@ flowchart LR
 
 `error_message` の redaction は一切変更しない。値全体置換（`IsSensitiveValue`）を含め、既存の挙動をそのまま引き継ぐ。パスはそこに含まれないため、`/opt/monkey/data` のようなパスで通知が消える問題は構造的に起きない。
 
-`failed_file_paths` は新しい属性で、グローバルと group の検証エラー発火元が設定する。要素は既存の `processSlice` が `RedactText`（値形式検出と key=value 置換）だけを適用し、値全体置換は行わない（§5.4）。`failed_file_paths` は `Message` にも `handleErrorCommon` の stderr・stdout にも入らない。ビルダーが `Error Message` へ描画する文字列は、既存の自由文の役割の補間契約を通る。0172 §3.5 の「動的な値の一覧」に `failed_file_paths` の要素を自由文の役割で追加する。
+`failed_file_paths` は新しい属性で、グローバルと group の検証エラー発火元が設定する。要素は既存の `processSlice` が `RedactText`（値形式検出と key=value 置換）だけを適用し、値全体置換は行わない（§5.4）。`failed_file_paths` は `Message` にも `handleErrorCommon` の stderr にも入らない。ビルダーが `Error Message` へ描画する文字列は、既存の自由文の役割の補間契約を通る。0172 §3.5 の「動的な値の一覧」に `failed_file_paths` の要素を自由文の役割で追加する。
 
 **他タスクのポリシー変更。** 元のポリシーは 0172 アーキテクチャ設計書 §3.5（`approved`）の「動的な値の一覧」で、通知へ到達しうる動的な値を列挙して役割を割り当てる。本タスクはここに `failed_file_paths` の要素（役割は自由文）の行を追加する。通知書式・エンベロープ・種別定義は変えない。0172 は `approved` のため、この編集は decision change として 0172 を `draft` に戻し再承認が必要である。更新するテストは 0172 の `internal/logging/notification_test.go` の一覧対応の検査で、`failed_file_paths` の行を追加する。
 
@@ -520,7 +520,7 @@ flowchart LR
 
 1. `VerifyGroupFiles` が失敗し、`*verification.Error` に `Details` と件数を設定して返す（既存）。
 2. `executeGroups` が `Message`（件数とセンチネル）と `FailedFilePaths`（昇順）を設定し、`HandlePreExecutionError` を呼ぶ。
-3. `HandlePreExecutionError` が `failed_file_paths` 属性を加え、`handleErrorCommon` が `Detail()`（この経路では `Message` と等しい）を stderr・stdout へ書く。
+3. `HandlePreExecutionError` が `failed_file_paths` 属性を加え、`handleErrorCommon` が `Detail()`（この経路では `Message` と等しい）を stderr へ書く。
 4. `RedactingHandler` が `failed_file_paths` の各要素に `RedactText` を適用する（値全体置換なし）。
 5. `SlackHandler` が `buildPreExecutionError` で `error_message` の値と全パスを連結し、`WithinInterpolationLimit` が真なので省略通知なしで確定する。
 6. `Interpolate`（自由文）を通し、`Error Message` フィールドへ載せる。
@@ -537,7 +537,7 @@ flowchart LR
 
 1. `VerifyGroupFiles` が失敗し、`Details` を持たない `*verification.Error` を返す（既存）。
 2. `executeGroups` は `FailedFilePaths` を設定しない（空）。
-3. `handleErrorCommon` は `error_message` だけを記録し、stderr・stdout に既存の `Total: ..., Error: <verErr.Err>` を書く。
+3. `handleErrorCommon` は `error_message` だけを記録し、stderr に既存の `Total: ..., Error: <verErr.Err>` を書く。
 4. ビルダーは `failed_file_paths` がないので `error_message` 属性の値（`Detail()`）をそのまま `Error Message` にする（後方互換）。
 
 ### 6.4 グローバル検証エラー（group と同じ描画）
@@ -610,7 +610,7 @@ flowchart LR
 - `failed_file_paths` の要素が `key` を普通に含む（例: `/opt/monkey/data`）場合、`RedactingHandler` を通しても要素はマスクされず残る（`processSlice` が文字列要素に `RedactText` のみを適用する）。
 - `failed_file_paths` の要素が値形式の機密（GitHub トークン、`password=` など）を含む場合、当該部分は `[REDACTED]` になる。
 - `error_message` など `failed_file_paths` 以外の属性は従来どおり値全体置換を受け、`TestRedactingHandler_PlainStringIsStillRedacted` が成立し続ける。
-- `handleErrorCommon` の stderr・stdout 出力にパスが現れないことを `internal/logging` のテストで固定する。
+- `handleErrorCommon` の stderr 出力にパスが現れないことを `internal/logging` のテストで固定する。
 
 ### 7.6 テストの失敗確認は実装時に行う
 
