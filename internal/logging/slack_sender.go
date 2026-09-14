@@ -350,7 +350,9 @@ func (sd *slackSender) sendSync(ctx context.Context, req slackRequest) error {
 	}
 	defer sd.syncInFlight.Done()
 
-	sendCtx, cancel := context.WithTimeout(ctx, sd.sendTimeout)
+	// Detached from the log call's context for the same reason as in serve: a
+	// cancelled run must not abort the notification that reports its failure.
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sd.sendTimeout)
 	defer cancel()
 
 	err := sd.send(sendCtx, req, false)

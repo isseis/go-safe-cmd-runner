@@ -151,8 +151,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 失敗分岐への配線と setuid 統合テストを実装
 
@@ -160,21 +160,22 @@
 
 **作業内容**:
 
-- [ ] 失敗分岐（`executor.go:282-295`）で `pc.child.started()` が true のときだけ `auditUserGroupExecution` を呼ぶ。`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばない。既存の `failureAttrs`・`User/group privilege execution failed` ログ・戻り値は変えない（02_architecture.md §3.3）。
-- [ ] `assertCommandFailureWindows` を追加する。`assertFailureWindows` に倣い、"User/group command failed" の ERROR レコードを取得して既存の `assertWindowAttrs` を適用する。
-- [ ] `TestPrivilegeGap_UserGroupFailureRecord` を追加する（02_architecture.md §7.2 のケース (a)）。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild` に失敗レコードの検証を追加する（ケース (b)）。
-- [ ] `TestPrivilegeGap_CancelKillsChild` に同様の検証を追加する（ケース (c)）。
-- [ ] `TestPrivilegeGap_UserGroupFailureWithoutAuditLogger` を追加する（ケース (d)）。fixture の基本オプションは常に `WithAuditLogger` を含むため、`AuditLogger` を nil にする `executor.Option` を fixture の追加オプションとして渡す。
-- [ ] `TestPrivilegeGap_UserGroupNotStartedNoAudit` を追加する（ケース (e)）。`runtimeCommand` に存在しない絶対パスを渡す。
-- [ ] `TestPrivilegeGap_ChildCredentialsMatchTarget` に「成功レコード 1 件のみで失敗レコードがない」検証を追加する。
-- [ ] `TestPrivilegeGap_RefusedElevationDoesNotRecordWindow` に "User/group command failed" レコードが出ないことの検証を追加する（昇格拒否＝未開始の一形態。02_architecture.md §7.2 のケース外だが AC-05 の対象）。
-- [ ] `TestPrivilegeGap_StagingCancellationCleansUp` に失敗レコードの検証を追加する（staging フォールバックのキャンセルで、開始・kill・staging cleanup のメトリクスを含む）。
-- [ ] `TestPrivilegeGap_OutputLimitAbortsRunningChild` に失敗レコードの検証を追加する（出力上限でシグナル終了する経路。開始区間のメトリクスを含む）。
-- [ ] ケース (e) は統合テストが `package executor_test` にあり `pc.child` を読めないため、状態は Phase 1 の遷移テストで固定し、統合テストはレコードと通知の不在だけを観測する。この分担をコメントに残す。
-- [ ] 非特権の `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` に、`prepareCommand` が失敗する開始前キャンセル（キャンセル済み ctx で run-as 実行）で監査レコードが出ないサブテストを追加する（AC-05 の `prepareCommand` 失敗の観測）。
-- [ ] 必須テスト名の一覧（`:151`）に新設 3 テスト（`TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_UserGroupFailureWithoutAuditLogger`・`TestPrivilegeGap_UserGroupNotStartedNoAudit`）を追加する。既存 2 テストの拡張は一覧に既にある。
-- [ ] `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` の doc コメント（`:680-683`）とサブテスト内コメント（`:716`）を、この失敗は子プロセス開始前であり監査レコードが出ないという趣旨へ更新する。アサーションは変えない。
+- [x] 失敗分岐（`executor.go:282-295`）で `pc.child.started()` が true のときだけ `auditUserGroupExecution` を呼ぶ。`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばない。既存の `failureAttrs`・`User/group privilege execution failed` ログ・戻り値は変えない（02_architecture.md §3.3）。
+- [x] `assertCommandFailureWindows` を追加する。`assertFailureWindows` に倣い、"User/group command failed" の ERROR レコードを取得して既存の `assertWindowAttrs` を適用し、通知メタデータを呼び出し側で検証できるようレコードを返す。通知メタデータ（`audit_type`・`message_type`・通知コンテキスト）の検証は `assertCommandFailureNotificationAttrs` に集約し、各ケースで重複させない。
+- [x] `TestPrivilegeGap_UserGroupFailureRecord` を追加する（02_architecture.md §7.2 のケース (a)）。
+- [x] `TestPrivilegeGap_TimeoutKillsChild` に失敗レコードの検証を追加する（ケース (b)）。
+- [x] `TestPrivilegeGap_CancelKillsChild` に同様の検証を追加する（ケース (c)）。
+- [x] `TestPrivilegeGap_UserGroupFailureWithoutAuditLogger` を追加する（ケース (d)）。fixture の基本オプションは常に `WithAuditLogger` を含むため、`AuditLogger` を nil にする `executor.Option` を fixture の追加オプションとして渡す。
+- [x] `TestPrivilegeGap_UserGroupNotStartedNoAudit` を追加する（ケース (e)）。`runtimeCommand` に存在しない絶対パスを渡す。
+- [x] `TestPrivilegeGap_ChildCredentialsMatchTarget` に「成功レコード 1 件のみで失敗レコードがない」検証を追加する。
+- [x] `TestPrivilegeGap_RefusedElevationDoesNotRecordWindow` に "User/group command failed" レコードが出ないことの検証を追加する（昇格拒否＝未開始の一形態。02_architecture.md §7.2 のケース外だが AC-05 の対象）。
+- [x] `TestPrivilegeGap_StagingCancellationCleansUp` に失敗レコードの検証を追加する（staging フォールバックのキャンセルで、開始・kill・staging cleanup のメトリクスを含む）。
+- [x] `TestPrivilegeGap_OutputLimitAbortsRunningChild` に失敗レコードの検証を追加する（出力上限でシグナル終了する経路。開始区間のメトリクスと `ExitCodeUnknown` を含む）。
+- [x] `TestPrivilegeGap_RunnerFailureWithZeroExitStillAuditsSuccess` を追加する。出力 sink の書き込み失敗で runner は失敗するが子は exit 0 の場合、開始済みなので監査は INFO 成功レコード 1 件のみとなり通知は出ない（02_architecture.md §4 の補足「レコードのレベルは子プロセスの終了ステータスで決まる」を、失敗分岐の配線側で固定する）。
+- [x] ケース (e) は統合テストが `package executor_test` にあり `pc.child` を読めないため、状態は Phase 1 の遷移テストで固定し、統合テストはレコードと通知の不在だけを観測する。この分担をコメントに残す。
+- [x] 非特権の `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` に、`prepareCommand` が失敗する開始前キャンセル（キャンセル済み ctx で run-as 実行）で監査レコードが出ないサブテストを追加する（AC-05 の `prepareCommand` 失敗の観測）。
+- [x] 必須テスト名の一覧（`:151`）に新設 4 テスト（`TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_UserGroupFailureWithoutAuditLogger`・`TestPrivilegeGap_UserGroupNotStartedNoAudit`・`TestPrivilegeGap_RunnerFailureWithZeroExitStillAuditsSuccess`）を追加する。既存 2 テストの拡張は一覧に既にある。
+- [x] `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` の doc コメント（`:680-683`）とサブテスト内コメント（`:716`）を、この失敗は子プロセス開始前であり監査レコードが出ないという趣旨へ更新する。アサーションは変えない。
 
 **完了確認**: `make fmt` → `make test` → `make lint` が通る。加えて integration タグ付きのコンパイル（`go test -tags "test integration" -run '^$' ./internal/runner/base/executor/`）と setuid ゲートを skip なしで実行する（§4.5）。成功経路のレコード内容が変わらないことは既存テスト（`TestLogger_LogUserGroupExecution` と拡張後の `TestPrivilegeGap_ChildCredentialsMatchTarget`）で確認する。
 
@@ -184,14 +185,14 @@
 
 **推奨タイトル**: `fix(0174): audit started run-as command failures`
 
-**レビュー観点**: 失敗分岐で `pc.child.started()` が true のときだけ監査し、`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばないこと（02_architecture.md §3.3）／成功経路がヘルパ呼び出しのまま変わらず、レコードのレベル・属性が変わらないこと（AC-08）／setuid 統合テストがケース (a)〜(e) と成功の回帰を観測し、失敗レコードの通知メタデータとメトリクスを検証していること／新設 3 テストが `run_executor_setuid_integration.sh` の必須一覧（`:151`）に追加され、skip を許さないゲートで検証されること／`make test`・`make lint` の対象外である統合テストの型エラーが integration タグ付きコンパイルで PR 内に検出されること
+**レビュー観点**: 失敗分岐で `pc.child.started()` が true のときだけ監査し、`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばないこと（02_architecture.md §3.3）／成功経路がヘルパ呼び出しのまま変わらず、レコードのレベル・属性が変わらないこと（AC-08）／setuid 統合テストがケース (a)〜(e)・成功の回帰・開始済み exit 0 の runner 失敗を観測し、失敗レコードの通知メタデータとメトリクスを検証していること／新設 4 テストが `run_executor_setuid_integration.sh` の必須一覧（`:151`）に追加され、skip を許さないゲートで検証されること／`make test`・`make lint` の対象外である統合テストの型エラーが integration タグ付きコンパイルで PR 内に検出されること
 
 **実装モデル要件**: frontier-required
 
-**判定理由**: 実 setuid 資格情報・sudo・非 root の対象ユーザーを要する専用ゲート（skip を 1 件でも検出すると FATAL）で新設 3 テストの登録まで伴う重い統合テスト面であり、mkplan.md step 8 の panel-mode トリガー「重い統合テスト／CI／外部リソース面」に該当する。
+**判定理由**: 実 setuid 資格情報・sudo・非 root の対象ユーザーを要する専用ゲート（skip を 1 件でも検出すると FATAL）で新設 4 テストの登録まで伴う重い統合テスト面であり、mkplan.md step 8 の panel-mode トリガー「重い統合テスト／CI／外部リソース面」に該当する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

@@ -280,6 +280,15 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	e.logDeferredWarnings(pc)
 
 	if err != nil {
+		// A run whose child started owes its single audit record on the failure
+		// path too; LogUserGroupExecution picks the record's level from the
+		// child's exit status. A failure before the child started -- a refused
+		// elevation, a failed Start, a cancelled prepare phase -- leaves
+		// pc.child at its zero value and is not an execution, so it is not
+		// recorded as one.
+		if pc.child.started() {
+			e.auditUserGroupExecution(ctx, cmd, result, startTime, metrics)
+		}
 		failureAttrs := []any{
 			"error", err,
 			"command", cmd.ExpandedCmd,

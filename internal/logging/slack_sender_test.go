@@ -658,6 +658,25 @@ func TestSlackHandler_SendContextIsDetachedFromTheLogCall(t *testing.T) {
 	assert.Equal(t, 1, rec.count())
 }
 
+// TestSlackHandler_SendSyncContextIsDetachedFromTheLogCall pins the same
+// contract for GSCR_SLACK_SYNC=1, which bypasses the worker. The failure
+// notification fired on a kill or timeout is issued under the already
+// cancelled run context, so an inherited context aborts exactly the delivery
+// the operator needs; detaching leaves the send timeout as the only bound.
+func TestSlackHandler_SendSyncContextIsDetachedFromTheLogCall(t *testing.T) {
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+
+	opts := slackOptionsFor(t, server)
+	opts.Synchronous = true
+	handler := newTestSlackHandler(t, opts)
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.NoError(t, handler.Handle(cancelled, slackRecord(slog.LevelInfo, "issued under a cancelled context")))
+	assert.Equal(t, 1, rec.count(), "a cancelled log-call context must not abort a synchronous send")
+}
+
 func TestSlackHandler_FlushDeliversPendingAndReturnsStats(t *testing.T) {
 	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
 	handler := newTestSlackHandler(t, slackOptionsFor(t, server))
