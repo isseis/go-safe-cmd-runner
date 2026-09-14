@@ -77,7 +77,7 @@
 | 統合ヘルパー | `assertAuditWindows`／`assertFailureWindows` | 同 `:369,375` | 既存レコードへの `assertWindowAttrs` 適用 |
 | 記録ヘルパー | `tu.RecordSnapshot.AssertAttrs`／`AssertNotificationContext`／`LogRecorder.RequireRecord` | `internal/testutil/handlers.go:202,256,188` | レコードの属性・通知コンテキストの検証 |
 | 監査ロガー | `audit.NewAuditLoggerWithCustom` | `internal/runner/base/audit/test_helpers.go:13` | `redaction.DefaultConfig()` 付きのテスト用ロガー |
-| 既存テスト | `TestLogger_LogUserGroupExecution`／`TestLogUserGroupExecution_OutputMasking` | `internal/runner/base/audit/logger_test.go:38,228` | 失敗分岐の通知属性と redaction の既存保証 |
+| 既存テスト | `TestLogger_LogUserGroupExecution`／`TestLogUserGroupExecution_OutputMasking` | `internal/runner/base/audit/logger_test.go:38,230` | 失敗分岐の通知属性と redaction の既存保証 |
 | 既存テスト | `TestSlackHandler_UserGroupCommandFailure` | `internal/logging/slack_handler_test.go:2032` | Slack ペイロードの既存保証 |
 
 **変更が必要な既存コメント**
@@ -194,7 +194,7 @@
 
 ### 4.2 setuid 統合テスト（`make executor-setuid-integration-test`）
 
-開始済みの失敗を `executeWithUserGroup` 越しに観測するテストは、実資格情報で子を起動できる環境を要する。ケース・assert・ゲートの仕組みは 02_architecture.md §7.2 に定めたとおりで、本計画ではテスト名と登録先だけを固定する。同じ開始済みの失敗を生む既存の `TestPrivilegeGap_StagingCancellationCleansUp` と `TestPrivilegeGap_OutputLimitAbortsRunningChild` にも同じ検証を足す（両テストはすでに必須一覧にある）。実行手順は §4.5。
+開始済みの失敗を `executeWithUserGroup` 越しに観測するテストは、実資格情報で子を起動できる環境を要する。ケース・assert・ゲートの仕組みは 02_architecture.md §7.2 に定めたとおりで、本計画ではテスト名と登録先だけを固定する。同じ開始済みの失敗を生む既存の `TestPrivilegeGap_StagingCancellationCleansUp` と `TestPrivilegeGap_OutputLimitAbortsRunningChild` にも同じ失敗レコード（レベル・メッセージ・メトリクス）の検証を足す（両テストはすでに必須一覧にある）。実行手順は §4.5。
 
 ### 4.3 回帰
 
@@ -207,7 +207,7 @@
 CLAUDE.md「Every test must be able to fail for its stated reason」に従い、次の確認を実装時に行い、結果をコミットメッセージに記す。設計書・計画書では結果を予測しない。
 
 - [ ] `startPrepared` の `childRunning` 代入を一時的に外し、遷移テストのうち起動直後を観測するケースが失敗することを確認して復元する。
-- [ ] `superviseCommand` の終了種別の確定を一時的に外し、遷移テストが失敗することを確認して復元する。
+- [ ] `superviseCommand` の終了種別の確定を一時的に外し、遷移テストと `TestSupervise_ProcessAlreadyDoneIsNotAnError` の `childTerminated` 観測が失敗することを確認して復元する。
 - [ ] `started()` が `childNotStarted` でも true を返すように一時的に変え、`TestPrivilegeGap_UserGroupNotStartedNoAudit` だけを `-run` で実行して失敗を確認して復元する。この確認は Start 失敗の経路（プレースホルダの非 nil `Result` が返る）を対象にし、nil `Result` を返す昇格拒否の経路は対象にしない。
 - [ ] 失敗分岐の監査呼び出しを一時的に外し、ケース (a)〜(c) のいずれかが失敗することを確認して復元する。
 
@@ -284,7 +284,7 @@ CLAUDE.md「Every test must be able to fail for its stated reason」に従い、
 | AC | 実装タスク | 検証（種別 / アーティファクト） |
 |---|---|---|
 | AC-01 | Phase 1・Phase 2 | `test`: `executor_supervise_test.go::TestRunCommand_ChildStateTransitions`（終了コードと状態）、`executor_privilege_gap_integration_test.go::TestPrivilegeGap_UserGroupFailureRecord`・`::TestPrivilegeGap_TimeoutKillsChild`・`::TestPrivilegeGap_CancelKillsChild`・`::TestPrivilegeGap_OutputLimitAbortsRunningChild`・`::TestPrivilegeGap_StagingCancellationCleansUp`（ERROR レコードと `exit_code`）。kill が exit 0 の回収と競合した場合は INFO 成功レコードとなり AC-01 の対象外（02_architecture.md §4 の補足） |
-| AC-02 | Phase 2 | `test`: 上記 setuid 5 テストの通知メタデータ検証（`message_type`・通知コンテキスト） |
+| AC-02 | Phase 2 | `test`: `TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_TimeoutKillsChild`・`TestPrivilegeGap_CancelKillsChild`（ケース (a)〜(c)。`message_type`・通知コンテキスト `CommandScope(group, command)`） |
 | AC-03 | Phase 2 | `test`: `TestPrivilegeGap_UserGroupFailureRecord`（相異なる stdout／stderr と redaction 後の値）、`internal/runner/base/audit/logger_test.go::TestLogUserGroupExecution_OutputMasking` |
 | AC-04 | Phase 2 | `test`: `TestPrivilegeGap_ChildCredentialsMatchTarget`（成功レコード 1 件のみ）、`audit/logger_test.go::TestLogger_LogUserGroupExecution` |
 | AC-05 | Phase 1・Phase 2・Phase 3 | `test`: `TestPrivilegeGap_UserGroupNotStartedNoAudit`、`TestPrivilegeGap_RefusedElevationDoesNotRecordWindow`、`executor_test.go::TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging`（開始前 EPERM と、キャンセルによる `prepareCommand` 失敗を含む）、`TestRunCommand_ChildStateTransitions`（未開始 3 経路） |
