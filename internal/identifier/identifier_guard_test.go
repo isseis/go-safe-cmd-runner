@@ -28,10 +28,10 @@ import (
 // calls unqualified and invisible to the scan.
 const identifierImportPath = "github.com/isseis/go-safe-cmd-runner/internal/identifier"
 
-// NewIdentifierName is the tracked constructor. Only calls are legitimate; a
+// newIdentifierName is the tracked constructor. Only calls are legitimate; a
 // value reference can be invoked through a variable and would otherwise exempt
 // free text (see TestIdentifierDeclarationCatalog_Control).
-const NewIdentifierName = "NewIdentifier"
+const newIdentifierName = "NewIdentifier"
 
 // Site shape labels.
 const (
@@ -42,7 +42,7 @@ const (
 
 var identifierNewIdentifierOptions = identitymutationguard.Options{
 	Extra: []identitymutationguard.ExtraTrackedFunc{
-		{ImportPath: identifierImportPath, FuncName: NewIdentifierName},
+		{ImportPath: identifierImportPath, FuncName: newIdentifierName},
 	},
 }
 
@@ -131,7 +131,7 @@ var declarationSiteCatalog = []siteCatalogEntry{
 var identifierDeclarationAllowlist = map[string]string{
 	"log/slog":              `"log/slog"`,
 	"Identifier":            `type Identifier struct { name string }`,
-	NewIdentifierName:       `func NewIdentifier(name string) Identifier`,
+	newIdentifierName:       `func NewIdentifier(name string) Identifier`,
 	"(Identifier).Name":     `func (Identifier) Name() string`,
 	"(Identifier).String":   `func (Identifier) String() string`,
 	"(Identifier).LogValue": `func (Identifier) LogValue() slog.Value`,
@@ -219,13 +219,13 @@ func scanOneFile(t *testing.T, path, src string) ([]scannedSite, []string, error
 	scannerSites, scannerRefs := identitymutationguard.RefsInSourceWithOptions(t, path, src, identifierNewIdentifierOptions)
 	funcByOffset := make(map[int]string)
 	for _, site := range scannerSites {
-		if site.SyscallName == NewIdentifierName {
+		if site.SyscallName == newIdentifierName {
 			funcByOffset[posOffset(site.Pos)] = site.FuncName
 		}
 	}
 	var valueRefs []string
 	for _, ref := range scannerRefs {
-		if strings.HasSuffix(ref.Expr, "."+NewIdentifierName) {
+		if strings.HasSuffix(ref.Expr, "."+newIdentifierName) {
 			valueRefs = append(valueRefs, fmt.Sprintf("%s in %s", ref.Expr, ref.FuncName))
 		}
 	}
@@ -325,7 +325,7 @@ func isNewIdentifierCall(call *ast.CallExpr, imports map[string]string) bool {
 	if !ok {
 		return false
 	}
-	return imports[qualifier.Name] == identifierImportPath && selector.Sel.Name == NewIdentifierName
+	return imports[qualifier.Name] == identifierImportPath && selector.Sel.Name == newIdentifierName
 }
 
 // classifySite returns the enclosing call label, the attribute key expression
@@ -579,25 +579,35 @@ type siteKey struct {
 	Use     string
 }
 
+// key returns the catalog identity of the entry.
+func (e siteCatalogEntry) key() siteKey {
+	return siteKey{
+		File:    e.File,
+		Func:    e.Func,
+		Context: e.Context,
+		Key:     e.Key,
+		ArgExpr: e.ArgExpr,
+		Use:     e.Use,
+	}
+}
+
+// key returns the catalog identity of the scanned site.
+func (s scannedSite) key() siteKey {
+	return siteKey(s)
+}
+
 // compareDeclarationSites requires a bidirectional match between the scan and
 // the catalog.
 func compareDeclarationSites(got []scannedSite, catalog []siteCatalogEntry) error {
 	gotCounts := make(map[siteKey]int, len(got))
 	for _, site := range got {
-		gotCounts[siteKey(site)]++
+		gotCounts[site.key()]++
 	}
 
 	var problems []string
 	wantCounts := make(map[siteKey]int, len(catalog))
 	for _, entry := range catalog {
-		key := siteKey{
-			File:    entry.File,
-			Func:    entry.Func,
-			Context: entry.Context,
-			Key:     entry.Key,
-			ArgExpr: entry.ArgExpr,
-			Use:     entry.Use,
-		}
+		key := entry.key()
 		if _, duplicate := wantCounts[key]; duplicate {
 			problems = append(problems, fmt.Sprintf("catalog lists %v twice", key))
 		}
@@ -618,11 +628,9 @@ func compareDeclarationSites(got []scannedSite, catalog []siteCatalogEntry) erro
 
 // sortedSiteKeys returns the map's keys in a deterministic order.
 func sortedSiteKeys(counts map[siteKey]int) []siteKey {
-	keys := slices.Collect(maps.Keys(counts))
-	slices.SortFunc(keys, func(a, b siteKey) int {
+	return slices.SortedFunc(maps.Keys(counts), func(a, b siteKey) int {
 		return strings.Compare(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b))
 	})
-	return keys
 }
 
 // checkDeclarationFace compares the top-level declarations of every production
@@ -765,69 +773,68 @@ func Run(cmd *command, group *groupSpec) {
 }
 `
 
+// Catalog selectors for the declaration-site controls.
+const (
+	compareBase  = "base"  // the base catalog, built from the case's file path
+	compareEmpty = "empty" // no catalog at all
+	compareNone  = "none"  // do not run the comparison
+)
+
 func testDeclarationSiteControls(t *testing.T) {
 	t.Helper()
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "synthetic.go")
-	writeSyntheticFile(t, path, validSiteSource)
+	baseCatalog := func(path string) []siteCatalogEntry {
+		return []siteCatalogEntry{{
+			File:    path,
+			Func:    "Run",
+			Context: `slog.Info("Executing")`,
+			Key:     `"command"`,
+			ArgExpr: "cmd.Name()",
+			Use:     useDirect,
+			Count:   1,
+		}}
+	}
 
-	catalog := []siteCatalogEntry{{
-		File:    path,
-		Func:    "Run",
-		Context: `slog.Info("Executing")`,
-		Key:     `"command"`,
-		ArgExpr: "cmd.Name()",
-		Use:     useDirect,
-		Count:   1,
-	}}
-
-	t.Run("positive control passes and ignores the syscall site", func(t *testing.T) {
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		require.Len(t, got, 1, "only the NewIdentifier site may be decoded")
-		require.NoError(t, compareDeclarationSites(got, catalog))
-	})
-
-	t.Run("extra declaration fails", func(t *testing.T) {
-		extra := strings.Replace(validSiteSource,
-			"\t_ = syscall.Seteuid(0)\n",
-			"\t_ = syscall.Seteuid(0)\n\tslog.Info(\"Other\", slog.Any(\"group\", identifier.NewIdentifier(group.Name())))\n", 1)
-		require.NotEqual(t, validSiteSource, extra, "the control source must actually change")
-		writeSyntheticFile(t, path, extra)
-
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		err = compareDeclarationSites(got, catalog)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not in catalog")
-		assert.Contains(t, err.Error(), `"group"`)
-	})
-
-	t.Run("missing declaration fails", func(t *testing.T) {
-		writeSyntheticFile(t, path, validSiteSource)
-
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		err = compareDeclarationSites(got, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "scan found 1, not in catalog")
-	})
-
-	t.Run("moved to another log call fails", func(t *testing.T) {
-		moved := strings.Replace(validSiteSource, `slog.Info("Executing"`, `slog.Warn("Executing"`, 1)
-		require.NotEqual(t, validSiteSource, moved, "the control source must actually change")
-		writeSyntheticFile(t, path, moved)
-
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		err = compareDeclarationSites(got, catalog)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `slog.Warn("Executing")`)
-	})
-
-	t.Run("derived result use fails", func(t *testing.T) {
-		derived := `package synthetic
+	controls := []struct {
+		name        string
+		source      string
+		catalog     string
+		wantSites   int
+		wantScanErr []string
+		wantCmpErr  []string
+	}{
+		{
+			name:      "positive control passes and ignores the syscall site",
+			source:    validSiteSource,
+			catalog:   compareBase,
+			wantSites: 1,
+		},
+		{
+			name: "extra declaration fails",
+			source: strings.Replace(validSiteSource,
+				"\t_ = syscall.Seteuid(0)\n",
+				"\t_ = syscall.Seteuid(0)\n\tslog.Info(\"Other\", slog.Any(\"group\", identifier.NewIdentifier(group.Name())))\n", 1),
+			catalog:    compareBase,
+			wantSites:  2,
+			wantCmpErr: []string{"not in catalog", `"group"`},
+		},
+		{
+			name:       "declaration absent from the scan fails",
+			source:     "package synthetic\n\nfunc Run() {}\n",
+			catalog:    compareBase,
+			wantSites:  0,
+			wantCmpErr: []string{"catalog expects 1, scan found 0"},
+		},
+		{
+			name:       "moved to another log call fails",
+			source:     strings.Replace(validSiteSource, `slog.Info("Executing"`, `slog.Warn("Executing"`, 1),
+			catalog:    compareBase,
+			wantSites:  1,
+			wantCmpErr: []string{`slog.Warn("Executing")`},
+		},
+		{
+			name: "derived result use fails",
+			source: `package synthetic
 
 import (
 	"log/slog"
@@ -838,31 +845,24 @@ import (
 func Run(entry *entrySpec) {
 	slog.String("command_name", identifier.NewIdentifier(entry.CommandName).Name())
 }
-`
-		writeSyntheticFile(t, path, derived)
-
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported way")
-	})
-
-	t.Run("bound value reference fails", func(t *testing.T) {
-		bound := `package synthetic
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"unsupported way"},
+		},
+		{
+			name: "bound value reference fails",
+			source: `package synthetic
 
 import "github.com/isseis/go-safe-cmd-runner/internal/identifier"
 
 var makeID = identifier.NewIdentifier
-`
-		writeSyntheticFile(t, path, bound)
-
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not bound as a value")
-		assert.Contains(t, err.Error(), "identifier.NewIdentifier")
-	})
-
-	t.Run("same-named function in another package is not a site", func(t *testing.T) {
-		local := `package synthetic
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"not bound as a value", "identifier.NewIdentifier"},
+		},
+		{
+			name: "same-named function in another package is not a site",
+			source: `package synthetic
 
 import "log/slog"
 
@@ -871,16 +871,13 @@ func NewIdentifier(s string) string { return s }
 func Run(cmd *command) {
 	slog.Info("Executing", slog.String("command", NewIdentifier(cmd.Name())))
 }
-`
-		writeSyntheticFile(t, path, local)
-
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		assert.Empty(t, got, "an unqualified local NewIdentifier must not be tracked")
-	})
-
-	t.Run("dot import fails", func(t *testing.T) {
-		dotImported := `package synthetic
+`,
+			catalog:   compareNone,
+			wantSites: 0,
+		},
+		{
+			name: "dot import fails",
+			source: `package synthetic
 
 import (
 	"log/slog"
@@ -891,16 +888,13 @@ import (
 func Run(cmd *command) {
 	slog.Info("Executing", slog.Any("command", NewIdentifier(cmd.Name())))
 }
-`
-		writeSyntheticFile(t, path, dotImported)
-
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "dot-import")
-	})
-
-	t.Run("aliased import is resolved", func(t *testing.T) {
-		aliased := `package synthetic
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"dot-import"},
+		},
+		{
+			name: "aliased import is resolved",
+			source: `package synthetic
 
 import (
 	"log/slog"
@@ -911,19 +905,14 @@ import (
 func Run(cmd *command) {
 	slog.Info("Executing", slog.Any("command", id.NewIdentifier(cmd.Name())))
 }
-`
-		writeSyntheticFile(t, path, aliased)
-
-		got, err := scanDeclarationSites(t, []string{path})
-		require.NoError(t, err)
-		require.Len(t, got, 1, "an aliased call must still be decoded")
-		err = compareDeclarationSites(got, nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not in catalog")
-	})
-
-	t.Run("composite literal value position fails", func(t *testing.T) {
-		valuePosition := `package synthetic
+`,
+			catalog:    compareEmpty,
+			wantSites:  1,
+			wantCmpErr: []string{"not in catalog"},
+		},
+		{
+			name: "composite literal value position fails",
+			source: `package synthetic
 
 import (
 	"log/slog"
@@ -934,16 +923,13 @@ import (
 func Run(cmd *command) {
 	slog.Info("Executing", slog.Any("command", map[string]any{"id": identifier.NewIdentifier(cmd.Name())}))
 }
-`
-		writeSyntheticFile(t, path, valuePosition)
-
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported way")
-	})
-
-	t.Run("unconsumed argument list fails", func(t *testing.T) {
-		unconsumed := `package synthetic
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"unsupported way"},
+		},
+		{
+			name: "unconsumed argument list fails",
+			source: `package synthetic
 
 import "github.com/isseis/go-safe-cmd-runner/internal/identifier"
 
@@ -951,29 +937,62 @@ func Run(cmd *command) {
 	args := []any{"command", identifier.NewIdentifier(cmd.Name())}
 	_ = args
 }
-`
-		writeSyntheticFile(t, path, unconsumed)
-
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no call consumes")
-	})
-
-	t.Run("wrong arity fails", func(t *testing.T) {
-		arity := `package synthetic
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"no call consumes"},
+		},
+		{
+			name: "wrong arity fails",
+			source: `package synthetic
 
 import "github.com/isseis/go-safe-cmd-runner/internal/identifier"
 
 func Run() {
 	_ = identifier.NewIdentifier()
 }
-`
-		writeSyntheticFile(t, path, arity)
+`,
+			catalog:     compareNone,
+			wantScanErr: []string{"exactly one argument"},
+		},
+	}
 
-		_, err := scanDeclarationSites(t, []string{path})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "exactly one argument")
-	})
+	for _, tt := range controls {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "synthetic.go")
+			writeSyntheticFile(t, path, tt.source)
+
+			got, err := scanDeclarationSites(t, []string{path})
+			if len(tt.wantScanErr) > 0 {
+				require.Error(t, err)
+				for _, want := range tt.wantScanErr {
+					assert.Contains(t, err.Error(), want)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, tt.wantSites)
+
+			switch tt.catalog {
+			case compareNone:
+				return
+			case compareBase:
+				err = compareDeclarationSites(got, baseCatalog(path))
+			case compareEmpty:
+				err = compareDeclarationSites(got, nil)
+			default:
+				t.Fatalf("unknown catalog selector %q", tt.catalog)
+			}
+			if len(tt.wantCmpErr) == 0 {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			for _, want := range tt.wantCmpErr {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
 }
 
 // validDeclarationSource is a synthetic package whose top-level declarations
@@ -1023,7 +1042,7 @@ func testDeclarationFaceControls(t *testing.T) {
 			name: "missing declaration is rejected by name",
 			source: strings.Replace(validDeclarationSource,
 				"func NewIdentifier(name string) Identifier {\n\treturn Identifier{name: name}\n}\n\n", "", 1),
-			expected: NewIdentifierName,
+			expected: newIdentifierName,
 		},
 		{
 			name: "forwarding wrapper is rejected by name",
@@ -1062,7 +1081,7 @@ func LogFreeText(s string) {
 			name: "changed signature is rejected by name",
 			source: strings.Replace(validDeclarationSource,
 				"func NewIdentifier(name string) Identifier", "func NewIdentifier(name any) Identifier", 1),
-			expected: NewIdentifierName,
+			expected: newIdentifierName,
 		},
 		{
 			name: "changed struct is rejected by name",
