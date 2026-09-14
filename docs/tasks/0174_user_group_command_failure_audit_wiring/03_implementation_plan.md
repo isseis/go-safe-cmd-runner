@@ -203,7 +203,7 @@
 **作業内容**:
 
 - [x] §10 の `user_group_command_failure` の follow-up に、タスク 0174 で解消した旨を追記する。実装 PR（PR-3）の番号はその PR 作成時に判明するため、その時点で記入し、実装コミットの SHA を併記する。既存の記述は履歴として残し、削除しない。
-- [x] 記録した PR 番号とコミット SHA が実在することを PR レビュー時に確認する（存在しない参照を残さない）。
+- [x] 記録した PR 番号とコミット SHA が実在することを確認する（存在しない参照を残さない）。
 - [x] 0172 は `approved` のため、追記は履歴の追加であり決定を変えない editorial correction である旨を 0172 の文書ステータス `Comments` に記録する（requirements_process.md「Editing an approved document」）。
 - [x] docs の検証を通す: `go test -tags test ./internal/testutil/docsguard/` と `make verify-docs-checks`。
 
