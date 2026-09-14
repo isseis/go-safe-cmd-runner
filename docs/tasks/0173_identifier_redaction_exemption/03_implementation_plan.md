@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-13 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-09-14 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
@@ -272,7 +272,10 @@ AST でパッケージのトップレベル宣言面を allowlist と厳密に�
 追加し、AC-13〜AC-17 の検証をこの 1 ファイルに集約する。追加したスクリプトは `Makefile` の
 `verify-docs-checks` ターゲットが `scripts/verification/check_*.sh` を自動列挙して実行し、
 非ゼロ終了を make の失敗として伝播させる（`verify-docs`／`verify-docs-full` はこの
-ターゲットに依存する）。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
+ターゲットに依存する）。各 `check_*.sh` は `sh "$script"` で実行するため、実行ビットに
+依存せず POSIX シェルで解釈される。bash 固有機能（`[[ ... ]]`・配列・`local` など）は
+使わず、shebang を `#!/bin/sh` とした POSIX 準拠のスクリプトとして記述する。
+`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
 検査の合否は自動列挙側で判定する。スクリプト名を Makefile に列挙しないので、将来追加する
 `check_*.sh` も配線漏れなく `make verify-docs` に組み込まれる。これにより
 `make verify-docs` が AC-13〜AC-17 の完了ゲートになる。スクリプトは語ごとに独立した
@@ -300,6 +303,13 @@ AST でパッケージのトップレベル宣言面を allowlist と厳密に�
 `internal/identifier` を参照する既存コードは無く、同名パッケージも存在しない。新設する
 leaf パッケージは `log/slog` だけを import し、02_architecture.md §2.1 の追加依存辺は
 いずれも非循環である。
+
+depguard の許可リストにも未登録である。`.golangci.yml` の `filevalidator` ルール
+（`:61`〜`:98`、`files: ["**/internal/**"]`）は、`internal/` 配下のファイルが import
+できる内部パッケージを明示列挙しており、`internal/identifier` は含まれない
+（`.golangci.yml` に `internal/identifier` は 0 件）。`make lint` はこのルールを有効に
+するため、`internal/identifier` を最初に import する Phase 2 が同じコミットで許可リストへ
+追加する。`main` ルール（`:100` 以降）は `cmd/` に宣言サイトが無いため変更しない。
 
 ### 1.4 テストヘルパーの方針
 
@@ -346,10 +356,33 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通り、`Identifier` の単体テストが通る。
 
+### PR-1 作成ポイント: add the identifier declaration type
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0173): add the identifier declaration type`
+
+**レビュー観点**: `Identifier` のフィールドが非公開で、名前を持つ値の構築が `NewIdentifier` に限られること（02_architecture.md §3.1）／`LogValue` が `KindString` で名前を返し、`String` が `fmt.Stringer` として名前を返すこと／`internal/identifier` が内部パッケージを 1 つも import しない leaf パッケージであること／単体テストが名前・ゼロ値・`LogValue` を覆うこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 型・メソッド・leaf 制約は 02_architecture.md §3.1 に固定済みで、未確定の実装アプローチや高リスク分岐は無く、Conditional checks のいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2: `internal/redaction` への免除経路の追加
 
-**対象ファイル**: `internal/redaction/redactor.go`、`internal/redaction/redactor_test.go`
+**対象ファイル**: `internal/redaction/redactor.go`、`internal/redaction/redactor_test.go`、
+`.golangci.yml`
 
+- [ ] `.golangci.yml` の depguard `filevalidator` ルールの `allow` に
+      `github.com/isseis/go-safe-cmd-runner/internal/identifier` を追加する。
+      `internal/` 配下から宣言型を import する最初の Phase であり、追加しないと
+      `make lint` が import を拒否する。`main` ルールは `cmd/` に宣言サイトが無いため
+      変更しない。
 - [ ] `redactor.go` に、`slog.Value` が宣言型（`identifier.Identifier` または非 nil の
       `*identifier.Identifier`）かを判定する非公開ヘルパーを 1 つ追加する。値の型だけで判定し、
       キー名・値の内容・長さは見ない。型付き nil の `*identifier.Identifier` は false を返す
@@ -396,7 +429,25 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       キー名判定より先に免除すると `TestRedactingHandler_SensitiveKeyMaskPrecedesExemption`
       が失敗する。破壊と復元の対象・テスト名をコミットメッセージに記す。
 
-**完了条件**: 追加テストが通り、既存のパターンテストが変更なく通る。
+**完了条件**: 追加テストが通り、`make lint` が `internal/identifier` への import 辺を
+通り、既存のパターンテストが変更なく通る。
+
+### PR-2 作成ポイント: exempt declared identifiers from value-based redaction
+
+**対象ステップ**: Phase 2
+
+**推奨タイトル**: `feat(0173): exempt declared identifiers from value-based redaction`
+
+**レビュー観点**: キー名判定が免除判定より先に働く fail-closed の順序が 3 挿入点すべてで守られていること／`processSlice` の免除要素が `Name()` の string へ正規化されること／免除が 3 層すべてに及び、同じ文字列を plain string に載せた対照が従来どおり redact されること／`.golangci.yml` の depguard `filevalidator` 許可リストに `internal/identifier` が追加され、`make lint` が新しい import 辺を通ること
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: redaction というセキュリティ境界に免除経路を挿入する孤立した高リスク・複雑ステップである（キー名判定との順序または 3 挿入点のいずれかを誤ると漏洩方向に倒れる）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: `NotificationContext` の復号受理
 
@@ -428,6 +479,23 @@ leaf パッケージは `log/slog` だけを import し、02_architecture.md §2
       宣言型行が失敗することを確認し、コミットメッセージに記す。
 
 **完了条件**: `internal/common`・`internal/logging`・`internal/redaction` のテストが通る。
+
+### PR-3 作成ポイント: decode identifier values in notification context
+
+**対象ステップ**: Phase 3
+
+**推奨タイトル**: `feat(0173): decode identifier values in notification context`
+
+**レビュー観点**: `decodeNotificationContextParts` が生の `identifier.Identifier` と正規化後の string の 2 形式だけを受け、汎用の `Value.Resolve` を使っていないこと／`scope` は従来どおり `KindString` だけを受けること／宣言型以外の `LogValuer` を拒否する行があること／この Phase で `NotificationContext.LogValue` の符号化を変えていないこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 復号の受理分岐とテストの追加に限られ、設計判断は 02_architecture.md §3.3 に既決。高リスク分岐や未確定の実装アプローチは無く、Conditional checks・panel-mode トリガーのいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 宣言サイトの置き換えと識別子ガード
 
@@ -725,6 +793,23 @@ Phase 4.5 の AC-19 確認が担う。
 
 **完了条件**: `make test` が通り、AC-07〜AC-09 のテストと guard が通る。
 
+### PR-4 作成ポイント: declare identifier log sites and add the declaration guard
+
+**対象ステップ**: Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5
+
+**推奨タイトル**: `feat(0173): declare identifier log sites and add the declaration guard`
+
+**レビュー観点**: **本 PR は 1 コミットで不可分だが、レビューは 4.1→4.5 の小見出し順に読み進めること**（宣言・目録・アサーションを同時に導入し、rollback を導入コミットの revert に保つ。02_architecture.md §5.2）／43 宣言サイトが 02_architecture.md §3.4 の表と双方向に一致し、§3.5 の plain string サイトを巻き込んでいないこと／guard の「結果の使用」が `NewIdentifier` の戻り値へ `.Name()` などを適用した式を拒否すること／宣言面 allowlist 検査が別コンストラクタ・転送ラッパー・型エイリアス・定義型・初期化子を宣言名付きで拒否し、`ProductionGoFiles` が platform-tagged なファイルも列挙すること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: 43 宣言サイトで値ベース redaction の保護を下方修正すると同時に、宣言面 guard で構造的な保護を上方修正する security-gate ステップであり、多数のテスト更新を伴う 1 コミット不可分の変更である（mkplan step 8 の panel-mode トリガーに該当）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 5: 文書の更新と翻訳
 
 **対象ファイル**: §1.3「文書の該当箇所」の 4 文書、`docs/translation_glossary.md`、
@@ -744,15 +829,23 @@ Phase 4.5 の AC-19 確認が担う。
       （`identifier` と `exempt` の語を用いる）。
 - [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       未登録なら追加する。
-- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する。§1.3「文書内容の
-      検証スクリプト」の表の語をファイルごとに独立して検査し、1 語でも欠ければ非ゼロで
-      終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
+- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
+      で実行されるため POSIX 準拠で記述し、shebang は `#!/bin/sh`。bash 固有機能は
+      使わない）。§1.3「文書内容の検証スクリプト」の表の語をファイルごとに独立して検査し、
+      1 語でも欠ければ非ゼロで終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
+- [ ] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
+      一時的に外し、スクリプトが非ゼロで終了することを確認して復元する。確認結果を
+      コミットメッセージに記す。
 - [ ] `Makefile` に `verify-docs-checks` ターゲットを追加し、
       `scripts/verification/check_*.sh` を自動列挙して 1 つずつ実行し、いずれかの非ゼロ
-      終了を make の失敗として伝播させる。glob が一致しない場合にリテラルのパスを実行
-      しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
+      終了を make の失敗として伝播させる。各スクリプトは `sh "$script"` で実行し、実行
+      ビットに依存しない。`sh` は bash 固有機能を解釈しないため `check_*.sh` は POSIX 準拠
+      （shebang は `#!/bin/sh`）で記述する（既存の
+      `run_executor_setuid_integration.sh` と同じ方針）。glob が一致しない場合に
+      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
       `verify-docs-full` は `verify-docs-checks` に依存させ、`run_all.sh` の実行と組み合わせる。
-      `run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
+      ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は検査結果に
+      かかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
       判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を追加しても
       配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を検出できないまま
       ゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に
@@ -771,15 +864,53 @@ Phase 4.5 の AC-19 確認が担う。
 AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含めて成功する
 （スクリプトを失敗させると `make verify-docs` も失敗することを確認する）。
 
+### PR-5 作成ポイント: document the identifier exemption and wire docs verification
+
+**対象ステップ**: Phase 5
+
+**推奨タイトル**: `docs(0173): document the identifier exemption and wire docs verification`
+
+**レビュー観点**: 日英 4 文書に、識別子の免除・免除されない自由文・名前に機密を書いた場合の帰結が書かれていること（AC-13〜AC-16）／`check_identifier_exemption_docs.sh` が語ごとに独立した終了コードで判定し（1 語欠落で非ゼロ）、`verify-docs-checks` が `check_*.sh` を自動列挙して `sh` で実行し（各スクリプトは POSIX 準拠）失敗を make へ伝播すること／Task 0172 の承認済み文書を変更していないこと／用語集の訳語が日英文書で一致すること
+
+**実装モデル要件**: standard
+
+**判定理由**: 文書の追記・翻訳と、検証スクリプトおよびその失敗伝播の確認が中心で、設計判断は 02_architecture.md と本書 §1.3 に既決。高リスク分岐や未確定の実装アプローチは無く、Conditional checks・panel-mode トリガーのいずれにも該当しない（`verify-docs-checks` は変更検出ではなく文書の語句検証である）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 6: 全体検証と AC-19 の確認
 
 - [ ] 最終コミットで `make test`・`make lint`・`make verify-docs` を通す（AC-18）。
 - [ ] `git log` で各コミットメッセージに AC-19 の確認記録（壊した対象と、失敗を確認した
       テスト名）が含まれることを確認する。
+- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で差分が無いことを確認し、結果をコミットメッセージに記す（AC-17）。
 - [ ] `make deadcode` を実行し、新しい到達不能コードの報告が無いことを確認する。
 - [ ] 本計画書のチェックボックスを実装の進捗に合わせて更新し、§6 と §7 の結果を記録する。
 
+### PR-6 作成ポイント: final verification and AC-19 review
+
+**対象ステップ**: Phase 6
+
+**推奨タイトル**: `chore(0173): run final verification and record AC-19 mutations`
+
+**レビュー観点**: 各コミットの `git log` に AC-19 の mutation 記録（壊した対象と、失敗を確認したテスト名）があること／`make test`・`make lint`・`make verify-docs`・`make deadcode` の結果が記録されていること／`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` で Task 0172 の承認済み文書に差分が無いことを確認していること（AC-17）／§6 と §7 の結果が計画書へ反映されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 既定のコマンド実行と結果記録が中心で、新規の設計判断を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ## 3. 実装順序とマイルストーン
+
+### 3.1 マイルストーン
 
 | マイルストーン | 含む Phase | 成果物 | 判定 |
 |---|---|---|---|
@@ -787,11 +918,22 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 | M2: 免除 | Phase 2 | 3 挿入点、redaction テスト、パターン集合の固定テスト | AC-03・AC-04・AC-05・AC-12 が緑。AC-08 はテスト側が緑（guard 側は M4） |
 | M3: 復号受理 | Phase 3 | `NotificationContext` の復号受理と復号テスト | AC-11 が緑。符号化を伴う AC-01・AC-02 は M4 で確認する |
 | M4: 宣言と guard | Phase 4 | 12 ファイルの宣言サイト（`NotificationContext.LogValue` の符号化を含む）、既存テスト更新、`identifier_guard_test.go` | AC-01・AC-02・AC-06・AC-07・AC-08・AC-09 が緑。AC-10 の既存テストが無変更で通る。`make test` が緑 |
-| M5: 文書 | Phase 5 | 日英 4 文書、用語集、検証スクリプト、`verify-docs-checks` による自動列挙 | AC-13〜AC-17 が緑。`make verify-docs` がスクリプトの失敗を伝播する |
-| M6: 全体検証 | Phase 6 | 全体の green gate、AC-19 の記録 | AC-18・AC-19 が緑 |
+| M5: 文書 | Phase 5 | 日英 4 文書、用語集、検証スクリプト、`verify-docs-checks` による自動列挙 | AC-13〜AC-16 が緑。AC-17 はスクリプトの語句検証が緑（Task 0172 に差分が無いことの確認は M6）。`make verify-docs` がスクリプトの失敗を伝播する |
+| M6: 全体検証 | Phase 6 | 全体の green gate、AC-17 の差分確認、AC-19 の記録 | AC-17 の差分確認・AC-18・AC-19 が緑 |
 
 Phase 1 を最初に置く理由、Phase 2 を Phase 3 より先に置く理由、Phase 4 を最後の実装
 Phase に置く理由は 02_architecture.md §8.2 のとおりである。
+
+### 3.2 PR 構成
+
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `internal/identifier` の宣言型と単体テストを追加 | standard |
+| PR-2 | Phase 2 | 3 挿入点の免除経路、免除・対照テスト、パターン集合の固定テスト、depguard 許可リストへの `internal/identifier` 追加 | frontier-recommended |
+| PR-3 | Phase 3 | `NotificationContext` の復号が生の宣言型と正規化後の string を受けるようにする | standard |
+| PR-4 | Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5 | 12 ファイル・43 宣言サイトの置き換え、既存テストの更新、統合テスト、`identifier_guard_test.go` を 1 コミットで導入 | frontier-required |
+| PR-5 | Phase 5 | 日英 4 文書の更新、用語集、`check_identifier_exemption_docs.sh`、`make verify-docs` への配線 | standard |
+| PR-6 | Phase 6 | 全体の green gate、AC-19 の記録確認、`make deadcode`、計画書の進捗記録 | standard |
 
 ## 4. テスト戦略
 
@@ -882,17 +1024,12 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 
 ## 6. 実装チェックリスト
 
-- [ ] Phase 1: `internal/identifier` の型・単体テスト・leaf 条件確認
-- [ ] Phase 2: 3 挿入点・免除／対照テスト・パターン集合の固定テスト
-- [ ] Phase 3: `NotificationContext` の復号受理と復号テスト
-- [ ] Phase 4.1: `CommandResult`／`CommandResults` の宣言
-- [ ] Phase 4.2: `SecurityLogger` の引数型と 3 呼び出し元
-- [ ] Phase 4.3: 02_architecture.md §3.4 の残り宣言サイト（12 ファイル・43 件。`NotificationContext.LogValue` の符号化を含む）
-- [ ] Phase 4.4: 既存テストの更新、統合テストの追加、AC-10 の既存テスト確認、全 `*_test.go` の再検索
-- [ ] Phase 4.5: `TestIdentifierDeclarationCatalog`・`internal/identifier` の宣言面 allowlist 検査・対照テスト
-- [ ] Phase 5: 日英 4 文書の更新、用語集、`check_identifier_exemption_docs.sh`、`make verify-docs`
-- [ ] Phase 6: 全体の green gate、AC-19 の記録確認、`make deadcode`
-- [ ] 全 Phase: 各コミットで `make test`・`make lint` が緑
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
+- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
+- [ ] PR-4 マージ済み（対象ステップ: Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5）
+- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [ ] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ## 7. 受け入れ基準の検証
 
@@ -919,11 +1056,11 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 | AC-10 | test | `internal/runner/config/validation_test.go::TestValidateIdentifiers` と `cmd/runner/integration_pre_execution_error_test.go::TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`。Phase 4.4 と Phase 6 で実行する | Phase 4.4・6 |
 | AC-11 | test | `internal/logging/slack_handler_test.go::TestSlackHandler_InvalidNotificationContext`（無変更で表示契約を固定）と `internal/common/notification_context_test.go::TestDecodeNotificationContext_Validity`（宣言型と正規化後の string の両形式を受ける更新後の行） | Phase 3 |
 | AC-12 | test | `internal/redaction/redactor_test.go::TestDefaultPatternSets_AreUnchanged`（新規。`DefaultKeyValuePatterns` の集合と件数、`DefaultSensitivePatterns` の `AllowedEnvVars` の集合と結合正規表現のソース、`valueDetectorPatterns` の各正規表現ソースを固定）と、`internal/redaction/sensitive_patterns_test.go`・`internal/redaction/value_detector_test.go` の既存テストが無変更で通ること | Phase 2 |
-| AC-13 | static | `scripts/verification/check_identifier_exemption_docs.sh`（`docs/tasks/0173_identifier_redaction_exemption/02_architecture.md` の `残余リスク` と `record.Message` を検査。`b2d2f744` で一致を確認済み） | 設計済み |
+| AC-13 | static | `scripts/verification/check_identifier_exemption_docs.sh`（`docs/tasks/0173_identifier_redaction_exemption/02_architecture.md` の `残余リスク` と `record.Message` を検査。`b2d2f744` で一致を確認済み） | Phase 5 |
 | AC-14 | static | 同上のスクリプト（`docs/user/security-risk-assessment.ja.md` の `識別子` と `免除` を検査。`識別子` の既存 1 件は別文脈のため、`免除` が加わらなければ失敗する）。加えて追加段落を読み、AC-14 の内容を確認する（manual） | Phase 5 |
 | AC-15 | static | 同上のスクリプト（`security-architecture.ja.md` の `識別子`・`免除`・`NewIdentifier`、`security-architecture.md` の `identifier`・`exempt`・`NewIdentifier` を検査。実装前はいずれも 0 件） | Phase 5 |
 | AC-16 | static | 同上のスクリプト（`docs/user/security-risk-assessment.md` の `identifier` と `exempt` を検査）と `make verify-docs` | Phase 5 |
-| AC-17 | static | 同上のスクリプト（`01_requirements.md` の `0172` と `置き換え` を検査）と、Task 0172 の承認済み文書に差分が無いこと（Phase 6 で `git diff` を確認する manual） | 設計済み・6 |
+| AC-17 | static | 同上のスクリプト（`01_requirements.md` の `0172` と `置き換え` を検査）と、Task 0172 の承認済み文書に差分が無いこと（Phase 6 で `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` を確認する manual） | Phase 5・6 |
 | AC-18 | static | 各 Phase のコミットで `make test` と `make lint`（`make` ターゲット） | 全 Phase |
 | AC-19 | test + manual | Phase 1〜4 のタスクに列挙した mutation（production コードを一時的に壊し、対応するテストの失敗を確認して復元）を `make test` 後の状態で行う。テストケースの削除・無効化は、同じテストが失敗せず挙動を検証しなくなるだけなので mutation に数えない。test: 各 AC 行が指すテスト。manual: `git log -1 --format=%B <sha>` に壊した対象と失敗したテスト名が含まれることを Phase 6 で確認する | Phase 1〜4・6 |
 
@@ -940,8 +1077,8 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 - [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       登録されているか確認する。未登録なら Phase 5 で追加し、日英文書の訳語が一致する
       ことを確認する。
-- [ ] `docs/tasks/0172_slack_notification_message_unification/` の承認済み文書に差分が
-      無いことを `git diff` で確認する（履歴として残す。AC-17）。
+- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で承認済み文書に差分が無いことを確認する（履歴として残す。AC-17）。
 - [ ] Phase 5 の日英文書について `make verify-docs` を実行し、構造比較のレポート
       （`build/verification-reports/structure_comparison_report.txt`）に見出し構造の差分が
       無いことを確認する。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
@@ -978,8 +1115,7 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 
 ## 10. 次のステップ
 
-1. 本計画書を人間がレビューし、`03_implementation_plan.md` のステータスを `approved` に
-   する（`draft` のままでは実装を開始しない。requirements_process.md §0）。
-2. `/mkplan2` で PR 境界と実装モデル要件を挿入する。
-3. `/runplan` で Phase 1 から実装する。各 Phase の完了条件と AC-19 の記録を守る。
-4. Phase 5 の日本語版コミット後、`/mktrans` で英語版へ反映する。
+1. `/runplan` で PR-1 から順に実装する。各 PR の完了条件と AC-19 の記録を守る。
+2. Phase 5 の日本語版コミット後、`/mktrans` で英語版へ反映する。
+3. Phase 6 の検証結果（green gate、`make deadcode`、AC-17 の差分確認、AC-19 の記録）と
+   §6 の進捗は、PR-6 の中で本書へ反映する。
