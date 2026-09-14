@@ -1374,8 +1374,8 @@ Phase 6-a の doc コメント更新で、0170 実装計画書の**3つの検証
 - [x] §4.4 の性能測定を全変更が入った状態で行い、結果を §4.4 へ追記した
 - [x] この PR が追加したテストについて §4.2 の該当行（仕組みを外すと落ちること）を確認し、コミットメッセージに記した
 - [x] PR を作成した（[#1104](https://github.com/isseis/go-safe-cmd-runner/pull/1104)）
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -1688,19 +1688,19 @@ dry-run は `DefaultExecutor.Execute` へ到達しないため、本タスクの
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: 1）
-- [ ] PR-2 マージ済み（対象ステップ: 2）
-- [ ] PR-3 マージ済み（対象ステップ: 3-a / 3-b / 3-c）
-- [ ] PR-4 マージ済み（対象ステップ: 3-d / 3-e）
-- [ ] PR-5 マージ済み（対象ステップ: 4-a / 4-b）
-- [ ] PR-6 マージ済み（対象ステップ: 4-c）
-- [ ] PR-7 マージ済み（対象ステップ: 5-a / 5-b / 5-c / 5-d）
-- [ ] PR-8 マージ済み（対象ステップ: 6-a / 6-b / 6-c）
-- [ ] §4.2 のすべての項目について、仕組みを外すとテストが落ちることを確認した
-- [ ] §4.3 の実行手順を実環境で走らせ、スキップされていないことを確認し、結果を追記した
-- [ ] §4.4 の性能測定を行い、結果を追記した
-- [ ] §7 の受け入れ基準検証のすべての項目が期待どおりの結果を返す
-- [ ] §8 の横断検索チェックリストがすべて期待どおりの結果を返す
+- [x] PR-1 マージ済み（対象ステップ: 1）
+- [x] PR-2 マージ済み（対象ステップ: 2）
+- [x] PR-3 マージ済み（対象ステップ: 3-a / 3-b / 3-c）
+- [x] PR-4 マージ済み（対象ステップ: 3-d / 3-e）
+- [x] PR-5 マージ済み（対象ステップ: 4-a / 4-b）
+- [x] PR-6 マージ済み（対象ステップ: 4-c）
+- [x] PR-7 マージ済み（対象ステップ: 5-a / 5-b / 5-c / 5-d）
+- [x] PR-8 マージ済み（対象ステップ: 6-a / 6-b / 6-c）
+- [x] §4.2 のすべての項目について、仕組みを外すとテストが落ちることを確認した
+- [x] §4.3 の実行手順を実環境で走らせ、スキップされていないことを確認し、結果を追記した
+- [x] §4.4 の性能測定を行い、結果を追記した
+- [x] §7 の受け入れ基準検証のすべての項目が期待どおりの結果を返す
+- [x] §8 の横断検索チェックリストがすべて期待どおりの結果を返す
 
 ---
 
@@ -2097,42 +2097,76 @@ Phase 6-c で注記を足す）。
 
 ### 機能の完成度
 
-- [ ] 受け入れ基準 AC-01〜AC-23 のすべてについて、§7 の検証が期待どおりの結果を返す
-- [ ] 設計文書 §5.6 が挙げる1点を除き、外から見える挙動が変わらない
-- [ ] 実行時に旧経路へ切り替える設定項目を追加していない
+- [x] 受け入れ基準 AC-01〜AC-23 のすべてについて、§7 の検証が期待どおりの結果を返す
+- [x] 設計文書 §5.6 が挙げる1点を除き、外から見える挙動が変わらない
+- [x] 実行時に旧経路へ切り替える設定項目を追加していない
 
 ### 品質
 
-- [ ] `make fmt` → `make test` → `make lint` が緑
-- [ ] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` がコンパイルを通る
-- [ ] `make deadcode` が新たな未使用シンボルを報告しない
-- [ ] §4.2 のすべての項目について「仕組みを外すと落ちる」ことを確認し、コミットメッセージに記した
-- [ ] 新規テストは `-race` 付き（CGO_ENABLED=1）と無し（CGO_ENABLED=0）の両方で緑
+- [x] `make fmt` → `make test` → `make lint` が緑
+- [x] `go test -run '^$' -tags "test integration" ./internal/runner/base/executor/` がコンパイルを通る
+- [x] `make deadcode` が新たな未使用シンボルを報告しない
+- [x] §4.2 のすべての項目について「仕組みを外すと落ちる」ことを確認し、コミットメッセージに記した
+- [x] 新規テストは `-race` 付き（CGO_ENABLED=1）と無し（CGO_ENABLED=0）の両方で緑
 
 ### セキュリティ
 
-- [ ] `privileged_window_guard_test.go` の許可リストが設計文書 §7.2 の表と一致し、
+- [x] `privileged_window_guard_test.go` の許可リストが設計文書 §7.2 の表と一致し、
       `Logger` のメソッドを1つも含まず、negative self-test が許可リスト外の呼び出しと
       隙の中のログ出力の両方を拒否する
-- [ ] 3つの隙のいずれからも `Logger` へ到達しない。`stageFromFD` の2つの警告は
+- [x] 3つの隙のいずれからも `Logger` へ到達しない。`stageFromFD` の2つの警告は
       戻り値と `preparedCommand.stagingWarn` で隙の外へ運ばれ、記録されている
-- [ ] 隙の中の stderr への書き込みは、staging ディレクトリの削除失敗の1件だけである。
+- [x] 隙の中の stderr への書き込みは、staging ディレクトリの削除失敗の1件だけである。
       その doc コメントに、redaction を通らないので秘匿情報を載せない旨が書かれている
-- [ ] staged copy のパスが起動区間の直後に `Debug` で記録され、`emergencyShutdown` の
+- [x] staged copy のパスが起動区間の直後に `Debug` で記録され、`emergencyShutdown` の
       経路でも `$TMPDIR` に残った複製の在処が追える
-- [ ] 3つの隙がそれぞれ専用の `Operation` で開き、監査ログから区別できる
-- [ ] `Execute` 末尾の識別子検査（`identityChecker`）の位置と意味を変えていない
-- [ ] §4.3 の手順で作った setuid テストバイナリを、実行後に削除した
+- [x] 3つの隙がそれぞれ専用の `Operation` で開き、監査ログから区別できる
+- [x] `Execute` 末尾の識別子検査（`identityChecker`）の位置と意味を変えていない
+- [x] §4.3 の手順で作った setuid テストバイナリを、実行後に削除した
 
 ### 文書
 
-- [ ] `security-architecture.ja.md`／`security-risk-assessment.ja.md` を更新し、
+- [x] `security-architecture.ja.md`／`security-risk-assessment.ja.md` を更新し、
       英語版へ `/mktrans` で反映した
-- [ ] 5つの doc コメント（`WithPrivileges`／`Capture`／`InMemoryErrorCollector`／
+- [x] 5つの doc コメント（`WithPrivileges`／`Capture`／`InMemoryErrorCollector`／
       `DefaultLogLineTracker`／`superviseCommand`）と `outputWrapper`／`stageFromFD`／
       `startPrepared` の doc コメントを更新した
-- [ ] 0170 実装計画書の5箇所へ注記と置換後の検証コマンドを併記した
-- [ ] §4.3（統合テストの実行手順）と §4.4（性能測定）に実測結果を追記した
+- [x] 0170 実装計画書の5箇所へ注記と置換後の検証コマンドを併記した
+- [x] §4.3（統合テストの実行手順）と §4.4（性能測定）に実測結果を追記した
+
+**完了基準の検証結果（2026-09-14、main `80e293ae`）**: 各項目を次の証拠で確認した。
+
+- 機能の完成度: §7 の `static` を再実行し、AC-18 の dry-run 検索 0 件、AC-19 の旧文言 0 件・
+  新文言あり、AC-20 の旧文言 0 件・4語あり、AC-21 のコンパイル終了コード 0・
+  `TestPrivilegeGap_` 9 本と guard 9 本の一致、AC-22 の `make -n` のタグと環境変数・CI
+  2 ターゲット・pre-commit 設定検証・非特権 skip 実行（終了コード 0、SKIP 10）・
+  AC-23 の追跡表走査（出力空）がすべて期待どおり。`test` は `make test` で緑。実 setuid の
+  統合テストは本環境（非 root、uid 1000）では実行できず、§4.3 の Phase 5-d 実測記録
+  （必須10本 PASS、SKIP 0）を根拠とする。§5.6 の意図的な変更は「タイムアウト・キャンセル
+  時のエラーで `context.DeadlineExceeded` をたどれる」1点のみで、AC-16 の既存テストは
+  追加のみ（差分に削除行なし）、AC-18 の `capture_test.go` は無変更。executor
+  パッケージに環境変数の読み取りは無く、0171 が足した設定は `Operation` 2 定数だけで、
+  旧経路へ切り替える実行時設定は無い。
+- 品質: `make fmt`（差分なし）→ `make test`（CGO_ENABLED=1 `-race` と CGO_ENABLED=0 の
+  両構成、FAIL 0 件）→ `make lint`（0 issues）。`go test -run '^$' -tags "test
+  integration"` は終了コード 0。`make deadcode` は着手前 `33aa8697^1`（`4ad89c76`）と
+  正規化後の出力が完全一致（10 件、増減なし）。§4.2 の記録は 0171 の各コミットメッセージ
+  にあり、`3ed17f17`・`ea9ac911`・`eb7bea81` などに mutation と失敗したテスト名の
+  対応が記されている。
+- セキュリティ: `TestPrivilegeWindowAllowedCalls` が全サブテスト PASS。許可リストは
+  設計文書 §7.2 の表と一致し（起動区間 18 項目、kill 区間 1 項目、後始末区間 2 項目）、
+  `Logger` のメソッドを含まない。`stageFromFD` の2警告は戻り値（`cleanupFn() error`）と
+  `preparedCommand.stagingWarn` で運ばれ、`logDeferredWarnings` が隙の外で記録する。
+  隙の中の stderr 書き込みは `executor.go:479` の staging ディレクトリ削除失敗1件だけで、
+  doc コメント（同 `:438-450`）に redaction を通るため秘匿情報を載せない旨がある。
+  staged copy パスは `logStartWindowRecords` が起動区間の直後に `Debug` で記録する。
+  隙は `OperationUserGroupExecution`／`OperationKillAfterCancel`／`OperationStagingCleanup`
+  で開く。`identityChecker` は 0171 のどのマージでも変更されておらず、AC-06 の既存2テスト
+  は通過。`/var/tmp/scr-setuid.*`・`/tmp/scr-stage-*` の残存は 0 件。
+- 文書: 日英4文書の対応（起動区間・Slack 送信ワーカー・実行時間に比例しない旨）を
+  読み合わせて確認。8つの doc コメントを確認。0170 追跡表の `0171` は5箇所で、
+  各注記に置換後の検証コマンドが併記されている。§4.3／§4.4 に実測記録
+  （Phase 5 初回、Phase 5-d、Phase 6 完了時）がある。
 
 ---
 
@@ -2140,8 +2174,9 @@ Phase 6-c で注記を足す）。
 
 本書は `approved` である。実装は次の順で進める。
 
-- [ ] §3.2 の PR 構成に従い、PR-1 から順に実装する。1つの PR を1つのブランチで作り、
-      マージしてから次の PR のブランチへ切り替える
+- [x] §3.2 の PR 構成に従い、PR-1 から順に実装する。1つの PR を1つのブランチで作り、
+      マージしてから次の PR のブランチへ切り替える（PR-1〜PR-8 はマージ済み。
+      レビュー対応の追加ブランチ `-0a`・`-0b` も含めて `main` に入っている）
 
 実装完了後に残るもの（設計文書 §9、要件定義書「本タスクの後に残るもの」）:
 
