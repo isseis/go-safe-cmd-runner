@@ -94,16 +94,16 @@
 
 **作業内容**:
 
-- [ ] `childState` 型と定数 `childNotStarted`（零値）・`childRunning`・`childExited`・`childTerminated` を追加する。意味は 02_architecture.md §3.1 のとおり。Go のコメントは英語で書く。
-- [ ] `started()` メソッドを追加する。`childRunning`・`childExited`・`childTerminated` を `true`、`childNotStarted` と未知の値を `false` とする（02_architecture.md §3.1）。
-- [ ] `preparedCommand` に `child childState` フィールドを追加する。
-- [ ] `startPrepared` の `pc.execCmd.Start()` 成功直後に `pc.child = childRunning` を代入する。
-- [ ] `superviseCommand` で `killed` が確定した後、`Result` を組み立てる前に `pc.child` を `childExited`（kill 経路を通っていない）または `childTerminated`（kill 経路を通った）へ確定する（02_architecture.md §3.2 の表）。
-- [ ] 既存の戻り値・ログ・`Result` の値・エラーを変更しない。
-- [ ] `TestRunCommand_ChildStateTransitions` を追加する。`prepareForSupervise` と `runUnprivileged` を再利用し、正常終了・非ゼロ終了・キャンセル／タイムアウトによる強制終了・開始前失敗（存在しない絶対パス）・起動区間が start を実行しない場合・spent の各ケースで、`pc.child`・`started()`・`Result.ExitCode` を観測する。強制終了は `WithKillGraceDelay` で待ち時間を短縮する。spent は `TestStartPrepared_RejectsSpentCommand`（`executor_lifecycle_test.go:390`）と同じく `&preparedCommand{spent: true}` を直接組んで入力する。
-- [ ] 起動直後を観測するケースを同テストに含める。`startForSupervise` で開始した後、`superviseCommand` を呼ぶ前に `pc.child == childRunning` かつ `started()` が true であることを観測する。`startPrepared` の遷移は `superviseCommand` が終了種別で上書きするため、`runCommand` の戻り値だけでは観測できない。
-- [ ] `TestSupervise_ProcessAlreadyDoneIsNotAnError`（`executor_supervise_test.go:317`）に `pc.child == childTerminated` の観測を追加する（kill が exit 0 の回収と競合しても開始済みのままであることを状態で固定する）。
-- [ ] `TestChildState_StartedClassification` を追加する。4 定数に対する `started()` の分類と、列挙外の値（例: `childState(99)`）が `false` になることを観測する（02_architecture.md §7.1）。
+- [x] `childState` 型と定数 `childNotStarted`（零値）・`childRunning`・`childExited`・`childTerminated` を追加する。意味は 02_architecture.md §3.1 のとおり。Go のコメントは英語で書く。
+- [x] `started()` メソッドを追加する。`childRunning`・`childExited`・`childTerminated` を `true`、`childNotStarted` と未知の値を `false` とする（02_architecture.md §3.1）。
+- [x] `preparedCommand` に `child childState` フィールドを追加する。
+- [x] `startPrepared` の `pc.execCmd.Start()` 成功直後に `pc.child = childRunning` を代入する。
+- [x] `superviseCommand` で `killed` が確定した後、`Result` を組み立てる前に `pc.child` を `childExited`（kill 経路を通っていない）または `childTerminated`（kill 経路を通った）へ確定する（02_architecture.md §3.2 の表）。
+- [x] 既存の戻り値・ログ・`Result` の値・エラーを変更しない。
+- [x] `TestRunCommand_ChildStateTransitions` を追加する。`prepareForSupervise` と `runUnprivileged` を再利用し、正常終了・非ゼロ終了・キャンセル／タイムアウトによる強制終了・開始前失敗（存在しない絶対パス）・起動区間が start を実行しない場合・spent の各ケースで、`pc.child`・`started()`・`Result.ExitCode` を観測する。強制終了は `WithKillGraceDelay` で待ち時間を短縮する。spent は `TestStartPrepared_RejectsSpentCommand`（`executor_lifecycle_test.go:390`）と同じく `&preparedCommand{spent: true}` を直接組んで入力する。
+- [x] 起動直後を観測するケースを同テストに含める。`startForSupervise` で開始した後、`superviseCommand` を呼ぶ前に `pc.child == childRunning` かつ `started()` が true であることを観測する。`startPrepared` の遷移は `superviseCommand` が終了種別で上書きするため、`runCommand` の戻り値だけでは観測できない。
+- [x] `TestSupervise_ProcessAlreadyDoneIsNotAnError`（`executor_supervise_test.go:317`）に `pc.child == childTerminated` の観測を追加する（kill が exit 0 の回収と競合しても開始済みのままであることを状態で固定する）。
+- [x] `TestChildState_StartedClassification` を追加する。4 定数に対する `started()` の分類と、列挙外の値（例: `childState(99)`）が `false` になることを観測する（02_architecture.md §7.1）。
 
 **完了確認**: `make fmt`（Go を変更するため）→ `make test` → `make lint` が通る。この時点では配線がないため実行時の挙動は変わらない。
 
@@ -119,8 +119,8 @@
 
 **判定理由**: Phase 1 は kill と回収の競合（exit 0 競合）を含む終了種別の状態機械を導入する孤立した複雑ステップであり、frontier-recommended の「孤立した高リスク／複雑ステップ（状態機械）」に該当する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

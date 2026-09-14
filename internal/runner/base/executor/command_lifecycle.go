@@ -106,6 +106,42 @@ const (
 	cleanupElevated
 )
 
+// childState declares whether the prepared command's child was ever started,
+// and how it ended. Its contract: the zero value claims no execution, so a run
+// whose state was never advanced owes no audit record; only a state reached
+// after Start succeeded makes started() report an execution.
+type childState int
+
+const (
+	// childNotStarted is the zero value: no child was ever started, so the
+	// run owes no audit record.
+	childNotStarted childState = iota
+	// childRunning: Start succeeded; the supervision phase has not yet
+	// declared how the child ended.
+	childRunning
+	// childExited: the child was reaped and its exit status was read.
+	// Result.ExitCode is that status.
+	childExited
+	// childTerminated: the child was started and then force-killed
+	// (cancellation, timeout, or a start-phase failure after it was
+	// running), or could not be reaped after the kill. Result.ExitCode is
+	// ExitCodeUnknown, or the code the child had already been reaped with
+	// when the kill found it finished.
+	childTerminated
+)
+
+// started reports whether a run in this state executed a child, and so owes
+// exactly one audit record. Any value outside the declared states falls to
+// false: an undeclared state must never make a run claim an execution.
+func (s childState) started() bool {
+	switch s {
+	case childRunning, childExited, childTerminated:
+		return true
+	default:
+		return false
+	}
+}
+
 // stagingRequest carries what the start phase needs to build the staged copy
 // inside the privilege window: the verified identity to copy from and the
 // run-as credential whose gid the copy is chgrp'd to. The resolved path the
@@ -136,6 +172,11 @@ type preparedCommand struct {
 	binding execBinding
 	pump    *outputPump
 	kill    killStrategy
+
+	// child declares whether a child process was ever started, and how it
+	// ended. The zero value claims no execution, so the audit wiring reads
+	// this instead of guessing from Result.ExitCode.
+	child childState
 
 	// verifiedFD is the duplicated verified descriptor used for fd-bound
 	// execution; nil unless binding == bindingVerifiedFD.
@@ -462,6 +503,9 @@ func (e *DefaultExecutor) startPrepared(pc *preparedCommand) (started bool, err 
 		// Removed from inside the window; see the doc comment above.
 		return false, errors.Join(err, pc.runStagingCleanup())
 	}
+	// Declared the moment Start succeeds, before anything can fail: from here
+	// a child exists, and the run owes an audit record however it ends.
+	pc.child = childRunning
 	return true, nil
 }
 
@@ -716,6 +760,16 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	// may run inside the cleanup window, and removeStagedCopy records the
 	// failure on pc for the caller to log once every window has closed.
 	_ = e.removeStagedCopy(pc)
+
+	// Settled before the Result is built, so everything that reads the state
+	// once this function returns -- the audit wiring -- sees how the run
+	// ended. childExited and childTerminated both report an execution; only
+	// the zero value startPrepared left behind claims none.
+	if killed {
+		pc.child = childTerminated
+	} else {
+		pc.child = childExited
+	}
 
 	result := &Result{Stdout: string(outcome.stdout)}
 	if pc.hasOutputWriter {
