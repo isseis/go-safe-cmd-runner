@@ -400,6 +400,7 @@ func assertCommandFailureNotificationAttrs(t *testing.T, record tu.RecordSnapsho
 	record.AssertAttrs(t, map[string]any{
 		"audit_type":   "user_group_execution",
 		"message_type": logging.NotificationMessageType(logging.UserGroupCommandFailureNotification()),
+		"slack_notify": true,
 	})
 	record.AssertNotificationContext(t, common.CommandScope(cmd.GroupName(), cmd.Name()))
 }
@@ -538,6 +539,7 @@ func TestPrivilegeGap_ChildCredentialsMatchTarget(t *testing.T) {
 	successRecord := fixture.recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
 	_, hasNotification := successRecord.NotificationContext()
 	assert.False(t, hasNotification, "a successful run must not raise a notification")
+	assert.NotContains(t, successRecord.Attrs, "slack_notify", "a successful run must not trigger a notification")
 }
 
 // TestPrivilegeGap_UserGroupFailureRecord observes the failure wiring end to
@@ -690,6 +692,46 @@ func TestPrivilegeGap_OutputLimitAbortsRunningChild(t *testing.T) {
 	record.AssertAttrs(t, map[string]any{"exit_code": executor.ExitCodeUnknown})
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
 		"the failed run must not also write a success record")
+}
+
+// refusingOutputWriter fails every write, standing in for an output sink that
+// is broken or full. The child itself still runs to completion.
+type refusingOutputWriter struct {
+	err error
+}
+
+func (w refusingOutputWriter) Write(executor.OutputStream, []byte) error { return w.err }
+func (w refusingOutputWriter) Close() error                              { return nil }
+
+// TestPrivilegeGap_RunnerFailureWithZeroExitStillAuditsSuccess pins the
+// documented boundary where the runner fails but the child succeeded: the
+// output sink refuses the write while the child exits 0. The audit is keyed on
+// the child having started, so the run still owes exactly one record, and the
+// record's level follows the child's exit status rather than the runner error:
+// INFO, with no notification. Narrowing the failure-branch gate to non-zero
+// exit codes would drop this record silently.
+func TestPrivilegeGap_RunnerFailureWithZeroExitStillAuditsSuccess(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
+	sinkErr := errors.New("test output sink refused the write")
+	path, args := executortestutil.ResolveCommand("sh"), []string{"-c", "printf x"}
+	cmd := runtimeCommand(path, args, fixture)
+
+	before := os.Geteuid()
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, refusingOutputWriter{err: sinkErr})
+
+	require.ErrorIs(t, err, sinkErr)
+	assert.Equal(t, before, os.Geteuid())
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.ExitCode, "the child itself must have succeeded")
+	assertFailureWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assertAuditWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
+		"a zero exit code must not produce a failure record even when the runner failed")
+	successRecord := fixture.recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	_, hasNotification := successRecord.NotificationContext()
+	assert.False(t, hasNotification, "a zero exit code must not raise a notification")
+	assert.NotContains(t, successRecord.Attrs, "slack_notify", "a zero exit code must not trigger a notification")
 }
 
 func TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials(t *testing.T) {
@@ -912,7 +954,9 @@ func TestPrivilegeGap_UserGroupNotStartedNoAudit(t *testing.T) {
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
 		"a child that never started must not be recorded as an execution")
 	for _, record := range fixture.recorder.Records() {
-		_, hasNotification := record.NotificationContext()
-		assert.Falsef(t, hasNotification, "record %q must not carry a notification context", record.Message)
+		assert.NotContainsf(t, record.Attrs, common.NotificationContextAttrs.Key,
+			"record %q must not carry a notification context", record.Message)
+		assert.NotContainsf(t, record.Attrs, "slack_notify",
+			"record %q must not carry the notification trigger", record.Message)
 	}
 }

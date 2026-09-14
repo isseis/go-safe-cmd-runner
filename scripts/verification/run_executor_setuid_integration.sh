@@ -153,6 +153,7 @@ for test_name in \
 	TestPrivilegeGap_UserGroupFailureRecord \
 	TestPrivilegeGap_UserGroupFailureWithoutAuditLogger \
 	TestPrivilegeGap_UserGroupNotStartedNoAudit \
+	TestPrivilegeGap_RunnerFailureWithZeroExitStillAuditsSuccess \
 	TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials \
 	TestPrivilegeGap_StagingCleanupUsesRealPrivileges \
 	TestPrivilegeGap_StagingCancellationCleansUp \

@@ -682,8 +682,8 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 // so SysProcAttr.Credential causes "operation not permitted" at exec time.
 // Both failures here happen before the child starts: the failed exec never
 // starts a process, and a cancelled context stops prepareCommand before the
-// start window opens. A run that never started owes no audit record, so each
-// subtest verifies none is produced.
+// start window opens. A run that never started owes no audit record; the
+// subtests that hold an audit logger assert none is produced.
 func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 	t.Run("audit_logging_not_invoked_on_failure", func(t *testing.T) {
 		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
