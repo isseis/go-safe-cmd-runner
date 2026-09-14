@@ -203,9 +203,11 @@ func decodeNotificationContextParts(attrs []slog.Attr) (scopeName, group, comman
 // decodeNotificationContextName reads a group or command name from the two
 // forms the encoding produces: the string a redacting handler writes after
 // normalizing a declared identifier, and the raw identifier.Identifier. It
-// deliberately does not resolve other LogValuer values; accepting every value
-// that resolves to a string would widen the encoding contract beyond those two
-// forms.
+// does not accept a *identifier.Identifier: the redaction layer normalizes a
+// non-nil pointer to a string before decoding and refuses a typed nil one. It
+// deliberately does not resolve other LogValuer values either; accepting every
+// value that resolves to a string would widen the encoding contract beyond
+// those two forms.
 func decodeNotificationContextName(value slog.Value) (string, bool) {
 	if value.Kind() == slog.KindString {
 		return value.String(), true

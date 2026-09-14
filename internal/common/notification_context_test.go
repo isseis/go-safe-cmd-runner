@@ -171,6 +171,8 @@ func TestNotificationContext_UnknownScopeEncodesEmptyAndIsRejected(t *testing.T)
 }
 
 func TestDecodeNotificationContext_Validity(t *testing.T) {
+	identifierPointer := identifier.NewIdentifier("backup")
+
 	tests := []struct {
 		name    string
 		value   slog.Value
@@ -267,7 +269,7 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "group value is not a string",
+			name: "group value is an int",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Group),
 				slog.Int(NotificationContextAttrs.Group, 1),
@@ -275,11 +277,44 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "command value is not a string",
+			name: "command value is an int",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Command),
 				groupAttr("backup"),
 				slog.Int(NotificationContextAttrs.Command, 1),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a typed nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, (*identifier.Identifier)(nil)),
+			),
+			wantErr: true,
+		},
+		{
+			name: "command value is a typed nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				groupAttr("backup"),
+				slog.Any(NotificationContextAttrs.Command, (*identifier.Identifier)(nil)),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a non-nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, &identifierPointer),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a group",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Group(NotificationContextAttrs.Group, slog.String("nested", "backup")),
 			),
 			wantErr: true,
 		},
