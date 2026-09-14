@@ -341,8 +341,8 @@ flowchart TD
     RECORD -->|"ExitCode == 0"| INFO["INFO 成功レコード<br>通知なし"]
     RECORD -->|"ExitCode != 0"| ERROR["ERROR 失敗レコード<br>user_group_command_failure 通知"]
 
-    THREAT1["脅威: 開始済みの失敗が<br>記録されない"] -.->|"未記録に至る"| NORECORD
-    THREAT2["脅威: 開始していない実行が<br>記録される"] -.->|"捏造記録に至る"| RECORD
+    NORECORD -.->|"開始済みの失敗がここへ来ると成立"| THREAT1["脅威 A: 開始済みの失敗が<br>監査に残らない"]
+    RECORD -.->|"未開始の実行がここへ来ると成立"| THREAT2["脅威 B: 走っていない実行が<br>監査に記録される"]
 
     class TERM,CHILD data
     class STARTED process
@@ -350,6 +350,8 @@ flowchart TD
     class INFO,ERROR enhanced
     class THREAT1,THREAT2 problem
 ```
+
+実線は通常の処理経路を、破線は誤判定（開始済みを `false`、未開始を `true` と判定する）で本来の分岐へ誤って到達したときに成立する脅威を表す。破線の始点の分岐ラベルが「本来ここに来てはならない実行が来た」条件を、終点がそこで成立する脅威を示す。
 
 **凡例（Legend）**
 
@@ -361,7 +363,7 @@ flowchart LR
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
     D[("子プロセスの終了ステータス<br>と状態宣言")] --> P["監査の分岐（既存・無変更）"] --> E["記録される結果"]
-    X["脅威（回避すべき経路）"]
+    X["脅威（誤判定で到達すると成立）"]
     class D data
     class P process
     class E enhanced
