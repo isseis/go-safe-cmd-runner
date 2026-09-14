@@ -419,12 +419,13 @@ func TestRunCommand_ChildStateTransitions(t *testing.T) {
 		e := NewDefaultExecutor().(*DefaultExecutor)
 		pc := prepareForSupervise(t, e, nil, shPath, "-c", "echo never-runs")
 
-		result, err := e.runCommand(context.Background(), pc, func(func() error) error {
+		// The rejection itself is pinned by
+		// TestRunCommand_StartWindowThatRunsNothingIsRejected; this case only
+		// observes the state the same path leaves behind.
+		_, _ = e.runCommand(context.Background(), pc, func(func() error) error {
 			return nil // never calls fn, and reports no reason
 		})
 
-		require.ErrorIs(t, err, ErrStartPhaseNotRun)
-		assert.Nil(t, result)
 		assert.Equal(t, childNotStarted, pc.child)
 		assert.False(t, pc.child.started())
 	})
@@ -501,6 +502,8 @@ func TestSupervise_ChildNotReapedReportsUnknownExitCode(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	require.NotNil(t, result)
 	assert.Equal(t, ExitCodeUnknown, result.ExitCode, "an unreaped child has no exit code to report")
+	assert.Equal(t, childTerminated, pc.child,
+		"a child the kill could not reap was still started")
 
 	errs := rec.FindRecords(slog.LevelError, "Command did not exit after kill")
 	require.Len(t, errs, 1, "a child that may still be running must be recorded at Error")
@@ -661,6 +664,8 @@ func TestStartPrepared_ReleaseFailureStillKillsChild(t *testing.T) {
 	assert.Less(t, elapsed, 5*time.Second, "a started child must be killed, not waited out")
 	assert.False(t, processIsRunning(pid), "a child that cannot be supervised must not be left running")
 	require.NotNil(t, result)
+	assert.Equal(t, childTerminated, pc.child,
+		"the start-phase failure forced the kill path on a child that had started")
 
 	assert.Len(t, rec.FindRecords(slog.LevelInfo, "Killed command after start-phase failure"), 1,
 		"the record must name what forced the kill; nothing cancelled this run")
