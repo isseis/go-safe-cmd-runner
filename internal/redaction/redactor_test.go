@@ -3796,6 +3796,24 @@ func TestRedactLogAttribute_IdentifierExemption(t *testing.T) {
 		assert.Equal(t, slog.KindString, got.Value.Kind())
 		assert.Equal(t, DefaultPlaceholder, got.Value.String())
 	})
+
+	t.Run("sensitive key masks a declared identifier", func(t *testing.T) {
+		got := config.RedactLogAttribute(slog.Any("password", identifier.NewIdentifier("monkey")))
+
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, DefaultPlaceholder, got.Value.String())
+	})
+
+	t.Run("sensitive key inside a group masks a declared identifier", func(t *testing.T) {
+		attr := slog.Group("scope", slog.Any("password", identifier.NewIdentifier("monkey")))
+
+		got := config.RedactLogAttribute(attr)
+
+		require.Equal(t, slog.KindGroup, got.Value.Kind())
+		group := got.Value.Group()
+		require.Len(t, group, 1)
+		assert.Equal(t, DefaultPlaceholder, group[0].Value.String())
+	})
 }
 
 // TestRedactingHandler_IdentifierExemption pairs each of the three value-based
@@ -3981,6 +3999,22 @@ func TestRedactingHandler_IdentifierSliceElements(t *testing.T) {
 		require.Len(t, elements, 2)
 		assert.Equal(t, "monkey", elements[0])
 		assert.Equal(t, "rotate_api_key", elements[1])
+	})
+
+	t.Run("typed nil element fails closed", func(t *testing.T) {
+		var nilIdentifier *identifier.Identifier
+
+		var buf bytes.Buffer
+		failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		handler := NewRedactingHandler(slog.NewTextHandler(&buf, nil), DefaultConfig(), failureLogger)
+		slog.New(handler).LogAttrs(context.Background(), slog.LevelError, "test message",
+			slog.Any("items", []*identifier.Identifier{nilIdentifier, &first}),
+		)
+
+		output := buf.String()
+		assert.Contains(t, output, RedactionFailurePlaceholder)
+		assert.NotContains(t, output, "monkey")
+		assert.NotContains(t, output, "[{}]")
 	})
 }
 
