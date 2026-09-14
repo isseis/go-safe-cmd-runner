@@ -28,7 +28,7 @@
 | 監査レコード | `audit_type=user_group_execution` の構造化ログ 1 件。成功は INFO、失敗は ERROR |
 | 失敗レコード | `LogUserGroupExecution` が `ExitCode != 0` のときに書く ERROR レコード。`user_group_command_failure` 通知属性を載せる |
 | 成功レコード | 同じ関数が `ExitCode == 0` のときに書く INFO レコード |
-| 配線 | 開始済みの失敗経路から `LogUserGroupExecution` を呼び、失敗レコードと通知を発生させること |
+| 配線 | 開始済みの失敗経路から `LogUserGroupExecution` を呼び、終了ステータスに応じたレコード（非ゼロなら失敗レコードと通知）を発生させること |
 
 ---
 
@@ -49,7 +49,7 @@
 1. **事実は起きた場所で宣言する。** 子プロセスが開始したという事実は `Start()` が成功した `startPrepared` で状態を進める。監査時点の状態から遡って推測しない。
 2. **判別の根拠を型に置く。** 監査の可否は `ExitCode` の値でもエラー文字列でもなく、`preparedCommand.child` の列挙値で決める。
 3. **零値を「何も走っていない」にする。** 状態の零値 `childNotStarted` は、開始を主張しない値とする。
-4. **実行 1 回につき監査レコードは 1 件。** 成功（`err == nil`）は成功レコード、開始済みの失敗（`err != nil`）は失敗レコードとし、両方を書かない。分岐の条件を `err` の一方に閉じることで排他にする。
+4. **実行 1 回につき監査レコードは 1 件。** 監査を呼ぶかどうかは `err` の分岐で決める。`err == nil` は無条件に 1 回呼び、`err != nil` は開始済みのときだけ呼ぶ。レコードのレベルと `user_group_command_failure` 通知の有無は `err` ではなく子プロセスの終了ステータス（`ExitCode`）で決まり、既存の `LogUserGroupExecution` の分岐に従う（§4 の補足を参照）。
 5. **既存の意味論を変えない。** `Result` の値の意味、`LogUserGroupExecution` の分岐と属性、0172 の通知種別定義・メッセージ書式は変更しない。本設計が足すのは、失敗分岐に到達する配線だけである。
 
 ### 1.3 概念モデル: 実行状態の遷移
@@ -73,9 +73,9 @@ stateDiagram-v2
 | `childNotStarted` | 0 件 | Start を実行しない失敗、または `prepareCommand` 失敗 |
 | `childRunning` | （監査時点では観測されない） | 開始の事実を `Start()` 成功の時点で記録する中間状態 |
 | `childExited` | 1 件（INFO または ERROR） | 実際の終了コードを `Result` に持つ |
-| `childTerminated` | 1 件（ERROR） | `ExitCodeUnknown` を持つ |
+| `childTerminated` | 1 件（INFO または ERROR） | 通常は `ExitCodeUnknown`。kill が exit 0 での回収と競合した場合は `0`（§4 の補足） |
 
-`childTerminated` は、タイムアウト・キャンセルによる kill、開始後の起動区間失敗による kill、kill 後も回収できなかった場合を含む。いずれも子プロセスは開始しているので監査対象である。
+`childTerminated` は、タイムアウト・キャンセルによる kill、開始後の起動区間失敗による kill、kill 後も回収できなかった場合を含む。いずれも子プロセスは開始しているので監査対象である。ただし監査レコードのレベルは状態ではなく `Result.ExitCode` で決まる（§4 の補足）。
 
 監査の判断は `runCommand` が戻った後に行うため、実際に観測されるのは `childNotStarted`・`childExited`・`childTerminated` のいずれかである。`childRunning` は、開始の事実を `Start()` 成功の時点で記録するために置く。将来 `superviseCommand` より前に戻る経路が足されても、開始済みの実行が未開始に戻ることはない。
 
@@ -100,7 +100,7 @@ flowchart TD
 
     subgraph After["After: 開始済みだけを監査する"]
         RC2["runCommand"] --> ST2["pc.child を読む"]
-        ST2 -->|"started() が true"| AUD["LogUserGroupExecution<br>失敗レコード + 通知"]
+        ST2 -->|"started() が true"| AUD["LogUserGroupExecution<br>終了ステータスに応じたレコード"]
         ST2 -->|"started() が false"| GAP2["監査レコードなし"]
         class ST2,AUD enhanced
         class GAP2 process
@@ -194,7 +194,8 @@ const (
     // childTerminated: the child was started and then force-killed
     // (cancellation, timeout, or a start-phase failure after it was
     // running), or could not be reaped after the kill. Result.ExitCode is
-    // ExitCodeUnknown.
+    // ExitCodeUnknown, or the code the child had already been reaped with
+    // when the kill found it finished (see the race note in section 4).
     childTerminated
 )
 
@@ -203,7 +204,7 @@ const (
 func (s childState) started() bool
 ```
 
-`started` は `childRunning`・`childExited`・`childTerminated` を `true`、`childNotStarted` を `false` とする。宣言済みの 3 状態を明示的に列挙し、どれにも一致しない値は `false` に倒す。これは「一度も開始していない実行を監査しない」という要件の禁止側を守るためであり、監査への記録漏れは §7.1 の遷移テストが状態ごとに検出する。
+`started` は `childRunning`・`childExited`・`childTerminated` を `true`、`childNotStarted` を `false` とする。宣言済みの 3 状態を明示的に列挙し、どれにも一致しない値は `false` に倒す。これは「一度も開始していない実行を監査しない」という要件の禁止側を守るためである。out-of-enum の値が `false` に倒れることは §7.1 の分類テストの観測対象に含める。
 
 ### 3.2 `preparedCommand` への追加と遷移を刻む場所
 
@@ -237,7 +238,7 @@ return result, nil
 - 開始済みなら `result` は必ず非 nil である（`superviseCommand` が `Result` を組んでから戻る）。
 - `prepareCommand` の失敗経路は `runCommand` より前に return するため、状態が零値のまま監査されない。
 - 成功経路は既存どおり無条件に 1 回だけ記録する。`err == nil` は強制終了も開始失敗も含まないため、開始済みである。
-- `err != nil` と `err == nil` は排他なので、成功レコードと失敗レコードが二重に出ることはない。
+- `err != nil` と `err == nil` は排他なので、同じ実行で監査呼び出しが 2 回になることはない。呼ばれた後のレベルは `LogUserGroupExecution` が `ExitCode` で決める（§4 の補足）。
 
 ### 3.4 監査ヘルパ（1 実行 1 レコードの一元化）
 
@@ -293,9 +294,13 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 | 起動区間が `Start` を実行しなかった（昇格拒否） | 零値 | `nil` | なし |
 | `Start()` 失敗 | 零値 | `ExitCodeUnknown` のプレースホルダ | なし |
 | 非ゼロ終了 | `childExited` | 実際の終了コード | 失敗レコード |
-| タイムアウト・キャンセル・開始後の起動区間失敗による kill | `childTerminated` | `ExitCodeUnknown` | 失敗レコード |
-| 出力上限による中断で子がシグナル終了 | `childExited` | `ExitCodeUnknown` または実際の終了コード | 失敗レコード（`ExitCode != 0` のため） |
+| タイムアウト・キャンセル・開始後の起動区間失敗による kill | `childTerminated` | `ExitCodeUnknown`（既に exit 0 で回収済みの場合は `0`） | `ExitCode != 0` なら失敗レコード、`0` なら成功レコード（通知なし。§4 の補足を参照） |
+| 出力上限による中断で子がシグナル終了 | `childExited` | `ExitCodeUnknown` または実際の終了コード | `ExitCode != 0` なら失敗レコード |
 | 成功（終了コード 0） | `childExited` | `0` | 成功レコード |
+
+補足（レベルの決定則）: 監査レコードのレベルと `user_group_command_failure` 通知の有無は、`runCommand` がエラーを返したかどうかではなく、子プロセスの終了ステータスで決まる。`LogUserGroupExecution` は `ExitCode == 0` なら INFO 成功レコードを書き、`ExitCode != 0` なら ERROR 失敗レコードと通知を書く（§3.5 で無変更とする既存分岐）。本設計が保証する不変条件は「開始済みの実行 1 回につき監査レコードちょうど 1 件」であり、そのレベルは子プロセスの終了ステータスに従う。
+
+補足（kill と exit 0 の競合）: 強制終了の直前、または開始後の起動区間失敗で kill を試みた時点で、子プロセスが既に exit 0 で回収されていることがある。`TestSupervise_ProcessAlreadyDoneIsNotAnError` が固定するとおり、この場合は kill が `os.ErrProcessDone` になっても失敗扱いされず、`runCommand` は `err != nil` かつ `Result.ExitCode == 0` を返す。開始済みなので監査は呼ばれるが、`ExitCode == 0` のため INFO 成功レコード 1 件となり、`user_group_command_failure` 通知は発生しない。ランナー側の失敗は、既存の `User/group privilege execution failed` ERROR ログが伝える。この競合は許容し、`Result` の意味（`ExitCode` が子プロセスの終了ステータスを表すこと）は変えない。記録の排他は「開始済みなら監査を 1 回呼ぶ」という配線だけに閉じる。
 
 補足: 出力上限エラー（`writeErr`）はランナー側の失敗だが、子プロセスが 0 で終了していた場合は `ExitCode == 0` のため成功レコードになる。これは 0172 の「レコードのレベルは子プロセスの終了コードで決まる」という定義どおりであり、ランナー側の失敗は既存の `User/group privilege execution failed` の ERROR ログが伝える。本設計はこの意味論を変えない。
 
@@ -313,7 +318,55 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 | 未開始の失敗が実行として記録される | 零値を `childNotStarted` とし、`started()` が未知の値を含めて安全側に倒す |
 | `ExitCode` の値による誤判定 | 判定材料に使わない。強制終了の `-1` とプレースホルダの `-1` は状態で区別する |
 | エラー文字列の内容による誤判定 | 使わない（CLAUDE.md「Declare, don't infer」） |
-| 記録の二重出力・欠落 | 成功は `err == nil`、失敗は `err != nil` かつ開始済みの 1 箇所に閉じる |
+| 記録の二重出力・欠落 | 監査呼び出しを `err == nil` の 1 箇所と、`err != nil` かつ開始済みの 1 箇所に閉じ、排他にする |
+
+#### 脅威モデル図: 監査証跡の完全性
+
+```mermaid
+flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
+
+    subgraph BOUNDARY["信頼境界: 監査の可否は pc.child の宣言だけで決まる"]
+        direction TB
+        TERM["子プロセスの終了ステータス<br>非ゼロ終了 / 強制終了 / 未開始"] --> CHILD["pc.child の childState 宣言"]
+        CHILD --> STARTED{"started()"}
+    end
+
+    STARTED -->|"true: 開始済み"| RECORD["監査を 1 回呼ぶ<br>LogUserGroupExecution"]
+    STARTED -->|"false: 未開始"| NORECORD["監査を呼ばない"]
+
+    RECORD -->|"ExitCode == 0"| INFO["INFO 成功レコード<br>通知なし"]
+    RECORD -->|"ExitCode != 0"| ERROR["ERROR 失敗レコード<br>user_group_command_failure 通知"]
+
+    THREAT1["脅威: 開始済みの失敗が<br>記録されない"] -.->|"未記録に至る"| NORECORD
+    THREAT2["脅威: 開始していない実行が<br>記録される"] -.->|"捏造記録に至る"| RECORD
+
+    class TERM,CHILD data
+    class STARTED process
+    class RECORD,NORECORD process
+    class INFO,ERROR enhanced
+    class THREAT1,THREAT2 problem
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
+
+    D[("子プロセスの終了ステータス<br>と状態宣言")] --> P["監査の分岐（既存・無変更）"] --> E["記録される結果"]
+    X["脅威（回避すべき経路）"]
+    class D data
+    class P process
+    class E enhanced
+    class X problem
+```
 
 ### 5.2 特権区間への影響
 
@@ -321,7 +374,7 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 
 ### 5.3 残存リスク
 
-- 開始の事実を `startPrepared` と `superviseCommand` の 2 箇所で更新する。遷移を足すときに更新を忘れると状態が古いまま残りうる。§7.1 の遷移テストがそれぞれの遷移を固定する。
+- 開始の事実を `startPrepared` と `superviseCommand` の 2 箇所で更新する。遷移を足すときに更新を忘れると状態が古いまま残りうる。各遷移は §7.1 の観測対象であり、テストが意図どおり失敗することの確認は実装時にコミットメッセージへ記録する（AC-11）。
 - 監査の記録先（Slack 到達）は 0172 のハンドラに依存する。本設計は発火元までの配線を保証し、送信は既存の Slack ハンドラテストが担う。
 
 ---
@@ -340,8 +393,8 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 ### 6.2 タイムアウト・シグナル（開始済み・強制終了）
 
 1.〜2. は 6.1 と同じ。
-3. `superviseCommand` がキャンセルを観測し、kill して回収する。`killed == true` なので `child = childTerminated`、`Result.ExitCode` は `ExitCodeUnknown`。
-4. 以降は 6.1 と同じ。`ExitCode != 0` なので失敗レコードになり、`exit_code=-1` が記録される。
+3. `superviseCommand` がキャンセルを観測し、kill して回収する。`killed == true` なので `child = childTerminated`、`Result.ExitCode` は通常 `ExitCodeUnknown`。
+4. 以降は 6.1 と同じ。`ExitCode != 0` なので失敗レコードになり、`exit_code=-1` が記録される。ただし kill が既に回収済みの exit 0 と競合した場合は `ExitCode == 0` となり、INFO 成功レコード 1 件で通知は発生しない（§4 の「kill と exit 0 の競合」を参照）。
 
 ### 6.3 未開始の失敗
 
@@ -370,32 +423,43 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 | 開始して強制終了 | 実行中の `sleep` をキャンセル／タイムアウト | `childTerminated`、`started() == true`、`ExitCode == ExitCodeUnknown` |
 | 開始前の失敗 | 起動できないパス | `childNotStarted`、`started() == false`、`err != nil` |
 | 開始前の失敗（spent） | `pc.spent` の `preparedCommand` | `childNotStarted`、`started() == false` |
+| 未定義の状態値 | `childState(99)` | `started() == false`（fail-closed の零値側へ倒れることを固定） |
 
-`startPrepared` → `superviseCommand` を直接呼ぶ既存テストにも同じ期待を適用し、遷移が 2 箇所で刻まれることを固定する。
+`startPrepared` → `superviseCommand` を直接呼ぶ既存テストにも同じ期待を適用し、遷移が 2 箇所で刻まれることを固定する。最後の行は、宣言済みのどの状態にも一致しない値に対する `started()` の fail-closed な倒れ方（`false`）を分類テストとして観測する。
 
-### 7.2 配線の統合テスト（setuid gate）
+### 7.2 配線の統合テスト（setuid ゲート・必須ケース）
 
-開始済みの失敗を `executeWithUserGroup` 越しに観測するテストは、実資格情報で子を起動できる環境を要する。既存の setuid ゲート（`make executor-setuid-integration-test`、`TestPrivilegeGap_*`）に監査の assert を足す。このゲートは skip を 1 件でも許さず、必須テスト名の一覧を [`run_executor_setuid_integration.sh`](../../../scripts/verification/run_executor_setuid_integration.sh) に持つ。新設するテストは同スクリプトの必須一覧へも足し、実行されないまま緑になる状態を防ぐ。
+開始済みの失敗を `executeWithUserGroup` 越しに観測するテストは、実資格情報で子を起動できる環境を要する。`make executor-setuid-integration-test` は [`scripts/verification/run_executor_setuid_integration.sh`](../../../scripts/verification/run_executor_setuid_integration.sh) を実行し、このゲートは次を強制する。
 
-| ケース | テスト | assert |
-|---|---|---|
-| 非ゼロ終了 | 新設（`sh -c 'exit 2'` を run-as 実行） | ERROR "User/group command failed" が 1 件。`audit_type=user_group_execution`、`exit_code=2`、stdout/stderr 属性、`message_type=user_group_command_failure`、`CommandScope(group, command)` |
-| タイムアウト強制終了 | `TestPrivilegeGap_TimeoutKillsChild` を拡張 | ERROR レコードが 1 件。`exit_code=-1` |
-| キャンセル強制終了 | `TestPrivilegeGap_CancelKillsChild` を拡張 | 同上 |
-| 成功 | `TestPrivilegeGap_ChildCredentialsMatchTarget` を拡張 | INFO 成功レコードが 1 件だけで、失敗レコードがない |
+- `--- SKIP:` を 1 件でも検出すると FATAL（`skip_count != 0`）とし、特権挙動が未検証のまま緑になることを許さない。
+- 実行対象を `^(TestPrivilegeGap_.*|TestRunAsSupplementaryGroups_MatchTargetUser_NotRoot)$` に限定する。
+- 必須テスト名のハードコード一覧を持ち、各名前について `^--- PASS: <name> ` を行単位で確認する。一覧にあるテストが skip または fail ならゲートは落ちる。逆に一覧にないテストは、フィルタに一致して実行されても必須確認の対象にはならない。
+
+したがって新設する配線ケースは、名前を `TestPrivilegeGap_*` に合わせてフィルタに載せ、スクリプトの必須一覧へ追加する。この 2 点を欠くと「実行されないまま」「必須と見なされないまま」緑になり得るため、テストの追加は必ずこの 2 箇所へ同時に行う。
+
+| # | ケース | テスト | assert |
+|---|---|---|---|
+| (a) | 開始済み・非ゼロ終了（stdout と stderr が相異なる） | 新設。run-as の `sh -c` が stdout と stderr へ別々の値を書き、`exit 2` する | ERROR "User/group command failed" が 1 件。`audit_type=user_group_execution`、`exit_code=2`、`stdout`／`stderr` 属性がそれぞれのストリームの出力を redaction した値と一致（相異なる値で取り違えも検出）、`message_type=user_group_command_failure`、通知コンテキスト `CommandScope(group, command)` |
+| (b) | タイムアウトによる強制終了 | `TestPrivilegeGap_TimeoutKillsChild` を拡張 | ERROR レコードが 1 件。`exit_code=-1` と、(a) と同じ通知メタデータ（`message_type`・`CommandScope`） |
+| (c) | キャンセルによる強制終了 | `TestPrivilegeGap_CancelKillsChild` を拡張 | (b) と同じ（`exit_code=-1` と通知メタデータ） |
+| (d) | 開始済み・非ゼロ終了・AuditLogger なし | 新設。`WithAuditLogger` を渡さずに組んだ executor を run-as で実行 | panic しない。`user_group_execution` レコードも通知も出ない（nil は no-op）。通常の `User/group privilege execution failed` ERROR ログは出る |
+| (e) | 未開始の失敗 | 新設。絶対パスが存在しない run-as コマンドを `executeWithUserGroup` に通し、子プロセスが走る前に `Start` を失敗させる | `user_group_execution` レコード 0 件、`user_group_command_failure` 通知 0 件。状態は `childNotStarted` のまま |
+| 成功 | 成功の回帰 | `TestPrivilegeGap_ChildCredentialsMatchTarget` を拡張 | INFO 成功レコードが 1 件だけ。失敗レコードも通知もない |
+
+(a) は属性の空振りを避けるため、stdout と stderr に別々の値（redaction が変換する形式を含む）を出し、`stdout`・`stderr` 属性がそれぞれのストリームの redaction 後の値と一致することを確認する。(e) は絶対パス不存在で `Start` を決定論的に失敗させ、開始しなかった失敗の観測を skip にも空振りにも依存させない。
 
 通知ペイロードの書式そのものは 0172 の `TestSlackHandler_UserGroupCommandFailure` と `TestLogger_LogUserGroupExecution` が担う。統合テストは「発火元がその種別を選んだか」をレコードの `message_type` で固定する。
 
-### 7.3 未開始・成功の回帰
+### 7.3 必須ケースの登録と非 setuid テストの位置づけ
 
-- 未開始の失敗: `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` の "audit_logging_not_invoked_on_failure"（資格情報の `EPERM` で `Start` が失敗する経路）が、監査ログが空のままであることを既に固定している。本設計後もこのテストは緑であるべきで、意味が「未開始の失敗は監査しない」に変わる。
-- 成功: 既存の成功レコードのレベル・属性（`audit_type`・`command_name`・`exit_code` など）が変わらないことを既存テストで確認する。
+- 7.2 の必須ケースは、テスト本体の追加と同時に `run_executor_setuid_integration.sh` の必須一覧へ追加する。非ゼロ終了ケースが stdout/stderr に相異なる値を出し、未開始ケースが絶対パス不存在で `Start` を決定論的に失敗させることで、AC-02・AC-03・AC-05・AC-07 の観測は skip や空振りで通らない。
+- 7.1 の分類・遷移テストは特権を要さず `make test` で常に走るが、特権モデル越しの配線（開始済みの失敗が `executeWithUserGroup` から監査へ届くこと）は観測しないため、7.2 の必須ケースの代替にはならない。
+- 既存の `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging`（"audit_logging_not_invoked_on_failure"）は非特権の回帰として残る。root 実行時は skip するため、AC-07 の保証は 7.2(e) の必須ケースが担う。
+- 成功の回帰（AC-04・AC-08）は `TestPrivilegeGap_ChildCredentialsMatchTarget` の拡張で、INFO 成功レコードが 1 件のままであることを固定する。
 
-### 7.4 テストが主張する理由で失敗できること
+### 7.4 テストの失敗確認は実装時に行う
 
-- 遷移テストは、`startPrepared` の状態代入を外せば `childRunning` に到達せず失敗する。`superviseCommand` の確定を外せば `childExited` / `childTerminated` の assert が失敗する。
-- 配線テストは、失敗分岐の `pc.child.started()` ガードを外せば（または `started()` を常に false にすれば）ERROR レコードが出ずに失敗する。逆に未開始テストは、ガードを外して無条件に監査すると失敗する。
-- これらの確認をコミットメッセージに記す（AC-11）。
+本設計書は、個々のテストが「何を壊すと落ちるか」を予測しない。CLAUDE.md「Every test must be able to fail for its stated reason」と AC-11 に従い、追加・変更したテストが検証対象の挙動を壊すと失敗することを実装時に確認し、その結果をコミットメッセージに記す。設計書の役割は、状態遷移（§3.1・3.2）と配線（§3.3・3.4）の観測対象を §7.1・7.2 のケースとして列挙するところまでとする。
 
 ---
 
@@ -425,16 +489,16 @@ func (e *DefaultExecutor) auditUserGroupExecution(
 | AC | 設計上の対応 |
 |---|---|
 | AC-01 | §3.1〜§3.3。開始済みのときだけ監査し、`ExitCode` は `Result` の値をそのまま記録 |
-| AC-02 | §3.3〜§3.4。既存 `LogUserGroupExecution` が `CommandScope` の通知属性を載せる |
-| AC-03 | §3.4。既存の redaction を通した stdout/stderr を移すだけ |
+| AC-02 | §3.3〜§3.4、§7.2(a)〜(c)。既存 `LogUserGroupExecution` が `CommandScope` の通知属性を載せ、必須ケースで発火を観測 |
+| AC-03 | §3.4、§7.2(a)。redaction 済み stdout/stderr を相異なる値で必須ケースに観測 |
 | AC-04 | §3.3・6.4。成功経路は無条件 1 回で従来どおり |
-| AC-05 | §3.1〜§3.3、4 章。零値の経路は監査しない |
-| AC-06 | §7.2。setuid 統合テストで非ゼロ・強制終了を観測 |
-| AC-07 | §7.3。未開始の失敗で監査しないことを観測 |
+| AC-05 | §3.1〜§3.3、4 章、§7.2(e)。零値の経路は監査しない |
+| AC-06 | §7.2(a)〜(c)。setuid 統合テストで非ゼロ・強制終了を観測 |
+| AC-07 | §7.2(e)・§7.3。未開始の失敗で監査しないことを、skip 不可の必須ケースで観測 |
 | AC-08 | §3.5・6.4。成功レコードのレベル・属性を変えない |
 | AC-09 | §3.5。通知種別定義と Slack ペイロードを変えない |
 | AC-10 | §8。各 Phase で make ターゲットを通す |
-| AC-11 | §7.4。壊したときに落ちることを確認しコミットメッセージに記す |
+| AC-11 | §7.4。壊したときに落ちることを確認するのは実装時の作業であり、結果をコミットメッセージに記す |
 
 ## 付録B: 採らなかった案
 
