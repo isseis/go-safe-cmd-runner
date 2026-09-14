@@ -441,14 +441,16 @@ flowchart LR
 
 | # | ケース | テスト | assert |
 |---|---|---|---|
-| (a) | 開始済み・非ゼロ終了（stdout と stderr が相異なる） | 新設。run-as の `sh -c` が stdout と stderr へ別々の値を書き、`exit 2` する | ERROR "User/group command failed" が 1 件。`audit_type=user_group_execution`、`exit_code=2`、`stdout`／`stderr` 属性がそれぞれのストリームの出力を redaction した値と一致（相異なる値で取り違えも検出）、`message_type=user_group_command_failure`、通知コンテキスト `CommandScope(group, command)` |
-| (b) | タイムアウトによる強制終了 | `TestPrivilegeGap_TimeoutKillsChild` を拡張 | ERROR レコードが 1 件。`exit_code=-1` と、(a) と同じ通知メタデータ（`message_type`・`CommandScope`） |
-| (c) | キャンセルによる強制終了 | `TestPrivilegeGap_CancelKillsChild` を拡張 | (b) と同じ（`exit_code=-1` と通知メタデータ） |
+| (a) | 開始済み・非ゼロ終了（stdout と stderr が相異なる） | 新設。run-as の `sh -c` が stdout と stderr へ別々の値を書き、`exit 2` する | ERROR "User/group command failed" が 1 件。`audit_type=user_group_execution`、`exit_code=2`、`stdout`／`stderr` 属性がそれぞれのストリームの出力を redaction した値と一致（相異なる値で取り違えも検出）、`message_type=user_group_command_failure`、通知コンテキスト `CommandScope(group, command)`。加えて同じ失敗レコードで `elevation_count` と開始区間 `privilege_duration_user_group_execution_us` を検証する（kill 区間は要求しない） |
+| (b) | タイムアウトによる強制終了 | `TestPrivilegeGap_TimeoutKillsChild` を拡張 | "User/group command failed" の ERROR レコードが 1 件。`exit_code=-1` と、(a) と同じ通知メタデータ（`message_type`・`CommandScope`）、および同じ失敗レコードで `elevation_count`・開始区間 `privilege_duration_user_group_execution_us`・kill 区間 `privilege_duration_kill_after_cancel_us` を検証する |
+| (c) | キャンセルによる強制終了 | `TestPrivilegeGap_CancelKillsChild` を拡張 | (b) と同じ（`exit_code=-1`、通知メタデータ、`elevation_count` と開始・kill 両区間の duration） |
 | (d) | 開始済み・非ゼロ終了・AuditLogger なし | 新設。`WithAuditLogger` を渡さずに組んだ executor を run-as で実行 | panic しない。`user_group_execution` レコードも通知も出ない（nil は no-op）。通常の `User/group privilege execution failed` ERROR ログは出る |
 | (e) | 未開始の失敗 | 新設。絶対パスが存在しない run-as コマンドを `executeWithUserGroup` に通し、子プロセスが走る前に `Start` を失敗させる | `user_group_execution` レコード 0 件、`user_group_command_failure` 通知 0 件。状態は `childNotStarted` のまま |
 | 成功 | 成功の回帰 | `TestPrivilegeGap_ChildCredentialsMatchTarget` を拡張 | INFO 成功レコードが 1 件だけ。失敗レコードも通知もない |
 
 (a) は属性の空振りを避けるため、stdout と stderr に別々の値（redaction が変換する形式を含む）を出し、`stdout`・`stderr` 属性がそれぞれのストリームの redaction 後の値と一致することを確認する。(e) は絶対パス不存在で `Start` を決定論的に失敗させ、開始しなかった失敗の観測を skip にも空振りにも依存させない。
+
+失敗レコード側のメトリクス検証は、既存の `assertWindowAttrs` を使う。このヘルパは `elevation_count` と `privilege_duration_*_us` 属性の集合を照合する。設計としては `assertAuditWindows`／`assertFailureWindows` に倣い、"User/group command failed" の ERROR レコードを 1 件取得して `assertWindowAttrs` を呼ぶ専用ヘルパ（例: `assertCommandFailureWindows`）を置き、属性の解析を重複実装しない。失敗レコードは成功レコードと同じ収集済み `PrivilegeMetrics` を載せなければならない（01 §スコープ 2）。これにより、メトリクスを落として `auditUserGroupExecution` を呼ぶ実装は、開始区間・kill 区間の属性を要求する必須ケースの assertion を通らない。
 
 通知ペイロードの書式そのものは 0172 の `TestSlackHandler_UserGroupCommandFailure` と `TestLogger_LogUserGroupExecution` が担う。統合テストは「発火元がその種別を選んだか」をレコードの `message_type` で固定する。
 
@@ -490,7 +492,7 @@ flowchart LR
 
 | AC | 設計上の対応 |
 |---|---|
-| AC-01 | §3.1〜§3.3。開始済みのときだけ監査し、`ExitCode` は `Result` の値をそのまま記録 |
+| AC-01 | §3.1〜§3.3、§7.2(a)〜(c)。開始済みのときだけ監査し、`ExitCode` は `Result` の値をそのまま記録。失敗レコードも成功レコードと同じ収集済み `PrivilegeMetrics`（`elevation_count` と `privilege_duration_*_us`）を載せる |
 | AC-02 | §3.3〜§3.4、§7.2(a)〜(c)。既存 `LogUserGroupExecution` が `CommandScope` の通知属性を載せ、必須ケースで発火を観測 |
 | AC-03 | §3.4、§7.2(a)。redaction 済み stdout/stderr を相異なる値で必須ケースに観測 |
 | AC-04 | §3.3・6.4。成功経路は無条件 1 回で従来どおり |
