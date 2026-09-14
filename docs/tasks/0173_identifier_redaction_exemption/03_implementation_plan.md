@@ -378,24 +378,24 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 **対象ファイル**: `internal/redaction/redactor.go`、`internal/redaction/redactor_test.go`、
 `.golangci.yml`
 
-- [ ] `.golangci.yml` の depguard `filevalidator` ルールの `allow` に
+- [x] `.golangci.yml` の depguard `filevalidator` ルールの `allow` に
       `github.com/isseis/go-safe-cmd-runner/internal/identifier` を追加する。
       `internal/` 配下から宣言型を import する最初の Phase であり、追加しないと
       `make lint` が import を拒否する。`main` ルールは `cmd/` に宣言サイトが無いため
       変更しない。
-- [ ] `redactor.go` に、`slog.Value` が宣言型（`identifier.Identifier` または非 nil の
+- [x] `redactor.go` に、`slog.Value` が宣言型（`identifier.Identifier` または非 nil の
       `*identifier.Identifier`）かを判定する非公開ヘルパーを 1 つ追加する。値の型だけで判定し、
       キー名・値の内容・長さは見ない。型付き nil の `*identifier.Identifier` は false を返す
       （02_architecture.md §3.2）。
-- [ ] `Config.RedactLogAttribute` のキー名判定の後、string／group 判定の前に、宣言型を
+- [x] `Config.RedactLogAttribute` のキー名判定の後、string／group 判定の前に、宣言型を
       `slog.StringValue(name)` へ正規化する分岐を追加する。
-- [ ] `RedactingHandler.redactLogAttributeWithContext` のキー名判定の後、
+- [x] `RedactingHandler.redactLogAttributeWithContext` のキー名判定の後、
       `switch value.Kind()` の前に、宣言型を `slog.StringValue(name)` にして返す分岐を
       追加する。キー名判定を先に置く fail-closed の順序を守る。
-- [ ] `RedactingHandler.processSlice` の要素ループで、`slog.LogValuer` 型アサーションの前に
+- [x] `RedactingHandler.processSlice` の要素ループで、`slog.LogValuer` 型アサーションの前に
       ヘルパーで要素の型を見る。免除した要素は `Name()` の string にして
       `processedElements` へ append する。
-- [ ] `redactor_test.go` に次のテストを追加する。免除の入力集合は 02_architecture.md §7.1・
+- [x] `redactor_test.go` に次のテストを追加する。免除の入力集合は 02_architecture.md §7.1・
       §7.3 が定義する。各テストは、免除側で名前がそのまま現れることに加え、下流へ渡った
       値の種別が string であることを検証する。
   - `TestRedactLogAttribute_IdentifierExemption`（Config 実装。group 再帰内の宣言型が string
@@ -415,14 +415,14 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
     `RedactionFailurePlaceholder` になる）
   - `TestRedactingHandler_SensitiveKeyMaskPrecedesExemption`（機密キーに宣言型を載せても
     値は `[REDACTED]` のまま）
-- [ ] `redactor_test.go` に `TestDefaultPatternSets_AreUnchanged` を追加し、AC-12 の集合
+- [x] `redactor_test.go` に `TestDefaultPatternSets_AreUnchanged` を追加し、AC-12 の集合
       不変を検出可能にする。`DefaultKeyValuePatterns()` の `Literal` と `Kind` の集合と件数、
       `DefaultSensitivePatterns()` の `AllowedEnvVars` の集合と `combinedCredentialPattern`・
       `combinedEnvVarPattern` の正規表現ソース、`valueDetectorPatterns` の各正規表現ソースを
       固定し、追加・削除・置換のいずれでも失敗させる。
-- [ ] `internal/redaction/sensitive_patterns.go` と `internal/redaction/value_detector.go` を
+- [x] `internal/redaction/sensitive_patterns.go` と `internal/redaction/value_detector.go` を
       変更しない（AC-12）。
-- [ ] AC-19 の確認: 挿入点ごとに、外したときに失敗するテストを対応づけて確認する。
+- [x] AC-19 の確認: 挿入点ごとに、外したときに失敗するテストを対応づけて確認する。
       `Config.RedactLogAttribute` を外すと `TestRedactLogAttribute_IdentifierExemption`、
       `redactLogAttributeWithContext` を外すと `TestRedactingHandler_IdentifierExemption`、
       `processSlice` を外すと `TestRedactingHandler_IdentifierSliceElements` が失敗する。

@@ -10,6 +10,8 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
 // DefaultPlaceholder is the text substituted for a redacted secret unless
@@ -297,6 +299,26 @@ func (c *Config) RedactText(text string) string {
 	return result
 }
 
+// declaredIdentifier returns the identifier carried by value and reports whether
+// value carries one. Only the dynamic type decides: identifier.Identifier and a
+// non-nil *identifier.Identifier are declared identifiers, while a typed nil
+// pointer is not, so it continues through the normal fail-closed path instead of
+// being rendered as an empty name. Key names, value contents and value lengths
+// are not inspected.
+func declaredIdentifier(value slog.Value) (identifier.Identifier, bool) {
+	switch v := value.Any().(type) {
+	case identifier.Identifier:
+		return v, true
+	case *identifier.Identifier:
+		if v == nil {
+			return identifier.Identifier{}, false
+		}
+		return *v, true
+	default:
+		return identifier.Identifier{}, false
+	}
+}
+
 // RedactLogAttribute redacts sensitive information from a log attribute
 func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	key := attr.Key
@@ -311,6 +333,12 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	// Check for sensitive patterns in the key
 	if c.patterns.IsSensitiveKey(key) {
 		return slog.Attr{Key: key, Value: slog.StringValue(c.placeholder)}
+	}
+
+	// A declared identifier bypasses value-based redaction. It is normalized to
+	// its name so subsequent handlers always receive a string.
+	if id, ok := declaredIdentifier(value); ok {
+		return slog.Attr{Key: key, Value: slog.StringValue(id.Name())}
 	}
 
 	// Redact string values that match sensitive patterns
@@ -768,6 +796,14 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	// Check for sensitive patterns in the key
 	if r.config.patterns.IsSensitiveKey(key) {
 		return slog.Attr{Key: key, Value: slog.StringValue(r.config.placeholder)}
+	}
+
+	// A declared identifier bypasses value-based redaction. It is normalized to
+	// its name so subsequent handlers always receive a string. This check sits
+	// after the key-name check so a sensitive key still masks a declared
+	// identifier placed under it (fail-closed).
+	if id, ok := declaredIdentifier(value); ok {
+		return slog.Attr{Key: key, Value: slog.StringValue(id.Name())}
 	}
 
 	// Process based on value kind
@@ -1325,6 +1361,14 @@ func (r *RedactingHandler) processSlice(key string, sliceValue any, ctx redactio
 
 	for i := range rv.Len() {
 		element := rv.Index(i).Interface()
+
+		// A declared identifier bypasses value-based redaction. The element is
+		// appended as its name rather than the raw value so that handlers which
+		// do not resolve LogValuer values still render the name, not "[{}]".
+		if id, ok := declaredIdentifier(slog.AnyValue(element)); ok {
+			processedElements = append(processedElements, id.Name())
+			continue
+		}
 
 		// Check if element is LogValuer
 		if logValuer, ok := element.(slog.LogValuer); ok {

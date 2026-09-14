@@ -78,6 +78,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/security
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/groupmembership
+            - github.com/isseis/go-safe-cmd-runner/internal/identifier
             - github.com/isseis/go-safe-cmd-runner/internal/logging
             - github.com/isseis/go-safe-cmd-runner/internal/ansicolor
             - github.com/isseis/go-safe-cmd-runner/internal/runner
