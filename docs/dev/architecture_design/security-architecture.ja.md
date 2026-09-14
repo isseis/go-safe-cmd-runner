@@ -633,6 +633,29 @@ logger := slog.New(redactedHandler)
 - `slog.KindGroup`を含む構造化ログの再帰的処理
 - key=value形式と認証ヘッダーパターンの両方をサポート
 
+**識別子の型宣言による免除**（`internal/identifier`）:
+
+group 名とコマンド名は識別子として宣言型 `identifier.Identifier` でログ属性に載せられ、
+`identifier.NewIdentifier` で構築された値だけが値ベース redaction から免除されます。免除は
+key=value 置換・値形式検出・値まるごと判定の 3 層すべてに及び、名前に `=` や `:` が含まれる
+場合や、AWS アクセスキー ID・GitHub トークンの形式に一致する場合、機密語を含む場合
+（`monkey`、`rotate_api_key` など）でも書き換えません。これにより Slack 通知の Scope と
+JSON ログの `name` には、設定に書かれた識別子がそのまま表示されます。
+
+免除は宣言された値だけに掛かります。stdout・stderr・展開済みコマンド行・引数・環境変数値・
+message・error 文字列などの自由文は、同じ文字列でも従来どおり値ベース redaction の対象です。
+message・error 文字列に連結された識別子は型では宣言できないため免除の対象外であり、
+`failed to execute group monkey: ...` のような error 属性の文字列は、key=value 置換に続く
+値まるごと判定で全文が `[REDACTED]` になりえます（`record.Message` には key=value 置換のみが
+適用され、値まるごと判定は行われません）。この残余リスクは本タスクの設計文書に記録しています。
+
+免除を止める専用の実行時スイッチはありません。設定の名前に機密を書いた場合、その文字列は
+通知・ログにそのまま現れます。免除を解除する場合は、その宣言を導入したコミットを revert します。
+宣言サイトと、宣言面 allowlist・目録 guard・固定アサーションは同じコミットに含まれるため、
+revert は 3 つを同時に戻し、CI は緑のままです。同じコミットに別の宣言サイトが混在する場合は、
+`git revert -n <commit>` で revert を保留し、戻す hunk を絞ってから `make test` を実行し、
+guard の green を確認します。
+
 **Slack通知実装**:
 ```go
 // 場所: internal/logging/slack_handler.go の SlackHandler 型
