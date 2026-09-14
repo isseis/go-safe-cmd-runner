@@ -882,18 +882,30 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した (#1137)
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 6: 全体検証と AC-19 の確認
 
-- [ ] 最終コミットで `make test`・`make lint`・`make verify-docs` を通す（AC-18）。
-- [ ] `git log` で各コミットメッセージに AC-19 の確認記録（壊した対象と、失敗を確認した
-      テスト名）が含まれることを確認する。
-- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
-      で差分が無いことを確認し、結果をコミットメッセージに記す（AC-17）。
-- [ ] `make deadcode` を実行し、新しい到達不能コードの報告が無いことを確認する。
-- [ ] 本計画書のチェックボックスを実装の進捗に合わせて更新し、§6 と §7 の結果を記録する。
+- [x] 最終コミットで `make test`・`make lint`・`make verify-docs` を通す（AC-18）。
+      検証はコードが `2569f8e4` と同一の作業ツリーで実行した（この記録コミットは計画書
+      のみを変更する）。`test` は終了コード 0（`FAIL` 行 0 件）、`lint` は `0 issues`、
+      `verify-docs` は `check_identifier_exemption_docs.sh` と日英構造比較
+      （`✓ Document structure comparison passed`）を含めて終了コード 0。構造比較の合否は
+      終了コードでは判定せず、§8 のレポート確認で判定する。
+- [x] `git log` で各コミットメッセージに AC-19 の確認記録（壊した対象と、失敗を確認した
+      テスト名）が含まれることを確認する。Phase 1〜4 の behavior mutation の記録は
+      該当コミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8e5f7`・`30dc0b8a`・
+      `f5a3e25b`）に壊した production の対象と失敗したテスト名がある。Phase 5 の文書語句
+      mutation の記録は `be8e3031`・`36280132` に壊した語と失敗した static check
+      （`make verify-docs-checks` の非ゼロ終了）があり、F-005 の基準は `static` のみのため
+      テスト名は無い（AC-19）。
+- [x] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で差分が無いことを確認し、結果をコミットメッセージに記す（AC-17）。空出力。
+- [x] `make deadcode` を実行し、新しい到達不能コードの報告が無いことを確認する。開始前
+      （`88624849`）と同じ 10 件で、関数の増減は無い（`internal/redaction/redactor.go` の
+      2 件と `internal/runner/runner.go` の 1 件は行番号のみシフト）。
+- [x] 本計画書のチェックボックスを実装の進捗に合わせて更新し、§6 と §7 の結果を記録する。
 
 ### PR-6 作成ポイント: final verification and AC-19 review
 
@@ -901,14 +913,14 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 **推奨タイトル**: `chore(0173): run final verification and record AC-19 mutations`
 
-**レビュー観点**: 各コミットの `git log` に AC-19 の mutation 記録（壊した対象と、失敗を確認したテスト名）があること／`make test`・`make lint`・`make verify-docs`・`make deadcode` の結果が記録されていること／`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` で Task 0172 の承認済み文書に差分が無いことを確認していること（AC-17）／§6 と §7 の結果が計画書へ反映されていること
+**レビュー観点**: 各コミットの `git log` に AC-19 の mutation 記録があること（Phase 1〜4 の behavior mutation は壊した対象と失敗したテスト名、Phase 5 の文書語句 mutation は壊した語と失敗した static check）／`make test`・`make lint`・`make verify-docs`・`make deadcode` の結果が記録されていること／`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` で Task 0172 の承認済み文書に差分が無いことを確認していること（AC-17）／§6 と §7 の結果が計画書へ反映されていること
 
 **実装モデル要件**: standard
 
 **判定理由**: 既定のコマンド実行と結果記録が中心で、新規の設計判断を伴わない。Conditional checks・panel-mode トリガーいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した (#1138)
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -1028,11 +1040,11 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2）
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5）
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5）
 - [ ] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ## 7. 受け入れ基準の検証
@@ -1073,22 +1085,48 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 `02_architecture.md` と AC-17 の `01_requirements.md` は実装中も変更しないため、スクリプトの
 この 2 行は導入時から成功する。AC-14〜AC-16 の行は Phase 5 まで失敗する。
 
+**検証結果（Phase 6、2026-09-14）**: 上表の各行は、コードが `2569f8e4` と同一の作業ツリーで
+期待どおりの結果を返した（この記録コミットは計画書のみを変更する）。`make test`
+（`FAIL` 行 0 件）、`make lint`（`0 issues`）、`make verify-docs`
+（`check_identifier_exemption_docs.sh` と日英構造比較を含む）はいずれも終了コード 0。
+AC-10 の `TestValidateIdentifiers`・`TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted`
+と AC-11 の `TestSlackHandler_InvalidNotificationContext` は無変更で通過した。AC-17 の
+`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+は空で、Task 0172 の承認済み文書に差分は無い。AC-19 の mutation 記録は Phase 1〜4 の
+behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8e5f7`・
+`30dc0b8a`・`f5a3e25b`）が壊した production の対象と失敗したテスト名を、Phase 5 の文書
+語句 mutation のコミット（`be8e3031`・`36280132`）が壊した語と失敗した static check を
+記録している。
+
 ## 8. 横断検索チェックリスト
 
 `make lint` と `make test` が検出できない項目だけを挙げる。シンボルの残留参照は
 `identifier_guard_test.go` とコンパイラが検出するため、ここには含めない。
 
-- [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
+- [x] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       登録されているか確認する。未登録なら Phase 5 で追加し、日英文書の訳語が一致する
-      ことを確認する。
-- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
-      で承認済み文書に差分が無いことを確認する（履歴として残す。AC-17）。
-- [ ] Phase 5 の日英文書について `make verify-docs` を実行し、構造比較のレポート
+      ことを確認する。`識別子`（`:253`）・`免除`（`:172`）と関連語が登録され、日英文書は
+      同じ語を用いている。
+- [x] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で承認済み文書に差分が無いことを確認する（履歴として残す。AC-17）。空出力。
+- [x] Phase 5 の日英文書について `make verify-docs` を実行し、構造比較のレポート
       （`build/verification-reports/structure_comparison_report.txt`）に見出し構造の差分が
       無いことを確認する。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
       構造比較は終了コードだけでは判定しない。一方、`verify-docs-checks` ターゲットが
       自動列挙して実行する `scripts/verification/check_*.sh` の失敗は make の終了コードへ
       伝播するため、AC-13〜AC-17 の語句検証は `make verify-docs` の成否で判定する。
+      `make verify-docs` は終了コード 0 で `✓ Document structure comparison passed`、
+      スクリプトを含めて成功した。`run_all.sh` は `compare_doc_structure` の終了コードを
+      そのまま表示するだけで、`compare_doc_structure` 自体は issue があっても終了コード 0
+      を返すため、合否はレポートで判定する。構造比較の対象は `run_all.sh` の `STRUCT_OPTS`
+      （`--docs=docs/user`）どおり `docs/user` 配下だけで、`security-risk-assessment.ja.md`／
+      `.md` は `structure_comparison_report.json` の `mismatches` が空（見出し 49/49、
+      コードブロック 13/13、表 2/2、リスト 138/138）である。`.txt` に列挙される「missing」は
+      日英の見出し文言差であり、件数差分ではない。`security-architecture.ja.md`／`.md`
+      （`docs/dev` 配下）は `run_all.sh` の構造比較の対象外だが、
+      `compare_doc_structure --docs=docs/dev/architecture_design` を ad hoc に実行して
+      `mismatches` が空（見出し 102/102、コードブロック 37/37、表 0/0）であることを確認した
+      （AC-15 の語句検証はスクリプトが担う）。
 
 ## 9. 成功基準
 
@@ -1119,7 +1157,6 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 
 ## 10. 次のステップ
 
-1. `/runplan` で PR-1 から順に実装する。各 PR の完了条件と AC-19 の記録を守る。
-2. Phase 5 の日本語版コミット後、`/mktrans` で英語版へ反映する。
-3. Phase 6 の検証結果（green gate、`make deadcode`、AC-17 の差分確認、AC-19 の記録）と
-   §6 の進捗は、PR-6 の中で本書へ反映する。
+1. `/runplan` による Phase 1〜5 の実装と、Phase 6 の検証・記録（green gate、`make deadcode`、
+   AC-17 の差分確認、AC-19 の記録、§6〜§8 の進捗）は完了している。PR-1〜PR-5 はマージ済み。
+2. 残る作業は PR-6 の作成とマージだけである。
