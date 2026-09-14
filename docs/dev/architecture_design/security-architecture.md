@@ -637,6 +637,14 @@ logger := slog.New(redactedHandler)
 - Recursive processing of structured logs including `slog.KindGroup`
 - Supports both key=value format and authentication header patterns
 
+**Exemption by Identifier Type Declaration** (`internal/identifier`):
+
+Group names and command names are placed on log attributes as identifiers of the declared type `identifier.Identifier`, and only values constructed by `identifier.NewIdentifier` are exempt from value-based redaction. The exemption covers all three layers — key=value replacement, value-format detection, and whole-value detection — so a name is not rewritten even when it contains `=` or `:`, matches the format of an AWS access key ID or a GitHub token, or contains a sensitive word (such as `monkey` or `rotate_api_key`). As a result, the Slack notification Scope and the JSON log `name` show the identifier written in the configuration as-is.
+
+The exemption applies only to declared values. Free text such as stdout, stderr, the expanded command line, arguments, environment variable values, and message/error strings remains subject, as before, to value-based redaction even when the string is the same. An identifier concatenated into a message or error string cannot be declared with the type and is therefore not exempt, and an error attribute string such as `failed to execute group monkey: ...` can become entirely `[REDACTED]` in the whole-value detection following key=value replacement (`record.Message` receives only key=value replacement, and no whole-value detection is performed on it). This residual risk is recorded in the design document for this task.
+
+There is no dedicated runtime switch to disable the exemption. If sensitive information is written in a configured name, that string appears as-is in notifications and logs. To remove the exemption, revert the commit that introduced the declaration. The declaration sites, the guard (declaration-surface allowlist and catalog), and the pinned assertions are all included in the same commit, so the revert restores all three at once and CI stays green. If the same commit also contains other declaration sites, use `git revert -n <commit>` to hold the revert, trim the hunks to revert, then run `make test` and confirm the guard is green.
+
 **Slack Notification Implementation**:
 ```go
 // Location: internal/logging/slack_handler.go, the SlackHandler type
