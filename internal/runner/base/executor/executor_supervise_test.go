@@ -330,6 +330,141 @@ func TestSupervise_ProcessAlreadyDoneIsNotAnError(t *testing.T) {
 	assert.NotErrorIs(t, err, ErrKillAfterCancel)
 	require.NotNil(t, result)
 	assert.Equal(t, 0, result.ExitCode, "the exit status still comes from Wait()")
+	assert.Equal(t, childTerminated, pc.child,
+		"the kill path ran, so the race must not leave the state claiming an unstarted run")
+}
+
+// TestRunCommand_ChildStateTransitions verifies that the child-state
+// declaration follows the run end to end: advanced to childRunning the moment
+// Start succeeds, settled to childExited or childTerminated once the run's
+// shape is final, and left at the zero value on every path that never starts a
+// child. The audit wiring trusts these values, so each way a run can end is
+// pinned here -- including the ways that must not look like executions.
+func TestRunCommand_ChildStateTransitions(t *testing.T) {
+	t.Run("normal_exit_declares_exited", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, shPath, "-c", "exit 0")
+
+		result, err := e.runCommand(context.Background(), pc, runUnprivileged)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, 0, result.ExitCode)
+		assert.Equal(t, childExited, pc.child)
+		assert.True(t, pc.child.started())
+	})
+
+	t.Run("non_zero_exit_declares_exited", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, shPath, "-c", "exit 2")
+
+		result, err := e.runCommand(context.Background(), pc, runUnprivileged)
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, 2, result.ExitCode)
+		assert.Equal(t, childExited, pc.child)
+		assert.True(t, pc.child.started())
+	})
+
+	t.Run("timeout_kill_declares_terminated", func(t *testing.T) {
+		e := NewDefaultExecutor(WithKillGraceDelay(50 * time.Millisecond)).(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, sleepPath, "30")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		t.Cleanup(cancel)
+
+		result, err := e.runCommand(ctx, pc, runUnprivileged)
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, ExitCodeUnknown, result.ExitCode)
+		assert.Equal(t, childTerminated, pc.child)
+		assert.True(t, pc.child.started())
+	})
+
+	t.Run("start_advances_to_running_before_the_kill_settles_it", func(t *testing.T) {
+		e := NewDefaultExecutor(WithKillGraceDelay(50 * time.Millisecond)).(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, sleepPath, "30")
+		startForSupervise(t, e, pc)
+
+		// Only observable here: runCommand returns after superviseCommand has
+		// already overwritten the state with the run's end.
+		require.Equal(t, childRunning, pc.child, "Start must advance the state before supervision settles it")
+		require.True(t, pc.child.started())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		result, err := e.superviseCommand(ctx, pc, nil)
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, childTerminated, pc.child)
+	})
+
+	t.Run("start_failure_stays_not_started", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, "/nonexistent/go-safe-cmd-runner-child-state", "arg")
+
+		result, err := e.runCommand(context.Background(), pc, runUnprivileged)
+
+		require.Error(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, ExitCodeUnknown, result.ExitCode)
+		assert.Equal(t, childNotStarted, pc.child)
+		assert.False(t, pc.child.started())
+	})
+
+	t.Run("start_window_that_starts_nothing_stays_not_started", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := prepareForSupervise(t, e, nil, shPath, "-c", "echo never-runs")
+
+		result, err := e.runCommand(context.Background(), pc, func(func() error) error {
+			return nil // never calls fn, and reports no reason
+		})
+
+		require.ErrorIs(t, err, ErrStartPhaseNotRun)
+		assert.Nil(t, result)
+		assert.Equal(t, childNotStarted, pc.child)
+		assert.False(t, pc.child.started())
+	})
+
+	t.Run("spent_command_stays_not_started", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := &preparedCommand{binding: bindingResolvedPath, spent: true}
+
+		result, err := e.runCommand(context.Background(), pc, runUnprivileged)
+
+		require.ErrorIs(t, err, ErrPreparedCommandSpent)
+		require.NotNil(t, result)
+		assert.Equal(t, ExitCodeUnknown, result.ExitCode)
+		assert.Equal(t, childNotStarted, pc.child)
+		assert.False(t, pc.child.started())
+	})
+}
+
+// TestChildState_StartedClassification verifies the fail-closed direction of
+// started(): the states that follow a successful Start report true, the zero
+// value reports false, and a value outside the enum also reports false. An
+// undeclared state must never make a run claim an audit record.
+func TestChildState_StartedClassification(t *testing.T) {
+	tests := []struct {
+		name  string
+		state childState
+		want  bool
+	}{
+		{name: "not_started", state: childNotStarted, want: false},
+		{name: "running", state: childRunning, want: true},
+		{name: "exited", state: childExited, want: true},
+		{name: "terminated", state: childTerminated, want: true},
+		{name: "unknown_value", state: childState(99), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.state.started())
+		})
+	}
 }
 
 // TestSupervise_ChildNotReapedReportsUnknownExitCode verifies the reap
