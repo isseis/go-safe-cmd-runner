@@ -29,7 +29,7 @@ check_word() {
         return 0
     fi
 
-    if ! grep -q -e "$word" "$file"; then
+    if ! grep -F -e "$word" "$file" >/dev/null 2>&1; then
         echo "FAIL: $file does not contain '$word' ($description)"
         status=1
         return 0

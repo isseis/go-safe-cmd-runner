@@ -775,8 +775,10 @@ deadcode:
 # verify-docs-checks runs every scripts/verification/check_*.sh script and
 # propagates a non-zero exit, so one missing required word fails the target.
 # The scripts are enumerated by glob rather than listed here, so a newly added
-# check_*.sh is always executed. run_all.sh always exits 0, so its exit code
-# cannot gate the checks; verify-docs verifies the scripts and then runs it.
+# check_*.sh is always executed, and an empty enumeration is an error so a
+# removed or renamed script cannot disable the gate silently. run_all.sh
+# reports the four verifications but exits 0 even when they find issues; only
+# build failures propagate. verify-docs verifies the scripts and then runs it.
 verify-docs: verify-docs-checks
 	@./scripts/verification/run_all.sh
 
@@ -784,8 +786,14 @@ verify-docs-full: verify-docs-checks
 	@./scripts/verification/run_all.sh -v -e
 
 verify-docs-checks:
-	@for script in scripts/verification/check_*.sh; do \
+	@matched=0; \
+	for script in scripts/verification/check_*.sh; do \
 		[ -e "$$script" ] || continue; \
+		matched=1; \
 		echo "Running $$script"; \
 		sh "$$script" || exit 1; \
-	done
+	done; \
+	if [ "$$matched" -eq 0 ]; then \
+		echo "verify-docs-checks: no scripts/verification/check_*.sh found" >&2; \
+		exit 1; \
+	fi

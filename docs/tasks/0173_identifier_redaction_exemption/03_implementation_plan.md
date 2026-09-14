@@ -43,10 +43,10 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
    `internal/redaction/sensitive_patterns.go`・`internal/redaction/value_detector.go` は
    変更しない（AC-12）。
 6. 宣言サイトの追加・変更・削除は、`identifier_guard_test.go` の目録（Phase 4）と、
-   その宣言に固定する型・挙動アサーションを同じコミットに含める。初回実装では Phase 4
-   （4.1〜4.5）を 1 コミットにまとめ、宣言・目録・アサーションを同時に導入する。これにより
-   rollback は Phase 4 のコミットの revert を単位にできる（02_architecture.md §5.2）。
-   以後の宣言サイトの追加・削除も同じコミット規約に従う。
+   その宣言に固定する型・挙動アサーションを同じ変更単位に含める。初回実装では Phase 4
+   （4.1〜4.5）を 1 つの PR にまとめ、宣言・目録・アサーションを同時に導入する。これにより
+   rollback は Phase 4 のマージコミットの revert を単位にできる（02_architecture.md §5.2）。
+   以後の宣言サイトの追加・削除も同じ変更単位規約に従う。
 7. 既存の実装・テスト・ヘルパーを優先して再利用する。とくに呼び出しサイトの走査は
    `internal/testutil/identitymutationguard` の既存ヘルパーを使い、走査対象ファイルの定義を
    複製しない。定義パッケージ内の guard は `go/types` を使わず、AST で
@@ -254,7 +254,7 @@ AST でパッケージのトップレベル宣言面を allowlist と厳密に�
 
 | 文書 | 該当箇所 | Phase 5 の扱い |
 |---|---|---|
-| `docs/dev/architecture_design/security-architecture.ja.md` | `### 9. セキュアログと機密データ保護`（`:574` 以降、とくに第 2 層の説明 `:616-635`） | 識別子の型宣言による免除を追記する（AC-15）。kill switch が無いことと、導入コミットの revert による rollback 手順、自由文 error の残余リスクを記す |
+| `docs/dev/architecture_design/security-architecture.ja.md` | `### 9. セキュアログと機密データ保護`（`:574` 以降、とくに第 2 層の説明 `:616-635`） | 識別子の型宣言による免除を追記する（AC-15）。kill switch が無いことと、導入したマージコミットの revert による rollback 手順、自由文 error の残余リスクを記す |
 | `docs/dev/architecture_design/security-architecture.md` | 対応する `### 9. Secure Logging and Sensitive Data Protection`（`:578` 以降） | 日本語版を `/mktrans` で反映する |
 | `docs/user/security-risk-assessment.ja.md` | `### 1. 拡張ログ・監査システム` の「限界」（`:295-299`） | 識別子を redact しない帰結を追記する（AC-14、AC-16） |
 | `docs/user/security-risk-assessment.md` | 対応する Limitations（`:299-301`） | 日本語版を `/mktrans` で反映する |
@@ -802,7 +802,7 @@ Phase 4.5 の AC-19 確認が担う。
 
 **推奨タイトル**: `feat(0173): declare identifier log sites and add the declaration guard`
 
-**レビュー観点**: **本 PR は 1 コミットで不可分だが、レビューは 4.1→4.5 の小見出し順に読み進めること**（宣言・目録・アサーションを同時に導入し、rollback を導入コミットの revert に保つ。02_architecture.md §5.2）／43 宣言サイトが 02_architecture.md §3.4 の表と双方向に一致し、§3.5 の plain string サイトを巻き込んでいないこと／guard の「結果の使用」が `NewIdentifier` の戻り値へ `.Name()` などを適用した式を拒否すること／宣言面 allowlist 検査が別コンストラクタ・転送ラッパー・型エイリアス・定義型・初期化子を宣言名付きで拒否し、`ProductionGoFiles` が platform-tagged なファイルも列挙すること
+**レビュー観点**: **本 PR は不可分な変更単位だが（レビュー修正で複数コミットになり、宣言・目録・アサーションは同一 PR で導入する）、レビューは 4.1→4.5 の小見出し順に読み進めること**（rollback を導入したマージコミットの revert に保つ。02_architecture.md §5.2）／43 宣言サイトが 02_architecture.md §3.4 の表と双方向に一致し、§3.5 の plain string サイトを巻き込んでいないこと／guard の「結果の使用」が `NewIdentifier` の戻り値へ `.Name()` などを適用した式を拒否すること／宣言面 allowlist 検査が別コンストラクタ・転送ラッパー・型エイリアス・定義型・初期化子を宣言名付きで拒否し、`ProductionGoFiles` が platform-tagged なファイルも列挙すること
 
 **実装モデル要件**: frontier-required
 
@@ -821,8 +821,8 @@ Phase 4.5 の AC-19 確認が担う。
 - [x] `docs/dev/architecture_design/security-architecture.ja.md` の
       「セキュアログと機密データ保護」の第 2 層の説明に、group 名・コマンド名が宣言型
       （`identifier.Identifier`）で免除されること、免除は 3 層すべてに及び、自由文は
-      免除されないこと、専用の実行時スイッチが無く rollback は導入コミットの revert で
-      行うことを追記する。**追記は `識別子` と `免除` の語を用いる**（用語を統一する）。
+      免除されないこと、専用の実行時スイッチが無く rollback は導入したマージコミットの
+      revert で行うことを追記する。**追記は `識別子` と `免除` の語を用いる**（用語を統一する）。
 - [x] `docs/user/security-risk-assessment.ja.md` の「限界」に、識別子として宣言された
       group 名・コマンド名は値ベース redaction の対象外であること、設定の名前に機密を
       書いた場合は通知・ログにそのまま出ることを追記する（AC-14、AC-16）。**追記は
@@ -845,14 +845,15 @@ Phase 4.5 の AC-19 確認が担う。
       ビットに依存しない。`sh` は bash 固有機能を解釈しないため `check_*.sh` は POSIX 準拠
       （shebang は `#!/bin/sh`）で記述する（既存の
       `run_executor_setuid_integration.sh` と同じ方針）。glob が一致しない場合に
-      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
+      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れ、一致が 0 件の
+      場合は検査の消失を黙って通さず非ゼロで終了する（fail-closed）。`verify-docs` と
       `verify-docs-full` は `verify-docs-checks` に依存させ、`run_all.sh` の実行と組み合わせる。
-      ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は検査結果に
-      かかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
-      判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を追加しても
-      配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を検出できないまま
-      ゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に
-      強制される。
+      ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は 4 つの検査結果に
+      かかわらず終了コード 0 を返す（ビルド失敗だけが伝播する）ため、検査の合否は
+      自動列挙側で判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を
+      追加しても配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を
+      検出できないままゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと
+      将来の CI で実際に強制される。
 - [x] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
       `make verify-docs` も実行し、日本語版と英語版の構造が一致することと、スクリプトが
       `make verify-docs` から実行され、失敗時に make が失敗することを確認する。
