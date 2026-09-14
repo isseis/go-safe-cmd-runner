@@ -193,8 +193,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 0172 §10 の follow-up を解消済みとして履歴に追記
 
@@ -202,10 +202,10 @@
 
 **作業内容**:
 
-- [ ] §10 の `user_group_command_failure` の follow-up に、タスク 0174 で解消した旨を追記する。実装 PR（PR-3）の番号はその PR 作成時に判明するため、その時点で記入し、実装コミットの SHA を併記する。既存の記述は履歴として残し、削除しない。
-- [ ] 記録した PR 番号とコミット SHA が実在することを PR レビュー時に確認する（存在しない参照を残さない）。
-- [ ] 0172 は `approved` のため、追記は履歴の追加であり決定を変えない editorial correction である旨を 0172 の文書ステータス `Comments` に記録する（requirements_process.md「Editing an approved document」）。
-- [ ] docs の検証を通す: `go test -tags test ./internal/testutil/docsguard/` と `make verify-docs-checks`。
+- [x] §10 の `user_group_command_failure` の follow-up に、タスク 0174 で解消した旨を追記する。実装 PR（PR-3）の番号はその PR 作成時に判明するため、その時点で記入し、実装コミットの SHA を併記する。既存の記述は履歴として残し、削除しない。
+- [x] 記録した PR 番号とコミット SHA が実在することを確認する（存在しない参照を残さない）。
+- [x] 0172 は `approved` のため、追記は履歴の追加であり決定を変えない editorial correction である旨を 0172 の文書ステータス `Comments` に記録する（requirements_process.md「Editing an approved document」）。
+- [x] docs の検証を通す: `go test -tags test ./internal/testutil/docsguard/` と `make verify-docs-checks`。
 
 **完了確認**: 0172 §10 に解消が記録され、docs の検証が通る。
 
@@ -221,8 +221,8 @@
 
 **判定理由**: 承認済み文書への履歴追記と docs 検証のみで、設計判断・高リスク分岐・未確定の実装アプローチは無く、Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

@@ -8,7 +8,7 @@
 | Created | 2026-09-09 |
 | Review date | 2026-09-12 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-09-14: §10 の `user_group_command_failure` follow-up に解消記録を追記（タスク 0174・PR #1147）。決定を変えない editorial correction。 |
 
 ## 関連文書
 
@@ -1735,6 +1735,14 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
   これは 0172 以前からの挙動で本タスクの回帰ではないが、F-001 の「本番で発火するのは 3 種別」
   という前提と AC-23 の実効性に影響する。失敗時にも監査するよう配線するか、死んだ種別として
   削除するかは、executor の挙動に踏み込む別タスクとして起票する。
+
+  **解消済み（2026-09-14 追記）**: 上の記述は当時の記録として残す。タスク 0174
+  [`user_group_command_failure` 通知の配線と run-as コマンド失敗時の監査記録](../0174_user_group_command_failure_audit_wiring/01_requirements.md)
+  が PR #1147（実装コミット `d8bf61e7`）で、子プロセスが開始した失敗に限り
+  `executeWithUserGroup` の失敗分岐から `LogUserGroupExecution` を呼ぶ配線を実装し、本
+  follow-up を解消した。開始前に失敗した実行（事前検証・`prepareCommand`・`Start()` 失敗・
+  昇格拒否）は実行として監査しない。0172 の通知種別定義・共通エンベロープ・メッセージ書式は
+  変更していない。
 - **follow-up（実機確認で判明）**: group 検証エラーの Slack 通知は、失敗したファイル名を
   Error Message に含めない。`internal/runner/runner.go` が `verErr.Err`（センチネル
   `ErrGroupVerificationFailed`）を表示し、失敗ファイル一覧を持つ `verErr.Details` を使ってい
