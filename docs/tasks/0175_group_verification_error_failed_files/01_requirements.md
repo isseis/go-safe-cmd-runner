@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | `-` |
-| Reviewer | `-` |
-| Comments | `-` |
+| Review date | 2026-09-15 |
+| Reviewer | `isseis` |
+| Comments | PR レビュー（P2/P1）への対応を decision change として反映。対象 7・AC-01 に「区切りと衝突しないエンコード後の表示形」を追加し、AC-14 を収集失敗の経路だけ対象外に絞った。再承認が必要。 |
 
 ## 関連 Issue
 
@@ -32,9 +32,10 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 ## 目的
 
 - group 検証エラー通知に、失敗したファイルの一覧を表示する。
+- 失敗ファイル一覧は自由文の本文へ連結せず、専用の構造化属性として運び、通知ビルダーが `Error Message` フィールドへ描画する。
 - group 名を本文やフィールドへ別個のメタデータとして重複させない。
-- グローバルと group で、失敗ファイルの提示が対称になる。
-- Task 0172 のメッセージ書式・通知種別定義・`error_type` を変えない。
+- グローバルと group の両方で、失敗ファイル一覧を同じ構造化属性 `failed_file_paths` として運び、同じ通知ビルダーが同じ予算管理で `Error Message` へ描画する。
+- Task 0172 のメッセージ書式・通知種別定義・`error_type` を変えない（`Error Message` フィールドの値だけを組み立て直す）。
 
 ## スコープ
 
@@ -45,13 +46,16 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 3. `Details` が空のときは、`Total`／`Verified`／`Failed` の件数と `verErr.Err` を含む既存の文言へフォールバックする。
 4. 通知にファイル一覧が現れることを固定するテストを追加する。このテストは、`Details` を通知から落とす実装へ戻すと失敗する形にする。
 5. 利用者向け文書（`docs/user/runner_command.ja.md` など）の group 検証エラー通知の表示が不足していれば、必要に応じて追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
+6. 失敗ファイル一覧を `error_message` へ連結せず、専用の構造化属性（`common.PreExecErrorAttrs.FailedFilePaths` = `failed_file_paths`）として記録する。`Message` は件数とセンチネルのみでパスを含めず、`handleErrorCommon` が stderr・stdout へ書く文字列もパスを含めない。
+7. `pre_execution_error` の `Error Message` フィールドは、`error_message` 属性の値と `failed_file_paths` から通知ビルダーが組み立てる。各パスは `strconv.Quote` で引用・エスケープした表示形（`"`・`\`・制御文字・書式制御文字・行区切り・不正な UTF-8 バイトを可視のエスケープにする）とする。上限内は全件、超える場合は上限内に収まる範囲（丸ごと優先・省略記号付き切り詰め）と省略件数を示す。
+8. `failed_file_paths` の各要素が、値形式の機密（トークン等）はマスクし、`key` などを通常含むパス（例: `/opt/monkey/data`）はマスクしないことを回帰で固定する。これは文字列スライス属性に対する既存の redaction 挙動であり、redaction の実装は変更しない。
+9. `cmd/runner/main.go` のグローバル検証エラー報告でも `verification.Error.Details` を `failed_file_paths` として設定し、`Message` からはパスを除く。失敗ファイル一覧は通知ビルダーが group と同じ予算管理で `Error Message` へ描画する。
 
 ### 対象外
 
-- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。
-- **グローバル検証エラー経路の変更。** 対称性は group 側を直して得る。
-- **共通エンベロープ・メッセージ書式・通知種別定義の変更。**
-- **失敗ファイルのパスに対する追加の redaction。** 既存の redaction 経路に委ねる。
+- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。グローバルは発行元でパスを含まない `Message` を組み立てる。
+- **共通エンベロープ・メッセージ書式・通知種別定義の変更。** 新しい Slack フィールドは足さず、既存の `Error Message` の値だけを組み立て直す。
+- **redaction の適用範囲の変更。** 既存の `RedactText` と既存の `processSlice` の挙動をそのまま使う（対象 8 は回帰固定のみ）。
 - **`user_group_command_failure` 通知の配線。** 別タスク（0174）で扱う。
 
 ## 決定事項
@@ -72,21 +76,33 @@ group 名を `Group: <name>, ` のような別個のメタデータとして本�
 
 Error Message は動的な値であり、0172 の表示安全な補間契約を通る。したがって 1 行であること・制御文字と書式制御文字を含まないこと・長さが上限（500 byte）を超えないことは既存の仕組みで保たれる。失敗ファイル一覧がこの上限を超える場合に全件を表示することはできないため、上限内に収まる範囲のファイルパスを表示し、残りを省略したこととその件数を示す。上限超過時の振る舞いを、切り詰め任せにせず本タスクの要件として定義する。
 
+### 失敗ファイル一覧は構造化属性で運び、ビルダーが描画する
+
+失敗ファイル一覧を自由文 `Message` へ連結しない。専用属性 `failed_file_paths`（`[]string`）として運び、`Error Message` フィールドの値は通知ビルダーが `Message` と `failed_file_paths` から組み立てる。これにより、パスは redaction の外にある stderr・stdout（`handleErrorCommon` の出力）へ届かず、`error_message` という自由文フィールドの意味も変えない。新しい Slack フィールドは足さず、`Error Message` の中身だけを組み立て直す。
+
+### グローバルと group は同じ属性・同じビルダーを使う
+
+グローバル検証エラーの報告（`cmd/runner/main.go`）も group と同じ `failed_file_paths` を設定し、`Message` からパスを除く。通知ビルダーは `error_type` を問わず `failed_file_paths` を読むため、両者とも同じ予算管理（全件、または上限内の範囲と省略件数）で `Error Message` に一覧が描画される。グローバルは従来 `err.Error()` の切り詰めに委ねていたが、これで切り詰めと省略件数の扱いが group と揃う。
+
+### 文字列スライス要素の redaction は既存挙動を回帰で固定する
+
+`failed_file_paths` の要素はファイルパス（データ）であり、`RedactingHandler.processSlice` は文字列要素に `RedactText`（値形式検出と key=value 置換）だけを適用し、値全体置換は行わない（`internal/redaction/redactor.go:1436-1439`）。この挙動は既に存在するため、本タスクは redaction を変更せず、機密がマスクされ普通のパスが残ることをテストで固定する。`error_message`（`KindString`）の値全体置換は従来どおりである。
+
 ## 受け入れ基準（Acceptance Criteria）
 
 #### F-001: 失敗ファイル名の表示
 
 **Acceptance Criteria**:
-- **AC-01**: 失敗ファイル一覧の表示が表示上限に収まるとき、group 検証エラー通知に `verification.Error.Details` の各ファイルパスが現れる。
-- **AC-02**: 失敗ファイル一覧が表示上限（既存の表示安全な補間契約の 500 byte）を超えるとき、上限内に収まる範囲のファイルパスと、省略した件数が通知に現れる。
+- **AC-01**: 失敗ファイル一覧の表示が表示上限に収まるとき、検証エラー通知の `Error Message` フィールドに `verification.Error.Details` の各ファイルパスが（区切りと衝突しないエンコード後の表示形で）現れる。
+- **AC-02**: 失敗ファイル一覧が表示上限（既存の表示安全な補間契約の 500 byte）を超えるとき、上限内に収まる範囲のファイルパスと、省略した件数が `Error Message` に現れる。
 - **AC-03**: group 名は通知コンテキスト（Scope）に表示され、Error Message には `Group: <name>, ` のような別個のメタデータとして重複しない。失敗ファイルパスに偶然含まれる group 名の文字列は許容する。
 - **AC-04**: `Details` が空のときは、`Total: N, Verified: N, Failed: N` と `verErr.Err` を含む既存の文言へフォールバックする。
-- **AC-05**: グローバル検証エラー通知の失敗ファイルパスの表示は変わらない。
+- **AC-05**: グローバル検証エラー通知も `failed_file_paths` 属性を使い、group と同じ予算管理（全件、または上限内に収まる範囲と省略件数）で `Error Message` に失敗ファイル一覧を描画する。
 
 #### F-002: 配線をテストで固定する
 
 **Acceptance Criteria**:
-- **AC-06**: `Runner.Execute` を通したテストが、失敗ファイルパスが通知に載ることを検証する。上限超過時には省略件数が示されることも検証する。
+- **AC-06**: `Runner.Execute` を通したテストが、通知レコードの `failed_file_paths` 属性に失敗ファイルパスが入り、`Error Message` に描画されることを検証する。上限超過時には省略件数が示されることも検証する。
 
 #### F-003: 既存の挙動を変えない
 
@@ -100,9 +116,17 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 - **AC-09**: 各コミットの時点で `make fmt`（Go を変更した場合）・`make test`・`make lint` が通る。
 - **AC-10**: 追加・変更したテストが、検証対象の挙動を壊すと失敗することを確認し、その旨をコミットメッセージに記す（CLAUDE.md「Every test must be able to fail for its stated reason」）。
 
+#### F-006: 構造化された失敗ファイル一覧
+
+**Acceptance Criteria**:
+- **AC-14**: グローバル／group 検証エラーの通知レコードは、失敗ファイル一覧を持つとき専用属性 `failed_file_paths` にそれを記録し、`handleErrorCommon` が stderr・stdout へ書く `Message` はパスを含まない。ただし検証対象の収集失敗（`Details` が空で `verErr.Err` がコマンド文字列を含む）は対象外とし、残存リスクとして設計に記録する（検証マネージャが各失敗ファイルを別途ログする経路と、console ハンドラが属性を描画する点も残存リスク）。
+- **AC-15**: `failed_file_paths` の各要素は、値形式の機密（トークン等）がマスクされ、`key` などを通常含むパス（例: `/opt/monkey/data`）はマスクされない。これは文字列スライス属性に対する既存の redaction 挙動であり、本タスクは redaction を変更しない。
+- **AC-16**: グローバル検証エラーの通知も、`Runner.Execute` ではなく `cmd/runner` の報告境界を通したテストで、`failed_file_paths` が `Error Message` に描画されることを固定する。
+
 ## Success Criteria（要件レベル）
 
 - group 検証エラー通知から失敗ファイルを判別できる。
+- 失敗ファイル一覧は構造化属性として運ばれ、通常の `key` などを含むパスが失敗しても通知は消えない。`handleErrorCommon` の stderr・stdout 出力にパスが出ない。
 - group 名が別個のメタデータとして本文へ重複しない（失敗ファイルパス内の同名文字列は除く）。
-- グローバルと group の通知が失敗ファイルの提示で対称になる。
-- メッセージ書式・通知種別定義・`error_type` が変わらない。
+- グローバルと group の通知が、同じ構造化属性と同じ予算管理による失敗ファイルの提示で対称になる。
+- メッセージ書式・通知種別定義・`error_type` が変わらない（`Error Message` の値の組み立てだけを変える）。
