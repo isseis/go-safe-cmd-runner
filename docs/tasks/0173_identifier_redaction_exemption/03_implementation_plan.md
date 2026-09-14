@@ -272,7 +272,10 @@ AST でパッケージのトップレベル宣言面を allowlist と厳密に�
 追加し、AC-13〜AC-17 の検証をこの 1 ファイルに集約する。追加したスクリプトは `Makefile` の
 `verify-docs-checks` ターゲットが `scripts/verification/check_*.sh` を自動列挙して実行し、
 非ゼロ終了を make の失敗として伝播させる（`verify-docs`／`verify-docs-full` はこの
-ターゲットに依存する）。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
+ターゲットに依存する）。各 `check_*.sh` は `sh "$script"` で実行するため、実行ビットに
+依存せず POSIX シェルで解釈される。bash 固有機能（`[[ ... ]]`・配列・`local` など）は
+使わず、shebang を `#!/bin/sh` とした POSIX 準拠のスクリプトとして記述する。
+`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
 検査の合否は自動列挙側で判定する。スクリプト名を Makefile に列挙しないので、将来追加する
 `check_*.sh` も配線漏れなく `make verify-docs` に組み込まれる。これにより
 `make verify-docs` が AC-13〜AC-17 の完了ゲートになる。スクリプトは語ごとに独立した
@@ -826,17 +829,20 @@ Phase 4.5 の AC-19 確認が担う。
       （`identifier` と `exempt` の語を用いる）。
 - [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       未登録なら追加する。
-- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する。§1.3「文書内容の
-      検証スクリプト」の表の語をファイルごとに独立して検査し、1 語でも欠ければ非ゼロで
-      終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
+- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
+      で実行されるため POSIX 準拠で記述し、shebang は `#!/bin/sh`。bash 固有機能は
+      使わない）。§1.3「文書内容の検証スクリプト」の表の語をファイルごとに独立して検査し、
+      1 語でも欠ければ非ゼロで終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
 - [ ] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
       一時的に外し、スクリプトが非ゼロで終了することを確認して復元する。確認結果を
       コミットメッセージに記す。
 - [ ] `Makefile` に `verify-docs-checks` ターゲットを追加し、
       `scripts/verification/check_*.sh` を自動列挙して 1 つずつ実行し、いずれかの非ゼロ
       終了を make の失敗として伝播させる。各スクリプトは `sh "$script"` で実行し、実行
-      ビットに依存しない。glob が一致しない場合にリテラルのパスを実行
-      しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
+      ビットに依存しない。`sh` は bash 固有機能を解釈しないため `check_*.sh` は POSIX 準拠
+      （shebang は `#!/bin/sh`）で記述する（既存の
+      `run_executor_setuid_integration.sh` と同じ方針）。glob が一致しない場合に
+      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
       `verify-docs-full` は `verify-docs-checks` に依存させ、`run_all.sh` の実行と組み合わせる。
       ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は検査結果に
       かかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
@@ -864,7 +870,7 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 **推奨タイトル**: `docs(0173): document the identifier exemption and wire docs verification`
 
-**レビュー観点**: 日英 4 文書に、識別子の免除・免除されない自由文・名前に機密を書いた場合の帰結が書かれていること（AC-13〜AC-16）／`check_identifier_exemption_docs.sh` が語ごとに独立した終了コードで判定し（1 語欠落で非ゼロ）、`verify-docs-checks` が `check_*.sh` を自動列挙して `sh` で実行し失敗を make へ伝播すること／Task 0172 の承認済み文書を変更していないこと／用語集の訳語が日英文書で一致すること
+**レビュー観点**: 日英 4 文書に、識別子の免除・免除されない自由文・名前に機密を書いた場合の帰結が書かれていること（AC-13〜AC-16）／`check_identifier_exemption_docs.sh` が語ごとに独立した終了コードで判定し（1 語欠落で非ゼロ）、`verify-docs-checks` が `check_*.sh` を自動列挙して `sh` で実行し（各スクリプトは POSIX 準拠）失敗を make へ伝播すること／Task 0172 の承認済み文書を変更していないこと／用語集の訳語が日英文書で一致すること
 
 **実装モデル要件**: standard
 
