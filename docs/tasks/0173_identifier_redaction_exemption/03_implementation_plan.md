@@ -818,28 +818,28 @@ Phase 4.5 の AC-19 確認が担う。
 **対象ファイル**: §1.3「文書の該当箇所」の 4 文書、`docs/translation_glossary.md`、
 `Makefile`（`verify-docs-checks` と、それが依存する `verify-docs`／`verify-docs-full` ターゲット）
 
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の
       「セキュアログと機密データ保護」の第 2 層の説明に、group 名・コマンド名が宣言型
       （`identifier.Identifier`）で免除されること、免除は 3 層すべてに及び、自由文は
       免除されないこと、専用の実行時スイッチが無く rollback は導入コミットの revert で
       行うことを追記する。**追記は `識別子` と `免除` の語を用いる**（用語を統一する）。
-- [ ] `docs/user/security-risk-assessment.ja.md` の「限界」に、識別子として宣言された
+- [x] `docs/user/security-risk-assessment.ja.md` の「限界」に、識別子として宣言された
       group 名・コマンド名は値ベース redaction の対象外であること、設定の名前に機密を
       書いた場合は通知・ログにそのまま出ることを追記する（AC-14、AC-16）。**追記は
       `識別子` と `免除` の語を用いる**。
-- [ ] 日本語版 2 文書のコミット後、`/mktrans` で
+- [x] 日本語版 2 文書のコミット後、`/mktrans` で
       `security-architecture.md`・`security-risk-assessment.md` へ反映する
       （`identifier` と `exempt` の語を用いる）。
-- [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
+- [x] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       未登録なら追加する。
-- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
+- [x] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
       で実行されるため POSIX 準拠で記述し、shebang は `#!/bin/sh`。bash 固有機能は
       使わない）。§1.3「文書内容の検証スクリプト」の表の語をファイルごとに独立して検査し、
       1 語でも欠ければ非ゼロで終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
-- [ ] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
+- [x] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
       一時的に外し、スクリプトが非ゼロで終了することを確認して復元する。確認結果を
       コミットメッセージに記す。
-- [ ] `Makefile` に `verify-docs-checks` ターゲットを追加し、
+- [x] `Makefile` に `verify-docs-checks` ターゲットを追加し、
       `scripts/verification/check_*.sh` を自動列挙して 1 つずつ実行し、いずれかの非ゼロ
       終了を make の失敗として伝播させる。各スクリプトは `sh "$script"` で実行し、実行
       ビットに依存しない。`sh` は bash 固有機能を解釈しないため `check_*.sh` は POSIX 準拠
@@ -853,13 +853,13 @@ Phase 4.5 の AC-19 確認が担う。
       配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を検出できないまま
       ゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に
       強制される。
-- [ ] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
+- [x] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
       `make verify-docs` も実行し、日本語版と英語版の構造が一致することと、スクリプトが
       `make verify-docs` から実行され、失敗時に make が失敗することを確認する。
-- [ ] Task 0172 の承認済み文書（`docs/tasks/0172_slack_notification_message_unification/`）
+- [x] Task 0172 の承認済み文書（`docs/tasks/0172_slack_notification_message_unification/`）
       を変更しない。本タスクが Task 0172 の残余リスクを置き換えたことが、本タスクの
       文書と Phase 5 の更新文書から参照できることを確認する（AC-17）。
-- [ ] 追加した段落を読み、識別子が免除されることと、名前に機密を書いた場合の帰結が
+- [x] 追加した段落を読み、識別子が免除されることと、名前に機密を書いた場合の帰結が
       書かれていることを確認する（スクリプトの語一致だけでは内容の正しさまでは保証
       できないため）。
 
