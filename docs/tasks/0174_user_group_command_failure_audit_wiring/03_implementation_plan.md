@@ -135,7 +135,7 @@
 - [ ] 失敗分岐（`executor.go:282-295`）にはこの Phase では触れない（配線は Phase 3）。
 - [ ] 成功経路の `Result` の非 nil 前提は現状のままとする。
 
-**完了確認**: `make fmt` → `make test` → `make lint` が通る。成功経路のレコード内容が変わらないことは既存テスト（`TestLogger_LogUserGroupExecution` と `TestPrivilegeGap_ChildCredentialsMatchTarget`）で確認する。
+**完了確認**: `make fmt` → `make test` → `make lint` が通る。成功経路のレコード内容が変わらないことは既存テスト（`TestLogger_LogUserGroupExecution` と `TestPrivilegeGap_ChildCredentialsMatchTarget`）で確認する。加えて setuid ゲートを skip なしで実行し、`TestPrivilegeGap_ChildCredentialsMatchTarget` が通ることを確認する（この既存テストの `assertAuditWindows` は `executeWithUserGroup` 越しに INFO 成功レコードを要求するため、成功経路の呼び出しの欠落・改変を検出する）。
 
 ### PR-2 作成ポイント: extract the audit helper (no behavior change)
 
@@ -143,7 +143,7 @@
 
 **推奨タイトル**: `refactor(0174): extract the user group audit helper`
 
-**レビュー観点**: 既存の成功経路の監査ブロックがメソッドへ移動しただけで、属性・時間計測・redaction の値が変わっていないこと（02_architecture.md §3.4）／`e.AuditLogger == nil` の no-op が維持されていること／失敗分岐にはまだ触れておらず、`err != nil` の挙動がこの PR で変わらないこと／既存テスト（`TestLogger_LogUserGroupExecution`・`TestPrivilegeGap_ChildCredentialsMatchTarget`）が無変更で通ること
+**レビュー観点**: 既存の成功経路の監査ブロックがメソッドへ移動しただけで、属性・時間計測・redaction の値が変わっていないこと（02_architecture.md §3.4）／`e.AuditLogger == nil` の no-op が維持されていること／失敗分岐にはまだ触れておらず、`err != nil` の挙動がこの PR で変わらないこと／成功経路の `auditUserGroupExecution` 呼び出しが setuid 回帰 `TestPrivilegeGap_ChildCredentialsMatchTarget` によって `executeWithUserGroup` 越しに実行され、`assertAuditWindows` が INFO 成功レコードを要求すること（`TestLogger_LogUserGroupExecution` 単体では executor を通らない）
 
 **実装モデル要件**: standard
 
@@ -234,7 +234,7 @@
 | マイルストーン | 含む Phase | 完了条件 |
 |---|---|---|
 | M1: 実行状態の導入 | Phase 1 | `childState` の遷移と分類の単体テストが green で、`make test`・`make lint` が通る |
-| M2: 監査ヘルパの抽出 | Phase 2 | 成功経路がヘルパ呼び出しへ置き換わり、既存テストが無変更で通る |
+| M2: 監査ヘルパの抽出 | Phase 2 | 成功経路がヘルパ呼び出しへ置き換わり、setuid ゲートの成功回帰 `TestPrivilegeGap_ChildCredentialsMatchTarget` を含めて green |
 | M3: 監査配線 | Phase 3 | 失敗分岐が開始済みのときだけ監査を呼び、setuid ゲート（skip なし）を含めて green |
 | M4: 履歴更新 | Phase 4 | 0172 §10 が更新され、docs の検証が通る |
 
@@ -275,18 +275,28 @@
 
 ### 4.4 実装時に行うテスト失敗確認（AC-11）
 
-CLAUDE.md「Every test must be able to fail for its stated reason」に従い、次の確認を実装時に行い、結果をコミットメッセージに記す。設計書・計画書では結果を予測しない。
+CLAUDE.md「Every test must be able to fail for its stated reason」に従い、各確認は実装時に行い、結果をコミットメッセージに記す。設計書・計画書では結果を予測しない。
 
-- [ ] `startPrepared` の `childRunning` 代入を一時的に外し、遷移テストのうち起動直後を観測するケースが失敗することを確認して復元する。
-- [ ] `superviseCommand` の終了種別の確定を一時的に外し、遷移テストと `TestSupervise_ProcessAlreadyDoneIsNotAnError` の `childTerminated` 観測が失敗することを確認して復元する。
-- [ ] `started()` が `childNotStarted` でも true を返すように一時的に変え、`TestPrivilegeGap_UserGroupNotStartedNoAudit` だけを `-run` で実行して失敗を確認して復元する。この確認は Start 失敗の経路（プレースホルダの非 nil `Result` が返る）を対象にし、nil `Result` を返す昇格拒否の経路は対象にしない。
-- [ ] 失敗分岐の監査呼び出しを一時的に外し、ケース (a)〜(c) のいずれかが失敗することを確認して復元する。
-- [ ] 項目 3・4 は setuid 統合テストを使う。setuid ゲートを実行できない環境では、これらの失敗確認も未実施として §5 のリスク行と同じ扱いで記録する。項目 3 の変異は非特権の `TestChildState_StartedClassification` も失敗させるため、環境が無い場合はその失敗を部分的な証拠として記録する。
+| 対象 PR | 追加・変更するテスト | 実装時に行う変異（失敗を確認して復元する） |
+|---|---|---|
+| PR-1 | `TestRunCommand_ChildStateTransitions`（起動直後の観測を含む） | `startPrepared` の `pc.child = childRunning` 代入を一時的に外し、起動直後の観測ケースが失敗することを確認して復元する。 |
+| PR-1 | `TestRunCommand_ChildStateTransitions`（終了種別の観測）・`TestSupervise_ProcessAlreadyDoneIsNotAnError` | `superviseCommand` の終了種別の確定を一時的に外し、遷移の観測と `TestSupervise_ProcessAlreadyDoneIsNotAnError` の `childTerminated` 観測が失敗することを確認して復元する。 |
+| PR-1 | `TestChildState_StartedClassification` | `started()` を `childNotStarted` と列挙外の値でも true を返すように一時的に変え、分類の観測が失敗することを確認して復元する。 |
+| PR-2 | `TestPrivilegeGap_ChildCredentialsMatchTarget`（既存。setuid ゲートで実行） | 成功経路の `auditUserGroupExecution` 呼び出しを一時的に外し、`assertAuditWindows` が要求する INFO 成功レコードが得られず失敗することを確認して復元する。 |
+| PR-3 | `TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_TimeoutKillsChild`・`TestPrivilegeGap_CancelKillsChild` | 失敗分岐の `auditUserGroupExecution` 呼び出しを一時的に外し、各テストが要求する ERROR 失敗レコードが得られず失敗することを確認して復元する。 |
+| PR-3 | `TestPrivilegeGap_UserGroupFailureWithoutAuditLogger` | `auditUserGroupExecution` の `e.AuditLogger == nil` ガードを一時的に外し、nil ロガーで panic して失敗することを確認して復元する。 |
+| PR-3 | `TestPrivilegeGap_UserGroupNotStartedNoAudit` | `started()` が `childNotStarted` でも true を返すように一時的に変え、未開始の Start 失敗（プレースホルダの非 nil `Result` が返る経路）で失敗レコードが出て失敗することを確認して復元する。nil `Result` を返す昇格拒否の経路は対象にしない。 |
+| PR-3 | `TestPrivilegeGap_ChildCredentialsMatchTarget`（成功レコード 1 件の検証を追加） | 成功経路の `auditUserGroupExecution` 呼び出しを一時的に外し、成功レコードの検証が失敗することを確認して復元する。 |
+| PR-3 | `TestPrivilegeGap_RefusedElevationDoesNotRecordWindow` | 失敗分岐の `pc.child.started()` ガードを一時的に外して未開始の昇格拒否でも監査を呼ぶようにし、このテストが失敗することを確認して復元する。 |
+| PR-3 | `TestPrivilegeGap_StagingCancellationCleansUp`・`TestPrivilegeGap_OutputLimitAbortsRunningChild` | 失敗分岐の `auditUserGroupExecution` 呼び出しを一時的に外し、各テストが要求する失敗レコードとメトリクス属性が得られず失敗することを確認して復元する。 |
+| PR-3 | `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging`（`prepareCommand` 失敗のサブテストを追加） | `prepareCommand` 失敗の return 経路で `auditUserGroupExecution` を呼ぶように一時的に変え、監査レコードが出て失敗することを確認して復元する。 |
+
+setuid 統合テストを使う確認（表のデータ行の 4・6・7・8・9・10 番目）は、setuid ゲートを実行できない環境では未実施として §5 のリスク行と同じ扱いで記録する。7 番目の変異は非特権の `TestChildState_StartedClassification` も失敗させるため、環境が無い場合はその失敗を部分的な証拠として記録する。
 
 ### 4.5 実行手順と環境
 
 - 特権不要: `make test`（CGO=1 `-race` と CGO=0 の 2 回）・`make lint`。
-- setuid ゲート: `TEST_RUNAS_TARGET_USER=<fixture-user> make executor-setuid-integration-test`。非 root の実行者、非 root の対象ユーザー、sudo が必要で、環境が揃わない場合はスクリプトが FATAL を返す（skip を許さない）。CI の非特権レグ `make executor-privileged-integration-test` は skip を許容するため、配線の保証は setuid ゲートが担う。
+- setuid ゲート: `TEST_RUNAS_TARGET_USER=<fixture-user> make executor-setuid-integration-test`。非 root の実行者、非 root の対象ユーザー、sudo が必要で、環境が揃わない場合はスクリプトが FATAL を返す（skip を許さない）。PR-2（成功回帰 `TestPrivilegeGap_ChildCredentialsMatchTarget`）と PR-3（配線の検証）がこのゲートを必要とする。CI の非特権レグ `make executor-privileged-integration-test` は skip を許容するため、配線の保証は setuid ゲートが担う。
 - integration タグ付きコンパイル: `go test -tags "test integration" -run '^$' ./internal/runner/base/executor/`（PR-3。`make test` は `-tags test`、`make lint` は `--build-tags test` のため、統合テストの型エラーはこの確認で検出する）。
 - 文書: `go test -tags test ./internal/testutil/docsguard/`・`make verify-docs-checks`。
 
@@ -296,7 +306,7 @@ CLAUDE.md「Every test must be able to fail for its stated reason」に従い、
 
 | リスク | 影響 | 対策 |
 |---|---|---|
-| setuid ゲートを実行できない環境（sudo・対象ユーザーなし） | 配線の実行検証が未実施のまま残る | スクリプトが skip を拒否する。実行できる環境で §4.5 を実施し、結果を PR-3 に記録する。実行できない場合は、配線が未検証であることと、§4.4 の setuid 依存の失敗確認が未実施であることを明示する |
+| setuid ゲートを実行できない環境（sudo・対象ユーザーなし） | 配線の実行検証が未実施のまま残る | スクリプトが skip を拒否する。実行できる環境で §4.5 を実施し、結果を PR-2・PR-3 に記録する。実行できない場合は、配線が未検証であることと、§4.4 の setuid 依存の失敗確認が未実施であることを明示する |
 | 状態の代入箇所の片側漏れ | 監査の欠落または誤記録 | Phase 1 の遷移テストで 4 状態と未開始 3 経路を観測する |
 | 失敗分岐の追加が成功経路へ波及 | AC-08 違反 | 成功経路はヘルパ呼び出しへの置換だけにする。既存の成功レコードテストで観測する |
 | 0172 の approved 文書への追記 | プロセス上の懸念 | 決定を変えない editorial correction として `Comments` に記録する（Phase 4） |
@@ -330,7 +340,7 @@ CLAUDE.md「Every test must be able to fail for its stated reason」に従い、
 | AC-08 | Phase 2・Phase 3 | `test`: `TestPrivilegeGap_ChildCredentialsMatchTarget`、`audit/logger_test.go::TestLogger_LogUserGroupExecution` |
 | AC-09 | 変更なし | `test`: `internal/logging/slack_handler_test.go::TestSlackHandler_UserGroupCommandFailure`（`make test` で実行） |
 | AC-10 | 各 Phase | `static`: `make fmt`・`make test`・`make lint`（各 Phase の完了確認） |
-| AC-11 | Phase 1・3（§4.4） | `test`: §4.4 の失敗確認を実施しコミットメッセージに記録する。対象は `TestRunCommand_ChildStateTransitions`・`TestSupervise_ProcessAlreadyDoneIsNotAnError`・`TestPrivilegeGap_UserGroupNotStartedNoAudit`・`TestPrivilegeGap_UserGroupFailureRecord` |
+| AC-11 | Phase 1・2・3（§4.4） | `test`: §4.4 の PR 別の表に従い、追加・変更した各テストについて変異の失敗確認を実施しコミットメッセージに記録する |
 
 ---
 
