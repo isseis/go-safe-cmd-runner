@@ -1155,6 +1155,35 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 - `security-architecture.ja.md` / `.md` と `security-risk-assessment.ja.md` / `.md` が
   更新され、Task 0172 の残余リスクを置き換えたことが追跡できる（AC-15〜AC-17）。
 
+**成功基準の検証結果（Phase 6、2026-09-14）**: 上記の各項目を最終状態で確認した。
+
+- 9.1: 通知 Scope の `TestSlackHandler_IdentifierScopeSurvivesRedaction`・
+  `TestRedactingHandler_ResolvesNotificationContextLogValue`、JSON の
+  `TestCommandResults_E2E_Integration`、免除の
+  `TestRedactLogAttribute_IdentifierExemption`・`TestRedactingHandler_IdentifierExemption`
+  が通過し、内容にかかわらず名前がそのまま現れる。宣言サイトは
+  `TestIdentifierDeclarationCatalog` の `declaration_sites` が目録（42 組・43 サイト・
+  12 ファイル）と走査結果を双方向照合して通過し、`02_architecture.md` §3.4 の表の合計
+  （12 ファイル・43 サイト）と一致する。
+- 9.2: Go を変更した各 Phase のコミットは pre-commit フックが `go test` を実行し、
+  計画書の各 Phase 記録も `make test`・`make lint` の通過を記録している。AC-01〜AC-11 の
+  テストが存在して通過し、AC-19 の mutation 記録は各コミットに存在する。構造比較は、
+  本タスクが変更した `security-risk-assessment` の `mismatches` が空（見出し 49/49）で、
+  `security-architecture` も ad hoc 実行で `mismatches` が空（見出し 102/102）。レポート
+  全体では本タスクが未変更の 5 文書（`runner_command.ja.md` と `toml_config/04〜06・08`）
+  に着手前からの見出し・コードブロック件数差が残るが、`88624849..HEAD` でこれらの
+  ファイルに差分は無く、本タスクの影響ではない。
+- 9.3: `TestRedactingHandler_PlainStringIsStillRedacted`・`TestRedactingHandler_ErrorValue`・
+  `TestRedactingHandler_Handle_MessageRedaction` が通過し、展開済みコマンド行・OS グループ
+  名・`cmdLine`・一時ファイル名を `NewIdentifier` で包む式は存在しない。キー名判定は
+  3 挿入点すべてで免除判定より先にあり（`redactor.go:334→340`・`:797→805`、
+  `processSlice` は免除要素だけを正規化）、`TestRedactingHandler_SensitiveKeyMaskPrecedesExemption`
+  が固定する。`TestDefaultPatternSets_AreUnchanged` が通過し、
+  `sensitive_patterns.go`・`value_detector.go` は `88624849..HEAD` で差分が無い。文書化は
+  `check_identifier_exemption_docs.sh` が通過する。
+- 9.4: 4 文書が更新され、`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+  は空である。
+
 ## 10. 次のステップ
 
 1. `/runplan` による Phase 1〜5 の実装と、Phase 6 の検証・記録（green gate、`make deadcode`、
