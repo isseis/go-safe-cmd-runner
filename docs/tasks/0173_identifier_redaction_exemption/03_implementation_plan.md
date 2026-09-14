@@ -886,8 +886,8 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 - [ ] 最終コミットで `make test`・`make lint`・`make verify-docs` を通す（AC-18）。
 - [ ] `git log` で各コミットメッセージに AC-19 の確認記録（壊した対象と、失敗を確認した
       テスト名）が含まれることを確認する。
-- [ ] `git diff` で `docs/tasks/0172_slack_notification_message_unification/` に差分が
-      無いことを確認し、結果をコミットメッセージに記す（AC-17）。
+- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で差分が無いことを確認し、結果をコミットメッセージに記す（AC-17）。
 - [ ] `make deadcode` を実行し、新しい到達不能コードの報告が無いことを確認する。
 - [ ] 本計画書のチェックボックスを実装の進捗に合わせて更新し、§6 と §7 の結果を記録する。
 
@@ -897,7 +897,7 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 **推奨タイトル**: `chore(0173): run final verification and record AC-19 mutations`
 
-**レビュー観点**: 各コミットの `git log` に AC-19 の mutation 記録（壊した対象と、失敗を確認したテスト名）があること／`make test`・`make lint`・`make verify-docs`・`make deadcode` の結果が記録されていること／`git diff` で Task 0172 の承認済み文書に差分が無いことを確認していること（AC-17）／§6 と §7 の結果が計画書へ反映されていること
+**レビュー観点**: 各コミットの `git log` に AC-19 の mutation 記録（壊した対象と、失敗を確認したテスト名）があること／`make test`・`make lint`・`make verify-docs`・`make deadcode` の結果が記録されていること／`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` で Task 0172 の承認済み文書に差分が無いことを確認していること（AC-17）／§6 と §7 の結果が計画書へ反映されていること
 
 **実装モデル要件**: standard
 
@@ -1060,7 +1060,7 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 | AC-14 | static | 同上のスクリプト（`docs/user/security-risk-assessment.ja.md` の `識別子` と `免除` を検査。`識別子` の既存 1 件は別文脈のため、`免除` が加わらなければ失敗する）。加えて追加段落を読み、AC-14 の内容を確認する（manual） | Phase 5 |
 | AC-15 | static | 同上のスクリプト（`security-architecture.ja.md` の `識別子`・`免除`・`NewIdentifier`、`security-architecture.md` の `identifier`・`exempt`・`NewIdentifier` を検査。実装前はいずれも 0 件） | Phase 5 |
 | AC-16 | static | 同上のスクリプト（`docs/user/security-risk-assessment.md` の `identifier` と `exempt` を検査）と `make verify-docs` | Phase 5 |
-| AC-17 | static | 同上のスクリプト（`01_requirements.md` の `0172` と `置き換え` を検査）と、Task 0172 の承認済み文書に差分が無いこと（Phase 6 で `git diff` を確認する manual） | Phase 5・6 |
+| AC-17 | static | 同上のスクリプト（`01_requirements.md` の `0172` と `置き換え` を検査）と、Task 0172 の承認済み文書に差分が無いこと（Phase 6 で `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/` を確認する manual） | Phase 5・6 |
 | AC-18 | static | 各 Phase のコミットで `make test` と `make lint`（`make` ターゲット） | 全 Phase |
 | AC-19 | test + manual | Phase 1〜4 のタスクに列挙した mutation（production コードを一時的に壊し、対応するテストの失敗を確認して復元）を `make test` 後の状態で行う。テストケースの削除・無効化は、同じテストが失敗せず挙動を検証しなくなるだけなので mutation に数えない。test: 各 AC 行が指すテスト。manual: `git log -1 --format=%B <sha>` に壊した対象と失敗したテスト名が含まれることを Phase 6 で確認する | Phase 1〜4・6 |
 
@@ -1077,8 +1077,8 @@ Phase 5 の完了ゲートで実行する。`scripts/verification/check_*.sh` �
 - [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       登録されているか確認する。未登録なら Phase 5 で追加し、日英文書の訳語が一致する
       ことを確認する。
-- [ ] `docs/tasks/0172_slack_notification_message_unification/` の承認済み文書に差分が
-      無いことを `git diff` で確認する（履歴として残す。AC-17）。
+- [ ] `git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+      で承認済み文書に差分が無いことを確認する（履歴として残す。AC-17）。
 - [ ] Phase 5 の日英文書について `make verify-docs` を実行し、構造比較のレポート
       （`build/verification-reports/structure_comparison_report.txt`）に見出し構造の差分が
       無いことを確認する。`run_all.sh` は検査結果にかかわらず終了コード 0 を返すため、
