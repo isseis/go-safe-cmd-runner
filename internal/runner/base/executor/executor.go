@@ -294,18 +294,35 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		return result, fmt.Errorf("user/group privilege execution failed: %w", err)
 	}
 
-	// Audit logging
-	if e.AuditLogger != nil {
-		executionDuration := time.Since(startTime)
-		auditResult := &audit.ExecutionResult{
-			Stdout:   result.Stdout,
-			Stderr:   result.Stderr,
-			ExitCode: result.ExitCode,
-		}
-		e.AuditLogger.LogUserGroupExecution(ctx, cmd, auditResult, executionDuration, metrics)
-	}
+	e.auditUserGroupExecution(ctx, cmd, result, startTime, metrics)
 
 	return result, nil
+}
+
+// auditUserGroupExecution writes the single user_group_execution audit record
+// for one executeWithUserGroup run. A nil AuditLogger is a no-op. The record's
+// level and notification follow the child's exit code; LogUserGroupExecution
+// decides which of the two records to write.
+//
+// result must be non-nil: callers audit a run only after the child started,
+// and a started child is always supervised into a Result.
+func (e *DefaultExecutor) auditUserGroupExecution(
+	ctx context.Context,
+	cmd *runnertypes.RuntimeCommand,
+	result *Result,
+	startTime time.Time,
+	metrics audit.PrivilegeMetrics,
+) {
+	if e.AuditLogger == nil {
+		return
+	}
+	executionDuration := time.Since(startTime)
+	auditResult := &audit.ExecutionResult{
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
+		ExitCode: result.ExitCode,
+	}
+	e.AuditLogger.LogUserGroupExecution(ctx, cmd, auditResult, executionDuration, metrics)
 }
 
 // executeNormal handles normal (non-privileged) command execution

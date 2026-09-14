@@ -121,8 +121,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: `auditUserGroupExecution` を抽出し、成功経路を置き換える
 
@@ -130,10 +130,10 @@
 
 **作業内容**:
 
-- [ ] `auditUserGroupExecution(ctx context.Context, cmd *runnertypes.RuntimeCommand, result *Result, startTime time.Time, metrics audit.PrivilegeMetrics)` を追加する。`e.AuditLogger == nil` は no-op とする。中身は既存の `audit.ExecutionResult` の組み立てと `LogUserGroupExecution` の呼び出しをそのまま移す（属性・時間計測・redaction を変えない）。
-- [ ] 成功経路の監査ブロック（`executor.go:297-306`）を `auditUserGroupExecution` 呼び出しへ置き換える。
-- [ ] 失敗分岐（`executor.go:282-295`）にはこの Phase では触れない（配線は Phase 3）。
-- [ ] 成功経路の `Result` の非 nil 前提は現状のままとする。
+- [x] `auditUserGroupExecution(ctx context.Context, cmd *runnertypes.RuntimeCommand, result *Result, startTime time.Time, metrics audit.PrivilegeMetrics)` を追加する。`e.AuditLogger == nil` は no-op とする。中身は既存の `audit.ExecutionResult` の組み立てと `LogUserGroupExecution` の呼び出しをそのまま移す（属性・時間計測・redaction を変えない）。
+- [x] 成功経路の監査ブロック（`executor.go:297-306`）を `auditUserGroupExecution` 呼び出しへ置き換える。
+- [x] 失敗分岐（`executor.go:282-295`）にはこの Phase では触れない（配線は Phase 3）。
+- [x] 成功経路の `Result` の非 nil 前提は現状のままとする。
 
 **完了確認**: `make fmt` → `make test` → `make lint` が通る。成功経路のレコード内容が変わらないことは既存テスト（`TestLogger_LogUserGroupExecution` と `TestPrivilegeGap_ChildCredentialsMatchTarget`）で確認する。加えて setuid ゲートを skip なしで実行し、`TestPrivilegeGap_ChildCredentialsMatchTarget` が通ることを確認する（この既存テストの `assertAuditWindows` は `executeWithUserGroup` 越しに INFO 成功レコードを要求するため、成功経路の呼び出しの欠落・改変を検出する）。
 
@@ -149,8 +149,8 @@
 
 **判定理由**: 既存ブロックのメソッド化に限られ、設計判断・高リスク分岐・未確定の実装アプローチは無く、Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
