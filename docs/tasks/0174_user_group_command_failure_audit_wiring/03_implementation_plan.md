@@ -160,21 +160,21 @@
 
 **作業内容**:
 
-- [ ] 失敗分岐（`executor.go:282-295`）で `pc.child.started()` が true のときだけ `auditUserGroupExecution` を呼ぶ。`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばない。既存の `failureAttrs`・`User/group privilege execution failed` ログ・戻り値は変えない（02_architecture.md §3.3）。
-- [ ] `assertCommandFailureWindows` を追加する。`assertFailureWindows` に倣い、"User/group command failed" の ERROR レコードを取得して既存の `assertWindowAttrs` を適用する。
-- [ ] `TestPrivilegeGap_UserGroupFailureRecord` を追加する（02_architecture.md §7.2 のケース (a)）。
-- [ ] `TestPrivilegeGap_TimeoutKillsChild` に失敗レコードの検証を追加する（ケース (b)）。
-- [ ] `TestPrivilegeGap_CancelKillsChild` に同様の検証を追加する（ケース (c)）。
-- [ ] `TestPrivilegeGap_UserGroupFailureWithoutAuditLogger` を追加する（ケース (d)）。fixture の基本オプションは常に `WithAuditLogger` を含むため、`AuditLogger` を nil にする `executor.Option` を fixture の追加オプションとして渡す。
-- [ ] `TestPrivilegeGap_UserGroupNotStartedNoAudit` を追加する（ケース (e)）。`runtimeCommand` に存在しない絶対パスを渡す。
-- [ ] `TestPrivilegeGap_ChildCredentialsMatchTarget` に「成功レコード 1 件のみで失敗レコードがない」検証を追加する。
-- [ ] `TestPrivilegeGap_RefusedElevationDoesNotRecordWindow` に "User/group command failed" レコードが出ないことの検証を追加する（昇格拒否＝未開始の一形態。02_architecture.md §7.2 のケース外だが AC-05 の対象）。
-- [ ] `TestPrivilegeGap_StagingCancellationCleansUp` に失敗レコードの検証を追加する（staging フォールバックのキャンセルで、開始・kill・staging cleanup のメトリクスを含む）。
-- [ ] `TestPrivilegeGap_OutputLimitAbortsRunningChild` に失敗レコードの検証を追加する（出力上限でシグナル終了する経路。開始区間のメトリクスを含む）。
-- [ ] ケース (e) は統合テストが `package executor_test` にあり `pc.child` を読めないため、状態は Phase 1 の遷移テストで固定し、統合テストはレコードと通知の不在だけを観測する。この分担をコメントに残す。
-- [ ] 非特権の `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` に、`prepareCommand` が失敗する開始前キャンセル（キャンセル済み ctx で run-as 実行）で監査レコードが出ないサブテストを追加する（AC-05 の `prepareCommand` 失敗の観測）。
-- [ ] 必須テスト名の一覧（`:151`）に新設 3 テスト（`TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_UserGroupFailureWithoutAuditLogger`・`TestPrivilegeGap_UserGroupNotStartedNoAudit`）を追加する。既存 2 テストの拡張は一覧に既にある。
-- [ ] `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` の doc コメント（`:680-683`）とサブテスト内コメント（`:716`）を、この失敗は子プロセス開始前であり監査レコードが出ないという趣旨へ更新する。アサーションは変えない。
+- [x] 失敗分岐（`executor.go:282-295`）で `pc.child.started()` が true のときだけ `auditUserGroupExecution` を呼ぶ。`prepareCommand` 失敗など `runCommand` より前の return 経路では呼ばない。既存の `failureAttrs`・`User/group privilege execution failed` ログ・戻り値は変えない（02_architecture.md §3.3）。
+- [x] `assertCommandFailureWindows` を追加する。`assertFailureWindows` に倣い、"User/group command failed" の ERROR レコードを取得して既存の `assertWindowAttrs` を適用し、通知メタデータを呼び出し側で検証できるようレコードを返す。通知メタデータ（`audit_type`・`message_type`・通知コンテキスト）の検証は `assertCommandFailureNotificationAttrs` に集約し、各ケースで重複させない。
+- [x] `TestPrivilegeGap_UserGroupFailureRecord` を追加する（02_architecture.md §7.2 のケース (a)）。
+- [x] `TestPrivilegeGap_TimeoutKillsChild` に失敗レコードの検証を追加する（ケース (b)）。
+- [x] `TestPrivilegeGap_CancelKillsChild` に同様の検証を追加する（ケース (c)）。
+- [x] `TestPrivilegeGap_UserGroupFailureWithoutAuditLogger` を追加する（ケース (d)）。fixture の基本オプションは常に `WithAuditLogger` を含むため、`AuditLogger` を nil にする `executor.Option` を fixture の追加オプションとして渡す。
+- [x] `TestPrivilegeGap_UserGroupNotStartedNoAudit` を追加する（ケース (e)）。`runtimeCommand` に存在しない絶対パスを渡す。
+- [x] `TestPrivilegeGap_ChildCredentialsMatchTarget` に「成功レコード 1 件のみで失敗レコードがない」検証を追加する。
+- [x] `TestPrivilegeGap_RefusedElevationDoesNotRecordWindow` に "User/group command failed" レコードが出ないことの検証を追加する（昇格拒否＝未開始の一形態。02_architecture.md §7.2 のケース外だが AC-05 の対象）。
+- [x] `TestPrivilegeGap_StagingCancellationCleansUp` に失敗レコードの検証を追加する（staging フォールバックのキャンセルで、開始・kill・staging cleanup のメトリクスを含む）。
+- [x] `TestPrivilegeGap_OutputLimitAbortsRunningChild` に失敗レコードの検証を追加する（出力上限でシグナル終了する経路。開始区間のメトリクスと `ExitCodeUnknown` を含む）。
+- [x] ケース (e) は統合テストが `package executor_test` にあり `pc.child` を読めないため、状態は Phase 1 の遷移テストで固定し、統合テストはレコードと通知の不在だけを観測する。この分担をコメントに残す。
+- [x] 非特権の `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` に、`prepareCommand` が失敗する開始前キャンセル（キャンセル済み ctx で run-as 実行）で監査レコードが出ないサブテストを追加する（AC-05 の `prepareCommand` 失敗の観測）。
+- [x] 必須テスト名の一覧（`:151`）に新設 3 テスト（`TestPrivilegeGap_UserGroupFailureRecord`・`TestPrivilegeGap_UserGroupFailureWithoutAuditLogger`・`TestPrivilegeGap_UserGroupNotStartedNoAudit`）を追加する。既存 2 テストの拡張は一覧に既にある。
+- [x] `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` の doc コメント（`:680-683`）とサブテスト内コメント（`:716`）を、この失敗は子プロセス開始前であり監査レコードが出ないという趣旨へ更新する。アサーションは変えない。
 
 **完了確認**: `make fmt` → `make test` → `make lint` が通る。加えて integration タグ付きのコンパイル（`go test -tags "test integration" -run '^$' ./internal/runner/base/executor/`）と setuid ゲートを skip なしで実行する（§4.5）。成功経路のレコード内容が変わらないことは既存テスト（`TestLogger_LogUserGroupExecution` と拡張後の `TestPrivilegeGap_ChildCredentialsMatchTarget`）で確認する。
 

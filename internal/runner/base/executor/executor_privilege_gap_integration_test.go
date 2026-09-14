@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
@@ -378,6 +380,30 @@ func assertFailureWindows(t *testing.T, recorder *tu.LogRecorder, want ...runner
 	assertWindowAttrs(t, record, want...)
 }
 
+// assertCommandFailureWindows requires exactly one "User/group command failed"
+// record -- the ERROR audit record LogUserGroupExecution writes for a started
+// child that did not exit 0 -- and applies the same metric check as the
+// success and privilege-failure records. It returns the record so the caller
+// can assert the notification metadata on the same record.
+func assertCommandFailureWindows(t *testing.T, recorder *tu.LogRecorder, want ...runnertypes.Operation) tu.RecordSnapshot {
+	t.Helper()
+	record := recorder.RequireRecord(t, slog.LevelError, "User/group command failed")
+	assertWindowAttrs(t, record, want...)
+	return record
+}
+
+// assertCommandFailureNotificationAttrs asserts that a command-failure audit
+// record names the user_group_command_failure type and scopes it to the
+// command's group and name.
+func assertCommandFailureNotificationAttrs(t *testing.T, record tu.RecordSnapshot, cmd *runnertypes.RuntimeCommand) {
+	t.Helper()
+	record.AssertAttrs(t, map[string]any{
+		"audit_type":   "user_group_execution",
+		"message_type": logging.NotificationMessageType(logging.UserGroupCommandFailureNotification()),
+	})
+	record.AssertNotificationContext(t, common.CommandScope(cmd.GroupName(), cmd.Name()))
+}
+
 type privilegedStatResult struct {
 	infos []os.FileInfo
 	err   error
@@ -505,6 +531,57 @@ func TestPrivilegeGap_ChildCredentialsMatchTarget(t *testing.T) {
 	require.Equal(t, 0, result.ExitCode)
 	assertChildCredentials(t, fixture, parseChildCredentials(t, result.Stdout))
 	assertAuditWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	// A successful run owes exactly the one INFO record: no failure record and
+	// no notification.
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
+		"a successful run must not write a failure record")
+	successRecord := fixture.recorder.RequireRecord(t, slog.LevelInfo, "User/group command executed successfully")
+	_, hasNotification := successRecord.NotificationContext()
+	assert.False(t, hasNotification, "a successful run must not raise a notification")
+}
+
+// TestPrivilegeGap_UserGroupFailureRecord observes the failure wiring end to
+// end: a run-as command that writes distinct stdout and stderr values and
+// exits non-zero must produce exactly one ERROR audit record carrying both
+// streams redacted and the user_group_command_failure notification metadata.
+// The distinct values catch a swap between the two stream attributes.
+func TestPrivilegeGap_UserGroupFailureRecord(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
+	tail := `printf 'scr0174-stdout password=outsecret\n'; printf 'scr0174-stderr token=errsecret\n' >&2; exit 2`
+	path, args := credentialShellCommand(t, fixture, tail)
+	cmd := runtimeCommand(path, args, fixture)
+
+	before := os.Geteuid()
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, nil)
+
+	require.Error(t, err)
+	assert.Equal(t, before, os.Geteuid())
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.ExitCode)
+	// Positive control: the raw output carries the secrets, so their absence
+	// from the record below shows redaction happened.
+	require.Contains(t, result.Stdout, "outsecret")
+	require.Contains(t, result.Stderr, "errsecret")
+
+	record := assertCommandFailureWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assertCommandFailureNotificationAttrs(t, record, cmd)
+	record.AssertAttrs(t, map[string]any{"exit_code": 2})
+
+	stdout, ok := record.Attrs["stdout"].(string)
+	require.True(t, ok, "the failure record must carry stdout")
+	stderr, ok := record.Attrs["stderr"].(string)
+	require.True(t, ok, "the failure record must carry stderr")
+	assert.Contains(t, stdout, "scr0174-stdout")
+	assert.NotContains(t, stdout, "scr0174-stderr", "stdout must not carry the stderr value")
+	assert.Contains(t, stderr, "scr0174-stderr")
+	assert.NotContains(t, stderr, "scr0174-stdout", "stderr must not carry the stdout value")
+	assert.NotContains(t, stdout, "outsecret", "stdout secrets must be redacted")
+	assert.NotContains(t, stderr, "errsecret", "stderr secrets must be redacted")
+	assert.Contains(t, stdout, "[REDACTED]")
+	assert.Contains(t, stderr, "[REDACTED]")
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
+		"the failed run must not also write a success record")
 }
 
 func TestPrivilegeGap_TimeoutKillsChild(t *testing.T) {
@@ -537,6 +614,14 @@ func TestPrivilegeGap_TimeoutKillsChild(t *testing.T) {
 		runnertypes.OperationUserGroupExecution,
 		runnertypes.OperationKillAfterCancel,
 	)
+	record := assertCommandFailureWindows(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+	)
+	assertCommandFailureNotificationAttrs(t, record, cmd)
+	record.AssertAttrs(t, map[string]any{"exit_code": executor.ExitCodeUnknown})
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
+		"the failed run must not also write a success record")
 }
 
 func TestPrivilegeGap_CancelKillsChild(t *testing.T) {
@@ -570,6 +655,14 @@ func TestPrivilegeGap_CancelKillsChild(t *testing.T) {
 		runnertypes.OperationUserGroupExecution,
 		runnertypes.OperationKillAfterCancel,
 	)
+	record := assertCommandFailureWindows(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+	)
+	assertCommandFailureNotificationAttrs(t, record, cmd)
+	record.AssertAttrs(t, map[string]any{"exit_code": executor.ExitCodeUnknown})
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
+		"the failed run must not also write a success record")
 }
 
 func TestPrivilegeGap_OutputLimitAbortsRunningChild(t *testing.T) {
@@ -589,6 +682,14 @@ func TestPrivilegeGap_OutputLimitAbortsRunningChild(t *testing.T) {
 	require.NotNil(t, result)
 	assert.NotErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(start), 2*time.Second)
+
+	record := assertCommandFailureWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assertCommandFailureNotificationAttrs(t, record, cmd)
+	// The aborted pipe kills the child by signal, which has no exit status:
+	// the record must still say it was a failure, with the unknown exit code.
+	record.AssertAttrs(t, map[string]any{"exit_code": executor.ExitCodeUnknown})
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
+		"the failed run must not also write a success record")
 }
 
 func TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials(t *testing.T) {
@@ -720,6 +821,15 @@ func TestPrivilegeGap_StagingCancellationCleansUp(t *testing.T) {
 		runnertypes.OperationKillAfterCancel,
 		runnertypes.OperationStagingCleanup,
 	)
+	record := assertCommandFailureWindows(t, fixture.recorder,
+		runnertypes.OperationUserGroupExecution,
+		runnertypes.OperationKillAfterCancel,
+		runnertypes.OperationStagingCleanup,
+	)
+	assertCommandFailureNotificationAttrs(t, record, cmd)
+	record.AssertAttrs(t, map[string]any{"exit_code": executor.ExitCodeUnknown})
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"),
+		"the failed run must not also write a success record")
 }
 
 var errElevationRefusedBeforeWindow = errors.New("test elevation refused before window")
@@ -749,4 +859,60 @@ func TestPrivilegeGap_RefusedElevationDoesNotRecordWindow(t *testing.T) {
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "Privileges elevated"))
 	assertFailureWindows(t, fixture.recorder)
 	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"))
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
+		"a refused elevation runs no child, so it must not write a command-failure record")
+}
+
+// TestPrivilegeGap_UserGroupFailureWithoutAuditLogger pins the nil-logger
+// no-op: a started run-as failure with no AuditLogger must neither panic nor
+// write a user_group_execution record. The ordinary privilege-failure log is
+// still the operator's signal.
+func TestPrivilegeGap_UserGroupFailureWithoutAuditLogger(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t, executor.WithAuditLogger(nil))
+	path, args := credentialShellCommand(t, fixture, "exit 2")
+	cmd := runtimeCommand(path, args, fixture)
+
+	before := os.Geteuid()
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, nil)
+
+	require.Error(t, err)
+	assert.Equal(t, before, os.Geteuid())
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.ExitCode)
+	assertFailureWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
+		"a nil audit logger is a no-op, not a panic")
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"))
+}
+
+// TestPrivilegeGap_UserGroupNotStartedNoAudit pins the other half of the
+// invariant through executeWithUserGroup: a run-as command whose Start fails
+// before the child exists must produce no user_group_execution record and no
+// notification, even though the privilege-failure log is still written.
+//
+// The Start failure is made deterministic by naming an absolute path that does
+// not exist. This external test package cannot read pc.child, so the state
+// that keeps this path out of the audit -- childNotStarted -- is pinned by the
+// package-internal transition tests in executor_supervise_test.go; this test
+// observes only the absence of the record and of the notification.
+func TestPrivilegeGap_UserGroupNotStartedNoAudit(t *testing.T) {
+	requireSetuidModel(t)
+	fixture := newSetuidFixture(t)
+	const missingPath = "/nonexistent/scr-0174-missing-binary"
+	cmd := runtimeCommand(missingPath, nil, fixture)
+
+	result, err := fixture.executor.Execute(context.Background(), nil, cmd, nil, nil)
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, executor.ExitCodeUnknown, result.ExitCode)
+	assertFailureWindows(t, fixture.recorder, runnertypes.OperationUserGroupExecution)
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelInfo, "User/group command executed successfully"))
+	assert.Empty(t, fixture.recorder.FindRecords(slog.LevelError, "User/group command failed"),
+		"a child that never started must not be recorded as an execution")
+	for _, record := range fixture.recorder.Records() {
+		_, hasNotification := record.NotificationContext()
+		assert.Falsef(t, hasNotification, "record %q must not carry a notification context", record.Message)
+	}
 }

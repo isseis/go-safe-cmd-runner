@@ -680,7 +680,10 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 // TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging tests audit logging for user/group command execution.
 // Note: The mock privilege manager does not actually change the process identity,
 // so SysProcAttr.Credential causes "operation not permitted" at exec time.
-// Audit logging only fires on success, so on failure we verify no audit log is produced.
+// Both failures here happen before the child starts: the failed exec never
+// starts a process, and a cancelled context stops prepareCommand before the
+// start window opens. A run that never started owes no audit record, so each
+// subtest verifies none is produced.
 func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 	t.Run("audit_logging_not_invoked_on_failure", func(t *testing.T) {
 		// Skip if running as root: with CAP_SETUID/CAP_SETGID (e.g. root in some
@@ -713,9 +716,40 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, -1, result.ExitCode)
 
-		// Audit logging is only invoked on success, so no audit log expected.
+		// The child never starts, so this run is not an execution and no audit
+		// record may be produced.
 		logOutput := logBuffer.String()
 		assert.Empty(t, logOutput)
+	})
+
+	t.Run("no_audit_logging_when_prepare_command_fails", func(t *testing.T) {
+		mockPriv := privilegetestutil.NewMockPrivilegeManager(true)
+
+		var logBuffer bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
+		auditLogger := audit.NewAuditLoggerWithCustom(logger)
+
+		exec := executor.NewDefaultExecutor(
+			executor.WithPrivilegeManager(mockPriv),
+			executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+			executor.WithAuditLogger(auditLogger),
+			executor.WithRunAsResolver(mockRunAsResolver(1000, 1000)),
+		)
+
+		cmd := executortestutil.CreateRuntimeCommand(echoCmd, []string{"test"}, executortestutil.WithName("test_prepare_failure_audit"), executortestutil.WithWorkDir(""), executortestutil.WithRunAsUser("testuser"), executortestutil.WithRunAsGroup("testgroup"))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result, err := exec.Execute(ctx, nil, cmd, map[string]string{}, nil)
+
+		// The cancelled context stops prepareCommand before the start phase
+		// opens, so the run never starts a child and the placeholder Result
+		// names no execution.
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotNil(t, result)
+		assert.Equal(t, -1, result.ExitCode)
+		assert.Empty(t, logBuffer.String(), "a run that never started must not write an audit record")
 	})
 
 	t.Run("no_audit_logging_when_logger_nil", func(t *testing.T) {

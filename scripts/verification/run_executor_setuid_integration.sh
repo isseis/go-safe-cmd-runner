@@ -150,6 +150,9 @@ fi
 
 for test_name in \
 	TestPrivilegeGap_ChildCredentialsMatchTarget \
+	TestPrivilegeGap_UserGroupFailureRecord \
+	TestPrivilegeGap_UserGroupFailureWithoutAuditLogger \
+	TestPrivilegeGap_UserGroupNotStartedNoAudit \
 	TestPrivilegeGap_VerifiedFDExecutionUsesTargetCredentials \
 	TestPrivilegeGap_StagingCleanupUsesRealPrivileges \
 	TestPrivilegeGap_StagingCancellationCleansUp \
