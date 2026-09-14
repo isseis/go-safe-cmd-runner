@@ -302,10 +302,7 @@ func rejectIdentifierDotImports(path string, file *ast.File) error {
 }
 
 func rejectScanDotImports(importPath string) bool {
-	return importPath == identifierImportPath ||
-		importPath == "syscall" ||
-		importPath == "unix" ||
-		strings.HasSuffix(importPath, "/unix")
+	return importPath == identifierImportPath || identitymutationguard.IsTrackedImportPath(importPath)
 }
 
 // isNewIdentifierCall reports whether call is a qualified identifier.NewIdentifier
@@ -923,6 +920,59 @@ func Run(cmd *command) {
 		err = compareDeclarationSites(got, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not in catalog")
+	})
+
+	t.Run("composite literal value position fails", func(t *testing.T) {
+		valuePosition := `package synthetic
+
+import (
+	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
+)
+
+func Run(cmd *command) {
+	slog.Info("Executing", slog.Any("command", map[string]any{"id": identifier.NewIdentifier(cmd.Name())}))
+}
+`
+		writeSyntheticFile(t, path, valuePosition)
+
+		_, err := scanDeclarationSites(t, []string{path})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported way")
+	})
+
+	t.Run("unconsumed argument list fails", func(t *testing.T) {
+		unconsumed := `package synthetic
+
+import "github.com/isseis/go-safe-cmd-runner/internal/identifier"
+
+func Run(cmd *command) {
+	args := []any{"command", identifier.NewIdentifier(cmd.Name())}
+	_ = args
+}
+`
+		writeSyntheticFile(t, path, unconsumed)
+
+		_, err := scanDeclarationSites(t, []string{path})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no call consumes")
+	})
+
+	t.Run("wrong arity fails", func(t *testing.T) {
+		arity := `package synthetic
+
+import "github.com/isseis/go-safe-cmd-runner/internal/identifier"
+
+func Run() {
+	_ = identifier.NewIdentifier()
+}
+`
+		writeSyntheticFile(t, path, arity)
+
+		_, err := scanDeclarationSites(t, []string{path})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exactly one argument")
 	})
 }
 

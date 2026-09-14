@@ -12,7 +12,7 @@ import (
 // These constants ensure consistency between log value creation (runner.CommandResult.LogValue())
 // and log attribute extraction (logging.extractCommandResults())
 const (
-	LogFieldName     = "name"      // string - command name
+	LogFieldName     = "name"      // identifier-encoded command name (KindLogValuer)
 	LogFieldExitCode = "exit_code" // int - command exit code
 	LogFieldOutput   = "output"    // string - command stdout
 	LogFieldStderr   = "stderr"    // string - command stderr

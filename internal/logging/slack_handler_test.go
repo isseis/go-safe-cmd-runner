@@ -1133,8 +1133,9 @@ func TestSlackHandler_IdentifierScopeSurvivesRedaction(t *testing.T) {
 	wantScope := "group=" + groupName + " command=" + commandName
 	assert.Contains(t, message.Text, wantScope, "the headline must name the declared identifiers")
 	assert.NotContains(t, message.Text, "(scope: invalid)")
+	assert.NotContains(t, message.Text, "[REDACTED]",
+		"a declared identifier must not be masked even in the headline")
 	assert.Equal(t, wantScope, attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
-	assert.NotContains(t, wantScope, "[REDACTED]")
 }
 
 func TestExtractCommandResultsFromGroup(t *testing.T) {

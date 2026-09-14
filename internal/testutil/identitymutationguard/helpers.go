@@ -59,10 +59,12 @@ var FuncNames = map[string]struct{}{
 	"Prctl":       {},
 }
 
-// isTrackedImportPath reports whether importPath is "syscall", exactly
+// IsTrackedImportPath reports whether importPath is "syscall", exactly
 // "unix", or ends in "/unix" (e.g. golang.org/x/sys/unix), so a vendored or
-// differently rooted path still resolves.
-func isTrackedImportPath(importPath string) bool {
+// differently rooted path still resolves. Callers that add their own paths to
+// the dot-import rejection share this predicate so the tracked set has one
+// definition.
+func IsTrackedImportPath(importPath string) bool {
 	return importPath == "syscall" || importPath == "unix" || strings.HasSuffix(importPath, "/unix")
 }
 
@@ -200,8 +202,9 @@ func RepositoryRoot(t *testing.T) string {
 // RepositoryRoot, so it does not depend on the calling package's depth.
 //
 // Production Go files outside these two trees (scripts/verification/, say) are
-// out of scope: the scan covers what the runner binaries build. The same walk
-// applies the exclusions of ProductionGoFiles, including testdata and
+// out of scope: the repository's production source layout is cmd/ and
+// internal/ only, and this walk is the definition of the scanned set. The same
+// walk applies the exclusions of ProductionGoFiles, including testdata and
 // test-only build constraints, so the definition of "production file" stays in
 // one place.
 func ProductionGoFilesInRepo(t *testing.T) []string {
@@ -362,7 +365,7 @@ func RefsInSourceWithOptions(t *testing.T, filename, src string, opts Options) (
 // rejecting a dot-import of a tracked identity-mutation package.
 func resolveLocalImports(t *testing.T, filename string, file *ast.File) map[string]string {
 	t.Helper()
-	return ResolveLocalImports(t, filename, file, isTrackedImportPath)
+	return ResolveLocalImports(t, filename, file, IsTrackedImportPath)
 }
 
 // ResolveLocalImports maps each import's local identifier (alias if present,
@@ -434,7 +437,7 @@ func (sc *scanner) trackedSelector(expr ast.Expr) (*ast.SelectorExpr, bool) {
 		// shares the package's name): never treat this as a match.
 		return nil, false
 	}
-	if isTrackedImportPath(importPath) {
+	if IsTrackedImportPath(importPath) {
 		if _, isTrackedFunc := FuncNames[sel.Sel.Name]; isTrackedFunc {
 			return sel, true
 		}
