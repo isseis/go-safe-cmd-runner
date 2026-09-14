@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-12 |
-| Review date | 2026-09-15 |
-| Reviewer | `isseis` |
-| Comments | PR レビュー（P2/P1）への対応を decision change として反映。対象 7・AC-01 に「区切りと衝突しないエンコード後の表示形」を追加し、AC-14 を収集失敗の経路だけ対象外に絞った。再承認が必要。 |
+| Review date | `-` |
+| Reviewer | `-` |
+| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` の対象に含める decision change を反映（背景・対象 10・11・決定事項・AC-14・AC-17）。以前の PR レビュー（P2/P1）対応（対象 7・AC-01 の「区切りと衝突しない表示形」、AC-14 の収集失敗の絞り込み）は取り込み済みだが、本変更で AC-14 の絞り込みは解除する。再承認が必要。 |
 
 ## 関連 Issue
 
@@ -24,14 +24,20 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 - Slack の group 検証エラー通知から、どのファイルが検証に失敗したかを判別できない。group 名は通知コンテキスト（Scope）で分かるが、失敗ファイルを特定するには別途ログを調べる必要がある。
 - 同じファイル検証の失敗でも、グローバルはファイルパスが出て group は出ない。
+- 検証対象の収集に失敗した場合（例: コマンドのパス解決失敗）は、どのコマンドが原因かを通知から特定できない。`Details` が空のため `failed_file_paths` に何も載らず、通知に残るのは本文中のコマンド文字列だけである。
 
 ### 失敗ファイルの出所は既にある
 
 [`verification.Error`](../../../internal/verification/errors.go) は `Details []string` に失敗ファイルを持ち、`Error()` はそれを連結して返す。原因は group 側の通知経路がこの値を使っていないことにある。新たに失敗ファイルのデータを作り出す必要はない。
 
+### 収集失敗では対象名が通知されない
+
+`VerifyGroupFiles` は検証対象を収集する段階でコマンドのパス解決に失敗すると、`Details` を持たない検証エラー（[`manager.go`](../../../internal/verification/manager.go) の収集失敗分岐）を返す。この経路の `verErr.Err` は `command.ExpandedCmd` を包むためコマンド文字列は `Message` に現れるが、`failed_file_paths` に載る一覧が無い。`Message` からパスを除く方針（対象 6）の下では、失敗した対象を通知から判別できなくなる。解決に失敗した対象は `collectVerificationFiles` の中で既に判明しているため、一覧の出所は `Details` に揃えたままこの経路へも渡せる。
+
 ## 目的
 
 - group 検証エラー通知に、失敗したファイルの一覧を表示する。
+- 検証対象の収集失敗でも、パス解決に失敗したコマンド（対象名）を一覧として表示する。
 - 失敗ファイル一覧は自由文の本文へ連結せず、専用の構造化属性として運び、通知ビルダーが `Error Message` フィールドへ描画する。
 - group 名を本文やフィールドへ別個のメタデータとして重複させない。
 - グローバルと group の両方で、失敗ファイル一覧を同じ構造化属性 `failed_file_paths` として運び、同じ通知ビルダーが同じ予算管理で `Error Message` へ描画する。
@@ -50,10 +56,12 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 7. `pre_execution_error` の `Error Message` フィールドは、`error_message` 属性の値と `failed_file_paths` から通知ビルダーが組み立てる。各パスは `strconv.Quote` で引用・エスケープした表示形（`"`・`\`・制御文字・書式制御文字・行区切り・不正な UTF-8 バイトを可視のエスケープにする）とする。上限内は全件、超える場合は上限内に収まる範囲（丸ごと優先・省略記号付き切り詰め）と省略件数を示す。
 8. `failed_file_paths` の各要素が、値形式の機密（トークン等）はマスクし、`key` などを通常含むパス（例: `/opt/monkey/data`）はマスクしないことを回帰で固定する。これは文字列スライス属性に対する既存の redaction 挙動であり、redaction の実装は変更しない。
 9. `cmd/runner/main.go` のグローバル検証エラー報告でも `verification.Error.Details` を `failed_file_paths` として設定し、`Message` からはパスを除く。失敗ファイル一覧は通知ビルダーが group と同じ予算管理で `Error Message` へ描画する。
+10. 検証対象の収集失敗（コマンドのパス解決失敗）で、解決に失敗した対象を `verification.Error.Details` に設定し、`failed_file_paths` として通知へ表示する。1 件目で打ち切らず、解決に失敗した対象を全て載せる。
+11. 収集失敗の `Message` から対象名を除く。`Err` の文言には対象名を含めず、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。
 
 ### 対象外
 
-- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。グローバルは発行元でパスを含まない `Message` を組み立てる。
+- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。パスを含まないセンチネルの追加はこれに含まない。グローバルは発行元でパスを含まない `Message` を組み立てる。
 - **共通エンベロープ・メッセージ書式・通知種別定義の変更。** 新しい Slack フィールドは足さず、既存の `Error Message` の値だけを組み立て直す。
 - **redaction の適用範囲の変更。** 既存の `RedactText` と既存の `processSlice` の挙動をそのまま使う（対象 8 は回帰固定のみ）。
 - **`user_group_command_failure` 通知の配線。** 別タスク（0174）で扱う。
@@ -64,13 +72,19 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 通知に載せるファイル一覧は `verification.Error.Details` だけから取る。`Total`／`Verified`／`Failed` の件数や別のログから作り直さない。件数と一覧が食い違う場合に、出所が 2 つあると同じ誤りを二重に直すことになるためである。
 
+### 収集失敗も `Details` に一本化する
+
+検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象の一覧を `verification.Error.Details` に設定する。通知へ載せる一覧の出所は常に `Details` であり、収集失敗だけ別経路にしない。`Details` が空のまま残るのは、`*verification.Error` 以外の失敗と、失敗対象を持たない検証エラーに限る。
+
+収集失敗の `Message` には対象名を入れない。`Err` にはパスを含まないセンチネル（"failed to collect verification files"）を用い、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。件数は、対象総数（`verify_files` とコマンド数の合計）・検証済み 0・解決に失敗した対象数とする。
+
 ### group 名は Scope に一本化する
 
 group 名を `Group: <name>, ` のような別個のメタデータとして本文・フィールドへ重複して表示しない。0172 の AC-13・AC-14 が定めた「group 名の構造的な表示場所を Scope にする」を維持する。失敗ファイルのパスに group 名と同名の文字列が含まれることはあるが、それはパスの内容であり、group 名の重複表示ではない。
 
 ### 空の `Details` は既存の文言へフォールバックする
 
-`verification.Error.Details` が空のときは、現在の `Total: %d, Verified: %d, Failed: %d, Error: %v` の形を保つ。一覧が無いことを空文字や空フィールドで示さない。
+`verification.Error.Details` が空のときは、現在の `Total: %d, Verified: %d, Failed: %d, Error: %v` の形を保つ。一覧が無いことを空文字や空フィールドで示さない。収集失敗は `Details` を持つようになるため、このフォールバックが使われるのは失敗対象を持たない経路に限られる。
 
 ### 表示は既存の表示安全な補間契約に従う
 
@@ -119,13 +133,15 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 #### F-006: 構造化された失敗ファイル一覧
 
 **Acceptance Criteria**:
-- **AC-14**: グローバル／group 検証エラーの通知レコードは、失敗ファイル一覧を持つとき専用属性 `failed_file_paths` にそれを記録し、`handleErrorCommon` が stderr へ書く `Message` はパスを含まない。ただし検証対象の収集失敗（`Details` が空で `verErr.Err` がコマンド文字列を含む）は対象外とし、残存リスクとして設計に記録する（検証マネージャが各失敗ファイルを別途ログする経路と、console ハンドラが属性を描画する点も残存リスク）。
+- **AC-14**: グローバル／group 検証エラーの通知レコードは、失敗対象（失敗ファイルまたは収集で解決に失敗したコマンド）を持つとき専用属性 `failed_file_paths` にそれを記録し、`handleErrorCommon` が stderr へ書く `Message` はパスを含まない（検証マネージャが各失敗ファイルを別途ログする経路と、console ハンドラが属性を描画する点は残存リスク）。
 - **AC-15**: `failed_file_paths` の各要素は、値形式の機密（トークン等）がマスクされ、`key` などを通常含むパス（例: `/opt/monkey/data`）はマスクされない。これは文字列スライス属性に対する既存の redaction 挙動であり、本タスクは redaction を変更しない。
 - **AC-16**: グローバル検証エラーの通知も、`Runner.Execute` ではなく `cmd/runner` の報告境界を通したテストで、`failed_file_paths` が `Error Message` に描画されることを固定する。
+- **AC-17**: 検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象が全て `failed_file_paths` に記録され、`Error Message` に表示される。`HandlePreExecutionError` が記録する `Message` と `handleErrorCommon` が stderr へ書く文字列は対象名を含まず、対象名は検証マネージャの構造化ログに残る。
 
 ## Success Criteria（要件レベル）
 
 - group 検証エラー通知から失敗ファイルを判別できる。
+- 検証対象の収集失敗でも、原因のコマンド（対象名）を通知から判別できる。
 - 失敗ファイル一覧は構造化属性として運ばれ、通常の `key` などを含むパスが失敗しても通知は消えない。`handleErrorCommon` の stderr 出力にパスが出ない。
 - group 名が別個のメタデータとして本文へ重複しない（失敗ファイルパス内の同名文字列は除く）。
 - グローバルと group の通知が、同じ構造化属性と同じ予算管理による失敗ファイルの提示で対称になる。

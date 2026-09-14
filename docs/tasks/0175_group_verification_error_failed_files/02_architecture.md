@@ -8,7 +8,7 @@
 | Created | 2026-09-14 |
 | Review date | `-` |
 | Reviewer | `-` |
-| Comments | `-` |
+| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` に含める決定を反映（§1.1・§1.2・§1.3・§2.2・§2.3・§3.2・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。 |
 
 ## 関連文書
 
@@ -23,8 +23,9 @@
 | 用語 | 意味 |
 |---|---|
 | group 検証エラー | `VerifyGroupFiles` が返す `*verification.Error`。`Op="group"`、`Group`、`Details`、`TotalFiles`・`VerifiedFiles`・`FailedFiles`、`Err` を持つ |
-| 失敗ファイル一覧 | `verification.Error.Details`（`[]string`）。検証に失敗したファイルのパス |
-| `failed_file_paths` 属性 | 本設計で新設する `pre_execution_error` レコードの構造化属性（`[]string`）。失敗ファイルのパスを運ぶ。`common.PreExecErrorAttrs.FailedFilePaths` = `"failed_file_paths"` |
+| 失敗ファイル一覧 | `verification.Error.Details`（`[]string`）。検証に失敗したファイルのパス、および収集でパス解決に失敗したコマンド（対象名） |
+| 収集失敗 | `VerifyGroupFiles` が検証対象を集める段階でコマンドのパス解決に失敗し、検証を実行せず group を拒否する経路（`internal/verification/manager.go:194-203`、解決の失敗は `:274-285`） |
+| `failed_file_paths` 属性 | 本設計で新設する `pre_execution_error` レコードの構造化属性（`[]string`）。失敗対象（失敗ファイルまたは解決に失敗したコマンド）を運ぶ。`common.PreExecErrorAttrs.FailedFilePaths` = `"failed_file_paths"` |
 | Error Message フィールド | `pre_execution_error` 通知の既存の添付フィールド。値は通知ビルダーが組み立てる |
 | 通知ビルダー | `internal/logging` の `buildPreExecutionError`。レコードの属性から `Error Message` の表示値を組み立てる |
 | 表示上限 | 表示安全な補間契約において、自由文の役割とエンベロープ値の役割が共有する UTF-8 500 byte の長さ上限（[`interpolationMaxBytes`](../../../internal/common/interpolation.go)） |
@@ -53,6 +54,8 @@ errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
 
 一方、グローバル検証エラーの報告経路は `err.Error()` を `Message` に渡す（`cmd/runner/main.go:391-402`）。`Error()` が `Details` を連結するため、グローバル通知は失敗ファイルのパスを含む。その結果、同じファイル検証の失敗でも、グローバルではパスが出て group では出ない。
 
+収集失敗の経路には別の問題がある。`VerifyGroupFiles` がコマンドのパス解決に失敗すると、`Details` を持たない `*verification.Error` を返す（`internal/verification/manager.go:194-203`、解決の失敗は `:274-285`）。`verErr.Err` は `command.ExpandedCmd` を包むため対象名は `Message` に残るが、`failed_file_paths` に載る一覧が無い。本設計は `Message` からパスを除く（§1.2）ため、この経路をそのままにすると、どの対象で失敗したかが通知から落ちる。本設計は収集失敗も `Details` に一本化し、対象名を一覧として運ぶ（§3.7）。
+
 失敗ファイルのパスは設定と実ファイルシステムに由来する任意の文字列である。これを既存の自由文 `Message` へ連結すると、次の 2 つの障害を招く。
 
 - `Message` は redaction の外にある stderr へそのまま書かれる（`internal/logging/pre_execution_error.go:120-151`。stdout には `handleErrorCommon` は `Error: <type>` と `RUN_SUMMARY` 行だけを書き、`Message` は書かない）。パスの改行・制御文字が端末出力の行を偽装し、生のパスが露出しうる。
@@ -69,6 +72,7 @@ errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
 5. **上限判定は契約自身に問い合わせる。** ビルダーは `common.WithinInterpolationLimit` で候補を測り、切り詰めは `common` の契約ヘルパーで行う。上限値や変換規則を書き写さない。
 6. **組み立て順を再現可能にする。** 両発火元（`Runner.executeGroups` と `cmd/runner/main.go`）が `Details` を複製して昇順に並べ、同じ失敗集合から同じ通知が得られるようにする。
 7. **redaction は変更しない。** `failed_file_paths` の要素は文字列スライス属性であり、既存の `processSlice` が `RedactText` のみを適用する。パスを自由文 `Message` へ入れないことで、値全体置換で通知が消える経路を避ける。
+8. **収集失敗も一覧に一本化する。** 解決に失敗したコマンドも `Details` に載せ、通知の一覧は常に `Details` から取る。収集失敗だけ別経路にしない。
 
 ### 1.3 概念モデル: 失敗ファイル一覧の受け渡しと描画
 
@@ -79,15 +83,17 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
     DET[("verification.Error.Details<br>失敗ファイル一覧")]
+    CF[("収集失敗の解決対象<br>Manager が Details に設定（新規）")]
     CNT[("TotalFiles / VerifiedFiles / FailedFiles<br>件数")]
     RUN["Runner.executeGroups<br>（発火元）"]
     MSG[("error_message 属性<br>件数とセンチネル")]
-    FILES[("failed_file_paths 属性<br>パスの配列")]
+    FILES[("failed_file_paths 属性<br>対象名の配列")]
     RED["RedactingHandler<br>failed_file_paths は要素単位で値形式検出"]
     BUILD["buildPreExecutionError<br>一覧を描画"]
     BODY[("Error Message<br>件数 + Files: ... (+m more)")]
     OUT["Slack pre_execution_error<br>Error Message フィールド"]
 
+    CF --> DET
     DET --> RUN
     CNT --> RUN
     RUN --> MSG
@@ -98,7 +104,7 @@ flowchart TD
     BUILD --> BODY
     BODY --> OUT
 
-    class DET,CNT,MSG,FILES,BODY data
+    class CF,DET,CNT,MSG,FILES,BODY data
     class RUN,BUILD enhanced
     class RED,OUT process
 ```
@@ -188,7 +194,7 @@ flowchart LR
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    VER["verification/manager.go<br>VerifyGroupFiles（無変更）"]
+    VER["verification/manager.go<br>VerifyGroupFiles（収集失敗でも Details）"]
     DET[("verification.Error.Details")]
     RUN["runner.go<br>executeGroups"]
     LOG["logging/pre_execution_error.go<br>handleErrorCommon"]
@@ -204,8 +210,8 @@ flowchart LR
     SL -->|"長さを問い合わせる"| PRED
 
     class DET data
-    class VER,RED process
-    class RUN,LOG,SL,PRED enhanced
+    class RED process
+    class VER,RUN,LOG,SL,PRED enhanced
 ```
 
 矢印 A → B は「A が B を呼ぶ、または A の値が B へ渡る」ことを表す。`RED`（既存の `processSlice`）は本設計で変更しない。図は group 経路を示す。グローバル検証エラーの発火元は `cmd/runner/main.go` で、同じく `failed_file_paths` を設定する（§3.2）。
@@ -232,18 +238,18 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     box rgb(255,241,230) 既存（無変更）
-        participant M as verification.Manager
         participant RH as RedactingHandler
         participant S as SlackHandler.Handle
     end
     box rgb(232,245,232) 追加・変更
+        participant M as verification.Manager
         participant R as runner.executeGroups
         participant L as HandlePreExecutionError
         participant B as buildPreExecutionError
         participant C as common.WithinInterpolationLimit
     end
 
-    M-->>R: *verification.Error（Details 付き、既存）
+    M-->>R: *verification.Error（Details 付き。収集失敗でも Details を設定）
     R->>L: PreExecutionError{Type, Message(件数), FailedFilePaths(昇順), GroupScope}
     L->>RH: slog レコード（error_message と failed_file_paths 属性）
     RH->>RH: failed_file_paths の要素を RedactText
@@ -314,6 +320,7 @@ type PreExecutionError struct {
 
 - `Message` は既存の `Total: %d, Verified: %d, Failed: %d, Error: %v` のまま（パスを含めない）。
 - `FailedFilePaths` は `verErr.Details` を複製して昇順に並べたもの。`verErr.Details` 自体の順序は変えない。
+- 収集失敗でも `verErr.Details` に解決失敗の対象が入るため（§3.7）、`FailedFilePaths` の設定経路はこの 1 つに閉じる。本文の `Error: %v` はパスを含まないセンチネルになる。
 - `Type` は `logging.ErrorTypeGroupFileVerification`、`NotificationContext` は `common.GroupScope(verErr.Group)`、`Component` は `"runner"`（いずれも既存）。
 
 **グローバル（`cmd/runner/main.go`）**
@@ -322,7 +329,7 @@ type PreExecutionError struct {
 - `Message` からはパスを除く。`verification.Error` の `Op`・`FailedFiles`・`TotalFiles` から `"%s verification failed: %d of %d files failed"` の形で組み立てる（例: `global verification failed: 1 of 2 files failed`。§7.4 で固定する）。`verification.Error.Error()` は `Details` を連結するため、そのままではパスが二重になる。それ以外（`*verification.Error` でない失敗、または `Details` が空の `*verification.Error`）は従来どおり `err.Error()` を `Message` に渡し、`FailedFilePaths` を設定しない。分岐の条件は型だけでなく `Details` の有無で決める。`Details` が空のまま件数書式へ倒すと `0 of N files failed` となり `Err` が落ちるためである（現在の `VerifyGlobalFiles` は `Details` 付きの `*verification.Error` しか返さないが、条件を型だけにすると将来の発火元がこの形に流れ込む）。両発火元とも `PreExecutionError.Err` は設定しない（`Detail()` は `Message` と等しい）。
 - `Type` は `logging.ErrorTypeFileAccess`、`NotificationContext` は `common.GlobalScope()`（いずれも既存）。
 
-並べ替えは両発火元が同じ規則（`Details` をコピーして昇順）で行い、ビルダーは順序を変えない。group の `Details` は `for file := range allFiles`（map）に由来し順序が変わりうる（`internal/verification/manager.go:218`。map の構築は `:260-291`）。グローバルの `Details` は `input.ExpandedVerifyFiles`（スライス）に由来する（`manager.go:146-157`）が、同じ規則で揃える。
+並べ替えは両発火元が同じ規則（`Details` をコピーして昇順）で行い、ビルダーは順序を変えない。group の `Details` は `for file := range allFiles`（map）に由来し順序が変わりうる（`internal/verification/manager.go:218`。map の構築は `:260-291`）。グローバルの `Details` は `input.ExpandedVerifyFiles`（スライス）に由来する（`manager.go:146-157`）が、同じ規則で揃える。収集失敗の `Details` は `input.Commands` の走査順に由来する（§3.7）が、これも発火元で同じ規則に揃える。
 
 失敗ファイル一覧を `Message` へ連結しない理由:
 
@@ -359,7 +366,7 @@ type PreExecutionError struct {
 
 | 対象 | 理由 |
 |---|---|
-| `verification.Error` の型・`Error()` | 01 §対象外。既存の表現を使う。グローバルは発行元でパスを含まない `Message` を組み立てる |
+| `verification.Error` の型・`Error()` | 01 §対象外。既存の表現を使う。`Details` を設定するのは発行元（`VerifyGroupFiles`）であり、型・`Error()` は変更しない。グローバルは発行元でパスを含まない `Message` を組み立てる |
 | 共通エンベロープ・通知種別定義・`error_type`・Slack フィールド集合 | 0172 §3.4・§3.5 を維持する。変えるのは既存 `Error Message` の値だけ。グローバルの `error_type` は `file_access_failed` のまま |
 | redaction の適用範囲 | 変更しない。`failed_file_paths` の要素は既存の `processSlice` が `RedactText` のみを適用する（`internal/redaction/redactor.go:1436-1439`） |
 | `handleErrorCommon` の stderr・stdout の書式 | stderr にはパスを含まない `Message` をそのまま書き、stdout には `Message` を書かない（既存のまま） |
@@ -372,8 +379,10 @@ type PreExecutionError struct {
 | `internal/logging` の `buildPreExecutionError` テスト | `failed_file_paths` がある場合の描画を新しいテストで固定する。`failed_file_paths` がない既存ケースは不変 |
 | `internal/logging/notification_test.go` の `Error Message` エスケープテスト（`:290`） | `failed_file_paths` なしのケースは不変 |
 | `internal/redaction/redactor_test.go` の `TestRedactLogAttribute_SensitiveValues`・`TestRedactingHandler_PlainStringIsStillRedacted` | 変更しない。`failed_file_paths` の要素の既存挙動は新しいテストで固定する（§7.5） |
+| `internal/verification/manager_test.go` の `TestCollectVerificationFiles`（解決失敗のサブテスト、`:773-810`） | 解決に失敗した対象の一覧を返す新しい契約に合わせて更新し、一覧を固定する |
+| `internal/verification/manager_test.go` の `TestVerifyGroupFiles`（`:567-615`） | 収集失敗ケースを追加する（`Details` に解決失敗の全対象、件数、パスを含まない `Err`）。ハッシュ不一致の `TestVerifyGroupFiles_OldSchema_BlocksExecution`（`:1866-1886`）は `Details` 付きの検証失敗であり不変 |
 
-`verification.Error.Details` を通知本文に使う既存のテストは他に無い。group 検証エラーの通知を組み立てる箇所は `Runner.executeGroups` と `buildPreExecutionError` の 2 箇所である。
+`verification.Error.Details` を通知本文に使う既存のテストは他に無い。group 検証エラーの通知を組み立てる箇所は `Runner.executeGroups` と `buildPreExecutionError` の 2 箇所である。収集失敗の `Details` を検証する既存テストも無い。
 
 ### 3.6 コンポーネント責務表（新規・変更ファイル）
 
@@ -384,6 +393,9 @@ type PreExecutionError struct {
 | `internal/common/logschema.go` | `PreExecErrorAttrs.FailedFilePaths` | `failed_file_paths` キー定数（新設） | 新設 | `internal/logging` テスト |
 | `internal/runner/runner.go` | `executeGroups` | 検証エラー本文と `FailedFilePaths`（昇順）を設定 | `Message` は不変。`FailedFilePaths` を追加 | `internal/runner/runner_test.go` |
 | `internal/runner/runner_test.go` | 配線テスト | `FailedFilePaths` が昇順で入ることを固定 | テストを追加 | それ自体 |
+| `internal/verification/manager.go` | `collectVerificationFiles` / `VerifyGroupFiles` | 収集失敗で解決に失敗した対象を全て集め、`Details`・件数・パスを含まない `Err` を設定する | 変更 | `internal/verification/manager_test.go` |
+| `internal/verification/errors.go` | `ErrGroupVerificationCollectionFailed` | 収集失敗を表すパスを含まないセンチネル（新設） | 新設 | `internal/verification/manager_test.go` |
+| `internal/verification/manager_test.go` | 収集失敗テスト | `Details`・件数・センチネル・`Err` の文言に対象名が現れないことを固定 | テストを追加 | それ自体 |
 | `internal/logging/pre_execution_error.go` | `PreExecutionError.FailedFilePaths` / `HandlePreExecutionError` | 生のパスを `failed_file_paths` 属性として記録する（`Detail()` には書かない） | 変更 | `internal/logging/pre_execution_error_test.go` |
 | `internal/logging/pre_execution_error_test.go` | stderr 出力テスト | `handleErrorCommon` の出力にパスが出ないことを固定 | テストを追加 | それ自体 |
 | `internal/logging/slack_handler.go` | `buildPreExecutionError` / `[]any` のデコード補助 | `error_message` 属性と `failed_file_paths` から `Error Message` を組み立てる（丸ごと優先・省略記号付き切り詰め・省略件数。デコード補助も同パッケージ、新設） | 変更 | `internal/logging/slack_handler_test.go`、`internal/logging/notification_test.go` |
@@ -396,19 +408,30 @@ type PreExecutionError struct {
 | `docs/user/runner_command.ja.md` | 利用者向け文書 | group 検証エラー通知が失敗ファイルを列挙することを説明 | 追記 | `static` |
 | `docs/user/runner_command.md` | 利用者向け文書（英語） | 日本語版の英語訳 | `/mktrans` で反映 | `static` |
 
-以下は変更しない: `internal/redaction/redactor.go`、`internal/runner/bootstrap/logger.go`、`internal/verification/manager.go`、`internal/verification/errors.go`。`failed_file_paths` 要素の redaction は既存挙動であり、回帰テストだけを足す（`internal/redaction/redactor_test.go`、表の行を参照）。
+以下は変更しない: `internal/redaction/redactor.go`、`internal/runner/bootstrap/logger.go`。`failed_file_paths` 要素の redaction は既存挙動であり、回帰テストだけを足す（`internal/redaction/redactor_test.go`、表の行を参照）。
+
+### 3.7 収集失敗（パス解決失敗）の扱い
+
+`VerifyGroupFiles` は検証対象の収集に失敗すると group の検証を中止し（fail-closed、既存挙動）、`*verification.Error` を返す（`internal/verification/manager.go:194-203`）。本設計はこの経路でも失敗対象の一覧を運ぶ。
+
+- **一覧の収集。** `collectVerificationFiles` はパス解決に失敗したコマンドを記録し、残りのコマンドの解決を続けて、解決に失敗した対象（`command.ExpandedCmd`）を全て集める。解決に失敗した時点で group の検証は中止し、検証は 1 件も行わない（fail-closed を維持する。走査の継続は解決の試行だけで、検証も副作用も伴わない）。
+- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を `Details` に設定する。`FailedFiles` はその件数（この経路では「検証に失敗した数」ではなく「解決に失敗した対象数」を表す）、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とする。`Op`・`Group` は既存のまま。
+- **`Err`。** パスを含まない新しいセンチネル `ErrGroupVerificationCollectionFailed`（"failed to collect verification files"）を設定する。パス解決の生の原因（コマンド文字列を包む）は `collectVerificationFiles` の既存の `slog.Warn`（`internal/verification/manager.go:279-283`）に残り、`Message` へは入れない。group 本文は `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files` となり、対象名は `failed_file_paths` だけが運ぶ。
+- **`Error()`。** `verification.Error` の型と `Error()` は変更しない。`Details` が設定されるため `Error()` は既存の `Details` 分岐（`internal/verification/errors.go:171-173`）を通る。原因の文面は通知に載らないが、通知の一覧に失敗対象が現れる（AC-17）。
+- **検証失敗との区別。** `ErrGroupVerificationFailed` はハッシュ不一致などの検証失敗、`ErrGroupVerificationCollectionFailed` は収集失敗を表す。`error_type` は `group_file_verification_failed` のままである（通知種別・エンベロープを変えない）。
 
 ---
 
 ## 4. エラーハンドリング設計
 
-**新しいエラー型は導入しない。** `verification.Error` の型と `Error()` を変えず、`Details` を読むだけである。`error_type` は `group_file_verification_failed` のままである。既存の `PreExecutionError` には `FailedFilePaths []string` を追加する（§3.2）。
+**新しいエラー型は導入しない。** `verification.Error` の型と `Error()` を変えず、`Details` を設定・参照するだけである。収集失敗を表すセンチネル `ErrGroupVerificationCollectionFailed` を `internal/verification/errors.go` に追加する（§3.7）。`error_type` は `group_file_verification_failed` のままである。既存の `PreExecutionError` には `FailedFilePaths []string` を追加する（§3.2）。
 
 | 状況 | レコード | Error Message |
 |---|---|---|
-| `failed_file_paths` なし（`Details` が空） | `error_message` のみ | 既存の `Total: ..., Error: <verErr.Err>`（後方互換） |
+| 失敗対象なし（`Details` が空） | `error_message` のみ | 既存の `Total: ..., Error: <verErr.Err>`（後方互換） |
 | 全件が上限内 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <全件>` |
 | 上限超過 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <一部> (+m more)` |
+| 収集失敗（`Details` は解決失敗の対象） | `error_message` + `failed_file_paths` | `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files, Files: ...` |
 | 前置きと省略通知だけで上限超過 | `error_message` + `failed_file_paths` | 既存の `Total: ..., Error: ...` へ退避 |
 
 グローバルの検証エラーも同じ表に従う。`error_type` は `file_access_failed`、Scope は `(global)` で、`error_message` はパスと原因を含む `err.Error()` から `global verification failed: X of Y files failed` の形へ変わり、ファイル一覧は `failed_file_paths` から描画される。`error_message` を照合する消費者はこの変更を確認する必要がある（§5.2・§7.4）。
@@ -428,10 +451,11 @@ type PreExecutionError struct {
 | 脅威 | 対策 |
 |---|---|
 | パスの改行・制御文字が stderr の行や端末エスケープを偽装する | パスを `Message` に入れない。stderr は件数とセンチネルだけを書く（§3.2） |
+| 収集失敗の対象名（コマンド）が stderr の行を偽装する | 収集失敗でも対象名を `Details` に分離し、`Message` にはパスを含まないセンチネルだけを書く（§3.7） |
 | パスの `&`・`<`・`>` で Slack のメンション・偽装リンクを作る | `Error Message` への埋め込みは既存の表示安全な補間契約（実体参照化）を通る（§3.3） |
 | パスの `key`・`token` の部分一致で未アンカーな値全体置換が発火し、通知全体が消える | パスを自由文 `Message` へ入れない。`failed_file_paths` の要素は文字列スライス要素であり値全体置換の対象外（既存挙動、§5.4） |
 | パスの生の機密（トークン等）がログ・Slack へ漏れる | `failed_file_paths` の要素に既存の `RedactText`（値形式検出と key=value 置換）が適用される（§5.4） |
-| 失敗ファイルのパスが端末出力の行を偽装する | 人間向け `Detail()` にはパスを入れない（§3.2）。`failed_file_paths` 属性は非対話の text handler が制御文字をエスケープし、対話モードでは表示されない。検証マネージャの `file` 属性は対話モードで生のまま出るため残存リスク（§5.2） |
+| 失敗ファイルのパスが端末出力の行を偽装する | 人間向け `Detail()` にはパスを入れない（§3.2）。`failed_file_paths` 属性は非対話の text handler が制御文字をエスケープし、対話モードでは表示されない。検証マネージャの `file`・`command` 属性は対話モードで生のまま出るため残存リスク（§5.2） |
 | ビルダーが redaction 前の生のパスを切り詰め、機密の区切りが壊れてマスク漏れする | ビルダーは RedactingHandler が redaction した後の要素を描画する（§2.3・§3.3） |
 | 一覧の順序が実行ごとに変わり、表示や省略対象が再現しない | 発火元が `Details` を複製して昇順に並べる（§3.2） |
 | 絶対パスによるディレクトリ構成の露出 | group 通知は Slack に絶対パスを新たに載せる（AC-01 が要求）。グローバルは既に載せていた（`cmd/runner/main.go:391-402`）。既存の redaction は値形式と key=value のみで、パターン外の文字列は対象外（残存） |
@@ -445,8 +469,8 @@ flowchart TD
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
     classDef problem fill:#ffe6e6,stroke:#d62728,stroke-width:2px,color:#7b0000;
 
-    subgraph SRC["信頼境界: 設定・実ファイルシステム由来のパス"]
-        PATH[("失敗ファイルパス<br>改行・制御文字・key を含みうる")]
+    subgraph SRC["信頼境界: 設定・実ファイルシステム由来の対象名"]
+        PATH[("失敗ファイルパス・解決に失敗したコマンド<br>改行・制御文字・key を含みうる")]
     end
     PATH -->|"構造化属性"| FF[("failed_file_paths 属性")]
     FF --> RED["processSlice<br>要素に RedactText"]
@@ -496,9 +520,9 @@ flowchart LR
 **残余リスク（端末出力へのパス露出）。** パスは人間向け `Detail()` からは消えるが、console への経路が残る。
 
 - 非対話実行の `ConditionalTextHandler` は `slog.TextHandler` を通し、制御文字を含む文字列を引用としてエスケープする（`internal/logging/conditional_text_handler.go:76-84`）。`failed_file_paths` 属性はそこで改行がエスケープされて描画されるため、属性経由で端末の行は偽装できない（属性自体は console に出る）。
-- 対話実行の `InteractiveHandler` は優先属性を `DefaultMessageFormatter` で整形し、文字列をそのまま返す（`internal/logging/message_formatter.go:238-241`）。検証マネージャの `file` 属性（`internal/verification/manager.go:223-226`）は優先キーであり（`message_formatter.go:89-104`）、改行・ANSI を含むパスが端末へ素通りしうる。`failed_file_paths` 属性は対話モードでは表示されない（`message_formatter.go:112-140` の走査に到達しない）。
+- 対話実行の `InteractiveHandler` は優先属性を `DefaultMessageFormatter` で整形し、文字列をそのまま返す（`internal/logging/message_formatter.go:238-241`）。検証マネージャの `file` 属性（`internal/verification/manager.go:223-226`）と収集失敗時の `command` 属性（`:279-283`）は優先キーであり（`message_formatter.go:89-104`）、改行・ANSI を含む対象名が端末へ素通りしうる。`failed_file_paths` 属性は対話モードでは表示されない（`message_formatter.go:112-140` の走査に到達しない）。
 
-**残余リスク（収集失敗の `Message`）。** 検証対象の収集失敗では `verErr.Err` が `command.ExpandedCmd` を包み（`internal/verification/manager.go:194-202`、`:273-285`）、group 本文の `Error: %v` 経由でコマンド文字列が `Message` に入る。この経路は一覧を持たないため `failed_file_paths` へ分離できず、`RedactText` は適用されるが値全体置換で `key` などを含む文字列が消えうる。AC-14 の対象外とし、残存リスクとして記録する。
+**収集失敗の扱い（変更点）。** 検証対象の収集失敗では、解決に失敗した対象を `Details` へ分離し、`Message` にはパスを含まないセンチネルだけを書く（§3.7）。パス解決の生の原因（`command.ExpandedCmd` を包む）は検証マネージャの `slog.Warn` に残り、通知本文には載らない。通知から原因の文面を失うことは、対象名を一覧で示すこととの交換である（AC-17）。
 
 端末出力の 1 行化と attribute の通知限定ルーティングは別タスクとする。
 
@@ -533,9 +557,9 @@ flowchart LR
 
 計算量は n に対して、並べ替えが O(n log n)（発火元）、走査と表示用の複製が O(n)（ビルダー）である。n は group の検証対象（`verify_files` とコマンド数の合計）であり設定に由来する（`internal/verification/manager.go:260-280`）。時間は単体テストのしきい値ではなくベンチマークで確認する（§7.7）。
 
-### 6.3 `failed_file_paths` が空（`Details` が空）
+### 6.3 `failed_file_paths` が空（失敗対象なし）
 
-1. `VerifyGroupFiles` が失敗し、`Details` を持たない `*verification.Error` を返す（既存）。
+1. 失敗対象を持たない検証エラー、または `*verification.Error` 以外の失敗が返る（本設計の経路では、`Details` が空のままの `*verification.Error` は作られない）。
 2. `executeGroups` は `FailedFilePaths` を設定しない（空）。
 3. `handleErrorCommon` は `error_message` だけを記録し、stderr に既存の `Total: ..., Error: <verErr.Err>` を書く。
 4. ビルダーは `failed_file_paths` がないので `error_message` 属性の値（`Detail()`）をそのまま `Error Message` にする（後方互換）。
@@ -546,6 +570,13 @@ flowchart LR
 2. `cmd/runner/main.go` が `FailedFilePaths` に `Details` の昇順コピーを設定し、パスを含まない `Message` を渡す。`GlobalScope` と `ErrorTypeFileAccess` は既存のまま（`cmd/runner/main.go:391-402`）。
 3. `RedactingHandler` が `failed_file_paths` の各要素に `RedactText` を適用する（既存挙動）。
 4. ビルダーが `error_message` 属性の値（`Detail()`）と `failed_file_paths` から `Error Message` を組み立て、group と同じ予算管理（全件、または上限内の範囲と省略件数）で描画する。
+
+### 6.5 収集失敗（パス解決失敗）
+
+1. `collectVerificationFiles` がパス解決に失敗したコマンドを記録し、残りの解決を続けて解決に失敗した対象を全て集める。group の検証は中止し、検証は 1 件も行わない（fail-closed）。
+2. `VerifyGroupFiles` が `Details`（解決失敗の対象）、`TotalFiles`（対象総数）、`FailedFiles`（解決失敗の数）、`VerifiedFiles = 0`、`Err = ErrGroupVerificationCollectionFailed` を設定して返す（§3.7）。
+3. `executeGroups` が `FailedFilePaths` に `Details` の昇順コピーを設定し、`Message` は `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files` とする（パスを含まない）。
+4. 以降は 6.1 と同じ（stderr にパスは出ず、`failed_file_paths` が `Error Message` に描画される）。
 
 ---
 
@@ -588,6 +619,7 @@ flowchart LR
 
 - 最終 `Error Message` に `Details` の各パスが現れる（実体参照化後の綴り）。
 - 上限超過の入力では `Details` の一部と省略件数 `(+m more)` が現れる。
+- 収集失敗（存在しないコマンドの絶対パス）でも、最終 `Error Message` に対象名が現れ、`error_message` の人間向け文字列には現れない。
 - `error_message` 属性の人間向け文字列にはパスが含まれない。
 - `NotificationContext` は `GroupScope(group)`、`Group: <name>` を含まない、`error_type` が `group_file_verification_failed` のまま。
 - 発火元の属性だけを直接見る補助テストを置く場合は、`RedactingHandler` を通したレコードを使う（§7.2）。
@@ -624,6 +656,14 @@ flowchart LR
 - **スケーリング**: n = 1,000 と n = 10,000 を測り、1 件あたりのコストが 3 倍を超えないこと。単一の計測では O(n²) を検出できないため、2 点で確認する。
 - **長いパス**: 4 KiB のパス数件を含む行も測る（`WithinInterpolationLimit` は上限超過が確定するまでパスを変換するため O(Σ len(path))）。
 
+### 7.8 収集失敗のテスト
+
+すべて特権不要で `make test` に含める（統合テストを除く）。
+
+- `internal/verification/manager_test.go` に、解決に失敗するコマンドを 1 件／複数件含む group で `VerifyGroupFiles` を呼び、`Details` に解決失敗の対象が全て載ること、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`Err` の文言に対象名が含まれないことを固定する（AC-17）。
+- `internal/runner/runner_test.go` の配線テストに、`Details` を持つ収集失敗を模した入力を足し、`FailedFilePaths` が設定されることを固定する。
+- `cmd/runner` の統合テスト（§7.3 と同じ in-process ハンドラ差し替え）で、収集失敗の最終 `Error Message` に対象名が現れ、`handleErrorCommon` の stderr 出力には現れないことを固定する。
+
 ---
 
 ## 8. 実装優先順位
@@ -631,9 +671,9 @@ flowchart LR
 | Phase | 内容 | 主なファイル |
 |---|---|---|
 | 1 | `common.WithinInterpolationLimit` と `PreExecErrorAttrs.FailedFilePaths` を足し、契約のテストを書く | `internal/common/interpolation.go`、`internal/common/logschema.go`、`internal/common/interpolation_test.go` |
-| 2 | 発火元が `Message` と `FailedFilePaths`（昇順）を設定し、`HandlePreExecutionError` が `failed_file_paths` を記録する | `internal/runner/runner.go`、`internal/logging/pre_execution_error.go` |
+| 2 | `verification` が収集失敗で `Details`・件数・センチネルを設定し、発火元が `Message` と `FailedFilePaths`（昇順）を設定、`HandlePreExecutionError` が `failed_file_paths` を記録する | `internal/verification/manager.go`、`internal/verification/errors.go`、`internal/runner/runner.go`、`internal/logging/pre_execution_error.go` |
 | 3 | `buildPreExecutionError` が `error_message` 属性（`Detail()`）と `failed_file_paths`（`[]any` をデコード）から `Error Message` を組み立てる | `internal/logging/slack_handler.go` |
-| 4 | 配線・描画・redaction 回帰のテストとベンチマーク、グローバル回帰を足す | `internal/runner/runner_test.go`、`internal/logging/*_test.go`、`internal/redaction/redactor_test.go`、`cmd/runner/integration_pre_execution_error_test.go` |
+| 4 | 収集失敗・配線・描画・redaction 回帰のテストとベンチマーク、グローバル回帰を足す | `internal/verification/manager_test.go`、`internal/runner/runner_test.go`、`internal/logging/*_test.go`、`internal/redaction/redactor_test.go`、`cmd/runner/integration_pre_execution_error_test.go` |
 | 5 | 利用者向け文書の group 検証エラー表示を追記する | `docs/user/runner_command.ja.md`（英語版は `/mktrans`） |
 
 各 Phase の完了時に `make fmt`（Go を変更した場合）・`make test`・`make lint` を通す（AC-09）。
@@ -645,6 +685,7 @@ flowchart LR
 - `failed_file_paths` は `pre_execution_error` の構造化属性である。失敗理由（ハッシュ不一致・読み取り失敗など）を構造化して持たせたくなったら、属性を足してビルダーで描画する。既存の `Error Message` フィールドへ載せる限り通知種別定義は変わらない。
 - `common.WithinInterpolationLimit` は他の通知本文でも再利用できる。一覧の連結形式と符号化（`strconv.Quote`）は呼び出し側が決める。
 - `failed_file_paths` の要素の redaction は既存の文字列スライス挙動に乗っている。同種のパス一覧を別の通知へ足す場合も、文字列スライス属性として運べば同じ扱いになる。
+- 収集失敗の原因（パス解決に失敗した理由）は現状ログにのみ残る。失敗理由を通知へ構造化して載せたくなったら、独立した属性として運び、ビルダーで描画する。`error_type` と通知種別定義はそのときも既存のまま使える。
 - コンソール向け描画（stderr・stdout）を出力先横断の単一契約にまとめる改善と、検証マネージャのファイル単位ログの 1 行化は別タスクとする。本設計は `Message` にパスを入れないことでこのタスクの範囲を守る。
 
 ---
@@ -663,9 +704,10 @@ flowchart LR
 | AC-08 | §3.3。表示値は既存の補間契約を通る |
 | AC-09 | §8。各 Phase で make ターゲットを通す |
 | AC-10 | §7.6。壊したときに落ちることを確認するのは実装時の作業 |
-| AC-14 | §3.2・§3.3・§4。一覧を持つとき `failed_file_paths` 属性がそれを運び、人間向け `Detail()` はパスを含まない。収集失敗（`Details` 空で `Err` がコマンド文字列を含む）は対象外の残存リスク（§5.2）。構造化属性と検証マネージャのファイル単位ログも残存リスク（§5.2・§7.3・§7.5） |
+| AC-14 | §3.2・§3.3・§3.7・§4。失敗対象（失敗ファイル・解決に失敗したコマンド）を持つとき `failed_file_paths` 属性がそれを運び、人間向け `Detail()` はパスを含まない。構造化属性と検証マネージャのファイル単位ログは残存リスク（§5.2・§7.3・§7.5） |
 | AC-15 | §5.4。`failed_file_paths` の要素は文字列スライス要素として既存の `RedactText` のみを受ける（redaction は変更しない）。回帰で固定する（§7.5） |
 | AC-16 | §3.2（グローバル発火元）・§6.4・§7.4。グローバルの通知も `failed_file_paths` が `Error Message` に描画されることを固定する |
+| AC-17 | §3.7・§6.5・§7.8。収集失敗でも解決に失敗した対象を全て `Details` に載せ、`Err` はパスを含まないセンチネルとする |
 
 ## 付録B: 採らなかった案
 
@@ -680,3 +722,7 @@ flowchart LR
 | 属性名に `failed_files` を使う | 既存の `internal/verification/manager.go:167` が `failed_files` を使う。衝突を避け `failed_file_paths` にする。 |
 | `verification.Error.Error()` を再利用する | `for group %s` で group 名を本文へ埋め込み、AC-03 に反する。 |
 | `Details` の反復順のまま通知へ渡す | map に由来する順序で表示と省略対象が実行ごとに変わる。発火元で昇順に並べる。 |
+| 収集失敗のコマンド文字列を `Message` に残す | 生の対象名（パス）が redaction の外にある stderr へ出て、行の偽装と値全体置換の問題が残る。パス解決の原因は検証マネージャの構造化ログに既にある（§3.7）。 |
+| 収集失敗の `Err` に元の解決エラー（コマンド文字列入り）を残す | `Message` へ `%v` で入り、本文からパスを除く方針と衝突する。パスを含まないセンチネルに置き換え、対象名は `Details` が運ぶ（§3.7）。 |
+| 収集失敗を別の通知種別・`error_type` にする | 0172 の通知種別定義の変更になる。既存の `group_file_verification_failed` のまま一覧だけを運ぶ（01 §対象外）。 |
+| 収集失敗で最初の解決失敗だけを `Details` に載せる | 複数のコマンドが解決に失敗したとき、通知から一部しか判別できない。対象名を全て表示する要件に反する（01 対象 10）。 |
