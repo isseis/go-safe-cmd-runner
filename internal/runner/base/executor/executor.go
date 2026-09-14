@@ -304,7 +304,8 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 // level and notification follow the child's exit code; LogUserGroupExecution
 // decides which of the two records to write.
 //
-// result must be non-nil: callers pass the Result that runCommand produced.
+// result must be non-nil: callers audit a run only after the child started,
+// and a started child is always supervised into a Result.
 func (e *DefaultExecutor) auditUserGroupExecution(
 	ctx context.Context,
 	cmd *runnertypes.RuntimeCommand,
