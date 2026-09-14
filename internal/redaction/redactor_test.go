@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 )
 
@@ -3730,5 +3733,387 @@ func TestNewConfig_WithWebhookHost(t *testing.T) {
 		c, err := NewConfig(WithWebhookHost("mattermost.example.com"), WithPlaceholder("[GONE]"))
 		require.NoError(t, err)
 		assert.Equal(t, "https://mattermost.example.com/[GONE]", c.RedactText(webhookURL))
+	})
+}
+
+// redactOneAttr runs a single attribute through a RedactingHandler backed by a
+// mock handler and returns the attribute as the handler rewrote it. The mock
+// stores values verbatim (it does not resolve LogValuer values), so callers can
+// assert the concrete kind the next handler receives.
+func redactOneAttr(t *testing.T, attr slog.Attr) slog.Attr {
+	t.Helper()
+
+	mock := newMockHandler()
+	handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+	slog.New(handler).LogAttrs(context.Background(), slog.LevelInfo, "test message", attr)
+
+	require.Len(t, mock.records, 1)
+	var got slog.Attr
+	found := false
+	mock.records[0].Attrs(func(a slog.Attr) bool {
+		got = a
+		found = true
+		return false
+	})
+	require.True(t, found, "the record must carry the attribute")
+	return got
+}
+
+// TestRedactLogAttribute_IdentifierExemption covers the Config.RedactLogAttribute
+// exemption path, including the group recursion it reaches production through.
+func TestRedactLogAttribute_IdentifierExemption(t *testing.T) {
+	config := DefaultConfig()
+
+	t.Run("declared identifier in a group normalizes to its name", func(t *testing.T) {
+		attr := slog.Group("scope",
+			slog.Any("command", identifier.NewIdentifier("rotate_api_key")),
+			slog.String("group", "monkey"),
+		)
+
+		got := config.RedactLogAttribute(attr)
+
+		require.Equal(t, slog.KindGroup, got.Value.Kind())
+		scope := got.Value.Group()
+		require.Len(t, scope, 2)
+
+		assert.Equal(t, slog.KindString, scope[0].Value.Kind())
+		assert.Equal(t, "rotate_api_key", scope[0].Value.String())
+
+		// The sibling plain string follows the existing value-based path.
+		assert.Equal(t, DefaultPlaceholder, scope[1].Value.String())
+	})
+
+	t.Run("top-level declared identifier normalizes to its name", func(t *testing.T) {
+		got := config.RedactLogAttribute(slog.Any("name", identifier.NewIdentifier("monkey")))
+
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, "monkey", got.Value.String())
+	})
+
+	t.Run("plain string control is still redacted", func(t *testing.T) {
+		got := config.RedactLogAttribute(slog.String("name", "monkey"))
+
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, DefaultPlaceholder, got.Value.String())
+	})
+
+	t.Run("sensitive key masks a declared identifier", func(t *testing.T) {
+		got := config.RedactLogAttribute(slog.Any("password", identifier.NewIdentifier("monkey")))
+
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, DefaultPlaceholder, got.Value.String())
+	})
+
+	t.Run("sensitive key inside a group masks a declared identifier", func(t *testing.T) {
+		attr := slog.Group("scope", slog.Any("password", identifier.NewIdentifier("monkey")))
+
+		got := config.RedactLogAttribute(attr)
+
+		require.Equal(t, slog.KindGroup, got.Value.Kind())
+		group := got.Value.Group()
+		require.Len(t, group, 1)
+		assert.Equal(t, DefaultPlaceholder, group[0].Value.String())
+	})
+}
+
+// TestRedactingHandler_IdentifierExemption pairs each of the three value-based
+// redaction layers with a declared identifier and a plain-string control of the
+// same text. The identifier must reach the next handler unchanged as a string;
+// the control must still be redacted.
+func TestRedactingHandler_IdentifierExemption(t *testing.T) {
+	t.Run("key=value layer", func(t *testing.T) {
+		const name = "backup --password=x"
+
+		got := redactOneAttr(t, slog.Any("command", identifier.NewIdentifier(name)))
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, name, got.Value.String())
+
+		control := redactOneAttr(t, slog.String("command", name))
+		assert.NotEqual(t, name, control.Value.String())
+		assert.Contains(t, control.Value.String(), DefaultPlaceholder)
+		assert.NotContains(t, control.Value.String(), "=x")
+	})
+
+	t.Run("value-format layer", func(t *testing.T) {
+		names := []string{
+			"AKIAIOSFODNN7EXAMPLE",
+			"ghp_" + strings.Repeat("a", 36),
+			"github_pat_" + strings.Repeat("b", 30),
+		}
+
+		for _, name := range names {
+			got := redactOneAttr(t, slog.Any("group", identifier.NewIdentifier(name)))
+			assert.Equal(t, slog.KindString, got.Value.Kind())
+			assert.Equal(t, name, got.Value.String())
+
+			control := redactOneAttr(t, slog.String("group", name))
+			assert.Equal(t, DefaultPlaceholder, control.Value.String())
+		}
+	})
+
+	t.Run("whole-value layer", func(t *testing.T) {
+		for _, name := range []string{"monkey", "rotate_api_key", "keyboard"} {
+			got := redactOneAttr(t, slog.Any("name", identifier.NewIdentifier(name)))
+			assert.Equal(t, slog.KindString, got.Value.Kind())
+			assert.Equal(t, name, got.Value.String())
+
+			control := redactOneAttr(t, slog.String("name", name))
+			assert.Equal(t, DefaultPlaceholder, control.Value.String())
+		}
+	})
+
+	t.Run("pointer identifier is exempt too", func(t *testing.T) {
+		id := identifier.NewIdentifier("rotate_api_key")
+
+		got := redactOneAttr(t, slog.Any("command", &id))
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, "rotate_api_key", got.Value.String())
+	})
+}
+
+// TestRedactingHandler_IdentifierInGroupAttribute fixes that the exemption also
+// applies to identifiers nested in a group value.
+func TestRedactingHandler_IdentifierInGroupAttribute(t *testing.T) {
+	attr := slog.Group("scope",
+		slog.Any("group", identifier.NewIdentifier("monkey")),
+		slog.Any("command", identifier.NewIdentifier("rotate_api_key")),
+		slog.String("detail", "token=hunter2"),
+	)
+
+	got := redactOneAttr(t, attr)
+
+	require.Equal(t, slog.KindGroup, got.Value.Kind())
+	scope := got.Value.Group()
+	require.Len(t, scope, 3)
+
+	assert.Equal(t, slog.KindString, scope[0].Value.Kind())
+	assert.Equal(t, "monkey", scope[0].Value.String())
+
+	assert.Equal(t, slog.KindString, scope[1].Value.Kind())
+	assert.Equal(t, "rotate_api_key", scope[1].Value.String())
+
+	assert.NotContains(t, scope[2].Value.String(), "hunter2")
+	assert.Contains(t, scope[2].Value.String(), DefaultPlaceholder)
+}
+
+// TestRedactingHandler_PlainStringIsStillRedacted fixes that free text is not
+// weakened by the exemption, including when the same key carries both a declared
+// command name and an expanded command line.
+func TestRedactingHandler_PlainStringIsStillRedacted(t *testing.T) {
+	t.Run("free text values keep value-based redaction", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			attr   slog.Attr
+			secret string
+		}{
+			{name: "key=value in a command line", attr: slog.String("command", "backup --password=hunter2"), secret: "hunter2"},
+			{name: "token assignment", attr: slog.String("detail", "token=abc123"), secret: "abc123"},
+			{name: "Bearer token", attr: slog.String("detail", "Bearer abc123def"), secret: "abc123def"},
+			{name: "error attribute", attr: slog.Any("error", errors.New("execute failed: password=hunter2")), secret: "hunter2"},
+			{name: "error naming a group", attr: slog.Any("error", errors.New("failed to execute group monkey")), secret: "monkey"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got := redactOneAttr(t, tt.attr)
+
+				assert.NotContains(t, got.Value.String(), tt.secret)
+				assert.Contains(t, got.Value.String(), DefaultPlaceholder)
+			})
+		}
+	})
+
+	t.Run("record message keeps text-based redaction", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+
+		record := slog.NewRecord(time.Now(), slog.LevelInfo, "running with token=abc123", 0)
+		require.NoError(t, handler.Handle(context.Background(), record))
+		require.Len(t, mock.records, 1)
+
+		assert.NotContains(t, mock.records[0].Message, "abc123")
+		assert.Contains(t, mock.records[0].Message, DefaultPlaceholder)
+	})
+
+	t.Run("same key keeps the identifier and redacts the command line", func(t *testing.T) {
+		mock := newMockHandler()
+		handler := NewRedactingHandler(mock, DefaultConfig(), nil)
+		logger := slog.New(handler)
+
+		logger.LogAttrs(context.Background(), slog.LevelInfo, "test message",
+			slog.Any("command", identifier.NewIdentifier("rotate_api_key")),
+			slog.String("command", "rotate --password=hunter2"),
+		)
+
+		require.Len(t, mock.records, 1)
+		var attrs []slog.Attr
+		mock.records[0].Attrs(func(attr slog.Attr) bool {
+			attrs = append(attrs, attr)
+			return true
+		})
+		require.Len(t, attrs, 2)
+
+		assert.Equal(t, "rotate_api_key", attrs[0].Value.String())
+
+		assert.NotContains(t, attrs[1].Value.String(), "hunter2")
+		assert.Contains(t, attrs[1].Value.String(), DefaultPlaceholder)
+	})
+}
+
+// TestRedactingHandler_IdentifierSliceElements fixes that declared identifiers
+// are exempt as slice elements and reach downstream handlers as strings, not as
+// the raw value that a JSON handler would render as "[{}]".
+func TestRedactingHandler_IdentifierSliceElements(t *testing.T) {
+	first := identifier.NewIdentifier("monkey")
+	second := identifier.NewIdentifier("rotate_api_key")
+
+	renderJSON := func(t *testing.T, value any) string {
+		t.Helper()
+		var buf bytes.Buffer
+		handler := NewRedactingHandler(slog.NewJSONHandler(&buf, nil), DefaultConfig(), nil)
+		slog.New(handler).LogAttrs(context.Background(), slog.LevelInfo, "test message", slog.Any("items", value))
+		return buf.String()
+	}
+
+	t.Run("value slice renders names", func(t *testing.T) {
+		output := renderJSON(t, []identifier.Identifier{first, second})
+
+		assert.Contains(t, output, "monkey")
+		assert.Contains(t, output, "rotate_api_key")
+		assert.NotContains(t, output, "[{}]")
+	})
+
+	t.Run("pointer slice renders names", func(t *testing.T) {
+		output := renderJSON(t, []*identifier.Identifier{&first, &second})
+
+		assert.Contains(t, output, "monkey")
+		assert.Contains(t, output, "rotate_api_key")
+		assert.NotContains(t, output, "[{}]")
+	})
+
+	t.Run("processed elements are strings", func(t *testing.T) {
+		got := redactOneAttr(t, slog.Any("items", []identifier.Identifier{first, second}))
+
+		elements, ok := got.Value.Any().([]any)
+		require.True(t, ok, "processed slice should be []any, got %T", got.Value.Any())
+		require.Len(t, elements, 2)
+		assert.Equal(t, "monkey", elements[0])
+		assert.Equal(t, "rotate_api_key", elements[1])
+	})
+
+	t.Run("typed nil element fails closed", func(t *testing.T) {
+		var nilIdentifier *identifier.Identifier
+
+		var buf bytes.Buffer
+		failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		handler := NewRedactingHandler(slog.NewTextHandler(&buf, nil), DefaultConfig(), failureLogger)
+		slog.New(handler).LogAttrs(context.Background(), slog.LevelError, "test message",
+			slog.Any("items", []*identifier.Identifier{nilIdentifier, &first}),
+		)
+
+		output := buf.String()
+		assert.Contains(t, output, RedactionFailurePlaceholder)
+		assert.NotContains(t, output, "monkey")
+		assert.NotContains(t, output, "[{}]")
+	})
+}
+
+// TestRedactingHandler_TypedNilIdentifierFailsClosed fixes that a typed nil
+// pointer is not exempt and fails secure instead of panicking or rendering an
+// empty name.
+func TestRedactingHandler_TypedNilIdentifierFailsClosed(t *testing.T) {
+	var nilIdentifier *identifier.Identifier
+
+	var buf bytes.Buffer
+	failureLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewRedactingHandler(slog.NewTextHandler(&buf, nil), DefaultConfig(), failureLogger)
+	slog.New(handler).LogAttrs(context.Background(), slog.LevelError, "test message",
+		slog.Any("command", nilIdentifier),
+	)
+
+	output := buf.String()
+	assert.Contains(t, output, RedactionFailurePlaceholder)
+	assert.NotContains(t, output, DefaultPlaceholder)
+}
+
+// TestRedactingHandler_SensitiveKeyMaskPrecedesExemption fixes the fail-closed
+// ordering: a sensitive key masks a declared identifier placed under it.
+func TestRedactingHandler_SensitiveKeyMaskPrecedesExemption(t *testing.T) {
+	for _, name := range []string{"monkey", "rotate_api_key", "AKIAIOSFODNN7EXAMPLE"} {
+		got := redactOneAttr(t, slog.Any("password", identifier.NewIdentifier(name)))
+
+		assert.Equal(t, slog.KindString, got.Value.Kind())
+		assert.Equal(t, DefaultPlaceholder, got.Value.String())
+	}
+}
+
+// TestDefaultPatternSets_AreUnchanged pins the three pattern sets the exemption
+// must not touch: any addition, removal, reordering or replacement fails here.
+func TestDefaultPatternSets_AreUnchanged(t *testing.T) {
+	t.Run("key-value patterns", func(t *testing.T) {
+		want := []KeyValuePattern{
+			{Literal: "password", Kind: PatternKindKeyedValue},
+			{Literal: "token", Kind: PatternKindKeyedValue},
+			{Literal: "key", Kind: PatternKindKeyedValue},
+			{Literal: "secret", Kind: PatternKindKeyedValue},
+			{Literal: "api_key", Kind: PatternKindKeyedValue},
+			{Literal: "_PASSWORD", Kind: PatternKindKeyedValue},
+			{Literal: "_TOKEN", Kind: PatternKindKeyedValue},
+			{Literal: "_KEY", Kind: PatternKindKeyedValue},
+			{Literal: "_SECRET", Kind: PatternKindKeyedValue},
+			{Literal: "Bearer ", Kind: PatternKindNextToken},
+			{Literal: "Basic ", Kind: PatternKindNextToken},
+			{Literal: "Authorization", Kind: PatternKindHeaderValue},
+		}
+
+		assert.Equal(t, want, DefaultKeyValuePatterns())
+	})
+
+	t.Run("sensitive patterns", func(t *testing.T) {
+		patterns := DefaultSensitivePatterns()
+
+		wantAllowed := []string{
+			"DISPLAY", "EDITOR", "HOME", "HOSTNAME", "LANG", "LOGNAME", "OLDPWD",
+			"PAGER", "PATH", "PWD", "SHELL", "TERM", "TMPDIR", "TZ", "USER",
+		}
+		gotAllowed := make([]string, 0, len(patterns.AllowedEnvVars))
+		for name := range patterns.AllowedEnvVars {
+			gotAllowed = append(gotAllowed, name)
+		}
+		slices.Sort(gotAllowed)
+		assert.Equal(t, wantAllowed, gotAllowed)
+
+		assert.Equal(t,
+			`((?i)(password|token|secret|key|api_key)|(?i)aws_access_key_id|(?i)aws_secret_access_key|(?i)aws_session_token|(?i)google_application_credentials|(?i)gcp_service_account_key|(?i)github_token|(?i)gitlab_token|(?i)bearer|(?i)basic|(?i)authorization)`,
+			patterns.combinedCredentialPattern.String())
+		assert.Equal(t,
+			`((?i).*PASSWORD.*|(?i).*SECRET.*|(?i).*TOKEN.*|(?i).*KEY.*|(?i).*API.*|(?i).*CREDENTIAL.*|(?i).*AUTH.*)`,
+			patterns.combinedEnvVarPattern.String())
+	})
+
+	t.Run("value detector patterns", func(t *testing.T) {
+		want := []struct {
+			name    string
+			pattern *regexp.Regexp
+			source  string
+		}{
+			{"awsKeyID", valueDetectorPatterns.awsKeyID, `\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b`},
+			{"githubToken", valueDetectorPatterns.githubToken, `\bgh[pors]_\s*[A-Za-z0-9_]{36,}\b`},
+			{"slackToken", valueDetectorPatterns.slackToken, `\bxox[bpar]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]+\b`},
+			{"gcpSAKey", valueDetectorPatterns.gcpSAKey, `("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`},
+			{"pemPrivate", valueDetectorPatterns.pemPrivate, `(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`},
+			{"bearerToken", valueDetectorPatterns.bearerToken, `(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`},
+			{"urlCred", valueDetectorPatterns.urlCred, `(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`},
+			{"githubPAT", valueDetectorPatterns.githubPAT, `\bgithub_pat_[A-Za-z0-9_]{30,}\b`},
+			{"slackPrefixToken", valueDetectorPatterns.slackPrefixToken, `\bx(?:app|oxe|oxs)-[A-Za-z0-9-]{9,}[A-Za-z0-9]`},
+			{"jwt", valueDetectorPatterns.jwt, `\beyJ[A-Za-z0-9_-]{7,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*([^A-Za-z0-9_.-]|$)`},
+		}
+
+		for _, tc := range want {
+			t.Run(tc.name, func(t *testing.T) {
+				require.NotNil(t, tc.pattern)
+				assert.Equal(t, tc.source, tc.pattern.String())
+			})
+		}
 	})
 }
