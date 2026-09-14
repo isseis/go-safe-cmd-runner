@@ -368,7 +368,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 
 **判定理由**: 型・メソッド・leaf 制約は 02_architecture.md §3.1 に固定済みで、未確定の実装アプローチや高リスク分岐は無く、Conditional checks のいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
