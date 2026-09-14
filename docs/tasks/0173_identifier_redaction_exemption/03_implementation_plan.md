@@ -921,8 +921,8 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した (#1138)
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ## 3. 実装順序とマイルストーン
 
@@ -1045,7 +1045,7 @@ Phase に置く理由は 02_architecture.md §8.2 のとおりである。
 - [x] PR-3 マージ済み（対象ステップ: Phase 3）
 - [x] PR-4 マージ済み（対象ステップ: Phase 4 §4.1 / §4.2 / §4.3 / §4.4 / §4.5）
 - [x] PR-5 マージ済み（対象ステップ: Phase 5）
-- [ ] PR-6 マージ済み（対象ステップ: Phase 6）
+- [x] PR-6 マージ済み（対象ステップ: Phase 6）
 
 ## 7. 受け入れ基準の検証
 
@@ -1139,8 +1139,10 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 
 ### 9.2 品質
 
-- `make test`・`make lint` が各コミットで通り、`make verify-docs` の構造比較レポートに
-  日英文書の見出し差分が無い。
+- `make test`・`make lint` が各コミットで通り、`make verify-docs` の構造比較レポートで、
+  本タスクが変更した文書（`security-risk-assessment.ja.md`／`.md`、
+  `security-architecture.ja.md`／`.md`）に見出し差分が無い。本タスクが未変更の文書に
+  残る着手前からの差分は本基準の対象外とする。
 - 新規・更新テストが AC-01〜AC-11 を覆い、AC-19 の mutation 確認が記録されている。
 
 ### 9.3 セキュリティ
@@ -1155,8 +1157,38 @@ behavior mutation のコミット（`4c6e85f0`・`6c1e9176`・`6fbdc4d6`・`a0f8
 - `security-architecture.ja.md` / `.md` と `security-risk-assessment.ja.md` / `.md` が
   更新され、Task 0172 の残余リスクを置き換えたことが追跡できる（AC-15〜AC-17）。
 
+**成功基準の検証結果（Phase 6、2026-09-14）**: 上記の各項目を最終状態で確認した（9.2 の
+構造比較基準は本タスクが変更した文書を対象とする）。
+
+- 9.1: 通知 Scope の `TestSlackHandler_IdentifierScopeSurvivesRedaction`・
+  `TestRedactingHandler_ResolvesNotificationContextLogValue`、JSON の
+  `TestCommandResults_E2E_Integration`、免除の
+  `TestRedactLogAttribute_IdentifierExemption`・`TestRedactingHandler_IdentifierExemption`
+  が通過し、内容にかかわらず名前がそのまま現れる。宣言サイトは
+  `TestIdentifierDeclarationCatalog` の `declaration_sites` が目録（42 組・43 サイト・
+  12 ファイル）と走査結果を双方向照合して通過し、`02_architecture.md` §3.4 の表の合計
+  （12 ファイル・43 サイト）と一致する。
+- 9.2: Go を変更した各 Phase のコミットは pre-commit フックが `go test` を実行し、
+  計画書の各 Phase 記録も `make test`・`make lint` の通過を記録している。AC-01〜AC-11 の
+  テストが存在して通過し、AC-19 の mutation 記録は各コミットに存在する。9.2 の構造比較
+  基準（本タスクが変更した文書）は、`security-risk-assessment` の `mismatches` が空
+  （見出し 49/49）で、`security-architecture` も ad hoc 実行で `mismatches` が空
+  （見出し 102/102）。レポート全体では本タスクが未変更の 5 文書（`runner_command.ja.md`
+  と `toml_config/04〜06・08`）に着手前からの見出し・コードブロック件数差が残るが、
+  `88624849..HEAD` でこれらのファイルに差分は無く、本タスクの影響ではない。
+- 9.3: `TestRedactingHandler_PlainStringIsStillRedacted`・`TestRedactingHandler_ErrorValue`・
+  `TestRedactingHandler_Handle_MessageRedaction` が通過し、展開済みコマンド行・OS グループ
+  名・`cmdLine`・一時ファイル名を `NewIdentifier` で包む式は存在しない。キー名判定は
+  3 挿入点すべてで免除判定より先にあり（`redactor.go:334→340`・`:797→805`、
+  `processSlice` は免除要素だけを正規化）、`TestRedactingHandler_SensitiveKeyMaskPrecedesExemption`
+  が固定する。`TestDefaultPatternSets_AreUnchanged` が通過し、
+  `sensitive_patterns.go`・`value_detector.go` は `88624849..HEAD` で差分が無い。文書化は
+  `check_identifier_exemption_docs.sh` が通過する。
+- 9.4: 4 文書が更新され、`git diff --stat 88624849..HEAD -- docs/tasks/0172_slack_notification_message_unification/`
+  は空である。
+
 ## 10. 次のステップ
 
 1. `/runplan` による Phase 1〜5 の実装と、Phase 6 の検証・記録（green gate、`make deadcode`、
-   AC-17 の差分確認、AC-19 の記録、§6〜§8 の進捗）は完了している。PR-1〜PR-5 はマージ済み。
-2. 残る作業は PR-6 の作成とマージだけである。
+   AC-17 の差分確認、AC-19 の記録、§6〜§8 の進捗）は完了している。PR-1〜PR-6 はマージ済み。
+2. 計画された PR はすべてマージ済みで、残る作業は無い。
