@@ -15,6 +15,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -2470,7 +2471,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			currentUser:      "testuser",
 			expectLog:        true,
 			expectedFields: map[string]any{
-				"command":        "unlimited-cmd",
+				"command":        identifier.NewIdentifier("unlimited-cmd"),
 				"user":           "testuser",
 				"timeout":        "unlimited",
 				"security_event": "unlimited_execution_start",
@@ -2483,7 +2484,7 @@ func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
 			currentUser:      "unknown",
 			expectLog:        true,
 			expectedFields: map[string]any{
-				"command":        "test-cmd",
+				"command":        identifier.NewIdentifier("test-cmd"),
 				"user":           "unknown",
 				"timeout":        "unlimited",
 				"security_event": "unlimited_execution_start",
@@ -2595,7 +2596,7 @@ func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
 	// Verify security log contains timeout exceeded event
 	rec.RequireRecord(t, slog.LevelError, "Command exceeded timeout").
 		AssertAttrs(t, map[string]any{
-			"command":         "timeout-cmd",
+			"command":         identifier.NewIdentifier("timeout-cmd"),
 			"timeout_seconds": 1,
 			"security_event":  "timeout_exceeded",
 		})
@@ -2671,7 +2672,7 @@ func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
 	unlimited := rec.FindRecords(slog.LevelWarn, "Command starting with unlimited timeout")
 	require.Len(t, unlimited, 1, "normal-cmd must not report an unlimited execution")
 	unlimited[0].AssertAttrs(t, map[string]any{
-		"command":        "unlimited-cmd",
+		"command":        identifier.NewIdentifier("unlimited-cmd"),
 		"user":           "testuser",
 		"security_event": "unlimited_execution_start",
 	})
@@ -2877,7 +2878,14 @@ func TestCommandDebugLogArgs_StdoutTruncation(t *testing.T) {
 				Stderr:   "",
 			}
 
-			logArgs := buildCommandDebugLogArgs("test-cmd", result)
+			logArgs := buildCommandDebugLogArgs(identifier.NewIdentifier("test-cmd"), result)
+
+			// The command argument must stay typed: a caller that receives a
+			// plain string would have to re-declare it, and the redaction
+			// exemption would be lost.
+			require.GreaterOrEqual(t, len(logArgs), 2)
+			assert.Equal(t, "command", logArgs[0])
+			assert.Equal(t, identifier.NewIdentifier("test-cmd"), logArgs[1])
 
 			// Find stdout in log args
 			var stdoutValue string

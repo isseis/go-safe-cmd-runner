@@ -82,10 +82,10 @@ func (c NotificationContext) CommandName() string {
 func (c NotificationContext) LogValue() slog.Value {
 	attrs := []slog.Attr{
 		slog.String(NotificationContextAttrs.Scope, c.scopeName()),
-		slog.String(NotificationContextAttrs.Group, c.group),
+		slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier(c.group)),
 	}
 	if c.command != "" {
-		attrs = append(attrs, slog.String(NotificationContextAttrs.Command, c.command))
+		attrs = append(attrs, slog.Any(NotificationContextAttrs.Command, identifier.NewIdentifier(c.command)))
 	}
 	return slog.GroupValue(attrs...)
 }

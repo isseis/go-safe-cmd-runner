@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
@@ -1098,7 +1099,7 @@ func resolveAndPrepareCommandSpec(
 	for _, warning := range warnings {
 		slog.Warn("Template parameter warning",
 			slog.String("warning", warning),
-			slog.String("command", spec.Name),
+			slog.Any("command", identifier.NewIdentifier(spec.Name)),
 			slog.String("template", spec.Template))
 	}
 

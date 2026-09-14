@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -120,7 +121,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	// logging from here would defeat that from the other side. The first
 	// record therefore precedes the escalation, so it names an operation that
 	// was attempted rather than one that ran.
-	m.logger.Debug("Entering privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName)
+	m.logger.Debug("Entering privileged operation callback", "operation", execCtx.elevationCtx.Operation, "command", identifier.NewIdentifier(execCtx.elevationCtx.CommandName))
 
 	// Deferred rather than written inline after the window, so a panic in fn
 	// still reports the escalation. It runs after the restore either way: the
@@ -137,7 +138,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 		return fn()
 	}()
 
-	m.logger.Debug("Privileged operation callback completed", "operation", execCtx.elevationCtx.Operation, "command", execCtx.elevationCtx.CommandName, "error", fnErr)
+	m.logger.Debug("Privileged operation callback completed", "operation", execCtx.elevationCtx.Operation, "command", identifier.NewIdentifier(execCtx.elevationCtx.CommandName), "error", fnErr)
 	return fnErr
 }
 
@@ -344,12 +345,12 @@ func (m *UnixPrivilegeManager) logElevationOutcome(execCtx *executionContext) {
 		// outcome only so both follow one path.
 		m.logger.Info("Native root execution - no privilege escalation needed",
 			"operation", execCtx.elevationCtx.Operation,
-			"command", execCtx.elevationCtx.CommandName,
+			"command", identifier.NewIdentifier(execCtx.elevationCtx.CommandName),
 			"original_uid", m.originalUID)
 	case elevationSeteuid:
 		m.logger.Info("Privileges elevated",
 			"operation", execCtx.elevationCtx.Operation,
-			"command", execCtx.elevationCtx.CommandName,
+			"command", identifier.NewIdentifier(execCtx.elevationCtx.CommandName),
 			"original_uid", m.originalUID,
 			"elevated_at", execCtx.elevatedAt)
 	case elevationNone:

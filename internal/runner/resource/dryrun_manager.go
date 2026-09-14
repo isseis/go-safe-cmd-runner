@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -300,8 +301,8 @@ func (d *DryRunResourceManager) validateRunAsIdentity(cmd *runnertypes.RuntimeCo
 		raiseSecurityRisk(analysis, runnertypes.RiskLevelHigh)
 		d.logger.Warn("Dry-run run-as identity resolution failed",
 			"dry_run", true,
-			"command", cmd.Name(),
-			"group", groupDisplayName,
+			"command", identifier.NewIdentifier(cmd.Name()),
+			"group", identifier.NewIdentifier(groupDisplayName),
 			"run_as_user", userName,
 			"run_as_group", groupName,
 			"failure_kind", runAsFailureKind(err, userName, base),
@@ -311,8 +312,8 @@ func (d *DryRunResourceManager) validateRunAsIdentity(cmd *runnertypes.RuntimeCo
 		analysis.Impact.Description += " [INFO: User/Group identity resolution validated]"
 		d.logger.Info("Dry-run run-as identity resolved",
 			"dry_run", true,
-			"command", cmd.Name(),
-			"group", groupDisplayName,
+			"command", identifier.NewIdentifier(cmd.Name()),
+			"group", identifier.NewIdentifier(groupDisplayName),
 			"run_as_user", userName,
 			"run_as_group", groupName,
 			"resolved_uid", ident.UID,
@@ -427,7 +428,7 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 	}
 	defer func() {
 		if closeErr := plan.Close(); closeErr != nil {
-			slog.Warn("Failed to close dry-run command plan", "command", cmd.Name(), "error", closeErr)
+			slog.Warn("Failed to close dry-run command plan", "command", identifier.NewIdentifier(cmd.Name()), "error", closeErr)
 		}
 	}()
 

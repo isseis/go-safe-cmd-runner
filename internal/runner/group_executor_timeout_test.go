@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -91,6 +92,6 @@ func TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded(t *testing.T) {
 
 	records := rec.FindRecords(slog.LevelError, "Command exceeded timeout")
 	require.Len(t, records, 1, "the timeout must be reported as a timeout, not as a bare signal death")
-	assert.Equal(t, "sleeps-past-its-timeout", records[0].Attrs["command"])
+	assert.Equal(t, identifier.NewIdentifier("sleeps-past-its-timeout"), records[0].Attrs["command"])
 	assert.Equal(t, "timeout_exceeded", records[0].Attrs["security_event"])
 }

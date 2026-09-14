@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -77,7 +78,7 @@ func (l *Logger) LogUserGroupExecution(
 		slog.String("audit_type", "user_group_execution"),
 		slog.Bool("audit", true), // Mark as audit event for new logging framework
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String(common.UserGroupCommandFailureAttrs.CommandName, cmd.Name()),
+		slog.Any(common.UserGroupCommandFailureAttrs.CommandName, identifier.NewIdentifier(cmd.Name())),
 		slog.String("command_path", cmd.Cmd()),
 		slog.String("command_args", l.redactor.RedactText(strings.Join(cmd.Args(), " "))),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
@@ -142,7 +143,7 @@ func (l *Logger) LogRiskProfile(ctx context.Context, entry risktypes.RiskAuditEn
 		slog.String("audit_type", "command_risk_profile"),
 		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("command_name", entry.CommandName),
+		slog.Any("command_name", identifier.NewIdentifier(entry.CommandName)),
 		slog.String("mode", string(entry.Mode)),
 		slog.String("decision", string(entry.Decision)),
 		slog.String("risk_level", assessment.Level.String()),

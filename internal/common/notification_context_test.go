@@ -28,11 +28,24 @@ func scopeAttr(name string) slog.Attr {
 	return slog.String(NotificationContextAttrs.Scope, name)
 }
 
+// groupAttr and commandAttr build the encoding LogValue produces: a declared
+// identifier under the group/command sub-key.
 func groupAttr(name string) slog.Attr {
-	return slog.String(NotificationContextAttrs.Group, name)
+	return slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier(name))
 }
 
 func commandAttr(name string) slog.Attr {
+	return slog.Any(NotificationContextAttrs.Command, identifier.NewIdentifier(name))
+}
+
+// stringGroupAttr and stringCommandAttr build the normalized form a redacting
+// handler writes after it turns a declared identifier into a string. The
+// decoder must accept both forms.
+func stringGroupAttr(name string) slog.Attr {
+	return slog.String(NotificationContextAttrs.Group, name)
+}
+
+func stringCommandAttr(name string) slog.Attr {
 	return slog.String(NotificationContextAttrs.Command, name)
 }
 
@@ -188,7 +201,7 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			name: "group encoding without a command key",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Group),
-				groupAttr("backup"),
+				stringGroupAttr("backup"),
 			),
 			want: GroupScope("backup"),
 		},
@@ -196,8 +209,8 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			name: "command encoding",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Command),
-				groupAttr("backup"),
-				commandAttr("pg_dump"),
+				stringGroupAttr("backup"),
+				stringCommandAttr("pg_dump"),
 			),
 			want: CommandScope("backup", "pg_dump"),
 		},
@@ -205,7 +218,7 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			name: "group encoding with a declared identifier",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Group),
-				slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier("backup")),
+				groupAttr("backup"),
 			),
 			want: GroupScope("backup"),
 		},
@@ -213,8 +226,8 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			name: "command encoding with a declared identifier group and a string command",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Command),
-				slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier("backup")),
-				commandAttr("pg_dump"),
+				groupAttr("backup"),
+				stringCommandAttr("pg_dump"),
 			),
 			want: CommandScope("backup", "pg_dump"),
 		},
@@ -222,8 +235,8 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			name: "command encoding with a string group and a declared identifier command",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Command),
-				groupAttr("backup"),
-				slog.Any(NotificationContextAttrs.Command, identifier.NewIdentifier("pg_dump")),
+				stringGroupAttr("backup"),
+				commandAttr("pg_dump"),
 			),
 			want: CommandScope("backup", "pg_dump"),
 		},

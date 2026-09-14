@@ -4,6 +4,8 @@ package logging
 import (
 	"log/slog"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
 // SecurityLogger logs security-relevant timeout events
@@ -19,7 +21,7 @@ func NewSecurityLogger() *SecurityLogger {
 }
 
 // LogUnlimitedExecution logs when a command starts execution with unlimited timeout
-func (s *SecurityLogger) LogUnlimitedExecution(cmdName string, user string) {
+func (s *SecurityLogger) LogUnlimitedExecution(cmdName identifier.Identifier, user string) {
 	s.logger.Warn("Command starting with unlimited timeout",
 		"command", cmdName,
 		"user", user,
@@ -28,7 +30,7 @@ func (s *SecurityLogger) LogUnlimitedExecution(cmdName string, user string) {
 }
 
 // LogLongRunningProcess logs when a process has been running for an extended period
-func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Duration, pid int) {
+func (s *SecurityLogger) LogLongRunningProcess(cmdName identifier.Identifier, duration time.Duration, pid int) {
 	s.logger.Warn("Long-running process detected",
 		"command", cmdName,
 		"pid", pid,
@@ -37,7 +39,7 @@ func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Dur
 }
 
 // LogTimeoutExceeded logs when a command exceeds its timeout
-func (s *SecurityLogger) LogTimeoutExceeded(cmdName string, timeoutSeconds int32, pid int) {
+func (s *SecurityLogger) LogTimeoutExceeded(cmdName identifier.Identifier, timeoutSeconds int32, pid int) {
 	s.logger.Error("Command exceeded timeout",
 		"command", cmdName,
 		"pid", pid,
@@ -46,7 +48,7 @@ func (s *SecurityLogger) LogTimeoutExceeded(cmdName string, timeoutSeconds int32
 }
 
 // LogTimeoutConfiguration logs the effective timeout configuration for a command
-func (s *SecurityLogger) LogTimeoutConfiguration(cmdName string, timeoutSeconds int32, source string) {
+func (s *SecurityLogger) LogTimeoutConfiguration(cmdName identifier.Identifier, timeoutSeconds int32, source string) {
 	if timeoutSeconds == 0 {
 		s.logger.Info("Command configured with unlimited timeout",
 			"command", cmdName,

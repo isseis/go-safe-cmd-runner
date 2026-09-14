@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/shebang"
@@ -220,7 +221,7 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 		if err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
-				"group", groupName,
+				slog.Any("group", identifier.NewIdentifier(groupName)),
 				"file", file,
 				"error", err)
 		} else {
@@ -276,7 +277,7 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[s
 			resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
-					"group", input.Name,
+					slog.Any("group", identifier.NewIdentifier(input.Name)),
 					"command", command.ExpandedCmd,
 					"reason", "path_resolution_failed",
 					"error", err.Error())

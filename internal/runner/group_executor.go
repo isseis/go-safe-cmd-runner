@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -146,9 +147,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	startTime := time.Now()
 
 	if groupSpec.Description != "" {
-		slog.Info("Executing group", slog.String("name", groupSpec.Name), slog.String("description", groupSpec.Description))
+		slog.Info("Executing group", slog.Any("name", identifier.NewIdentifier(groupSpec.Name)), slog.String("description", groupSpec.Description))
 	} else {
-		slog.Info("Executing group", slog.String("name", groupSpec.Name))
+		slog.Info("Executing group", slog.Any("name", identifier.NewIdentifier(groupSpec.Name)))
 	}
 
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
@@ -215,7 +216,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		errorMsg: "",
 	}
 
-	slog.Info("Group completed successfully", slog.String("name", groupSpec.Name))
+	slog.Info("Group completed successfully", slog.Any("name", identifier.NewIdentifier(groupSpec.Name)))
 	return nil
 }
 
@@ -230,7 +231,7 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 	commandResults := make(common.CommandResults, 0, len(runtimeGroup.Commands))
 
 	for i, runtimeCmd := range runtimeGroup.Commands {
-		slog.Info("Executing command", slog.String("command", runtimeCmd.Spec.Name), slog.Int("index", i+1), slog.Int("total", len(runtimeGroup.Commands)))
+		slog.Info("Executing command", slog.Any("command", identifier.NewIdentifier(runtimeCmd.Spec.Name)), slog.Int("index", i+1), slog.Int("total", len(runtimeGroup.Commands)))
 
 		stdout, stderr, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 
@@ -380,7 +381,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 
 	if result.TotalFiles > 0 {
 		slog.Info("Group file verification completed",
-			"group", groupName,
+			slog.Any("group", identifier.NewIdentifier(groupName)),
 			"verified_files", result.VerifiedFiles,
 			"duration_ms", result.Duration.Milliseconds())
 	}
@@ -405,7 +406,7 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		finalEnv := executor.EnvVarValues(executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd))
 		if depErr := ge.verificationManager.VerifyCommandDependencies(resolvedPath, finalEnv); depErr != nil {
 			slog.Error("Command dependency verification failed",
-				"group", groupName,
+				slog.Any("group", identifier.NewIdentifier(groupName)),
 				"command", resolvedPath,
 				"error", depErr)
 			return depErr
@@ -432,7 +433,7 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 		err := ge.resourceManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
 		if err != nil {
 			// Debug info is not worth aborting the run for.
-			slog.Warn("Failed to record group analysis", slog.Any("error", err), slog.String("group", groupSpec.Name))
+			slog.Warn("Failed to record group analysis", slog.Any("error", err), slog.Any("group", identifier.NewIdentifier(groupSpec.Name)))
 		}
 	} else {
 		fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n") //nolint:errcheck
@@ -456,8 +457,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
-		"command", cmd.Name(),
-		"group", groupSpec.Name,
+		slog.Any("command", identifier.NewIdentifier(cmd.Name())),
+		slog.Any("group", identifier.NewIdentifier(groupSpec.Name)),
 		"final_vars_count", len(envMap))
 
 	envVars := executor.EnvVarValues(envMap)
@@ -509,7 +510,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 				}
 				err := ge.resourceManager.UpdateCommandDebugInfo(token, debugInfo)
 				if err != nil {
-					slog.Warn("Failed to update command debug info", slog.Any("error", err), slog.String("command", cmd.Name()))
+					slog.Warn("Failed to update command debug info", slog.Any("error", err), slog.Any("command", identifier.NewIdentifier(cmd.Name())))
 				}
 			} else {
 				output := debuginfo.FormatFinalEnvironmentText(finalEnv)
@@ -534,13 +535,13 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 	}
 
 	if cmd.EffectiveTimeout <= 0 {
-		ge.securityLogger.LogUnlimitedExecution(cmd.Name(), ge.currentUser)
+		ge.securityLogger.LogUnlimitedExecution(identifier.NewIdentifier(cmd.Name()), ge.currentUser)
 		return context.WithCancel(ctx)
 	}
 
 	timeout := time.Duration(cmd.EffectiveTimeout) * time.Second
 	slog.Debug("Command timeout configured",
-		"command", cmd.Name(),
+		slog.Any("command", identifier.NewIdentifier(cmd.Name())),
 		"timeout_seconds", cmd.EffectiveTimeout)
 	return context.WithTimeout(ctx, timeout)
 }
@@ -550,7 +551,7 @@ const maxStdoutLengthForDebugLog = 500
 
 // buildCommandDebugLogArgs builds the log arguments for a command's result:
 // command name, exit code, truncated stdout, and stderr.
-func buildCommandDebugLogArgs(cmdName string, result *executor.Result) []any {
+func buildCommandDebugLogArgs(cmdName identifier.Identifier, result *executor.Result) []any {
 	logArgs := []any{"command", cmdName}
 	if result != nil {
 		logArgs = append(logArgs, "exit_code", result.ExitCode)
@@ -582,7 +583,7 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	result, err := ge.executeCommandInGroup(cmdCtx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			ge.securityLogger.LogTimeoutExceeded(cmd.Name(), cmd.EffectiveTimeout, 0) // PID not available at this level
+			ge.securityLogger.LogTimeoutExceeded(identifier.NewIdentifier(cmd.Name()), cmd.EffectiveTimeout, 0) // PID not available at this level
 		}
 		exitCode := executor.ExitCodeUnknown
 		stderr := ""
@@ -591,7 +592,7 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 			stderr = result.Stderr
 		}
 		// stdout is excluded to keep the error log bounded.
-		errorLogArgs := []any{"command", cmd.Name(), "exit_code", exitCode, "error", err}
+		errorLogArgs := []any{"command", identifier.NewIdentifier(cmd.Name()), "exit_code", exitCode, "error", err}
 		if stderr != "" {
 			errorLogArgs = append(errorLogArgs, "stderr", stderr)
 		}
@@ -609,12 +610,12 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		output = result.Stdout
 	}
 
-	logArgs := buildCommandDebugLogArgs(cmd.Name(), result)
+	logArgs := buildCommandDebugLogArgs(identifier.NewIdentifier(cmd.Name()), result)
 	slog.Debug("Command execution result", logArgs...)
 
 	if result.ExitCode != 0 {
 		// stdout is excluded to keep the error log bounded.
-		errorLogArgs := []any{"command", cmd.Name(), "exit_code", result.ExitCode}
+		errorLogArgs := []any{"command", identifier.NewIdentifier(cmd.Name()), "exit_code", result.ExitCode}
 		if result.Stderr != "" {
 			errorLogArgs = append(errorLogArgs, "stderr", result.Stderr)
 		}
@@ -649,7 +650,7 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 		}
 
 		slog.Info("Using group workdir",
-			"group", runtimeGroup.Spec.Name,
+			slog.Any("group", identifier.NewIdentifier(runtimeGroup.Spec.Name)),
 			"workdir", expandedWorkDir)
 		return expandedWorkDir, nil, nil
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
@@ -544,7 +545,7 @@ func (r *Runner) SetDryRunExecutionError(errType, message, component string, det
 //   - Error: ERROR level (sent to error webhook if configured)
 func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
 	attrs := []slog.Attr{
-		slog.String(common.GroupSummaryAttrs.Group, groupSpec.Name),
+		slog.Any(common.GroupSummaryAttrs.Group, identifier.NewIdentifier(groupSpec.Name)),
 		slog.String(common.GroupSummaryAttrs.Status, string(result.status)),
 		slog.Any(common.GroupSummaryAttrs.Commands, result.commands),
 		slog.Int64(common.GroupSummaryAttrs.DurationMs, duration.Milliseconds()),

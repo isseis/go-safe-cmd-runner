@@ -25,6 +25,10 @@ func TestRedactingHandler_ResolvesNotificationContextLogValue(t *testing.T) {
 		{name: "global scope", ctx: common.GlobalScope()},
 		{name: "group scope", ctx: common.GroupScope("backup")},
 		{name: "command scope", ctx: common.CommandScope("backup", "pg_dump")},
+		// Names that match the value-based redaction patterns must reach the
+		// lower handler as the declared identifier, not as a placeholder.
+		{name: "group scope with a redaction-triggering name", ctx: common.GroupScope("monkey")},
+		{name: "command scope with a redaction-triggering name", ctx: common.CommandScope("monkey", "rotate_api_key")},
 	}
 
 	for _, tt := range tests {

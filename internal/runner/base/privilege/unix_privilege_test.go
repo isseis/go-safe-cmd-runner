@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -809,7 +810,7 @@ func TestWithPrivileges_ReportsNativeRootOutcome(t *testing.T) {
 	rec.RequireRecord(t, slog.LevelInfo, "Native root execution - no privilege escalation needed").
 		AssertAttrs(t, map[string]any{
 			"operation":    runnertypes.OperationFileValidation,
-			"command":      "test-command",
+			"command":      identifier.NewIdentifier("test-command"),
 			"original_uid": 0,
 		})
 }
@@ -866,7 +867,7 @@ func TestLogElevationOutcome(t *testing.T) {
 			rec.RequireRecord(t, slog.LevelInfo, "Privileges elevated").
 				AssertAttrs(t, map[string]any{
 					"operation":    runnertypes.OperationFileValidation,
-					"command":      "test-command",
+					"command":      identifier.NewIdentifier("test-command"),
 					"original_uid": originalUID,
 					"elevated_at":  elevatedAt,
 				})
