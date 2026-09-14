@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
 func TestCommandResults_LogValue(t *testing.T) {
@@ -69,6 +71,8 @@ func TestCommandResults_LogValue(t *testing.T) {
 				cmdAttrs := attrs[2].Value.Group()
 				assert.Len(t, cmdAttrs, 4)
 				assert.Equal(t, "name", cmdAttrs[0].Key)
+				assert.Equal(t, slog.KindLogValuer, cmdAttrs[0].Value.Kind())
+				assert.Equal(t, identifier.NewIdentifier("test1"), cmdAttrs[0].Value.Any())
 				assert.Equal(t, "test1", cmdAttrs[0].Value.String())
 				assert.Equal(t, "exit_code", cmdAttrs[1].Key)
 				assert.Equal(t, int64(0), cmdAttrs[1].Value.Int64())

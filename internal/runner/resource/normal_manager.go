@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -105,7 +106,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	// leaked when a command is rejected after its fd was opened.
 	defer func() {
 		if closeErr := plan.Close(); closeErr != nil {
-			n.logger.Warn("Failed to close verified command plan", "command", cmd.Name(), "error", closeErr)
+			n.logger.Warn("Failed to close verified command plan", "command", identifier.NewIdentifier(cmd.Name()), "error", closeErr)
 		}
 	}()
 	effectiveRisk := plan.Assessment.Level
@@ -134,13 +135,13 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	if denied {
 		n.logger.Error(
 			"Command execution rejected due to risk level violation",
-			"command", cmd.Name(),
+			"command", identifier.NewIdentifier(cmd.Name()),
 			"cmd_binary", cmd.ExpandedCmd,
 			"effective_risk", effectiveRisk.String(),
 			"max_allowed_risk", maxAllowedRisk.String(),
 			"blocking", plan.Assessment.Blocking,
 			"blocking_reason", string(plan.Assessment.BlockingReason),
-			"command_path", group.Name,
+			"command_path", identifier.NewIdentifier(group.Name),
 		)
 		if plan.Assessment.Blocking {
 			return "", nil, fmt.Errorf("%w: command %s denied (reason: %s)",

@@ -1046,7 +1046,7 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 			},
 			{
 				CommandResultFields: common.CommandResultFields{
-					Name:     "test-cmd-2",
+					Name:     "rotate_api_key",
 					ExitCode: 1,
 					Output:   "",
 					Stderr:   "error2",
@@ -1088,6 +1088,53 @@ func TestSlackHandler_WithRedactingHandler(t *testing.T) {
 	// This is the critical assertion - Command Count should be 2, not 0
 	assert.Equal(t, "2", commandCountValue, "Command Count should be 2 after RedactingHandler")
 	assert.Len(t, commandFields, 2, "Should have 2 command fields")
+
+	// A command name that matches the value-based redaction patterns must
+	// survive as a declared identifier rather than become the placeholder.
+	var commandValues strings.Builder
+	for _, field := range commandFields {
+		commandValues.WriteString(field.Value)
+		commandValues.WriteString("\n")
+	}
+	assert.Contains(t, commandValues.String(), "rotate_api_key",
+		"a declared command identifier must survive redaction")
+	assert.NotContains(t, commandValues.String(), "[REDACTED]")
+}
+
+// TestSlackHandler_IdentifierScopeSurvivesRedaction verifies the end-to-end
+// Slack path for identifiers: names that match the value-based redaction
+// patterns reach the message text and the Scope field verbatim, rather than as
+// the redaction placeholder or as an invalid scope.
+func TestSlackHandler_IdentifierScopeSurvivesRedaction(t *testing.T) {
+	const (
+		groupName   = "monkey"
+		commandName = "rotate_api_key"
+	)
+
+	var failureLog syncBuffer
+	rec, server := newRecordingSlackServer(t, http.StatusOK, nil)
+	slackHandler := synchronousTestHandler(t, server, &failureLog)
+	redactingHandler := redaction.NewRedactingHandler(slackHandler, nil, nil)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "Command group execution completed", 0)
+	record.AddAttrs(NotificationAttrs(CommandGroupSummaryNotification(), common.CommandScope(groupName, commandName))...)
+	record.AddAttrs(
+		slog.String(common.GroupSummaryAttrs.Status, "success"),
+		slog.Int64(common.GroupSummaryAttrs.DurationMs, 100),
+	)
+
+	require.NoError(t, redactingHandler.Handle(context.Background(), record))
+
+	require.Equal(t, 1, rec.count())
+	rec.mu.Lock()
+	message := rec.messages[0]
+	rec.mu.Unlock()
+
+	wantScope := "group=" + groupName + " command=" + commandName
+	assert.Contains(t, message.Text, wantScope, "the headline must name the declared identifiers")
+	assert.NotContains(t, message.Text, "(scope: invalid)")
+	assert.Equal(t, wantScope, attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
+	assert.NotContains(t, wantScope, "[REDACTED]")
 }
 
 func TestExtractCommandResultsFromGroup(t *testing.T) {

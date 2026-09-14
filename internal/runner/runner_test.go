@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
@@ -2007,7 +2008,7 @@ func TestCommandResult_LogValue(t *testing.T) {
 				},
 			},
 			expected: map[string]any{
-				"name":      "test-cmd",
+				"name":      identifier.NewIdentifier("test-cmd"),
 				"exit_code": 0,
 				"output":    "success output",
 				"stderr":    "",
@@ -2024,7 +2025,7 @@ func TestCommandResult_LogValue(t *testing.T) {
 				},
 			},
 			expected: map[string]any{
-				"name":      "failing-cmd",
+				"name":      identifier.NewIdentifier("failing-cmd"),
 				"exit_code": 1,
 				"output":    "",
 				"stderr":    "error message",
@@ -2041,7 +2042,7 @@ func TestCommandResult_LogValue(t *testing.T) {
 				},
 			},
 			expected: map[string]any{
-				"name":      "mixed-cmd",
+				"name":      identifier.NewIdentifier("mixed-cmd"),
 				"exit_code": 2,
 				"output":    "some output",
 				"stderr":    "some error",
@@ -2064,6 +2065,10 @@ func TestCommandResult_LogValue(t *testing.T) {
 					attrMap[attr.Key] = attr.Value.String()
 				case slog.KindInt64:
 					attrMap[attr.Key] = int(attr.Value.Int64())
+				case slog.KindLogValuer:
+					// The name keeps its declared type; the value comparison
+					// below fails if it is downgraded to a plain string.
+					attrMap[attr.Key] = attr.Value.Any()
 				}
 			}
 

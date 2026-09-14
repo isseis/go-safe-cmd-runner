@@ -4,6 +4,8 @@ package common
 import (
 	"fmt"
 	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
 // Log field keys for CommandResult structured logging
@@ -117,7 +119,7 @@ type CommandResult struct {
 // Field keys are defined in LogField* constants to ensure consistency
 func (c CommandResult) LogValue() slog.Value {
 	return slog.GroupValue(
-		slog.String(LogFieldName, c.Name),
+		slog.Any(LogFieldName, identifier.NewIdentifier(c.Name)),
 		slog.Int(LogFieldExitCode, c.ExitCode),
 		slog.String(LogFieldOutput, c.Output),
 		slog.String(LogFieldStderr, c.Stderr),
@@ -161,7 +163,7 @@ func (cr CommandResults) LogValue() slog.Value {
 	for i, cmd := range commandsToLog {
 		attrs = append(attrs, slog.Group(
 			fmt.Sprintf("cmd_%d", i),
-			slog.String(LogFieldName, cmd.Name),
+			slog.Any(LogFieldName, identifier.NewIdentifier(cmd.Name)),
 			slog.Int(LogFieldExitCode, cmd.ExitCode),
 			slog.String(LogFieldOutput, cmd.Output),
 			slog.String(LogFieldStderr, cmd.Stderr),

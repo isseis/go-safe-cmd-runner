@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
 const (
@@ -64,7 +66,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 		}
 		tempDir := filepath.Join(resolvedTempDir, fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
 		m.tempDirPath = tempDir
-		slog.Info("[DRY-RUN] Would create temporary directory", slog.String("group", m.groupName), slog.String("path", tempDir))
+		slog.Info("[DRY-RUN] Would create temporary directory", slog.Any("group", identifier.NewIdentifier(m.groupName)), slog.String("path", tempDir))
 		return tempDir, nil
 	}
 
@@ -89,7 +91,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 	}
 
 	m.tempDirPath = tempDir
-	slog.Info("Created temporary directory", slog.String("group", m.groupName), slog.String("path", tempDir))
+	slog.Info("Created temporary directory", slog.Any("group", identifier.NewIdentifier(m.groupName)), slog.String("path", tempDir))
 	return tempDir, nil
 }
 

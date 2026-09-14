@@ -38,6 +38,12 @@ func TestCommandResults_E2E_Integration(t *testing.T) {
 			Output:   "",
 			Stderr:   "Deployment failed: API key=sk-invalid rejected",
 		}},
+		{CommandResultFields: common.CommandResultFields{
+			Name:     "rotate_api_key",
+			ExitCode: 0,
+			Output:   "rotate_api_key",
+			Stderr:   "",
+		}},
 	}
 
 	// Wire up RedactingHandler with a JSON handler to capture structured output.
@@ -61,7 +67,7 @@ func TestCommandResults_E2E_Integration(t *testing.T) {
 	commands, ok := logged[common.GroupSummaryAttrs.Commands].(map[string]any)
 	require.True(t, ok, "commands should be a map")
 
-	assert.Equal(t, float64(3), commands["total_count"])
+	assert.Equal(t, float64(4), commands["total_count"])
 	assert.Equal(t, false, commands["truncated"])
 
 	cmd0, ok := commands["cmd_0"].(map[string]any)
@@ -81,4 +87,14 @@ func TestCommandResults_E2E_Integration(t *testing.T) {
 	stderr2, _ := cmd2[common.LogFieldStderr].(string)
 	assert.Contains(t, stderr2, "[REDACTED]")
 	assert.NotContains(t, stderr2, "sk-invalid")
+
+	// The same string is an identifier as the command name and free text as the
+	// command output: the name survives, the output is still redacted.
+	cmd3, ok := commands["cmd_3"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rotate_api_key", cmd3[common.LogFieldName],
+		"a declared command identifier must survive redaction")
+	output3, _ := cmd3[common.LogFieldOutput].(string)
+	assert.Contains(t, output3, "[REDACTED]")
+	assert.NotContains(t, output3, "rotate_api_key")
 }

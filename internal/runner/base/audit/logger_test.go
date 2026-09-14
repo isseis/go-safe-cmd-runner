@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
@@ -114,7 +115,7 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 			record := rec.RequireRecord(t, tt.wantLevel, tt.wantMessage)
 			record.AssertAttrs(t, map[string]any{
 				"audit_type":            "user_group_execution",
-				"command_name":          tt.cmd.Name(),
+				"command_name":          identifier.NewIdentifier(tt.cmd.Name()),
 				"expanded_command_path": tt.cmd.ExpandedCmd,
 			})
 			// The identity attributes are written only when the command declares
@@ -172,6 +173,37 @@ func TestLogger_LogUserGroupExecution_ByOperationAttrs(t *testing.T) {
 			"privilege_duration_user_group_execution_us": int64(42),
 			"privilege_duration_kill_after_cancel_us":    int64(7),
 		})
+}
+
+// TestLogUserGroupExecution_CommandNameSurvivesRedaction verifies the
+// end-to-end contract of the declared command_name: a name that matches the
+// value-based redaction patterns reaches the JSON output verbatim. The same
+// string logged as a plain attribute would become the redaction placeholder,
+// which is what this record carried before the site declared the identifier.
+func TestLogUserGroupExecution_CommandNameSurvivesRedaction(t *testing.T) {
+	const commandName = "rotate_api_key"
+
+	var buf bytes.Buffer
+	handler := redaction.NewRedactingHandler(
+		slog.NewJSONHandler(&buf, nil), nil, nil)
+	auditLogger := audit.NewAuditLoggerWithCustom(slog.New(handler))
+
+	cmd := executortestutil.CreateRuntimeCommand("/bin/echo", []string{"test"},
+		executortestutil.WithName(commandName),
+		executortestutil.WithRunAsUser("testuser"))
+
+	auditLogger.LogUserGroupExecution(
+		context.Background(),
+		cmd,
+		&audit.ExecutionResult{ExitCode: 0},
+		0,
+		audit.PrivilegeMetrics{},
+	)
+
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entry), "failed to parse JSON log output")
+	assert.Equal(t, commandName, entry["command_name"],
+		"a declared identifier must not be redacted")
 }
 
 // logUserGroupExecutionEntry runs LogUserGroupExecution against a fresh JSON
@@ -330,6 +362,31 @@ func TestLogRiskProfile_LogLevelByRisk(t *testing.T) {
 			assert.Equal(t, "allow", entry["decision"])
 		})
 	}
+}
+
+// TestLogRiskProfile_CommandNameSurvivesRedaction verifies the risk-profile
+// entry's declared command_name reaches the JSON output verbatim through the
+// redacting handler. The name matches the value-based redaction patterns, so a
+// plain-string site would be masked.
+func TestLogRiskProfile_CommandNameSurvivesRedaction(t *testing.T) {
+	const commandName = "rotate_api_key"
+
+	var buf bytes.Buffer
+	handler := redaction.NewRedactingHandler(
+		slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}), nil, nil)
+	auditLogger := audit.NewAuditLoggerWithCustom(slog.New(handler))
+
+	auditLogger.LogRiskProfile(context.Background(), risktypes.RiskAuditEntry{
+		CommandName: commandName,
+		Mode:        risktypes.ModeNormal,
+		Decision:    risktypes.DecisionAllow,
+		Assessment:  risktypes.RiskAssessment{Level: runnertypes.RiskLevelLow},
+	})
+
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entry), "failed to parse JSON log output")
+	assert.Equal(t, commandName, entry["command_name"],
+		"a declared identifier must not be redacted")
 }
 
 // TestLogRiskProfile_DenySeverityFloor verifies every deny is logged at

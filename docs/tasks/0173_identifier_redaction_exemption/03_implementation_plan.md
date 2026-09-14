@@ -503,11 +503,11 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 
 **対象ファイル**: `internal/common/logschema.go`、`internal/common/logschema_test.go`
 
-- [ ] `CommandResult.LogValue`（`logschema.go:118`）の `name` を
+- [x] `CommandResult.LogValue`（`logschema.go:118`）の `name` を
       `slog.Any(LogFieldName, identifier.NewIdentifier(c.Name))` にする。
-- [ ] `CommandResults.LogValue`（`logschema.go:147`）の各 `cmd_%d` グループの `name` も同様に
+- [x] `CommandResults.LogValue`（`logschema.go:147`）の各 `cmd_%d` グループの `name` も同様に
       する。`CommandResultFields.Name` の型は string のまま変えない。
-- [ ] `logschema_test.go` に、`name` の `Kind` が `KindLogValuer` で `Value.Any()` が
+- [x] `logschema_test.go` に、`name` の `Kind` が `KindLogValuer` で `Value.Any()` が
       `identifier.Identifier` であること、`Value.String()` が名前を返すことを検証する行を
       足す。
 
@@ -516,16 +516,16 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 **対象ファイル**: `internal/logging/security.go`、`internal/runner/group_executor.go`、
 `internal/logging/security_test.go`、`internal/runner/group_executor_test.go`
 
-- [ ] `SecurityLogger` の 4 メソッドの引数 `cmdName string` を
+- [x] `SecurityLogger` の 4 メソッドの引数 `cmdName string` を
       `cmdName identifier.Identifier` に変え、`internal/identifier` を import する。
-- [ ] `buildCommandDebugLogArgs`（`group_executor.go:553`）の引数を
+- [x] `buildCommandDebugLogArgs`（`group_executor.go:553`）の引数を
       `cmdName identifier.Identifier` に変える。
-- [ ] 呼び出し元で宣言する。`group_executor.go:537`（`LogUnlimitedExecution`）、`:585`
+- [x] 呼び出し元で宣言する。`group_executor.go:537`（`LogUnlimitedExecution`）、`:585`
       （`LogTimeoutExceeded`）、`:612`（`buildCommandDebugLogArgs`）を
       `identifier.NewIdentifier(cmd.Name())` に置き換える。
-- [ ] `security_test.go` の 5 箇所の呼び出しと `group_executor_test.go:2880` の呼び出しで
+- [x] `security_test.go` の 5 箇所の呼び出しと `group_executor_test.go:2880` の呼び出しで
       `identifier.NewIdentifier(…)` を渡すよう更新する。
-- [ ] `security_test.go::TestSecurityLogger_LogMethods` は呼び出し引数の更新に留めず、
+- [x] `security_test.go::TestSecurityLogger_LogMethods` は呼び出し引数の更新に留めず、
       `LogRecorder`（`internal/testutil/handlers.go`）で生値を捕捉し、4 メソッドが出力する
       `command` 属性の `Value.Any()` が `identifier.Identifier` であることを
       `RecordSnapshot.AssertAttrs` で固定する（`LogRecorder` は `Resolve` しないため、
@@ -545,23 +545,23 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 `internal/runner/base/audit/logger.go`、`internal/runner/resource/normal_manager.go`、
 `internal/runner/resource/dryrun_manager.go`、`internal/verification/manager.go`
 
-- [ ] `NotificationContext.LogValue`（`notification_context.go:78`）の `group`・`command` の
+- [x] `NotificationContext.LogValue`（`notification_context.go:78`）の `group`・`command` の
       下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
       `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
       この符号化は Phase 4.5 の guard が守る宣言サイトの 1 つであり、guard の目録・
       アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。この符号化の
       AC-19 mutation（下位値を一時的に `slog.String` へ戻す）は Phase 4.4 に記す。
-- [ ] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
+- [x] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
       または可変長引数への `identifier.NewIdentifier(値の式)` へ置き換える。`slog.Attr` を
       取る位置は `slog.Any` を使う。`internal/identifier` を各パッケージで import する。
-- [ ] `internal/runner/base/executor/executor.go` は行 247 の OS グループ名
+- [x] `internal/runner/base/executor/executor.go` は行 247 の OS グループ名
       （`cmd.RunAsGroup()`）と行 254 のコマンド名（`cmd.Name()`）を混同しない。行 191・198・
       314・327 の展開済みコマンド行を宣言型にしない。
-- [ ] `internal/verification/manager.go:279-280` は `group` だけを宣言型にし、同じ呼び出しの
+- [x] `internal/verification/manager.go:279-280` は `group` だけを宣言型にし、同じ呼び出しの
       `command`（`command.ExpandedCmd`）は plain string のまま残す。
-- [ ] `internal/runner/resource/normal_manager.go:143` はキー `command_path` の値
+- [x] `internal/runner/resource/normal_manager.go:143` はキー `command_path` の値
       （`group.Name`）だけを宣言型にする。キー名の是正はしない（02_architecture.md §5.2）。
-- [ ] 02_architecture.md §3.5 の表の行を変更しない。
+- [x] 02_architecture.md §3.5 の表の行を変更しない。
 
 #### 4.4 既存テストの更新と統合テストの追加
 
@@ -570,83 +570,86 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 `internal/runner/base/audit/logger_test.go`、`internal/common/notification_context_test.go`、
 `internal/logging/notification_context_test.go`
 
-- [ ] `group_executor_test.go` の 4 つの期待値（`:2473`・`:2486`・`:2598`・`:2674`）と
+- [x] `group_executor_test.go` の 4 つの期待値（`:2473`・`:2486`・`:2598`・`:2674`）と
       呼び出し 1 箇所（`:2880`）を `identifier.NewIdentifier(…)` を用いる形へ更新する。
       `TestCommandDebugLogArgs_StdoutTruncation` は呼び出し側の更新だけでは
       `buildCommandDebugLogArgs` が型付きの値を返すことを確認できないため、戻り値の
       `command` 要素が `identifier.Identifier` であることもアサートする。
-- [ ] AC-19 の確認: `buildCommandDebugLogArgs`（`group_executor.go`）の `command` に
+- [x] AC-19 の確認: `buildCommandDebugLogArgs`（`group_executor.go`）の `command` に
       一時的に `cmdName.Name()`（plain string）を載せ、
       `TestCommandDebugLogArgs_StdoutTruncation` が失敗することを確認して復元する。
       破壊と復元の対象・テスト名をコミットメッセージに記す。
-- [ ] `group_executor_timeout_test.go:94` の比較を
+- [x] `group_executor_timeout_test.go:94` の比較を
       `identifier.NewIdentifier("sleeps-past-its-timeout")` との比較へ更新する。
-- [ ] `runner_test.go::TestCommandResult_LogValue` の期待値マップ（`:2010`・`:2027`・`:2044`）
+- [x] `runner_test.go::TestCommandResult_LogValue` の期待値マップ（`:2010`・`:2027`・`:2044`）
       と属性変換（`:2062-2070`）を更新し、`KindLogValuer` の分岐で `name` が
       `identifier.Identifier` であることを検証する。
-- [ ] `unix_privilege_test.go:812`・`:869` の `command` 期待値を
+- [x] `unix_privilege_test.go:812`・`:869` の `command` 期待値を
       `identifier.NewIdentifier("test-command")` にする。
-- [ ] `audit/logger_test.go:117` の `command_name` 期待値を
+- [x] `audit/logger_test.go:117` の `command_name` 期待値を
       `identifier.NewIdentifier(tt.cmd.Name())` にする。
-- [ ] `security_test.go` の呼び出しと §4.2 の raw 型アサーションを追加する。
-- [ ] `internal/common/notification_context_test.go` の `groupAttr`／`commandAttr` ヘルパーを
+- [x] `security_test.go` の呼び出しと §4.2 の raw 型アサーションを追加する。
+- [x] `internal/common/notification_context_test.go` の `groupAttr`／`commandAttr` ヘルパーを
       `identifier.NewIdentifier` で構築する形に直し、`TestNotificationContext_LogValueEncoding`
       の期待値を宣言型へ更新する。復号が生の宣言型と正規化後の string の両形式を受けることの
       検証は Phase 3 の `TestDecodeNotificationContext_Validity` が担う。
-- [ ] `internal/logging/notification_context_test.go` の
+- [x] `internal/logging/notification_context_test.go` の
       `TestRedactingHandler_ResolvesNotificationContextLogValue` に `monkey` を group、
       `rotate_api_key` を command とするケースを足す。RedactingHandler を通した後の復号が
       元の名前を返すことを検証する（AC-01、AC-02）。
-- [ ] AC-19 の確認: `NotificationContext.LogValue`（`notification_context.go`）の
+- [x] AC-19 の確認: `NotificationContext.LogValue`（`notification_context.go`）の
       `group`・`command` の下位値を一時的に `slog.String` へ戻し、
       `TestRedactingHandler_ResolvesNotificationContextLogValue` の `monkey` ケースが
       失敗することを確認して復元する。テストケースを削除しても、そのケースが挙動を
       検証しなくなるだけで同じ失敗は確認できないため、production の符号化を壊す。破壊と
       復元の対象・テスト名をコミットメッセージに記す。
-- [ ] `internal/logging/slack_handler_test.go` に
+- [x] `internal/logging/slack_handler_test.go` に
       `TestSlackHandler_IdentifierScopeSurvivesRedaction` を追加する。
       `TestSlackHandler_WithRedactingHandler` と同じ配線（RedactingHandler →
       SlackHandler → モックサーバー）で group `monkey`・command `rotate_api_key` の通知を
       送り、Text 行に `group=monkey command=rotate_api_key` が現れ、`(scope: invalid)` に
       ならないこと、Scope・Command フィールドが `[REDACTED]` でないことを検証する
       （AC-01、AC-02）。
-- [ ] `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`
+- [x] `internal/runner/integration_command_results_test.go::TestCommandResults_E2E_Integration`
       を拡張し、redaction を発火させる名前（`rotate_api_key` など）を `CommandResults` に
       載せて、JSON の `name` が元の文字列のままであること、同じ文字列が output／stderr に
       現れた場合は redact されることを検証する（AC-06、AC-09）。
-- [ ] `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler` を拡張し、
+- [x] `internal/logging/slack_handler_test.go::TestSlackHandler_WithRedactingHandler` を拡張し、
       `command_group_summary` のコマンド一覧の名前（redaction を発火させる名前）が
       RedactingHandler 通過後も Slack のコマンドフィールドに残ることを検証する（AC-09）。
-- [ ] `internal/runner/base/audit/logger_test.go` に
+- [x] `internal/runner/base/audit/logger_test.go` に
       `TestLogUserGroupExecution_CommandNameSurvivesRedaction` を追加する。JSON ハンドラを
       RedactingHandler でラップし、redaction を発火させるコマンド名で
       `LogUserGroupExecution` を呼び、出力 JSON の `command_name` が元の名前のままである
       ことを検証する（AC-09）。既存の `TestLogger_LogUserGroupExecution` は生値捕捉の
       期待値更新に留め、免除後の表示はこの新テストが担う。
-- [ ] `internal/runner/base/audit/logger_test.go` に
+- [x] `internal/runner/base/audit/logger_test.go` に
       `TestLogRiskProfile_CommandNameSurvivesRedaction` を追加する。同じ配線で
       `LogRiskProfile` の `command_name`（`entry.CommandName`）が redaction を発火させる
       名前でも元の名前のまま出力されることを検証する（AC-09）。`LogUserGroupExecution` と
       `LogRiskProfile` はどちらも `command_name` に宣言型を載せるため、宣言サイトごとに
       end-to-end の残存証拠を揃える。
-- [ ] `internal/runner/config/validation.go` を変更しない。`TestValidateIdentifiers` と
+- [x] `internal/runner/config/validation.go` を変更しない。`TestValidateIdentifiers` と
       `TestE2E_PreExecutionError_RedactionRewrittenNamesAreAccepted` をこのコミットで実行し、
       設定境界の挙動が変わっていないことを確認する（AC-10）。
-- [ ] 全 `*_test.go` を検索し、宣言型として捕捉される値を string と比較する期待値が
+- [x] 全 `*_test.go` を検索し、宣言型として捕捉される値を string と比較する期待値が
       残っていないことを確認する。追加の更新が生じた場合は §1.3 の表を更新する。
 
 #### 4.5 識別子ガード
 
 **対象ファイル**: `internal/identifier/identifier_guard_test.go`（新規、`//go:build test`）
 
-- [ ] `identifier_guard_test.go` に `TestIdentifierDeclarationCatalog` を追加する。
+- [x] `identifier_guard_test.go` に `TestIdentifierDeclarationCatalog` を追加する。
       02_architecture.md §3.4 の表から導いた目録を持ち、これはファイル・関数・
       「囲むログ呼び出し／文」・「属性キー」・「引数式」・「結果の使用」の組と出現数から
       成る。「結果の使用」は `NewIdentifier` の戻り値がそのまま属性値・ヘルパー引数に
       なっていることを要求し、`.Name()` や `string(…)` を適用した式は失敗させる。走査結果に
       目録の外の宣言があれば失敗し、目録のエントリが走査結果に無ければ（宣言の省略・
-      削除）も失敗する。
-- [ ] 呼び出しサイトの走査は `Options.Extra` に修飾形
+      削除）も失敗する。ヘルパー引数として渡す 3 サイト（`:537`・`:585`・`:612`）は
+      キーが呼び出しサイトに現れないため、目録の「属性キー」欄を `(no key)` とし、
+      「囲むログ呼び出し」のヘルパー名で識別する。ヘルパーが `command` 属性を宣言型の
+      まま出力することは §4.2 の raw 型アサーションが固定する。
+- [x] 呼び出しサイトの走査は `Options.Extra` に修飾形
       （`ImportPath: "github.com/isseis/go-safe-cmd-runner/internal/identifier"`、
       `FuncName: "NewIdentifier"`）だけを渡し、非修飾形は渡さない。ファイル列挙は
       `ProductionGoFilesInRepo`、import 解決は `ResolveLocalImports` を再利用する。
@@ -655,7 +658,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       `identitymutationguard` は組み込みの syscall 関数も併せて報告するため、目録との
       照合前に呼び出しと値参照を `NewIdentifier` に限定して絞り込む。対照テストで
       syscall の呼び出しが混ざっていても検査が失敗しないことを確認する。
-- [ ] 各 production ファイルを再解析する際は `ResolveLocalImports` に
+- [x] 各 production ファイルを再解析する際は `ResolveLocalImports` に
       `internal/identifier`（および組み込みの追跡対象である syscall／unix）を拒否する
       dot import 述語を渡し、他パッケージが `internal/identifier` を dot import した時点で
       失敗させる。`identitymutationguard` の組み込み import 解決は syscall／unix の dot
@@ -663,14 +666,14 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       dot import を塞ぐ。dot import は `NewIdentifier` を非修飾にし、パッケージ外からの
       修飾形の走査に現れない呼び出しを許すため、これが無いと他パッケージの自由文が
       目録外のまま免除される。
-- [ ] 目録の組のうち「囲むログ呼び出し／文」・「引数式」・「結果の使用」は、
+- [x] 目録の組のうち「囲むログ呼び出し／文」・「引数式」・「結果の使用」は、
       `identitymutationguard` の `CallSite` が持たないため、guard 自身がファイルを再解析して
       復元する。呼び出し位置から囲む文を求め、`[]any` に詰めて後続の `slog` 呼び出しへ
       渡す形（`group_executor.go:594`・`:617`）では、消費側の `slog` 呼び出しまで辿って
       文脈を定める。引数式はソースから復元する。「結果の使用」は、`NewIdentifier` の戻り値を
       囲む式が属性値・ヘルパー引数そのものか、`[]any` などの複合リテラルの要素かを判定し、
       戻り値へ `.Name()`・`string(…)` など操作を適用した式は失敗させる。
-- [ ] `internal/identifier` の production ファイルを `ProductionGoFiles(t, dir)` で全数
+- [x] `internal/identifier` の production ファイルを `ProductionGoFiles(t, dir)` で全数
       列挙し、`parser.ParseFile` で解析して、パッケージのトップレベル宣言面を
       `identifier_guard_test.go` に持つ allowlist と双方向かつ厳密に比較する。allowlist が
       持つのは import 集合（`log/slog` だけ）、型 `Identifier`（非公開フィールド
@@ -679,7 +682,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       `(Identifier) LogValue() slog.Value`、および `var _ slog.LogValuer = Identifier{}` を
       描画したテキストである。追加・削除・変更された宣言があれば、その宣言名を挙げて
       失敗させる。`go/types` は使わず、型解決もしない。
-- [ ] ファイル選択は `ProductionGoFiles`
+- [x] ファイル選択は `ProductionGoFiles`
       （`internal/testutil/identitymutationguard/helpers.go:153`。`_test.go` と `test` タグを
       必須とするファイルを除く production ファイルの定義元）に委ね、ホスト GOOS／GOARCH の
       ビルド制約で除外される platform-tagged な production ファイル（例:
@@ -687,16 +690,16 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       しない場合（例: platform-tagged なファイルによる同一シンボルの再宣言）は、その時点で
       検査が失敗するため fail-closed である。golang.org/x/tools は依存に無く、この検査の
       ために追加しない。
-- [ ] 別の生産者（転送ラッパー・void ヘルパー・型エイリアス・定義型・パッケージレベル
+- [x] 別の生産者（転送ラッパー・void ヘルパー・型エイリアス・定義型・パッケージレベル
       初期化子・変更されたシグネチャ／構造体）は、いずれも新しいトップレベル宣言として
       宣言面の不一致に現れるため、allowlist がその宣言名を挙げて構造的に拒否する。
       `Identifier` へ任意の文字列を受け入れる宣言は `NewIdentifier` だけである。個々の
       関数の本体は信頼し、本体での意図的な構築（複合リテラル・型変換・フィールド
       書き込み）は T2（誤宣言）の脅威モデル外の残余制約として扱い、本体レベルの構築検査は
       追加しない（02_architecture.md §5.2）。
-- [ ] 修飾形の `NewIdentifier` の値参照（エイリアス）は `identitymutationguard` が報告する
+- [x] 修飾形の `NewIdentifier` の値参照（エイリアス）は `identitymutationguard` が報告する
       `ValueRef` のうち `NewIdentifier` のものが 0 件であることを要求する。
-- [ ] 対照テスト `TestIdentifierDeclarationCatalog_Control` を置く。合成ソースに対して、
+- [x] 対照テスト `TestIdentifierDeclarationCatalog_Control` を置く。合成ソースに対して、
       次のカテゴリで検査の合否を確認する（CLAUDE.md 「Every test must be able to fail for
       its stated reason」）。宣言面 allowlist の対照は、allowlist 済みの合成パッケージに
       対して宣言をちょうど 1 つだけ追加・削除・変更し、その宣言名を挙げる allowlist 診断を
@@ -736,7 +739,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
   - `internal/identifier` 以外のパッケージが import 別名
     （`import id "…/internal/identifier"`）を付けて `id.NewIdentifier(cmd.Name())` を
     呼ぶ入力。修飾形の走査が別名を解決し、目録に無ければ失敗することを確認する
-- [ ] AC-19 の確認: 次の production mutation を行い、対応するテストの失敗を確認して復元し、
+- [x] AC-19 の確認: 次の production mutation を行い、対応するテストの失敗を確認して復元し、
       壊した対象と失敗したテスト名をコミットメッセージに記す。テスト入力を削除・無効化
       する操作は mutation に数えない（入力を消しても同じテストは失敗せず、挙動を検証
       しなくなるだけである）。

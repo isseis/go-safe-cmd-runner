@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -157,7 +158,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, plan *risktypes.VerifiedC
 	if checkErr := e.identityChecker(); checkErr != nil {
 		e.Logger.Error("CRITICAL SECURITY FAILURE: privilege leak detected after command execution",
 			"error", checkErr,
-			"command", cmd.Name(),
+			"command", identifier.NewIdentifier(cmd.Name()),
 			"pid", os.Getpid())
 		fmt.Fprintf(os.Stderr, "FATAL: %v\n", checkErr)
 		e.osExit(1)
@@ -251,7 +252,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		return &Result{ExitCode: ExitCodeUnknown}, fmt.Errorf("user/group privilege execution failed: %w", err)
 	}
 
-	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", cmd.Name(), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
+	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", identifier.NewIdentifier(cmd.Name()), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
 	result, err := e.runCommand(ctx, pc, func(fn func() error) error {
 		// opened is set from inside the window, for the same reason as at the
 		// kill and staging-cleanup sites: an elevation the manager refused
