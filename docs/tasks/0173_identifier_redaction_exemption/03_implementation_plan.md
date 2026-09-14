@@ -454,28 +454,28 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 **対象ファイル**: `internal/common/notification_context.go`、
 `internal/common/notification_context_test.go`
 
-- [ ] `decodeNotificationContextParts`（`notification_context.go:136`）の `group`・`command` を、
+- [x] `decodeNotificationContextParts`（`notification_context.go:136`）の `group`・`command` を、
       `KindString` に加えて `value.Any()` が `identifier.Identifier` である値も受けるように
       する。汎用の `Value.Resolve` は使わず、`scope` は従来どおり `KindString` だけを受ける。
       どちらでもない値（`slog.Int`、宣言型以外の `LogValuer`）は従来どおり拒否する。
       この Phase では `NotificationContext.LogValue` の符号化を変えない。宣言を伴う符号化の
       変更は、guard・目録・アサーションを同じコミットに含めるため Phase 4 で行う
       （02_architecture.md §3.4、§5.2、§8.1）。
-- [ ] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
+- [x] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
       `identifier.Identifier` である行を足す。期待値は
       `slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier(…))` の形でその場に
       組み立て、正規化後の string 経路（既存の `groupAttr`／`commandAttr`）と生の宣言型経路の
       両方を検証する。`TestNotificationContext_LogValueEncoding` は符号化が変わる Phase 4 まで
       変更しない。
-- [ ] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
+- [x] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
       `identifier.Identifier` 以外の `LogValuer` である行を足し、`ErrInvalidNotificationContext`
       になることを検証する。これは設計が汎用の `Resolve` を採らない根拠（02_architecture.md
       §3.3）を固定する行であり、文字列を受ける任意の `LogValuer` を通す実装を落とす。
-- [ ] `DecodeNotificationContext` の exported コメントと `decodeNotificationContextParts` の
+- [x] `DecodeNotificationContext` の exported コメントと `decodeNotificationContextParts` の
       コメントを、`group`／`command` が受ける値の形（生の `identifier.Identifier` と
       正規化後の string の両方）と、`scope` が従来どおり string だけを受けることを説明する
       文言へ更新する。コメントも英語で書く。
-- [ ] AC-19 の確認: 復号の宣言型受理を外すと `TestDecodeNotificationContext_Validity` の
+- [x] AC-19 の確認: 復号の宣言型受理を外すと `TestDecodeNotificationContext_Validity` の
       宣言型行が失敗することを確認し、コミットメッセージに記す。
 
 **完了条件**: `internal/common`・`internal/logging`・`internal/redaction` のテストが通る。

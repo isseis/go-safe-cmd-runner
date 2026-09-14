@@ -1,6 +1,10 @@
 package common
 
-import "log/slog"
+import (
+	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
+)
 
 // NotificationScope identifies the origin level a notification context
 // declares. ScopeGlobal is the zero value so an omitted context still encodes
@@ -96,8 +100,11 @@ func (c NotificationContext) LogAttr() slog.Attr {
 // DecodeNotificationContext reconstructs a NotificationContext from the fixed
 // group encoding produced by LogValue and validates every part of it. It
 // returns ErrInvalidNotificationContext unless the input is exactly a group
-// with string-valued scope and group sub-keys, an optional string command
-// sub-key, a known scope name, and names consistent with that scope.
+// with a string-valued scope sub-key, a group sub-key that is either a string
+// or an identifier.Identifier, an optional command sub-key of either form, a
+// known scope name, and names consistent with that scope. A redacting handler
+// normalizes a declared identifier to a string, so both forms reach the
+// decoder.
 func DecodeNotificationContext(value slog.Value) (NotificationContext, error) {
 	if value.Kind() != slog.KindGroup {
 		return NotificationContext{}, ErrInvalidNotificationContext
@@ -129,10 +136,13 @@ func DecodeNotificationContext(value slog.Value) (NotificationContext, error) {
 	return ctx, nil
 }
 
-// decodeNotificationContextParts enforces the fixed key set, the string value
-// types and the key cardinality of the encoding and returns the scope name,
-// the group name and the command name. The command name is empty when the
-// command key is absent.
+// decodeNotificationContextParts enforces the fixed key set, the accepted
+// value forms and the key cardinality of the encoding and returns the scope
+// name, the group name and the command name. The scope value must be a string;
+// the group and command values must be either a string or an
+// identifier.Identifier, the two forms LogValue and a redacting handler
+// produce. Every other value, including a LogValuer that resolves to a string,
+// is rejected. The command name is empty when the command key is absent.
 func decodeNotificationContextParts(attrs []slog.Attr) (scopeName, group, command string, ok bool) {
 	var (
 		scopeValue   slog.Value
@@ -160,16 +170,11 @@ func decodeNotificationContextParts(attrs []slog.Attr) (scopeName, group, comman
 		}
 	}
 
-	// The values of present keys must be strings. The zero Value of a missing
-	// key is not a string, so this check is guarded by presence; the
-	// cardinality checks below are what reject a missing key.
+	// The scope value must be a string; the zero Value of a missing key is not
+	// a string, so this check is guarded by presence. The group and command
+	// values are checked by decodeNotificationContextName while extracting
+	// them; the cardinality checks below are what reject a missing key.
 	if scopeCount > 0 && scopeValue.Kind() != slog.KindString {
-		return "", "", "", false
-	}
-	if groupCount > 0 && groupValue.Kind() != slog.KindString {
-		return "", "", "", false
-	}
-	if commandCount > 0 && commandValue.Kind() != slog.KindString {
 		return "", "", "", false
 	}
 	// scope and group appear exactly once in the encoding; command is optional
@@ -179,12 +184,36 @@ func decodeNotificationContextParts(attrs []slog.Attr) (scopeName, group, comman
 	}
 
 	if groupCount > 0 {
-		group = groupValue.String()
+		name, named := decodeNotificationContextName(groupValue)
+		if !named {
+			return "", "", "", false
+		}
+		group = name
 	}
 	if commandCount > 0 {
-		command = commandValue.String()
+		name, named := decodeNotificationContextName(commandValue)
+		if !named {
+			return "", "", "", false
+		}
+		command = name
 	}
 	return scopeValue.String(), group, command, true
+}
+
+// decodeNotificationContextName reads a group or command name from the two
+// forms the encoding produces: the string a redacting handler writes after
+// normalizing a declared identifier, and the raw identifier.Identifier. It
+// deliberately does not resolve other LogValuer values; accepting every value
+// that resolves to a string would widen the encoding contract beyond those two
+// forms.
+func decodeNotificationContextName(value slog.Value) (string, bool) {
+	if value.Kind() == slog.KindString {
+		return value.String(), true
+	}
+	if id, ok := value.Any().(identifier.Identifier); ok {
+		return id.Name(), true
+	}
+	return "", false
 }
 
 // hasConsistentNames reports whether the group and command names match the
