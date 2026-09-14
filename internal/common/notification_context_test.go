@@ -6,7 +6,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
+
+// stringLogValuer resolves to a string but is not a declared identifier, so
+// the decoder must reject it instead of resolving every LogValuer.
+type stringLogValuer struct {
+	name string
+}
+
+func (v stringLogValuer) LogValue() slog.Value {
+	return slog.StringValue(v.name)
+}
 
 func contextGroupValue(attrs ...slog.Attr) slog.Value {
 	return slog.GroupValue(attrs...)
@@ -159,6 +171,8 @@ func TestNotificationContext_UnknownScopeEncodesEmptyAndIsRejected(t *testing.T)
 }
 
 func TestDecodeNotificationContext_Validity(t *testing.T) {
+	identifierPointer := identifier.NewIdentifier("backup")
+
 	tests := []struct {
 		name    string
 		value   slog.Value
@@ -184,6 +198,32 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 				scopeAttr(NotificationScopeNames.Command),
 				groupAttr("backup"),
 				commandAttr("pg_dump"),
+			),
+			want: CommandScope("backup", "pg_dump"),
+		},
+		{
+			name: "group encoding with a declared identifier",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier("backup")),
+			),
+			want: GroupScope("backup"),
+		},
+		{
+			name: "command encoding with a declared identifier group and a string command",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				slog.Any(NotificationContextAttrs.Group, identifier.NewIdentifier("backup")),
+				commandAttr("pg_dump"),
+			),
+			want: CommandScope("backup", "pg_dump"),
+		},
+		{
+			name: "command encoding with a string group and a declared identifier command",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				groupAttr("backup"),
+				slog.Any(NotificationContextAttrs.Command, identifier.NewIdentifier("pg_dump")),
 			),
 			want: CommandScope("backup", "pg_dump"),
 		},
@@ -229,7 +269,7 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "group value is not a string",
+			name: "group value is an int",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Group),
 				slog.Int(NotificationContextAttrs.Group, 1),
@@ -237,11 +277,72 @@ func TestDecodeNotificationContext_Validity(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "command value is not a string",
+			name: "command value is an int",
 			value: contextGroupValue(
 				scopeAttr(NotificationScopeNames.Command),
 				groupAttr("backup"),
 				slog.Int(NotificationContextAttrs.Command, 1),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a typed nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, (*identifier.Identifier)(nil)),
+			),
+			wantErr: true,
+		},
+		{
+			name: "command value is a typed nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				groupAttr("backup"),
+				slog.Any(NotificationContextAttrs.Command, (*identifier.Identifier)(nil)),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a non-nil identifier pointer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, &identifierPointer),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is a group",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Group(NotificationContextAttrs.Group, slog.String("nested", "backup")),
+			),
+			wantErr: true,
+		},
+		{
+			name: "scope value is a declared identifier",
+			value: contextGroupValue(
+				slog.Any(
+					NotificationContextAttrs.Scope,
+					identifier.NewIdentifier(NotificationScopeNames.Global),
+				),
+				groupAttr(""),
+			),
+			wantErr: true,
+		},
+		{
+			name: "group value is another LogValuer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Group),
+				slog.Any(NotificationContextAttrs.Group, stringLogValuer{name: "backup"}),
+			),
+			wantErr: true,
+		},
+		{
+			name: "command value is another LogValuer",
+			value: contextGroupValue(
+				scopeAttr(NotificationScopeNames.Command),
+				groupAttr("backup"),
+				slog.Any(NotificationContextAttrs.Command, stringLogValuer{name: "pg_dump"}),
 			),
 			wantErr: true,
 		},
