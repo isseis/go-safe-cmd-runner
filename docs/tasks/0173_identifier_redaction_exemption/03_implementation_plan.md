@@ -334,23 +334,23 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
 **対象ファイル**: `internal/identifier/identifier.go`（新規）、
 `internal/identifier/identifier_test.go`（新規）
 
-- [ ] `internal/identifier/identifier.go` に leaf パッケージを追加する。`Identifier`
+- [x] `internal/identifier/identifier.go` に leaf パッケージを追加する。`Identifier`
       （非公開フィールド `name string`）、`NewIdentifier(name string) Identifier`、
       `Name() string`、`String() string`、`LogValue() slog.Value`（string を返す）を定義し、
       `var _ slog.LogValuer = Identifier{}` のコンパイル時ガードを置く。02_architecture.md
       §3.1 のコード片は形を示すためのものである。コード片のコメントも含め、実装する
       コメント・識別子・文字列リテラルはすべて英語で書く（`.claude/commands/_context.md`
       の Source-language rule）。
-- [ ] `internal/identifier/identifier_test.go` に、`NewIdentifier(name).Name()` と
+- [x] `internal/identifier/identifier_test.go` に、`NewIdentifier(name).Name()` と
       `.String()` が名前を返すこと、`LogValue()` が `KindString` で名前を返すこと、ゼロ値
       `Identifier{}` が空名として扱われることを検証するテーブルテストを書く。
-- [ ] `internal/identifier` が内部パッケージを import しないことを確認する。`go list
+- [x] `internal/identifier` が内部パッケージを import しないことを確認する。`go list
       -deps ./internal/identifier` は対象パッケージ自身を必ず含むため、返り値をそのまま
       「標準ライブラリだけ」と比較しない。`go list -f '{{join .Imports "\n"}}'
       ./internal/identifier` で直接 import を列挙し、または `-deps` の出力から対象
       パッケージを除外して、標準ライブラリ以外が無いこと（leaf パッケージの条件）を
       確認する。
-- [ ] AC-19 の確認: `LogValue` を名前ではなく固定文字列へ変えるなど、テストが検証対象と
+- [x] AC-19 の確認: `LogValue` を名前ではなく固定文字列へ変えるなど、テストが検証対象と
       する挙動を一時的に壊して `internal/identifier/identifier_test.go` が失敗することを
       確認し、結果をコミットメッセージに記す。
 
