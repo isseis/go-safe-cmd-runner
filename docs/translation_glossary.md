@@ -169,6 +169,7 @@
 | 早期リターン | early return | 最初に該当した結果を返す制御方式 |
 | 実行可能ファイル | executable | |
 | 実行 | execute / execution | |
+| 免除 | exemption | 宣言された識別子に値ベース redaction を適用しないこと（Task 0173） |
 | 終了コード | exit code | プロセスの終了ステータス |
 | 明示 | explicit | env_allowlistの継承モードの文脈 |
 | 展開 | expansion | |
@@ -249,6 +250,7 @@
 | インジェクション | injection | コマンドインジェクションの文脈では "injection" |
 | 整合性 | integrity | ファイルの整合性検証の文脈 |
 | 識別トークン | identification token | `verify` が検証を1件も実施せずに終了した理由を機械的に判別するために、標準エラー出力へ `verify-error=<token>` の形で出力する固定文字列（Task 0164） |
+| 識別子 | identifier | group 名またはコマンド名を表す宣言型。宣言された値だけが値ベース redaction から免除される（Task 0173） |
 | インターフェース | interface | |
 | 即時展開 | immediate expansion | 変数展開の文脈 |
 | インタプリタ起動時コード注入変数 | interpreter startup code-injection variable | 検証済みインタプリタ（シェル/Python/Perl 等）の起動時に任意コードを実行させ得る環境変数（BASH_ENV、PYTHONPATH、NODE_OPTIONS 等） |
@@ -638,6 +640,8 @@
 | 可変長命令 | variable-length instruction | 1〜15バイトのx86_64命令 |
 | 仮想ノード | virtual node | CFG解析で使用する論理的な終端ノード |
 | 値形式検出 | value-format detection | キー名の文脈なしに、値そのものの形式（`AKIA...`、PEM ブロック等）から秘密を判定する層。`ValueDetector.Mask` が担う（Task 0163） |
+| 値まるごと判定 | whole-value detection | 値ベース redaction の最下層。`RedactText` で変化が無かった値を `SensitivePatterns.IsSensitiveValue` で部分一致判定し、値全体を置換する（Task 0173） |
+| 値ベース redaction | value-based redaction | 値そのものの内容・形式から機密情報を検出してマスクする処理の総称。key=value 置換・値形式検出・値まるごと判定の 3 層を指し、宣言された識別子は免除される（Task 0173） |
 | バリデーション | validation | データ妥当性検証 |
 | 検証不能 | verification unavailable | 解析／ファイル検証が利用不能な状態。dry-run の終了コードで区別 |
 | 可視化 | visualization | ログや統計による情報の見える化 |
@@ -805,6 +809,7 @@
 | 2026-08-21 | safefileio の残所見（Task 0167）関連の用語を追加 (seam)。テスト用の差し替え箇所を指す訳語を「差し替え点」に定め、「注入点」を使わないことを明記 |
 | 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映 (solve, silently)。問題を片づける文脈の訳語を「解決する」に定め「解く」を使わないこと、`silently` の訳語を「サイレントに」に定め「静かに」を使わないことを明記 |
 | 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映（window）。名前付きの個別の隙を指す複合語では「〜の隙」ではなく「〜区間」を使うことを明記（起動区間、kill 区間、後始末区間）。「隙」自体の訳語（window）は変更しない |
+| 2026-09-14 | 識別子の型宣言と値ベース redaction からの免除（Task 0173）関連の用語を追加 (identifier, exemption, value-based redaction, whole-value detection) |
 
 ---
 

@@ -43,10 +43,10 @@ group 名・コマンド名を識別子として型で宣言し、宣言され�
    `internal/redaction/sensitive_patterns.go`・`internal/redaction/value_detector.go` は
    変更しない（AC-12）。
 6. 宣言サイトの追加・変更・削除は、`identifier_guard_test.go` の目録（Phase 4）と、
-   その宣言に固定する型・挙動アサーションを同じコミットに含める。初回実装では Phase 4
-   （4.1〜4.5）を 1 コミットにまとめ、宣言・目録・アサーションを同時に導入する。これにより
-   rollback は Phase 4 のコミットの revert を単位にできる（02_architecture.md §5.2）。
-   以後の宣言サイトの追加・削除も同じコミット規約に従う。
+   その宣言に固定する型・挙動アサーションを同じ変更単位に含める。初回実装では Phase 4
+   （4.1〜4.5）を 1 つの PR にまとめ、宣言・目録・アサーションを同時に導入する。これにより
+   rollback は Phase 4 のマージコミットの revert を単位にできる（02_architecture.md §5.2）。
+   以後の宣言サイトの追加・削除も同じ変更単位規約に従う。
 7. 既存の実装・テスト・ヘルパーを優先して再利用する。とくに呼び出しサイトの走査は
    `internal/testutil/identitymutationguard` の既存ヘルパーを使い、走査対象ファイルの定義を
    複製しない。定義パッケージ内の guard は `go/types` を使わず、AST で
@@ -254,7 +254,7 @@ AST でパッケージのトップレベル宣言面を allowlist と厳密に�
 
 | 文書 | 該当箇所 | Phase 5 の扱い |
 |---|---|---|
-| `docs/dev/architecture_design/security-architecture.ja.md` | `### 9. セキュアログと機密データ保護`（`:574` 以降、とくに第 2 層の説明 `:616-635`） | 識別子の型宣言による免除を追記する（AC-15）。kill switch が無いことと、導入コミットの revert による rollback 手順、自由文 error の残余リスクを記す |
+| `docs/dev/architecture_design/security-architecture.ja.md` | `### 9. セキュアログと機密データ保護`（`:574` 以降、とくに第 2 層の説明 `:616-635`） | 識別子の型宣言による免除を追記する（AC-15）。kill switch が無いことと、導入したマージコミットの revert による rollback 手順、自由文 error の残余リスクを記す |
 | `docs/dev/architecture_design/security-architecture.md` | 対応する `### 9. Secure Logging and Sensitive Data Protection`（`:578` 以降） | 日本語版を `/mktrans` で反映する |
 | `docs/user/security-risk-assessment.ja.md` | `### 1. 拡張ログ・監査システム` の「限界」（`:295-299`） | 識別子を redact しない帰結を追記する（AC-14、AC-16） |
 | `docs/user/security-risk-assessment.md` | 対応する Limitations（`:299-301`） | 日本語版を `/mktrans` で反映する |
@@ -459,7 +459,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       する。汎用の `Value.Resolve` は使わず、`scope` は従来どおり `KindString` だけを受ける。
       どちらでもない値（`slog.Int`、宣言型以外の `LogValuer`）は従来どおり拒否する。
       この Phase では `NotificationContext.LogValue` の符号化を変えない。宣言を伴う符号化の
-      変更は、guard・目録・アサーションを同じコミットに含めるため Phase 4 で行う
+      変更は、guard・目録・アサーションを同じ変更単位に含めるため Phase 4 で行う
       （02_architecture.md §3.4、§5.2、§8.1）。
 - [x] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
       `identifier.Identifier` である行を足す。期待値は
@@ -549,7 +549,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
       `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
       この符号化は Phase 4.5 の guard が守る宣言サイトの 1 つであり、guard の目録・
-      アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。この符号化の
+      アサーションと同じ変更単位に含める（02_architecture.md §3.4、§5.2）。この符号化の
       AC-19 mutation（下位値を一時的に `slog.String` へ戻す）は Phase 4.4 に記す。
 - [x] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
       または可変長引数への `identifier.NewIdentifier(値の式)` へ置き換える。`slog.Attr` を
@@ -802,7 +802,7 @@ Phase 4.5 の AC-19 確認が担う。
 
 **推奨タイトル**: `feat(0173): declare identifier log sites and add the declaration guard`
 
-**レビュー観点**: **本 PR は 1 コミットで不可分だが、レビューは 4.1→4.5 の小見出し順に読み進めること**（宣言・目録・アサーションを同時に導入し、rollback を導入コミットの revert に保つ。02_architecture.md §5.2）／43 宣言サイトが 02_architecture.md §3.4 の表と双方向に一致し、§3.5 の plain string サイトを巻き込んでいないこと／guard の「結果の使用」が `NewIdentifier` の戻り値へ `.Name()` などを適用した式を拒否すること／宣言面 allowlist 検査が別コンストラクタ・転送ラッパー・型エイリアス・定義型・初期化子を宣言名付きで拒否し、`ProductionGoFiles` が platform-tagged なファイルも列挙すること
+**レビュー観点**: **本 PR は不可分な変更単位だが（レビュー修正で複数コミットになり、宣言・目録・アサーションは同一 PR で導入する）、レビューは 4.1→4.5 の小見出し順に読み進めること**（rollback を導入したマージコミットの revert に保つ。02_architecture.md §5.2）／43 宣言サイトが 02_architecture.md §3.4 の表と双方向に一致し、§3.5 の plain string サイトを巻き込んでいないこと／guard の「結果の使用」が `NewIdentifier` の戻り値へ `.Name()` などを適用した式を拒否すること／宣言面 allowlist 検査が別コンストラクタ・転送ラッパー・型エイリアス・定義型・初期化子を宣言名付きで拒否し、`ProductionGoFiles` が platform-tagged なファイルも列挙すること
 
 **実装モデル要件**: frontier-required
 
@@ -810,56 +810,57 @@ Phase 4.5 の AC-19 確認が担う。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書の更新と翻訳
 
 **対象ファイル**: §1.3「文書の該当箇所」の 4 文書、`docs/translation_glossary.md`、
 `Makefile`（`verify-docs-checks` と、それが依存する `verify-docs`／`verify-docs-full` ターゲット）
 
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の
       「セキュアログと機密データ保護」の第 2 層の説明に、group 名・コマンド名が宣言型
       （`identifier.Identifier`）で免除されること、免除は 3 層すべてに及び、自由文は
-      免除されないこと、専用の実行時スイッチが無く rollback は導入コミットの revert で
-      行うことを追記する。**追記は `識別子` と `免除` の語を用いる**（用語を統一する）。
-- [ ] `docs/user/security-risk-assessment.ja.md` の「限界」に、識別子として宣言された
+      免除されないこと、専用の実行時スイッチが無く rollback は導入したマージコミットの
+      revert で行うことを追記する。**追記は `識別子` と `免除` の語を用いる**（用語を統一する）。
+- [x] `docs/user/security-risk-assessment.ja.md` の「限界」に、識別子として宣言された
       group 名・コマンド名は値ベース redaction の対象外であること、設定の名前に機密を
       書いた場合は通知・ログにそのまま出ることを追記する（AC-14、AC-16）。**追記は
       `識別子` と `免除` の語を用いる**。
-- [ ] 日本語版 2 文書のコミット後、`/mktrans` で
+- [x] 日本語版 2 文書のコミット後、`/mktrans` で
       `security-architecture.md`・`security-risk-assessment.md` へ反映する
       （`identifier` と `exempt` の語を用いる）。
-- [ ] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
+- [x] `docs/translation_glossary.md` に `識別子` → `identifier`、`免除` → `exemption` が
       未登録なら追加する。
-- [ ] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
+- [x] `scripts/verification/check_identifier_exemption_docs.sh` を追加する（`sh "$script"`
       で実行されるため POSIX 準拠で記述し、shebang は `#!/bin/sh`。bash 固有機能は
       使わない）。§1.3「文書内容の検証スクリプト」の表の語をファイルごとに独立して検査し、
       1 語でも欠ければ非ゼロで終了する。`exempt` は語幹で照合し、`exemption`・`exempted` を含める。
-- [ ] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
+- [x] 同スクリプトの語ごとの AND 判定を確認する。いずれか 1 ファイルから 1 語だけを
       一時的に外し、スクリプトが非ゼロで終了することを確認して復元する。確認結果を
       コミットメッセージに記す。
-- [ ] `Makefile` に `verify-docs-checks` ターゲットを追加し、
+- [x] `Makefile` に `verify-docs-checks` ターゲットを追加し、
       `scripts/verification/check_*.sh` を自動列挙して 1 つずつ実行し、いずれかの非ゼロ
       終了を make の失敗として伝播させる。各スクリプトは `sh "$script"` で実行し、実行
       ビットに依存しない。`sh` は bash 固有機能を解釈しないため `check_*.sh` は POSIX 準拠
       （shebang は `#!/bin/sh`）で記述する（既存の
       `run_executor_setuid_integration.sh` と同じ方針）。glob が一致しない場合に
-      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れる。`verify-docs` と
+      リテラルのパスを実行しないよう `[ -e "$script" ] || continue` を入れ、一致が 0 件の
+      場合は検査の消失を黙って通さず非ゼロで終了する（fail-closed）。`verify-docs` と
       `verify-docs-full` は `verify-docs-checks` に依存させ、`run_all.sh` の実行と組み合わせる。
-      ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は検査結果に
-      かかわらず終了コード 0 を返すため、検査の合否は自動列挙側で
-      判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を追加しても
-      配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を検出できないまま
-      ゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと将来の CI で実際に
-      強制される。
-- [ ] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
+      ターゲット名を `Makefile` の `.PHONY` に追加する。`run_all.sh` は 4 つの検査結果に
+      かかわらず終了コード 0 を返す（ビルド失敗だけが伝播する）ため、検査の合否は
+      自動列挙側で判定する。スクリプト名を Makefile に列挙しないので、将来 `check_*.sh` を
+      追加しても配線を忘れて呼び出されない状態にはならない（配線漏れは文書の退行を
+      検出できないままゲートを緑にする）。これにより AC-13〜AC-17 が Phase 6 のゲートと
+      将来の CI で実際に強制される。
+- [x] 同スクリプトを Phase 5 の完了時に実行し、すべての語が一致することを確認する。
       `make verify-docs` も実行し、日本語版と英語版の構造が一致することと、スクリプトが
       `make verify-docs` から実行され、失敗時に make が失敗することを確認する。
-- [ ] Task 0172 の承認済み文書（`docs/tasks/0172_slack_notification_message_unification/`）
+- [x] Task 0172 の承認済み文書（`docs/tasks/0172_slack_notification_message_unification/`）
       を変更しない。本タスクが Task 0172 の残余リスクを置き換えたことが、本タスクの
       文書と Phase 5 の更新文書から参照できることを確認する（AC-17）。
-- [ ] 追加した段落を読み、識別子が免除されることと、名前に機密を書いた場合の帰結が
+- [x] 追加した段落を読み、識別子が免除されることと、名前に機密を書いた場合の帰結が
       書かれていることを確認する（スクリプトの語一致だけでは内容の正しさまでは保証
       できないため）。
 
@@ -879,8 +880,8 @@ AC-13〜AC-17 の検証が通り、`make verify-docs` がスクリプトを含�
 
 **判定理由**: 文書の追記・翻訳と、検証スクリプトおよびその失敗伝播の確認が中心で、設計判断は 02_architecture.md と本書 §1.3 に既決。高リスク分岐や未確定の実装アプローチは無く、Conditional checks・panel-mode トリガーのいずれにも該当しない（`verify-docs-checks` は変更検出ではなく文書の語句検証である）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した (#1137)
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
