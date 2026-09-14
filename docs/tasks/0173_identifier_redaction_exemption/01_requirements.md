@@ -6,9 +6,9 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | 2026-09-12 |
+| Review date | 2026-09-13 |
 | Reviewer | isseis |
-| Comments | Editorial correction only (no decision changed): fixed the Review date typo (`202-09-12` → `2026-09-12`) and repointed two `02_architecture.md` cross-references from Task 0172 to this task's own document. |
+| Comments | 2026-09-13: 編集上の補正（決定変更なし）: 用語を `02_architecture.md` の確立語「値ベース redaction」に統一（4 箇所）。スコープ対象 3 の件数を実測値（12 ファイル・43 属性サイト）に修正。 |
 
 ## 関連 Issue
 
@@ -52,7 +52,7 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 
 ## 目的
 
-- group 名・コマンド名を「識別子」として**型で宣言**し、redaction の値ベース変換から明示的に除外する。
+- group 名・コマンド名を「識別子」として**型で宣言**し、値ベース redaction から明示的に除外する。
 - 自由文（stdout・stderr・コマンド行・引数・環境変数値・message・error 文字列）の redaction は一切弱めない。
 - Slack・JSON・text の読み取り構造と、設定検証の挙動を変えない。
 
@@ -60,9 +60,9 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 
 ### 対象
 
-1. 識別子を表す型の追加（`internal/common`。型名とメソッドは [`02_architecture.md`](02_architecture.md) で確定する）。
-2. `internal/redaction` に、宣言された識別子を値ベース変換の対象外として明示的に認識する経路を追加し、下流ハンドラには string として正規化して渡す。
-3. group 名・コマンド名を属性値として書く production の全経路を宣言型へ置き換える。少なくとも `group`、`command`、`command_name`、`name`、`notification_context` の名前値、`CommandResult`／`CommandResults` の名前が対象（約 13 ファイル・40 属性サイト）。
+1. 識別子を表す型の追加（leaf パッケージ `internal/identifier`。型名とメソッドは [`02_architecture.md`](02_architecture.md) で確定する）。
+2. `internal/redaction` に、宣言された識別子を値ベース redaction の対象外として明示的に認識する経路を追加し、下流ハンドラには string として正規化して渡す。
+3. group 名・コマンド名を属性値として書く production の全経路を宣言型へ置き換える。少なくとも `group`、`command`、`command_name`、`name`、`notification_context` の名前値、`CommandResult`／`CommandResults` の名前が対象（12 ファイル・43 属性サイト）。
 4. 免除ケースと対照ケース（同じ内容の plain string は従来どおり redact される）を固定するテスト、コマンド行 redaction の維持を固定するテスト、Slack・JSON の表示を確認するテスト。
 5. [`docs/dev/architecture_design/security-architecture.md`](../../dev/architecture_design/security-architecture.md) と [`security-architecture.ja.md`](../../dev/architecture_design/security-architecture.ja.md)、[`docs/user/security-risk-assessment.md`](../../user/security-risk-assessment.md) と [`security-risk-assessment.ja.md`](../../user/security-risk-assessment.ja.md) の更新。
 
@@ -80,13 +80,13 @@ Task 0172 は識別子を設定境界で拒否する旧検査を撤去した（c
 
 ### 識別子は型で宣言する（Declare, don't infer）
 
-除外の判断を文字列の内容や属性キーから推測せず、値の型で宣言する。識別子として宣言された値は、内容にかかわらず値ベース変換の対象外とする。型の構築は production コードに限られ、外部入力から任意の値を作る経路は設けない。
+除外の判断を文字列の内容や属性キーから推測せず、値の型で宣言する。識別子として宣言された値は、内容にかかわらず値ベース redaction の対象外とする。型の構築は production コードに限られ、外部入力から任意の値を作る経路は設けない。
 
 ### キー名による除外はしない
 
 属性キーは「何の値か」を保証しない。同じキーに識別子と自由文の両方が載る現状では、キー単位の除外はコマンド行の redaction を弱める。型で区別することが唯一の一貫した方法である。
 
-### 免除の範囲は値ベース 3 層すべて
+### 免除の範囲は値ベース redaction の 3 層すべて
 
 key=value 置換・値形式検出・値まるごと判定のいずれも、宣言された識別子には適用しない。コマンド名に `=` や `:` が含まれても書き換えない。この帰結として、設定の名前に機密を書いた場合は通知・ログにそのまま出るが、その文字列は設定ファイルに平文で存在し、名前に機密を書く経路が現実に無いことは Task 0172 で確認済みである。この帰結は利用者向けセキュリティ文書に明記する（AC-16）。
 
