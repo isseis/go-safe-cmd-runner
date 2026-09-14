@@ -459,7 +459,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       する。汎用の `Value.Resolve` は使わず、`scope` は従来どおり `KindString` だけを受ける。
       どちらでもない値（`slog.Int`、宣言型以外の `LogValuer`）は従来どおり拒否する。
       この Phase では `NotificationContext.LogValue` の符号化を変えない。宣言を伴う符号化の
-      変更は、guard・目録・アサーションを同じコミットに含めるため Phase 4 で行う
+      変更は、guard・目録・アサーションを同じ変更単位に含めるため Phase 4 で行う
       （02_architecture.md §3.4、§5.2、§8.1）。
 - [x] `TestDecodeNotificationContext_Validity` に、`group`／`command` の下位値が
       `identifier.Identifier` である行を足す。期待値は
@@ -549,7 +549,7 @@ depguard の許可リストにも未登録である。`.golangci.yml` の `filev
       下位値を `slog.String` から `slog.Any` + `identifier.NewIdentifier` に変える。
       `command` は空でないときだけ載せる現行の出力条件を守る（02_architecture.md §3.3）。
       この符号化は Phase 4.5 の guard が守る宣言サイトの 1 つであり、guard の目録・
-      アサーションと同じコミットに含める（02_architecture.md §3.4、§5.2）。この符号化の
+      アサーションと同じ変更単位に含める（02_architecture.md §3.4、§5.2）。この符号化の
       AC-19 mutation（下位値を一時的に `slog.String` へ戻す）は Phase 4.4 に記す。
 - [x] 02_architecture.md §3.4 の表の各行を `slog.Any(key, identifier.NewIdentifier(値の式))`
       または可変長引数への `identifier.NewIdentifier(値の式)` へ置き換える。`slog.Attr` を
