@@ -914,6 +914,18 @@ func TestVerificationErrorDetailsAreSorted(t *testing.T) {
 		run  func(t *testing.T) *Error
 	}{
 		{
+			// The route-level cases below feed the group verification route
+			// through a map, whose iteration order is randomized, so on a
+			// given run that case may pass without the sort. This case calls
+			// the constructor with a fixed unsorted slice so the guard is
+			// deterministic.
+			name: "constructor_sorts_fixed_input",
+			run: func(_ *testing.T) *Error {
+				return newVerificationError("group", "test-group",
+					[]string{pathB, pathA, pathC}, 3, 0, ErrGroupVerificationFailed)
+			},
+		},
+		{
 			name: "global_verification_failure",
 			run: func(t *testing.T) *Error {
 				manager, err := NewManagerForTest(tu.SafeTempDir(t))

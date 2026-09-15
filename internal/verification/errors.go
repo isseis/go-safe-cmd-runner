@@ -22,8 +22,10 @@ var (
 	ErrGroupVerificationFailed = errors.New("group file verification failed")
 	// ErrGroupVerificationCollectionFailed is returned when the group's
 	// verification targets cannot be collected (a command path does not
-	// resolve). It carries no target names: the unresolved targets are listed
-	// in Error.Details so they do not leak into free-text output.
+	// resolve). Its text carries no target names: the unresolved targets are
+	// listed in Error.Details, so a consumer that embeds only Error.Err (the
+	// group notification path) never sees them in free text. Error.Error()
+	// still joins Details, as it does for verification failures.
 	ErrGroupVerificationCollectionFailed = errors.New("failed to collect verification files")
 	// ErrPathResolverNotInitialized is returned when path resolver is not initialized
 	ErrPathResolverNotInitialized = errors.New("path resolver not initialized")
