@@ -31,17 +31,17 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 ### 1.2 実装方針
 
 1. 失敗ファイル一覧は `verification.Error.Details` だけから取り、自由文 `Message` へ連結しない（02_architecture.md §1.2 原則 1・3）。
-2. `PreExecutionError` の組み立ては `runerrors.NewVerificationPreExecutionError` に一本化し、両発火元はそれを呼ぶだけにする（§3.2）。両発火元が実際にこれを呼ぶことは `go/ast` の静的ガードで固定する（§7.9）。
+2. `PreExecutionError` の組み立ては `runerrors.NewVerificationPreExecutionError` に一本化し、両発火元はそれを呼ぶだけにする（02_architecture.md §3.2）。両発火元が実際にこれを呼ぶことは `go/ast` の静的ガードで固定する（§7.9）。
 3. `Details` の並びは `manager.go` の非公開コンストラクタでだけ正規化する。発火元もビルダーも並びを変えない（§3.2.3・§3.7）。
-4. 表示上限の判定は `common.WithinInterpolationLimit` に問い合わせ、上限値や変換規則をビルダーへ書き写さない（§3.1）。
+4. 表示上限の判定は `common.WithinInterpolationLimit` に問い合わせ、上限値や変換規則をビルダーへ書き写さない（02_architecture.md §3.1）。
 5. redaction・通知種別定義・Slack フィールド集合・`error_type`・`verification.Error` の型と `Error()` は変更しない（§3.4）。
-6. Phase の順序は 02_architecture.md §8 の実装優先順位（1 → 2a → 2b → 3 → 4 → 5）を保つ。各コンポーネントの単体テストと静的ガードは対応する実装と同じ Phase に置き、§8 Phase 4 には横断的なテスト（統合テスト・redaction 回帰・ベンチマーク）を残す（§3.2 順序の根拠）。
+6. Phase の順序は 02_architecture.md §8 の実装優先順位（1 → 2a → 2b → 3 → 4 → 5）を保つ。各コンポーネントの単体テストと静的ガードは対応する実装と同じ Phase に置き、§8 Phase 4 には横断的なテスト（統合テスト・redaction 回帰・ベンチマーク）を残す（§3.3 順序の根拠）。
 7. Go のソースコメント・識別子・文字列リテラルは英語で書く。
 8. `verification.Error` と `PreExecutionError` はどちらもフィールドが公開されており（01 §対象外により型は変えない）、「唯一の生成箇所であること」と「手組みしないこと」を型で強制できない。両者は `go/ast` の静的ガードで固定し、ガードは複合リテラル（値・ポインタ・elided 形）とフィールド代入の各構築形を列挙する（Phase 2b.1・2b.4）。
 
 **02_architecture.md への反映。** 本書の作成時に次の 3 点が 02_architecture.md の記述と異なることが分かったため、02_architecture.md の §3.2.1・§3.6・§5.2・§8 を本書に合わせて修正し、`Status` を `draft` に戻して再レビューを依頼した（修正内容は同書の `Comments` に記録）。
 
-- §8 Phase 4 が挙げるコンポーネント単位のテストを、対応する実装と同じ Phase に置く（§3.2）。
+- §8 Phase 4 が挙げるコンポーネント単位のテストを、対応する実装と同じ Phase に置く（§3.3）。
 - §5.2 は `internal/logging/notification_test.go` の一覧対応テストに `failed_file_paths` の行を足すとするが、同テストはフィールド見出しの集合を検査しており `failed_file_paths` はフィールドではない。テストは変更せず、0172 アーキテクチャ設計書の表にだけ行を足す（§1.3）。
 - `runerrors/` の説明は README に加えて `docs/dev/developer_guide/package_reference.md` にもあるため、そちらも更新する（§1.3）。
 
@@ -77,7 +77,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 |---|---|---|
 | 既存シンボル | `internal/runner/runerrors/types.go`（`ErrorSeverity`・`ErrorType`・`ClassifiedError`）、`classification.go`（`ClassifyVerificationError`）、`logging.go`（`LogCriticalToStderr`・`LogClassifiedError`） | `rg -n "runerrors\." --glob '*.go'` でパッケージ外の参照は 0 件。本番の import も 0 件。全て削除する |
 | 既存テスト | `classification_test.go`・`logging_test.go` | 削除する |
-| パッケージ doc | `types.go:1`（"Package runerrors provides error classification and handling for the runner."） | 共有コンストラクタの責務に書き換える（新設する `pre_execution.go` に移す） |
+| パッケージ doc | `types.go:1`（"Package runerrors provides error classification and handling for the runner."） | 共有コンストラクタの責務に書き換える。Phase 2a で `doc.go` を置き、以後もそこに置く（非公開シンボルの削除でパッケージにファイルが無くならないようにする） |
 | 文書の記述 | `README.ja.md:146`（「一元化エラー処理」）、`README.md:146`（"Centralized error handling"）、`docs/dev/developer_guide/package_reference.md:42,109`（"Centralized error handling"） | 02_architecture.md は README のみを挙げるが、`package_reference.md` にも同じ記述が 2 箇所ある。3 文書とも更新する |
 | `make deadcode` | `Makefile:771` | commit `066c9e59` 時点の出力（`unreachable func` 10 行）に `runerrors` は現れない。本番から import されていないため走査対象に入らないからである。Phase 2b で `runner.go`・`main.go` が import した後は走査対象になる |
 
@@ -143,7 +143,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | `runerrors.ClassifyVerificationError` | （なし） | 削除 |
 | `runerrors.LogCriticalToStderr` | （なし） | 削除 |
 | `runerrors.LogClassifiedError` | （なし） | 削除 |
-| `internal/runner/runerrors/{types,classification,logging}.go`・`{classification,logging}_test.go` | `internal/runner/runerrors/pre_execution.go`・`pre_execution_test.go`・`pre_execution_guard_test.go` | ファイルの削除と新設 |
+| `internal/runner/runerrors/{types,classification,logging}.go`・`{classification,logging}_test.go` | `internal/runner/runerrors/pre_execution.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`doc.go`（新設） | ファイルの削除と新設 |
 
 本書の他の箇所・AC 表・横断検索の記述は、すべてこの表に従う。
 
@@ -151,7 +151,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 ## 2. 実装ステップ
 
-各 Phase の完了時に `make fmt`・`make test`・`make lint` を通す（AC-09）。追加・変更した各テストは、検証対象を壊して失敗することを確認し、その旨をコミットメッセージに記す（AC-10、§4.4）。
+各 Phase の完了時、および各 PR のマージ前に `make fmt`・`make test`・`make lint` を通す（AC-09）。追加・変更した各テストは、検証対象を壊して失敗することを確認し、その旨をコミットメッセージに記す（AC-10、§4.4）。
 
 ### Phase 1: 補間契約の述語・属性キー・走査補助の移動
 
@@ -165,6 +165,23 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 - [ ] `logschema.go` の `PreExecErrorAttrs` に `FailedFilePaths string` を追加し、値を `"failed_file_paths"` にする。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestWithinInterpolationLimit` が、述語の判定を切り詰め後の長さに変えると失敗することを確認する。
+
+### PR-1 作成ポイント: contract predicate, attribute key, and guard scan helpers
+
+**対象ステップ**: Phase 1
+
+**推奨タイトル**: `feat(0175): add the interpolation limit predicate and shared guard scan helpers`
+
+**レビュー観点**: `WithinInterpolationLimit` が自由文の変換後の長さで判定し、`common.Interpolate` の戻り値を測定に使っていないこと／移動した走査補助 5 関数が `identitymutationguard` に揃い、`internal/logging` の既存ガード 2 件が移動後もアサーションと検出結果を変えずに通ること／`PreExecErrorAttrs.FailedFilePaths` のキー値が `"failed_file_paths"` であること／表駆動テストが上限ちょうど・上限 + 1 byte・実体参照化で膨らむ入力を覆うこと
+
+**実装モデル要件**: standard
+
+**判定理由**: 述語の変換規則と判定時点は 02_architecture.md §3.1 に固定済みで、未確定の実装アプローチや高リスク分岐は無い。Conditional checks は、build tag 下の非テストソース `identitymutationguard/helpers.go` を同じタグでコンパイルする項目 1 件にのみ該当する（`make test` は `-tags test` でコンパイルする）。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2a: `runerrors` の死んだシンボルの削除（単独コミット）
 
@@ -184,6 +201,23 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **完了条件**: `go build ./...` と `make test`・`make lint` が通る。`rg -n "runerrors" --glob '!docs/tasks/**'` の結果が README 2 件・`package_reference.md` 2 件・パッケージ自身だけであること（§8）。
 
+### PR-2 作成ポイント: unused runerrors symbol removal
+
+**対象ステップ**: Phase 2a
+
+**推奨タイトル**: `refactor(0175): remove the unused runerrors symbols`
+
+**レビュー観点**: 削除したシンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）への参照が本番・テスト・`docs/tasks/` 以外の文書に残っていないこと／`doc.go` が残り、パッケージ doc が共有コンストラクタの責務を示すこと／README 日英と `package_reference.md` の説明が更新されていること／`go tool cover -func` の削除前後がコミットメッセージに記録されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 本番参照の無いシンボルの削除と 3 文書の追従で、設計判断を伴わず、Conditional checks・panel-mode トリガーのいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 2b: 収集失敗・非公開コンストラクタ・共有コンストラクタ・発火元
 
 02_architecture.md §8 Phase 2b を 4 段に分ける。2b.1 → 2b.2 → 2b.3 → 2b.4 の順に依存する。
@@ -199,12 +233,29 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 - [ ] `manager.go:170`（グローバル検証失敗）・`:242`（group 検証失敗）の構造体リテラルを `newVerificationError` の呼び出しに置き換える。
 - [ ] `collectVerificationFiles` を、パス解決に失敗したコマンドを記録して残りの解決を続け、解決済みファイル集合と解決に失敗した対象（`command.ExpandedCmd`）の一覧を返す形に変える。既存の `slog.Warn`（`:279-283`）は対象ごとに残す。検証は 1 件も行わない（fail-closed を維持）。
 - [ ] `VerifyGroupFiles` の収集失敗分岐（`:196-203`）を、解決に失敗した対象の一覧・`TotalFiles = len(ExpandedVerifyFiles) + len(Commands)`・`VerifiedFiles = 0`・`Err = ErrGroupVerificationCollectionFailed` で `newVerificationError` を呼ぶ形に変える（02_architecture.md §3.7）。
-- [ ] `manager_test.go` の `TestCollectVerificationFiles` の解決失敗サブテスト 2 件（`:773-810`）を、返り値の一覧に解決に失敗した対象が入ることを見る形に更新する。
+- [ ] `manager_test.go` の `TestCollectVerificationFiles` の全呼び出し 7 件（`:679,699,713,730,765,787,808`）を新しい返り値の契約に合わせて更新する。解決済みのケースは解決に失敗した対象の一覧が空であることを確認し、解決失敗のサブテスト 2 件（`:773-810`）は返り値の一覧に解決に失敗した対象が入ることを見る形にする。
 - [ ] `manager_test.go` に `TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets` を追加する。解決に失敗するコマンド 1 件／複数件で、`Details` が解決失敗の全対象を昇順で持つこと、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`verErr.Err.Error()` に対象名が含まれないことを固定する（AC-17）。
 - [ ] `manager_test.go` に `TestVerificationErrorDetailsAreSorted` を追加する。グローバル検証失敗・group 検証失敗・group 収集失敗の 3 経路を表駆動にし、map の反復順に依存しない入力（例: `/b`, `/a`, `/c` を含む集合）で `Details` が昇順になることを固定する（AC-19・AC-21）。
-- [ ] `error_construction_guard_test.go` に `TestVerificationErrorLiteralsOnlyInConstructor` を追加する。`verification.Error` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `verification` の修飾子を解決して、(a) `Error` の複合リテラル（値形 `Error{...}`・ポインタ形 `&Error{...}`・`ElidedCompositeLiterals` が返す elided 形）が `manager.go` の `newVerificationError` の中にだけ現れること、(b) `internal/verification` の本番ファイルに限って、`Details` フィールドへのセレクタ代入（`x.Details = ...`）が `newVerificationError` の外に無いこと、(c) リテラルが 1 件も見つからなければ失敗すること、を固定する（AC-21）。(a) はリポジトリ全体を走査するが、(b) を全本番ファイルへ広げない理由は次のとおりである。`go/ast` だけの走査は型を持たず（`ResolveLocalImports` が与えるのは import の修飾子であり、変数の型ではない）、`.Details` という名前のセレクタ代入は無関係な型のフィールドにも一致する（`internal/filevalidator/validator.go:2063-2065` は別の型の `pltResult.Details` に代入している）。`internal/verification` の中では修飾子なしの `Error` は `verification.Error` にしかならないため、そこに限れば名前だけの一致で足りる。したがって (b) はパッケージ外の代入を見ない点で意図的に不完全であり、これは `TestNotificationContextBuiltOnlyByConstructors`（`internal/logging/notification_contract_guard_test.go`）が走査範囲を絞っているのと同じ割り切りである。
+- [ ] `error_construction_guard_test.go` に `TestVerificationErrorLiteralsOnlyInConstructor` を追加する。`verification.Error` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `verification` の修飾子を解決して、(a) `verification.Error` を指す複合リテラル、すなわち修飾名 `<verification 修飾子>.Error{...}` と、`internal/verification` の本番ファイル内の非修飾 `Error{...}`（値形・ポインタ形・`ElidedCompositeLiterals` が返す elided 形）が `manager.go` の `newVerificationError` の中にだけ現れること（非修飾の `Error` は他パッケージにも同名の型があり、例: `internal/runner/base/privilege/unix.go:317` の `privilege.Error`。修飾名の解決無しに全本番ファイルを走査すると偽陽性になる）、(b) `internal/verification` の本番ファイルに限って、`Details` フィールドへのセレクタ代入（`x.Details = ...`）が `newVerificationError` の外に無いこと、(c) リテラルが 1 件も見つからなければ失敗すること、を固定する（AC-21）。(a) はリポジトリ全体を走査するが、(b) を全本番ファイルへ広げない理由は次のとおりである。`go/ast` だけの走査は型を持たず（`ResolveLocalImports` が与えるのは import の修飾子であり、変数の型ではない）、`.Details` という名前のセレクタ代入は無関係な型のフィールドにも一致する（`internal/filevalidator/validator.go:2063-2065` は別の型の `pltResult.Details` に代入している）。`internal/verification` の中では修飾子なしの `Error` は `verification.Error` にしかならないため、そこに限れば名前だけの一致で足りる。したがって (b) はパッケージ外の代入を見ない点で意図的に不完全であり、これは `TestNotificationContextBuiltOnlyByConstructors`（`internal/logging/notification_contract_guard_test.go`）が走査範囲を絞っているのと同じ割り切りである。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestVerificationErrorDetailsAreSorted` がコンストラクタの並べ替えを外すと 3 経路とも失敗すること、`TestVerificationErrorLiteralsOnlyInConstructor` が §4.4 の構築形ごとの変異（`VerifyGroupFiles` に `&Error{...}` を戻す、値形リテラルを置く、elided 形を置く、`internal/verification` の中（例: `VerifyGroupFiles`）で `newVerificationError` の外に `verErr.Details = ...` を代入する）のそれぞれで失敗することを確認する。
+
+### PR-3 作成ポイント: verification single construction point and collection-failure list
+
+**対象ステップ**: Phase 2b.1
+
+**推奨タイトル**: `feat(0175): centralize verification error construction and list unresolved targets`
+
+**レビュー観点**: `newVerificationError` が `Error` を生成する唯一の場所で、`Details` の昇順コピーと `FailedFiles` をそこでだけ設定すること／収集失敗が解決に失敗した全対象を `Details` に載せ、検証を 1 件も行わず fail-closed を維持すること／`collectVerificationFiles` の `slog.Warn` が同じ関数・同じ属性のままで、既存の `identifier_guard_test.go` の固定を壊さないこと／構築ガードが値・ポインタ・elided 形と `internal/verification` 内の `.Details` 代入を覆うこと
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: Phase 2b.1 はファイル検証というセキュリティ境界の fail-closed 収集経路を作り替え、構築形を列挙する `go/ast` ガードを導入する孤立した高リスク・複雑ステップである。fail-closed の判定規則（未解決が 1 件でもあれば検証を実行せず拒否）は変えず、段階的な rollout や保護の raise/lower を伴わないため panel-mode トリガーには該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 2b.2 `logging`: `FailedFilePaths` と `failed_file_paths` 属性
 
@@ -230,6 +281,23 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 - [ ] `pre_execution_guard_test.go` に `TestRunerrorsExportsOnlyTheSharedConstructor` を追加する。`identitymutationguard.ProductionGoFiles` で `internal/runner/runerrors` の本番ファイルを走査し、公開されたトップレベル宣言が `NewVerificationPreExecutionError` だけであることを固定する（AC-20）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestNewVerificationPreExecutionError` が、`Component` を `"runner"` に変える・`slices.Clone` を外す・収集失敗の分岐を外す、のそれぞれで失敗すること、`TestRunerrorsExportsOnlyTheSharedConstructor` が公開関数を 1 つ足すと失敗することを確認する。
+
+### PR-4 作成ポイント: failed_file_paths attribute and shared constructor
+
+**対象ステップ**: Phase 2b.2 / Phase 2b.3
+
+**推奨タイトル**: `feat(0175): record failed_file_paths and add the shared verification constructor`
+
+**レビュー観点**: `failed_file_paths` 属性が `FailedFilePaths` の空でないときだけ記録され、`Detail()`・stderr・stdout の出力が変わらないこと／共有コンストラクタが `Message` テンプレート 2 種・`Component` = `verification`・`slices.Clone`・`Err` = nil を満たす唯一の組み立て場所になること（発火元が実際にこれを呼ぶことの固定は PR-5 の配線ガード）／`TestRunerrorsExportsOnlyTheSharedConstructor` が `runerrors` の公開トップレベル宣言を `NewVerificationPreExecutionError` だけに固定すること／`TestHandlePreExecutionError_FailedFilePaths` が属性あり・なしの両方を覆うこと
+
+**実装モデル要件**: standard
+
+**判定理由**: フィールドと純関数の追加で、テンプレート・`Component`・複製規則は 02_architecture.md §3.2.1 に固定済み。未確定の実装アプローチや高リスク分岐は無く、Conditional checks・panel-mode トリガーのいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 2b.4 発火元の置き換えと `Component` の typed 定数化
 
@@ -259,23 +327,87 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。表の各行について、対応する分岐（省略通知の組み立て・丸ごと優先の走査・k = 0 の切り詰め・要素の型検査）を外すと当該行が失敗することを確認する（§4.4）。
 
+### PR-5 作成ポイント: shared constructor wiring and failed-file rendering
+
+**対象ステップ**: Phase 2b.4 / Phase 3
+
+**推奨タイトル**: `feat(0175): route verification failures through the shared constructor and render failed files`
+
+**レビュー観点**: group・グローバルの両発火元が共有コンストラクタを呼び、本文・一覧・`Component` を手組みしないこと（`go/ast` ガード 2 件）／`Component` の値が `string(resource.ComponentXxx)` 形に限られ、`"main"`・`"runner"` の生リテラルが残らないこと／記録した `failed_file_paths` が同じ PR のビルダーで `Files:` 節として描画され、`Message` がパスを含まないまま通知からパスが消えないこと（上限判定・切り詰め探索は `common.WithinInterpolationLimit` への問い合わせだけに頼り、丸ごと優先の走査・k = 0 の切り詰め・`(+m more)` の m = n − k が 02_architecture.md §3.3 の表の各行どおり）／テストが必ず `redaction.NewRedactingHandler` を通した `[]any` のレコードを使うこと
+
+**実装モデル要件**: frontier-recommended
+
+**判定理由**: Phase 2b.4 は両発火元の `Component`・`Message` という可視挙動を変えながら構築形を列挙する `go/ast` ガード 2 件を導入し、Phase 3 は予算内掲載の選択・切り詰め探索・省略件数計算を述語への問い合わせだけで行う。いずれも孤立した高リスク・複雑ステップだが、`failed_file_paths` の記録と描画を同一 PR に入れて段階的な raise/lower を作らないため panel-mode トリガーには該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
 ### Phase 4: 横断的なテスト・redaction 回帰・ベンチマーク・グローバル回帰
 
-**対象ファイル**: `internal/redaction/redactor_test.go`、`internal/logging/slack_handler_benchmark_test.go`、`cmd/runner/integration_test_helpers.go`、`cmd/runner/integration_pre_execution_error_test.go`
+02_architecture.md §8 Phase 4 を 2 段に分ける。4a → 4b の順に依存する。
+
+#### 4a 統合テスト共通ヘルパと group 統合テスト
+
+**対象ファイル**: `cmd/runner/integration_test_helpers.go`、`cmd/runner/integration_pre_execution_error_test.go`
 
 **作業内容**:
 
-- [ ] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
-- [ ] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
 - [ ] `cmd/runner/integration_test_helpers.go` に、`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`（`:481-586`）の共通手順（Slack モックサーバー、設定ファイルのハッシュ登録、`bootstrap.SetSlackHandlerFactory`、フラグ変数の退避、`mainWithExitCode` の実行と `FlushSlackNotifications`）を関数に抽出し、既存テストをそれで書き直す。ヘルパは `dryRun = false` を必ず設定し（§1.3）、これを使うテストは `t.Parallel` を呼ばない。
 - [ ] stderr の捕捉には、同じ `package main` にある既存の `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`）を再利用し、`mainWithExitCode` の実行をその `fn` の中で行う。同関数は `os.Stdout`・`os.Stderr` をパイプへ差し替え、両パイプを goroutine で並行して読み切り、書き込み側を閉じてから待つため、長い一覧を出す統合テスト（`TruncatesLongList` の 2 件）でもパイプの固定バッファが満杯になって `mainWithExitCode` が止まることがない。新しい捕捉ヘルパは作らない（`integration_logger_test.go:220-226` の手法は `os.Stderr` の退避と復元だけでパイプを持たず、出力を読めない）。非対話実行の stderr には `handleErrorCommon` の `  Details:` 行のほかに、構造化ログ行（`failed_file_paths=[...]` を含む）と検証マネージャのファイル単位の `slog.Error` 行も流れる（02_architecture.md §5.2 の残存リスク）。したがって以下の統合テストの「stderr にパスが無い」アサーションは `  Details:` 行だけを対象にし、stderr 全体には広げない。
 - [ ] `integration_pre_execution_error_test.go` に `TestIntegration_GroupFileVerificationFailureListsFailedFiles` を追加する。group の `verify_files` にハッシュ未登録のファイル 2 件以上（昇順でない名前で作る）を置き、`Error Message` が `Total: N, Verified: N, Failed: N, Error: group file verification failed, Files: ...` の形で各パスを表示形で含むこと、`Component` フィールドが `verification`、Text 行の Scope が `group=<name>`、`Error Message` に `Group: <name>` が無いこと、`error_type` が `group_file_verification_failed`、stderr の `Details:` 行にパスが無いことを固定する（AC-01・AC-03・AC-05・AC-06・AC-07・AC-14）。group のコマンド（`/bin/true` など）もハッシュ対象に入るため、ハッシュを登録するか失敗一覧に含めるかを決めて期待値を組む。
 - [ ] 同ファイルに `TestIntegration_GroupFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のハッシュ未登録ファイルで、`Error Message` に `(+m more)` が現れ m が `n - 掲載件数` に等しいことを固定する（AC-02・AC-06）。
 - [ ] 同ファイルに `TestIntegration_GroupCollectionFailureListsUnresolvedTargets` を追加する。存在しない絶対パスのコマンドを 2 件以上持つ group で、`Error Message` が `Collection failed: 2 of N targets unresolved, Error: failed to collect verification files, Files: ...` の形で対象名を含み `Total:`／`Verified:` を含まないこと、stderr の `Details:` 行に対象名が無いこと、`error_type` が `group_file_verification_failed` のままであることを固定する（AC-17）。
+
+**完了条件**: `make fmt`・`make test`・`make lint` が通る。group の統合テスト 3 件が対応する分岐（`Files:` 節の付与・省略通知・収集失敗テンプレート）を外すと失敗することを確認する（§4.4）。
+
+### PR-6 作成ポイント: group integration coverage and shared helper
+
+**対象ステップ**: Phase 4a
+
+**推奨タイトル**: `test(0175): extract the Slack integration helper and cover group verification failures`
+
+**レビュー観点**: 統合テスト共通ヘルパが既存テストと同じ手順（Slack モックサーバー、ハッシュ登録、ファクトリ差し替え、フラグ退避、`mainWithExitCode` と `FlushSlackNotifications`）を保ち、既存テストのアサーションを弱めないこと／プロセス全体の状態を差し替えるため `t.Parallel` を使わず、ヘルパが `dryRun = false` を必ず設定すること／group の統合テスト 3 件（全件・部分・収集失敗）が最終 `Error Message`・`Component` = `verification`・Scope・`error_type`・stderr の `  Details:` 行を観測すること／stderr のパス不在の検査対象が `  Details:` 行に限定されていること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: Slack モックサーバー・プロセス全体状態の差し替え・stderr パイプ捕捉を伴う統合テスト 3 件と、既存統合テストからの共通ヘルパ抽出を含む heavy integration-test surface で、mkplan.md step 8 の panel-mode トリガーに該当するため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+
+#### 4b グローバル回帰・redaction 回帰・ベンチマーク
+
+**対象ファイル**: `internal/redaction/redactor_test.go`、`internal/logging/slack_handler_benchmark_test.go`、`cmd/runner/integration_pre_execution_error_test.go`
+
+**作業内容**:
+
 - [ ] `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` にアサーションを追加する。`Error Message` が `Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: ...` の形で失敗ファイルのパスを含むこと、`Component` フィールドが `verification`、stderr の `Details:` 行にパスが無いこと、`error_type` と Scope が従来どおりであること（AC-05・AC-14・AC-16）。
 - [ ] 同ファイルに `TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のグローバル `verify_files` で `(+m more)` が現れることを固定する（AC-05・AC-16）。
+- [ ] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
+- [ ] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
 
-**完了条件**: `make fmt`・`make test`・`make lint` が通る。redaction 回帰のサブテストが `processSlice` の要素に値全体置換を足すと失敗すること、統合テスト各件が対応する分岐（`Files:` 節の付与・省略通知・収集失敗テンプレート・`Component`・`Detail()` へのパス連結）を外すと失敗することを確認する（§4.4）。
+**完了条件**: `make fmt`・`make test`・`make lint` が通る。redaction 回帰のサブテストが `processSlice` の要素に値全体置換を足すと失敗すること、グローバルの統合テスト 2 件が `Files:` 節・省略通知・`Component`・`Detail()` へのパス連結を外すと失敗することを確認する（§4.4）。
+
+### PR-7 作成ポイント: global regression, redaction regression, and benchmark
+
+**対象ステップ**: Phase 4b
+
+**推奨タイトル**: `test(0175): cover global verification rendering, redaction regression, and benchmark cost`
+
+**レビュー観点**: グローバルの統合テスト 2 件（既存の拡張・上限超過）が Phase 4a の共通ヘルパを通して `Files:` 節・省略件数・`Component` = `verification`・stderr の `  Details:` 行を観測すること／redaction 回帰が値形式検出だけが動く入力と値全体置換だけが動く入力の対照で層を切り分けていること／ベンチマークの絶対予算と実測値がコミットメッセージに記録されていること
+
+**実装モデル要件**: frontier-required
+
+**判定理由**: Phase 4b もプロセス全体状態を差し替えるグローバル統合テスト 2 件と end-to-end ベンチマークを含む integration-test surface で、同じ panel-mode トリガーに該当するため。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書の更新
 
@@ -283,13 +415,30 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `runner_command.ja.md` の「通知されるメッセージ種別」（`:1476` の `pre_execution_error` 行の周辺）またはその直後に、検証エラー通知の `Error Message` が失敗ファイル一覧を `Files:` 節として表示すること、上限を超えるときは `(+m more)` で省略件数を示すこと、収集失敗では解決に失敗したコマンドを一覧に載せることを追記する。「ファイル検証エラー」（`:1898`）から相互参照する。記述は Phase 4 の統合テストが観測した実際の `Error Message` を典拠にする。
+- [ ] `runner_command.ja.md` の「通知されるメッセージ種別」（`:1476` の `pre_execution_error` 行の周辺）またはその直後に、検証エラー通知の `Error Message` が失敗ファイル一覧を `Files:` 節として表示すること、上限を超えるときは `(+m more)` で省略件数を示すこと、収集失敗では解決に失敗したコマンドを一覧に載せることを追記する。「ファイル検証エラー」（`:1898`）から相互参照する。記述は Phase 4a・4b の統合テストが観測した実際の `Error Message` を典拠にする。
 - [ ] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。
 - [ ] 0172 アーキテクチャ設計書 §3.5「動的な値の一覧」（`02_architecture.md:560-580`）に `failed_file_paths` の要素（`pre_execution_error` の `Error Message` フィールドの材料、役割は自由文）の行を追加する。editorial correction として扱い、`Status` は `approved` のまま変えず、`Comments` に本タスク（0175）からの追加である旨と決定を変えていない旨を書く（02_architecture.md §5.2）。
 - [ ] 0172 実装計画書 §10（`03_implementation_plan.md:1746-1753`）の group 検証エラーの follow-up に、0174 と同じ形式で「解消済み（2026-MM-DD 追記）」と本タスクへのリンクを追記する。
 - [ ] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
 
 **完了条件**: 3 文書の変更が `make test`・`make verify-docs-checks` を通る。
+
+### PR-8 作成ポイント: user documentation and 0172 follow-up
+
+**対象ステップ**: Phase 5
+
+**推奨タイトル**: `docs(0175): document the failed file listing in verification notifications`
+
+**レビュー観点**: `runner_command.ja.md` の記述が Phase 4a・4b の統合テストが観測した実際の `Error Message` と一致すること／`/mktrans` による英語版への反映後も見出し構造が一致すること／0172 アーキテクチャ設計書への 1 行追記が editorial correction として `Comments` に記録され、`Status` を変えていないこと／0172 実装計画書 §10 の follow-up に解消が記録されていること
+
+**実装モデル要件**: standard
+
+**判定理由**: 文書の追記と翻訳が中心で、記述の典拠は Phase 4a・4b の統合テスト出力に固定されており、Conditional checks・panel-mode トリガーのいずれにも該当しない。
+
+- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ---
 
@@ -303,12 +452,27 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | M2: パッケージ整理 | Phase 2a | `runerrors` に本番シンボルが無く、README・`package_reference.md` が更新済み |
 | M3: 一覧の生成と伝搬 | Phase 2b | 3 経路の昇順・収集失敗・共有コンストラクタ・両発火元の置き換えと静的ガード 4 件が green。`make deadcode` に `runerrors` の行が無い |
 | M4: 描画 | Phase 3 | ビルダーの表駆動テストが green |
-| M5: 横断検証 | Phase 4 | redaction 回帰、ベンチマークの数値、統合テスト 5 件が green |
+| M5: 横断検証 | Phase 4a / Phase 4b | 統合テスト 5 件（新規 4 件 + 既存 1 件の拡張）と redaction 回帰が green。ベンチマークの数値を記録 |
 | M6: 文書 | Phase 5 | 利用者向け文書と 0172 の 2 文書が更新済み |
 
-### 3.2 順序の根拠
+### 3.2 PR 構成
 
-02_architecture.md §8 の 1 → 2a → 2b → 3 → 4 → 5 を保つ。Phase 1 の述語が無ければ Phase 3 のビルダーは上限を測れず、Phase 2b の属性が無ければ Phase 3 のビルダーは読む値を持たない。Phase 2a は共有コンストラクタの追加と別コミットにする要件（01 §決定事項）のため 2b の前に置く。§8 Phase 4 が挙げるテストのうち、コンポーネント単位のもの（`manager_test.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`pre_execution_error_test.go`・`slack_handler_test.go`）は対応する実装と同じ Phase へ移し、実装と検証を同じコミットのレビュー対象にする（静的ガードは、それが固定する置き換えと同じコミットに入ることで、置き換え直後から手組みへの後退を検出する）。静的ガードが依存する走査補助の移動は Phase 1 に置く。Phase 4 には複数コンポーネントを跨ぐもの（統合テスト・redaction 回帰・ベンチマーク）を残す。この配置は 02_architecture.md §8 にも反映済みである（§1.2）。Phase 4 の統合テストは Phase 2b と Phase 3 の両方が無いと最終 `Error Message` を観測できないため、この順でなければならない。Phase 5 は統合テストが観測した実際の表示を文書の典拠にするため最後に置く。
+| PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
+|---|---|---|---|
+| PR-1 | Phase 1 | `WithinInterpolationLimit`、`failed_file_paths` キー、走査補助 5 関数の `identitymutationguard` への移動 | standard |
+| PR-2 | Phase 2a | `runerrors` の死んだシンボルとテストの削除、パッケージ説明の更新 | standard |
+| PR-3 | Phase 2b.1 | 非公開コンストラクタと昇順正規化、収集失敗の一覧化、構築ガード | frontier-recommended |
+| PR-4 | Phase 2b.2 / Phase 2b.3 | `failed_file_paths` 属性の記録、共有コンストラクタ、公開シンボルガード | standard |
+| PR-5 | Phase 2b.4 / Phase 3 | 両発火元の置き換え、`Component` の typed 定数化、配線ガード 2 件、`buildPreExecutionError` の一覧描画 | frontier-recommended |
+| PR-6 | Phase 4a | 統合テスト共通ヘルパの抽出、group 統合テスト 3 件（新規） | frontier-required |
+| PR-7 | Phase 4b | グローバル統合テスト 2 件（既存 1 件の拡張 + 新規 1 件）、redaction 回帰、ベンチマーク | frontier-required |
+| PR-8 | Phase 5 | 日英の利用者向け文書、0172 の 2 文書への追記 | standard |
+
+PR-3 → PR-4 → PR-5 の順序は Phase 2b.1 → 2b.2 → 2b.3 → 2b.4 の依存（収集失敗のセンチネル、`FailedFilePaths`、共有コンストラクタ）による。PR-5 は Phase 2b.4 と Phase 3 をまとめ、`failed_file_paths` の記録と描画を同じ PR で変える（記録だけが先行して通知からパスが消える中間状態を作らない）。PR-6 は PR-5 までの実装を前提とし、PR-7 は PR-6 の共通ヘルパを再利用するため PR-6 → PR-7 の順に依存する。PR-8 は PR-7 が観測した表示を記述の典拠にする。
+
+### 3.3 順序の根拠
+
+02_architecture.md §8 の 1 → 2a → 2b → 3 → 4 → 5 を保つ。Phase 1 の述語が無ければ Phase 3 のビルダーは上限を測れず、Phase 2b の属性が無ければ Phase 3 のビルダーは読む値を持たない。Phase 2a は共有コンストラクタの追加と別コミットにする要件（01 §決定事項）のため 2b の前に置く。§8 Phase 4 が挙げるテストのうち、コンポーネント単位のもの（`manager_test.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`pre_execution_error_test.go`・`slack_handler_test.go`）は対応する実装と同じ Phase へ移し、実装と検証を同じコミットのレビュー対象にする（静的ガードは、それが固定する置き換えと同じコミットに入ることで、置き換え直後から手組みへの後退を検出する）。静的ガードが依存する走査補助の移動は Phase 1 に置く。Phase 4（4a・4b）には複数コンポーネントを跨ぐもの（統合テスト・redaction 回帰・ベンチマーク）を残す。この配置は 02_architecture.md §8 にも反映済みである（§1.2）。Phase 4a・4b の統合テストは Phase 2b と Phase 3 の両方が無いと最終 `Error Message` を観測できないため、この順でなければならない。Phase 5 は統合テストが観測した実際の表示を文書の典拠にするため最後に置く。
 
 ---
 
@@ -326,12 +490,12 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 ### 4.2 層の切り分け
 
 - `failed_file_paths` を読むテストは必ず `redaction.NewRedactingHandler` を通したレコードを使う。`processSlice` が `[]string` を `[]any` に変えるため（`redactor.go:1463`）、生のレコードを直接組むテストでは本番の表現を取りこぼす（02_architecture.md §7.2）。
-- redaction 回帰（Phase 4）は、値形式検出だけが動く要素（トークン形式）と、値全体置換だけが動く文字列（`/opt/monkey/data` を `KindString` で渡す）を分け、スライス要素の `/opt/monkey/data` が残ることを両者との対照で示す。
+- redaction 回帰（Phase 4b）は、値形式検出だけが動く要素（トークン形式）と、値全体置換だけが動く文字列（`/opt/monkey/data` を `KindString` で渡す）を分け、スライス要素の `/opt/monkey/data` が残ることを両者との対照で示す。
 - グローバル発火元が渡す `error_message` にパスが無いことは、`internal/logging` の汎用テストでは検出できない（`main.go` がパス入りの `Message` を渡し続けても通る）。`cmd/runner` の統合テストの stderr 捕捉で固定する（§7.4）。
 
 ### 4.3 統合テスト（`cmd/runner`、`make test` に含まれる）
 
-in-process ハンドラ差し替えで Slack モックサーバーへ流し、最終 `Error Message`・`Component`・Scope・stderr を観測する。group 検証失敗（全件・部分）、group 収集失敗、グローバル検証失敗（既存の拡張・部分）の 5 件（Phase 4）。
+in-process ハンドラ差し替えで Slack モックサーバーへ流し、最終 `Error Message`・`Component`・Scope・stderr を観測する。group 検証失敗（全件・部分）、group 収集失敗、グローバル検証失敗（既存の拡張・部分）の 5 件（Phase 4a / Phase 4b）。
 
 ### 4.4 実装時に行うテスト失敗確認（AC-10）
 
@@ -352,12 +516,12 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 | 2b.4 | 共有コンストラクタ呼び出しを旧リテラルへ戻す | `TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` |
 | 3 | 省略通知を付けない／丸ごと優先を切り詰めに変える／k = 0 の切り詰めを外す | `TestBuildPreExecutionError_FailedFilePaths`（部分表示・切り詰めの行） |
 | 3 | 要素の型検査を外す／空スライスで `Files:` 節を付ける | `TestBuildPreExecutionError_FailedFilePathsMalformedValue` |
-| 4 | `processSlice` の文字列要素に `IsSensitiveValue` の値全体置換を足す | `TestRedactingHandler_SliceStringElementRedaction`（`KeywordBearingPathElementIsKept`） |
-| 4 | ビルダーが `Files:` 節を付けない／`main.go` が `err.Error()` を `Message` に戻す | 統合テスト 5 件（後者はグローバルの 2 件の `Details:` 行アサーション） |
+| 4b | `processSlice` の文字列要素に `IsSensitiveValue` の値全体置換を足す | `TestRedactingHandler_SliceStringElementRedaction`（`KeywordBearingPathElementIsKept`） |
+| 4a・4b | ビルダーが `Files:` 節を付けない／`main.go` が `err.Error()` を `Message` に戻す | 統合テスト 5 件（後者はグローバルの 2 件の `Details:` 行アサーション） |
 
 ### 4.5 性能
 
-`BenchmarkBuildPreExecutionError_FailedFilePaths` で 02_architecture.md §7.7 の絶対予算とスケーリングを確認し、数値をコミットメッセージに記す（Phase 4）。単体テストのしきい値にはしない。
+`BenchmarkBuildPreExecutionError_FailedFilePaths` で 02_architecture.md §7.7 の絶対予算とスケーリングを確認し、数値をコミットメッセージに記す（Phase 4b）。単体テストのしきい値にはしない。
 
 ---
 
@@ -366,26 +530,29 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 | リスク | 影響 | 対策 |
 |---|---|---|
 | `collectVerificationFiles` の返り値変更が `VerifyGroupFiles` 以外の呼び出し元に波及する | ビルド失敗または挙動変化 | 呼び出し元は `VerifyGroupFiles` とテストのみ（§1.3）。コンパイルで検出する |
-| グローバル発火元の `Message` から `err.Error()` のパスが消え、`error_message` を照合する外部消費者が影響を受ける | 運用スクリプトの不一致 | 02_architecture.md §4 の記載どおり利用者向け文書に明記する（Phase 5）。通知本文から失敗ファイルは消えず、`Files:` 節へ移る |
+| グローバル発火元の `Message` から `err.Error()` のパスが消え、`error_message` を照合する外部消費者が影響を受ける | 運用スクリプトの不一致 | 02_architecture.md §3.6・§8 Phase 5 の記載どおり利用者向け文書に明記する（Phase 5）。通知本文から失敗ファイルは消えず、`Files:` 節へ移る |
 | ビルダーの切り詰め探索が上限値を暗黙に前提にする | `interpolationMaxBytes` を変えたときにビルダーが壊れる | 上限値をビルダーに書かず、`WithinInterpolationLimit` だけに問い合わせる。`TestBuildPreExecutionError_FailedFilePaths` の最終行（raw の候補が述語を満たす）で固定する |
-| `cmd/runner` 統合テストで group のコマンド（`/bin/true`）が失敗ファイル一覧に混ざる | 期待値がプラットフォーム依存になる | コマンドのハッシュを登録するか、コマンドを含む形で期待値を組むかを Phase 4 で決めて固定する |
+| `cmd/runner` 統合テストで group のコマンド（`/bin/true`）が失敗ファイル一覧に混ざる | 期待値がプラットフォーム依存になる | コマンドのハッシュを登録するか、コマンドを含む形で期待値を組むかを Phase 4a で決めて固定する |
 | 完了済みタスク 0172 の承認済み文書へ追記する | プロセス上の懸念 | 決定を変えない editorial correction として `Comments` に記録し、ステータスは変えない（02_architecture.md §5.2） |
 | `identitymutationguard` への走査補助の移動で `internal/logging` の既存ガードを壊す | 既存ガードの vacuous pass | `TestPreExecutionErrorLiteralCheckRecognizesForms` が移動後も通ることを Phase 1 の作業に含める |
 | `collectVerificationFiles` の書き換えが `internal/identifier/identifier_guard_test.go:122` の固定（同関数内の `slog.Warn` 1 件）を壊す | 既存ガードの失敗 | `slog.Warn` は同じ関数・同じ属性のまま残し、補助関数へ切り出さない（§1.3） |
 | `cmd/runner` 統合テストがプロセス全体の状態を差し替える | 並列実行時の干渉、dry-run で失敗が発火しない | `t.Parallel` を使わず、ヘルパが `dryRun = false` を必ず設定する（§1.3） |
 | 収集失敗で残りのコマンドの解決を続けることによる `slog.Warn` の増加 | ログ行数の増加 | 対象ごとに 1 行で、件数は group のコマンド数が上限。許容する |
 | `.Details` 代入の検査を全本番ファイルへ広げると `internal/filevalidator/validator.go:2063-2065` の `pltResult.Details` 代入に誤反応する | ガードの偽陽性 | 検査 (b) を `internal/verification` の本番ファイルに限定する（Phase 2b.1） |
+| 非修飾 `Error{...}` の検査を全本番ファイルへ広げると `internal/runner/base/privilege/unix.go:317` の `privilege.Error` リテラルに誤反応する | ガードの偽陽性 | 検査 (a) を修飾名 `verification.Error` と `internal/verification` 内の非修飾 `Error` に限定する（Phase 2b.1） |
 
 ---
 
 ## 6. 実装チェックリスト
 
-- [ ] Phase 1 完了（`make fmt`・`make test`・`make lint` green）
-- [ ] Phase 2a 完了（単独コミット。`go tool cover -func` の前後をコミットメッセージに記録）
-- [ ] Phase 2b.1〜2b.4 完了（`make deadcode` に `runerrors` の行が無い）
-- [ ] Phase 3 完了
-- [ ] Phase 4 完了（ベンチマークの数値をコミットメッセージに記録）
-- [ ] Phase 5 完了（`/mktrans` 済み、0172 の 2 文書に追記済み）
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1）
+- [ ] PR-2 マージ済み（対象ステップ: Phase 2a。削除の単独コミット。`go tool cover -func` の前後をコミットメッセージに記録）
+- [ ] PR-3 マージ済み（対象ステップ: Phase 2b.1）
+- [ ] PR-4 マージ済み（対象ステップ: Phase 2b.2 / Phase 2b.3）
+- [ ] PR-5 マージ済み（対象ステップ: Phase 2b.4 / Phase 3。`make deadcode` に `runerrors` の行が無い）
+- [ ] PR-6 マージ済み（対象ステップ: Phase 4a）
+- [ ] PR-7 マージ済み（対象ステップ: Phase 4b。ベンチマークの数値をコミットメッセージに記録）
+- [ ] PR-8 マージ済み（対象ステップ: Phase 5。`/mktrans` 済み、0172 の 2 文書に追記済み）
 - [ ] すべての AC が §7 の検証で green
 - [ ] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録
 
@@ -397,20 +564,20 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 | AC | 実装タスク | 検証（種別 / アーティファクト） |
 |---|---|---|
-| AC-01 | Phase 3、Phase 4 | `test`: `internal/logging/slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（全件表示・表示形の一意性の各行）、`cmd/runner/integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles` |
-| AC-02 | Phase 1、Phase 3、Phase 4 | `test`: `internal/common/interpolation_test.go::TestWithinInterpolationLimit`、`slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（部分表示・切り詰めの各行）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureTruncatesLongList` |
-| AC-03 | Phase 2b.3、Phase 4 | `test`: `internal/runner/runerrors/pre_execution_test.go::TestNewVerificationPreExecutionError`（`Message` に group 名が無い）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`（Scope に group 名、`Error Message` に `Group:` 無し）、既存の `internal/runner/runner_test.go::TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage` |
+| AC-01 | Phase 3、Phase 4a | `test`: `internal/logging/slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（全件表示・表示形の一意性の各行）、`cmd/runner/integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles` |
+| AC-02 | Phase 1、Phase 3、Phase 4a / Phase 4b | `test`: `internal/common/interpolation_test.go::TestWithinInterpolationLimit`、`slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（部分表示・切り詰めの各行）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureTruncatesLongList` |
+| AC-03 | Phase 2b.3、Phase 4a | `test`: `internal/runner/runerrors/pre_execution_test.go::TestNewVerificationPreExecutionError`（`Message` に group 名が無い）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`（Scope に group 名、`Error Message` に `Group:` 無し）、既存の `internal/runner/runner_test.go::TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage` |
 | AC-04 | Phase 2b.3、Phase 3 | `test`: `pre_execution_test.go::TestNewVerificationPreExecutionError`（`Details` が空の行と 3 テンプレートの行）、`slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（一覧なしの行） |
-| AC-05 | Phase 2b.3、Phase 2b.4、Phase 3、Phase 4 | `test`: `pre_execution_test.go::TestNewVerificationPreExecutionError`（グローバルと group が同じテンプレート・同じ `Component`）、`integration_pre_execution_error_test.go::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`・`::TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` |
-| AC-06 | Phase 2b.4、Phase 4 | `test`: `runner_test.go::TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（`Runner.Execute` 経由の `failed_file_paths` 属性）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GroupFileVerificationFailureTruncatesLongList`（`mainWithExitCode` → `Runner.Execute` を経由した最終 `Error Message` と省略件数） |
-| AC-07 | Phase 4 | `test`: `integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GroupCollectionFailureListsUnresolvedTargets`（`error_type` と Text 行）、既存の `internal/logging/notification_test.go::TestNotificationDefinitions_FieldsAreDeclaredInInventory`（フィールド集合が変わらない） |
+| AC-05 | Phase 2b.3、Phase 2b.4、Phase 3、Phase 4b | `test`: `pre_execution_test.go::TestNewVerificationPreExecutionError`（グローバルと group が同じテンプレート・同じ `Component`）、`integration_pre_execution_error_test.go::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`・`::TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` |
+| AC-06 | Phase 2b.4、Phase 4a | `test`: `runner_test.go::TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（`Runner.Execute` 経由の `failed_file_paths` 属性）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GroupFileVerificationFailureTruncatesLongList`（`mainWithExitCode` → `Runner.Execute` を経由した最終 `Error Message` と省略件数） |
+| AC-07 | Phase 4a | `test`: `integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GroupCollectionFailureListsUnresolvedTargets`（`error_type` と Text 行）、既存の `internal/logging/notification_test.go::TestNotificationDefinitions_FieldsAreDeclaredInInventory`（フィールド集合が変わらない） |
 | AC-08 | Phase 3 | `test`: `slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（実体参照化で膨らむ要素の行、raw の候補が述語を満たす行）、既存の `notification_test.go::TestNotificationDefinitions_FieldRolesTransformValues` |
 | AC-09 | 各 Phase | `static`: `make fmt`・`make test`・`make lint`（各 Phase の完了条件） |
 | AC-10 | 各 Phase | `manual`: §4.4 の表に従い変異確認を実施し、コミットメッセージに記録する。`test`: 変異確認の対象は §4.4 の各テスト |
-| AC-14 | Phase 2b.2、Phase 4 | `test`: `internal/logging/pre_execution_error_test.go::TestHandlePreExecutionError_FailedFilePaths`（属性の記録と stderr）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`（stderr の `Details:` 行にパスが無い） |
-| AC-15 | Phase 4 | `test`: `internal/redaction/redactor_test.go::TestRedactingHandler_SliceStringElementRedaction`（サブテスト `KeywordBearingPathElementIsKept`）、既存の `::TestRedactingHandler_PlainStringIsStillRedacted` |
-| AC-16 | Phase 2b.4（`main.go`）、Phase 3、Phase 4 | `test`: `integration_pre_execution_error_test.go::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`・`::TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` |
-| AC-17 | Phase 2b.1、Phase 2b.4、Phase 4 | `test`: `internal/verification/manager_test.go::TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets`、`runner_test.go::TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（収集失敗の行）、`integration_pre_execution_error_test.go::TestIntegration_GroupCollectionFailureListsUnresolvedTargets` |
+| AC-14 | Phase 2b.2、Phase 4a / Phase 4b | `test`: `internal/logging/pre_execution_error_test.go::TestHandlePreExecutionError_FailedFilePaths`（属性の記録と stderr）、`integration_pre_execution_error_test.go::TestIntegration_GroupFileVerificationFailureListsFailedFiles`・`::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`（stderr の `Details:` 行にパスが無い） |
+| AC-15 | Phase 4b | `test`: `internal/redaction/redactor_test.go::TestRedactingHandler_SliceStringElementRedaction`（サブテスト `KeywordBearingPathElementIsKept`）、既存の `::TestRedactingHandler_PlainStringIsStillRedacted` |
+| AC-16 | Phase 2b.4（`main.go`）、Phase 3、Phase 4b | `test`: `integration_pre_execution_error_test.go::TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`・`::TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` |
+| AC-17 | Phase 2b.1、Phase 2b.4、Phase 4a | `test`: `internal/verification/manager_test.go::TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets`、`runner_test.go::TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（収集失敗の行）、`integration_pre_execution_error_test.go::TestIntegration_GroupCollectionFailureListsUnresolvedTargets` |
 | AC-18 | Phase 2b.3、Phase 2b.4 | `test`: `pre_execution_test.go::TestNewVerificationPreExecutionError`、`runner_test.go::TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（`Component == verification`）。`static`: `internal/runner/runerrors/pre_execution_guard_test.go::TestFiringPointsUseSharedVerificationConstructor`（複合リテラルとフィールド代入の両構築形） |
 | AC-19 | Phase 2b.1、Phase 3 | `test`: `manager_test.go::TestVerificationErrorDetailsAreSorted`（3 経路）、`slack_handler_test.go::TestBuildPreExecutionError_FailedFilePaths`（渡した順に描画する行） |
 | AC-20 | Phase 2a、Phase 2b.3 | `static`: `pre_execution_guard_test.go::TestRunerrorsExportsOnlyTheSharedConstructor`、`make deadcode`（`internal/runner/runerrors` の行が無い。Phase 2b 以降）。`manual`: Phase 2a の `go tool cover -func` 前後の記録、README・`package_reference.md` の更新（§8） |
