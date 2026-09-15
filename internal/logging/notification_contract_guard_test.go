@@ -28,6 +28,9 @@ const (
 	// loggingPackageDir holds the PreExecutionError type, whose literals may
 	// name it without a qualifier.
 	loggingPackageDir = "internal/logging"
+	// resourceImportPath declares the Component constants that every
+	// production error literal must spell its Component with.
+	resourceImportPath = "github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
 
 // TestProductionPreExecutionErrorLiteralsCarryNotificationContext verifies that
@@ -56,6 +59,43 @@ func TestProductionPreExecutionErrorLiteralsCarryNotificationContext(t *testing.
 		"the scan found no production PreExecutionError literals; the import or file scan is broken")
 	assert.Empty(t, violations,
 		"every production PreExecutionError literal must set NotificationContext explicitly; missing in:\n%s",
+		strings.Join(violations, "\n"))
+}
+
+// TestProductionErrorLiteralsUseTypedComponent verifies that every production
+// PreExecutionError and ExecutionError literal spells its Component as
+// string(resource.Component<Name>) and nothing else. Component is a plain
+// string field, so a raw "main" or "runner" literal compiles; this guard is
+// what keeps the value set to the typed constants, so a component name cannot
+// drift between the report boundaries by a typo in one of them. A literal that
+// leaves Component unset is reported too: an empty component is the same
+// drift by omission.
+//
+// A selector assignment (pe.Component = ...) after the literal would bypass
+// the literal check, so files that import internal/logging are also scanned
+// for one. Like TestNotificationContextBuiltOnlyByConstructors, that part is
+// deliberately incomplete: the scan has no type information, so it is limited
+// to files that import the package, where a .Component selector on a
+// PreExecutionError or ExecutionError value is plausible.
+func TestProductionErrorLiteralsUseTypedComponent(t *testing.T) {
+	files := identitymutationguard.ProductionGoFilesInRepo(t)
+	require.NotEmpty(t, files, "the repository scan returned no production files")
+
+	var (
+		literals   int
+		violations []string
+	)
+	for _, file := range files {
+		src := identitymutationguard.ReadProductionSource(t, file)
+		found, misses := checkErrorLiteralComponents(t, file, src)
+		literals += found
+		violations = append(violations, misses...)
+	}
+
+	require.NotZero(t, literals,
+		"the scan found no production PreExecutionError or ExecutionError literal; the import or file scan is broken")
+	assert.Empty(t, violations,
+		"every production PreExecutionError and ExecutionError literal must set Component to string(resource.Component<Name>):\n%s",
 		strings.Join(violations, "\n"))
 }
 
@@ -164,6 +204,104 @@ func setsNotificationContext(lit *ast.CompositeLit) bool {
 		}
 	}
 	return false
+}
+
+// checkErrorLiteralComponents returns the number of PreExecutionError and
+// ExecutionError composite literals in src together with the positions of
+// those whose Component is not exactly string(resource.Component<Name>), and
+// of any selector assignment to a .Component field in a file that imports
+// internal/logging.
+func checkErrorLiteralComponents(t *testing.T, filename, src string) (found int, violations []string) {
+	t.Helper()
+
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
+	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
+		return importPath == loggingImportPath || importPath == resourceImportPath
+	})
+	inLogging := path.Dir(filename) == loggingPackageDir
+	isErrorType := func(expr ast.Expr) bool {
+		return identitymutationguard.IsNamedType(expr, qualifiers, loggingImportPath, "PreExecutionError", inLogging) ||
+			identitymutationguard.IsNamedType(expr, qualifiers, loggingImportPath, "ExecutionError", inLogging)
+	}
+	importsLogging := false
+	for _, importPath := range qualifiers {
+		if importPath == loggingImportPath {
+			importsLogging = true
+		}
+	}
+
+	report := func(pos token.Pos, form string) {
+		violations = append(violations, fmt.Sprintf("%s: %s", fset.Position(pos), form))
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.CompositeLit:
+			literals := make([]*ast.CompositeLit, 0, 1)
+			if isErrorType(node.Type) {
+				literals = append(literals, node)
+			}
+			literals = append(literals, identitymutationguard.ElidedCompositeLiterals(node, isErrorType)...)
+			for _, literal := range literals {
+				found++
+				value, ok := keyedElementValue(literal, "Component")
+				switch {
+				case !ok:
+					report(literal.Pos(), "error literal leaves Component unset")
+				case !isTypedComponentConversion(value, qualifiers):
+					report(value.Pos(), "Component is not string(resource.Component<Name>)")
+				}
+			}
+		case *ast.AssignStmt:
+			if !importsLogging || inLogging {
+				return true
+			}
+			for _, lhs := range node.Lhs {
+				sel, ok := identitymutationguard.UnwrapParen(lhs).(*ast.SelectorExpr)
+				if ok && sel.Sel.Name == "Component" {
+					report(lhs.Pos(), "Component assigned through a selector after construction")
+				}
+			}
+		}
+		return true
+	})
+	return found, violations
+}
+
+// keyedElementValue returns the value of the keyed element named key in lit.
+func keyedElementValue(lit *ast.CompositeLit, key string) (ast.Expr, bool) {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == key {
+			return kv.Value, true
+		}
+	}
+	return nil, false
+}
+
+// isTypedComponentConversion reports whether expr is exactly
+// string(<resource>.Component<Name>), where <resource> resolves through
+// qualifiers to the resource package. Every other shape -- an identifier, a
+// string literal, string("main"), fmt.Sprint(...), a selector into another
+// package -- is rejected, so the constant set in resource stays the only
+// source of component names.
+func isTypedComponentConversion(expr ast.Expr, qualifiers map[string]string) bool {
+	call, ok := identitymutationguard.UnwrapParen(expr).(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	if fn, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.Ident); !ok || fn.Name != "string" {
+		return false
+	}
+	sel, ok := identitymutationguard.UnwrapParen(call.Args[0]).(*ast.SelectorExpr)
+	if !ok || !strings.HasPrefix(sel.Sel.Name, "Component") || sel.Sel.Name == "Component" {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && qualifiers[pkg.Name] == resourceImportPath
 }
 
 // checkNotificationContextBuilds parses one production file and returns the
@@ -307,6 +445,121 @@ func TestPreExecutionErrorLiteralCheckRecognizesForms(t *testing.T) {
 		found, missing := checkPreExecutionErrorLiterals(t, "internal/logging/x.go", src)
 		assert.Equal(t, 1, found)
 		assert.Len(t, missing, 1)
+	})
+}
+
+// TestErrorLiteralComponentCheckRecognizesForms pins each Component shape the
+// guard must reject and the one it must accept, including the aliased resource
+// import and the selector assignment that bypasses the literal.
+func TestErrorLiteralComponentCheckRecognizesForms(t *testing.T) {
+	const header = "package x\n\nimport (\n\tl \"github.com/isseis/go-safe-cmd-runner/internal/logging\"\n\tres \"github.com/isseis/go-safe-cmd-runner/internal/runner/resource\"\n\t\"fmt\"\n)\n\nvar _ = l.ErrorTypeSystemError\nvar _ = res.ComponentMain\nvar _ = fmt.Sprint\n\n"
+
+	tests := []struct {
+		name           string
+		body           string
+		wantLiterals   int
+		wantViolations int
+	}{
+		{
+			name:         "typed conversion through an aliased import is accepted",
+			body:         "var e = &l.PreExecutionError{Component: string(res.ComponentMain)}",
+			wantLiterals: 1,
+		},
+		{
+			name:         "typed conversion in an ExecutionError literal is accepted",
+			body:         "var e = &l.ExecutionError{Component: string(res.ComponentRunner)}",
+			wantLiterals: 1,
+		},
+		{
+			name:         "typed conversion in an elided slice element is accepted",
+			body:         "var es = []*l.PreExecutionError{{Component: string(res.ComponentMain)}}",
+			wantLiterals: 1,
+		},
+		{
+			name:           "raw string literal is reported",
+			body:           "var e = &l.PreExecutionError{Component: \"main\"}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "string conversion of a literal is reported",
+			body:           "var e = &l.PreExecutionError{Component: string(\"main\")}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "identifier is reported",
+			body:           "var c = \"main\"\n\nvar e = &l.PreExecutionError{Component: c}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "string conversion of an identifier is reported",
+			body:           "var c = res.ComponentMain\n\nvar e = &l.PreExecutionError{Component: string(c)}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "fmt.Sprint is reported",
+			body:           "var e = &l.PreExecutionError{Component: fmt.Sprint(res.ComponentMain)}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "selector into another package is reported",
+			body:           "var e = &l.PreExecutionError{Component: string(l.ComponentMain)}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "resource selector that is not a Component constant is reported",
+			body:           "var e = &l.PreExecutionError{Component: string(res.Component)}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "unset Component is reported",
+			body:           "var e = &l.PreExecutionError{Type: l.ErrorTypeSystemError}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "raw literal in an elided ExecutionError element is reported",
+			body:           "var es = []l.ExecutionError{{Component: \"runner\"}}",
+			wantLiterals:   1,
+			wantViolations: 1,
+		},
+		{
+			name:           "selector assignment after construction is reported",
+			body:           "func f(pe *l.PreExecutionError) { pe.Component = string(res.ComponentMain) }",
+			wantViolations: 1,
+		},
+		{
+			name: "a same-named type in another package is not reported",
+			body: "type ExecutionError struct{ Component string }\n\nvar e = &ExecutionError{Component: \"x\"}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			found, violations := checkErrorLiteralComponents(t, "internal/x/x.go", header+tt.body+"\n")
+			assert.Equal(t, tt.wantLiterals, found)
+			assert.Len(t, violations, tt.wantViolations, "violations: %v", violations)
+		})
+	}
+
+	t.Run("selector assignment in a file that does not import logging is not reported", func(t *testing.T) {
+		src := "package x\n\nfunc f(r *result) { r.Component = \"x\" }\n"
+		found, violations := checkErrorLiteralComponents(t, "internal/x/x.go", src)
+		assert.Zero(t, found)
+		assert.Empty(t, violations)
+	})
+
+	t.Run("unqualified literal in the declaring package is checked", func(t *testing.T) {
+		src := "package logging\n\nvar e = &PreExecutionError{Component: \"logging\"}\n"
+		found, violations := checkErrorLiteralComponents(t, "internal/logging/x.go", src)
+		assert.Equal(t, 1, found)
+		assert.Len(t, violations, 1, "violations: %v", violations)
 	})
 }
 

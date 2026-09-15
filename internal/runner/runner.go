@@ -25,6 +25,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runerrors"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -424,18 +425,11 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 
 			// Check if this is a verification error - if so, notify via Slack and continue
 			if verErr, ok := errors.AsType[*verification.Error](err); ok {
-				// The group name is carried only by the notification scope; it
-				// is not repeated in the message body.
-				errorMsg := fmt.Sprintf("Total: %d, Verified: %d, Failed: %d, Error: %v",
-					verErr.TotalFiles, verErr.VerifiedFiles,
-					verErr.FailedFiles, verErr.Err)
-				logging.HandlePreExecutionError(&logging.PreExecutionError{
-					Type:                logging.ErrorTypeGroupFileVerification,
-					Message:             errorMsg,
-					Component:           "runner",
-					RunID:               r.runID,
-					NotificationContext: common.GroupScope(verErr.Group),
-				})
+				// The shared constructor owns the message template, the
+				// failed-target list and the Component; the group name is
+				// carried only by the notification scope.
+				logging.HandlePreExecutionError(runerrors.NewVerificationPreExecutionError(
+					verErr, logging.ErrorTypeGroupFileVerification, common.GroupScope(verErr.Group), r.runID))
 				continue // Skip this group but continue with the next one
 			}
 			// Collect error but continue with next group
