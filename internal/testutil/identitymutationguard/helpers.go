@@ -13,6 +13,11 @@
 // escalate/restore, keeps its own copy with a two-entry allow-list rather
 // than depending on this package, since its policy check is inherently
 // package-specific).
+//
+// It also hosts the go/ast scan helpers (ParseSource, IsNamedType,
+// ElidedCompositeLiterals, UnwrapParen) that the notification-contract guards
+// share, so their syntax checks do not each reimplement package, import and
+// composite-literal resolution.
 package identitymutationguard
 
 import (
@@ -576,14 +581,7 @@ func (sc *scanner) visit(n ast.Node, funcName string) {
 	case *ast.CallExpr:
 		// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0)
 		// is still recognized.
-		fun := n.Fun
-		for {
-			paren, ok := fun.(*ast.ParenExpr)
-			if !ok {
-				break
-			}
-			fun = paren.X
-		}
+		fun := UnwrapParen(n.Fun)
 
 		sel, ok := sc.trackedSelector(fun)
 		if !ok {

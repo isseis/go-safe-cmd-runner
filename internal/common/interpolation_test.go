@@ -237,18 +237,18 @@ func TestWithinInterpolationLimit(t *testing.T) {
 			want:  false,
 		},
 		{
-			name:  "ascii that grows past the limit when entity-escaped",
-			input: strings.Repeat("<", interpolationMaxBytes/4+1),
+			name:  "entity escaping of ascii grows past the limit",
+			input: strings.Repeat("<>&", interpolationMaxBytes/3),
 			want:  false,
 		},
 		{
-			name:  "control character stays within the limit after one-line normalization",
-			input: strings.Repeat("a", interpolationMaxBytes-1) + "\n",
+			name:  "control character normalization brings a raw over-limit value within the limit",
+			input: strings.Repeat("a", interpolationMaxBytes-1) + "\u0085",
 			want:  true,
 		},
 		{
-			name:  "invalid utf8 stays within the limit after replacement",
-			input: strings.Repeat("a", interpolationMaxBytes-3) + "\xff",
+			name:  "invalid utf8 run replacement brings a raw over-limit value within the limit",
+			input: strings.Repeat("a", interpolationMaxBytes-3) + "\xff\xff\xff\xff",
 			want:  true,
 		},
 	}
