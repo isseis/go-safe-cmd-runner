@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | `-` |
-| Reviewer | `-` |
-| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` の対象に含める decision change を反映（背景・対象 10・11・決定事項・AC-14・AC-17）。以前の PR レビュー（P2/P1）対応（対象 7・AC-01 の「区切りと衝突しない表示形」、AC-14 の収集失敗の絞り込み）は取り込み済みだが、本変更で AC-14 の絞り込みは解除する。再承認が必要。 |
+| Review date | 2026-09-15 |
+| Reviewer | `isseis` |
+| Comments | - |
 
 ## 関連 Issue
 
