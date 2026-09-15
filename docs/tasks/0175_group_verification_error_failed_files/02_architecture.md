@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-14 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-15 承認済み（`isseis`）。実装計画書の作成時に判明した 3 点を反映して再レビュー待ち: (1) §8 でコンポーネント単位のテストと静的ガードを対応する実装と同じ Phase に置く、(2) §5.2・§3.6 で `notification_test.go` の一覧対応テストは変更しない（フィールド見出しの集合を検査するテストであり、`failed_file_paths` はフィールドではない）、(3) §3.2.1・§3.6・§8 に `docs/dev/developer_guide/package_reference.md` の更新を追加、(4) §3.6・§5.2 で 0172 アーキテクチャ設計書への行追加を decision change から editorial correction（ステータス不変、`Comments` に記録）へ変更 |
+| Review date | 2026-09-15 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連文書
 
