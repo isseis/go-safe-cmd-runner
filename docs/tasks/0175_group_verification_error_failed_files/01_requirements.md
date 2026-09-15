@@ -8,7 +8,7 @@
 | Created | 2026-09-12 |
 | Review date | 2026-09-15 |
 | Reviewer | `isseis` |
-| Comments | - |
+| Comments | 2026-09-15: 収集失敗の対象総数を「`verify_files` とコマンド数の合計」から「重複を除いた対象数（解決済みファイル集合と解決に失敗した対象の和）」に変更（PR #1157 のレビューで、同じ解決不能コマンドを 2 回書いた group で `Details` と件数が重複することが判明。決定を変える editorial ではない小修正のため、ステータスは変えずここに記録） |
 
 ## 関連 Issue
 
@@ -101,7 +101,7 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象の一覧を `verification.Error.Details` に設定する。通知へ載せる一覧の出所は常に `Details` であり、収集失敗だけ別経路にしない。`Details` が空のまま残るのは、`*verification.Error` 以外の失敗と、失敗対象を持たない検証エラーに限る。
 
-収集失敗の `Message` には対象名を入れない。`Err` にはパスを含まないセンチネル（"failed to collect verification files"）を用い、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`Total`／`Verified`／`Failed` の検証サマリを提示しない。本文は対象総数（`verify_files` とコマンド数の合計）と解決に失敗した対象数による収集段階の件数（例: `Collection failed: 1 of 3 targets unresolved`）で示す。
+収集失敗の `Message` には対象名を入れない。`Err` にはパスを含まないセンチネル（"failed to collect verification files"）を用い、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`Total`／`Verified`／`Failed` の検証サマリを提示しない。本文は対象総数（重複を除いた対象数。解決済みファイル集合と、重複を除いた解決に失敗した対象の和）と解決に失敗した対象数による収集段階の件数（例: `Collection failed: 1 of 3 targets unresolved`）で示す。
 
 ### group 名は Scope に一本化する
 

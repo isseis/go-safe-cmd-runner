@@ -193,10 +193,11 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 	if len(unresolved) > 0 {
 		// Fail closed: a target that cannot be resolved is never verified, so
 		// the whole group is rejected. The unresolved targets are reported as
-		// details, not embedded in the error text.
+		// details, not embedded in the error text. Both sets are deduplicated,
+		// so the total counts distinct targets and "N of M" cannot exceed M.
 		return nil, newVerificationError(
 			"group", input.Name, unresolved,
-			len(input.ExpandedVerifyFiles)+len(input.Commands), 0,
+			len(allFiles)+len(unresolved), 0,
 			ErrGroupVerificationCollectionFailed)
 	}
 
@@ -265,10 +266,12 @@ func newVerificationError(op, group string, details []string, total, verified in
 }
 
 // collectVerificationFiles collects all files to verify for a group.
-// It returns the resolved file set and the targets whose command path could not
-// be resolved. Resolution failures are collected rather than returned on the
-// first one so the caller can report every unresolved target, but the caller
-// still fails closed: no verification runs when any target is unresolved.
+// It returns the resolved file set and the distinct targets whose command path
+// could not be resolved. Resolution failures are collected rather than returned
+// on the first one so the caller can report every unresolved target, but the
+// caller still fails closed: no verification runs when any target is
+// unresolved. A command listed twice is resolved once, so the unresolved list
+// mirrors the file set in carrying no duplicates.
 func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[string]struct{}, []string) {
 	if input == nil {
 		return make(map[string]struct{}), nil
@@ -283,10 +286,14 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[s
 	}
 
 	var unresolved []string
+	unresolvedSet := make(map[string]struct{})
 
 	// Add command files from pre-expanded runtime commands
 	if m.pathResolver != nil && len(input.Commands) > 0 {
 		for _, command := range input.Commands {
+			if _, seen := unresolvedSet[command.ExpandedCmd]; seen {
+				continue
+			}
 			// Use pre-expanded command path
 			resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
 			if err != nil {
@@ -295,6 +302,7 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[s
 					"command", command.ExpandedCmd,
 					"reason", "path_resolution_failed",
 					"error", err.Error())
+				unresolvedSet[command.ExpandedCmd] = struct{}{}
 				unresolved = append(unresolved, command.ExpandedCmd)
 				continue
 			}

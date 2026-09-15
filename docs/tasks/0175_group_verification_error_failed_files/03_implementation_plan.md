@@ -232,7 +232,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 - [x] `manager.go` に非公開コンストラクタ `newVerificationError(op, group string, details []string, total, verified int, sentinel error) *Error` を追加する。`Details` には `details` を昇順に並べたコピーを設定し、`FailedFiles` は `len(details)` とする。`&Error{...}` はこの関数の中にだけ書く。
 - [x] `manager.go:170`（グローバル検証失敗）・`:242`（group 検証失敗）の構造体リテラルを `newVerificationError` の呼び出しに置き換える。
 - [x] `collectVerificationFiles` を、パス解決に失敗したコマンドを記録して残りの解決を続け、解決済みファイル集合と解決に失敗した対象（`command.ExpandedCmd`）の一覧を返す形に変える。既存の `slog.Warn`（`:279-283`）は対象ごとに残す。検証は 1 件も行わない（fail-closed を維持）。
-- [x] `VerifyGroupFiles` の収集失敗分岐（`:196-203`）を、解決に失敗した対象の一覧・`TotalFiles = len(ExpandedVerifyFiles) + len(Commands)`・`VerifiedFiles = 0`・`Err = ErrGroupVerificationCollectionFailed` で `newVerificationError` を呼ぶ形に変える（02_architecture.md §3.7）。
+- [x] `VerifyGroupFiles` の収集失敗分岐（`:196-203`）を、解決に失敗した対象の一覧・`TotalFiles` = 解決済みファイル集合の要素数 + 重複を除いた解決失敗対象の数（解決に失敗した対象は重複を除く）・`VerifiedFiles = 0`・`Err = ErrGroupVerificationCollectionFailed` で `newVerificationError` を呼ぶ形に変える（02_architecture.md §3.7）。
 - [x] `manager_test.go` の `TestCollectVerificationFiles` の全呼び出し 7 件（`:679,699,713,730,765,787,808`）を新しい返り値の契約に合わせて更新する。解決済みのケースは解決に失敗した対象の一覧が空であることを確認し、解決失敗のサブテスト 2 件（`:773-810`）は返り値の一覧に解決に失敗した対象が入ることを見る形にする。
 - [x] `manager_test.go` に `TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets` を追加する。解決に失敗するコマンド 1 件／複数件で、`Details` が解決失敗の全対象を昇順で持つこと、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`verErr.Err.Error()` に対象名が含まれないことを固定する（AC-17）。
 - [x] `manager_test.go` に `TestVerificationErrorDetailsAreSorted` を追加する。グローバル検証失敗・group 検証失敗・group 収集失敗の 3 経路を表駆動にし、map の反復順に依存しない入力（例: `/b`, `/a`, `/c` を含む集合）で `Details` が昇順になることを固定する（AC-19・AC-21）。

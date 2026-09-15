@@ -8,7 +8,7 @@
 | Created | 2026-09-14 |
 | Review date | 2026-09-15 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | -。2026-09-15 追記: 収集失敗の対象総数を「`verify_files` とコマンド数の合計」から「重複を除いた対象数（解決済みファイル集合と解決に失敗した対象の和）」に変更（PR #1157 のレビューで、同じ解決不能コマンドを 2 回書いた group で `Details` と件数が重複することが判明。決定を変える editorial ではない小修正のため、ステータスは変えずここに記録） |
 
 ## 関連文書
 
@@ -475,7 +475,7 @@ func NewVerificationPreExecutionError(
 `VerifyGroupFiles` は検証対象の収集に失敗すると group の検証を中止し（fail-closed、既存挙動）、`*verification.Error` を返す（`internal/verification/manager.go:194-203`）。本設計はこの経路でも失敗対象の一覧を運ぶ。
 
 - **一覧の収集。** `collectVerificationFiles` はパス解決に失敗したコマンドを記録し、残りのコマンドの解決を続けて、解決に失敗した対象（`command.ExpandedCmd`）を全て集める（返り値は解決済みファイル集合と解決に失敗した対象の一覧）。解決に失敗した時点で group の検証は中止し、検証は 1 件も行わない（fail-closed を維持する。走査の継続は解決の試行だけで、検証も副作用も伴わない）。
-- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を §3.2.3 の非公開コンストラクタへ渡し、コンストラクタが昇順に並べたコピーを `Details` に設定する。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`TotalFiles`・`VerifiedFiles`・`FailedFiles` を検証の内訳として提示しない。`FailedFiles` は解決に失敗した対象数、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とし、これらは収集段階の件数として扱う（`verification.Error` の型は変えない）。`Op`・`Group` は既存のまま。
+- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を §3.2.3 の非公開コンストラクタへ渡し、コンストラクタが昇順に並べたコピーを `Details` に設定する。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`TotalFiles`・`VerifiedFiles`・`FailedFiles` を検証の内訳として提示しない。`FailedFiles` は解決に失敗した対象数、`TotalFiles` は対象総数（重複を除いた対象数。解決済みファイル集合の要素数と、重複を除いた解決に失敗した対象の数の和。同じコマンドを 2 回書いても 1 件と数え、`Details` にも 1 回だけ載る）、`VerifiedFiles` は 0 とし、これらは収集段階の件数として扱う（`verification.Error` の型は変えない）。`Op`・`Group` は既存のまま。
 - **`Err`。** パスを含まない新しいセンチネル `ErrGroupVerificationCollectionFailed`（"failed to collect verification files"）を設定する。パス解決の生の原因（コマンド文字列を包む）は `collectVerificationFiles` の既存の `slog.Warn`（`internal/verification/manager.go:279-283`）に残り、`Message` へは入れない。group 本文は共有コンストラクタ（§3.2.1）が組み立て、検証の内訳ではなく収集段階の事実を示す `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files` となる。対象名は `failed_file_paths` だけが運ぶ。
 - **`Error()`。** `verification.Error` の型と `Error()` は変更しない。`Details` が設定されるため `Error()` は既存の `Details` 分岐（`internal/verification/errors.go:171-173`）を通る。本経路の通知本文は共有コンストラクタが組み立てるため、`Error()` の `%d of %d files failed` 表記が検証サマリとして通知に現れることはない。原因の文面は通知に載らないが、通知の一覧に失敗対象が現れる（AC-17）。`Error()` の `%d of %d files failed` が収集段階の件数を検証の内訳として読ませる点は残存として §5.5・§9 に記録する。
 - **検証失敗との区別。** `ErrGroupVerificationFailed` はハッシュ不一致などの検証失敗、`ErrGroupVerificationCollectionFailed` は収集失敗を表す。`error_type` は `group_file_verification_failed` のままである（通知種別・エンベロープを変えない）。

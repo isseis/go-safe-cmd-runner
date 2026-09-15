@@ -833,6 +833,11 @@ func TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets(t *testing.T
 			commands:    []string{"/nonexistent/c", "/nonexistent/a", "/nonexistent/b"},
 			wantDetails: []string{"/nonexistent/a", "/nonexistent/b", "/nonexistent/c"},
 		},
+		{
+			name:        "duplicate_unresolved_target_is_listed_once",
+			commands:    []string{"/nonexistent/b", "/nonexistent/a", "/nonexistent/b"},
+			wantDetails: []string{"/nonexistent/a", "/nonexistent/b"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -857,8 +862,10 @@ func TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets(t *testing.T
 			verErr, ok := errors.AsType[*Error](err)
 			require.True(t, ok, "error must be *verification.Error")
 			assert.Equal(t, tt.wantDetails, verErr.Details)
-			assert.Equal(t, len(input.ExpandedVerifyFiles)+len(commands), verErr.TotalFiles)
-			assert.Equal(t, len(commands), verErr.FailedFiles)
+			// Totals count distinct targets: the explicit files plus the
+			// distinct unresolved commands, not the raw command count.
+			assert.Equal(t, len(input.ExpandedVerifyFiles)+len(tt.wantDetails), verErr.TotalFiles)
+			assert.Equal(t, len(tt.wantDetails), verErr.FailedFiles)
 			assert.Equal(t, 0, verErr.VerifiedFiles)
 			assert.ErrorIs(t, err, ErrGroupVerificationCollectionFailed)
 			assert.Equal(t, ErrGroupVerificationCollectionFailed.Error(), verErr.Err.Error())
