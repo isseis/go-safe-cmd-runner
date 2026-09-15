@@ -13,6 +13,11 @@
 // escalate/restore, keeps its own copy with a two-entry allow-list rather
 // than depending on this package, since its policy check is inherently
 // package-specific).
+//
+// It also hosts the go/ast scan helpers (ParseSource, IsNamedType,
+// ElidedCompositeLiterals, UnwrapParen) that the notification-contract guards
+// share, so their syntax checks do not each reimplement package, import and
+// composite-literal resolution.
 package identitymutationguard
 
 import (
@@ -402,6 +407,91 @@ func ResolveLocalImports(t *testing.T, filename string, file *ast.File, rejectDo
 	return localToImportPath
 }
 
+// ParseSource parses one file's source for a guard check and returns the file
+// set and the parsed file, failing the test on a parse error. Contract guards
+// in different packages share it so the parse step has one implementation.
+func ParseSource(t *testing.T, filename, src string) (*token.FileSet, *ast.File) {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, 0)
+	require.NoErrorf(t, err, "failed to parse %s", filename)
+	return fset, file
+}
+
+// IsNamedType reports whether expr names the identifier name of the package at
+// importPath: qualified through an import resolved in qualifiers, or
+// unqualified because the file belongs to that package (inPackage).
+func IsNamedType(expr ast.Expr, qualifiers map[string]string, importPath, name string, inPackage bool) bool {
+	switch e := UnwrapParen(expr).(type) {
+	case *ast.Ident:
+		return inPackage && e.Name == name
+	case *ast.SelectorExpr:
+		pkgIdent, ok := e.X.(*ast.Ident)
+		if !ok {
+			return false
+		}
+		return e.Sel.Name == name && qualifiers[pkgIdent.Name] == importPath
+	default:
+		return false
+	}
+}
+
+// ElidedCompositeLiterals returns the nested composite literals that leave
+// their type implicit when the enclosing literal's element type matches
+// isType. []T{{...}} and map[K]T{k: {...}} create a T value without ever
+// spelling the type name, so a type check on the nested literal alone (whose
+// Type is nil) would miss them. The same elision is allowed for a pointer
+// element type: []*T{{...}} builds &T{...}, so *T is unwrapped to T.
+func ElidedCompositeLiterals(lit *ast.CompositeLit, isType func(ast.Expr) bool) []*ast.CompositeLit {
+	element := compositeElementType(lit.Type)
+	if element == nil || !isType(element) {
+		return nil
+	}
+	var elided []*ast.CompositeLit
+	for _, elt := range lit.Elts {
+		if kv, ok := elt.(*ast.KeyValueExpr); ok {
+			elt = kv.Value
+		}
+		if inner, ok := elt.(*ast.CompositeLit); ok && inner.Type == nil {
+			elided = append(elided, inner)
+		}
+	}
+	return elided
+}
+
+// compositeElementType returns the element type of a slice, array or map type,
+// unwrapping parentheses and one level of pointer: an element of type *T may
+// elide &T in the literal, which still constructs a T.
+func compositeElementType(expr ast.Expr) ast.Expr {
+	var element ast.Expr
+	switch e := UnwrapParen(expr).(type) {
+	case *ast.ArrayType:
+		element = e.Elt
+	case *ast.MapType:
+		element = e.Value
+	default:
+		return nil
+	}
+	if star, ok := UnwrapParen(element).(*ast.StarExpr); ok {
+		return star.X
+	}
+	return element
+}
+
+// UnwrapParen peels parenthesized type expressions so a caller's syntax check
+// is not defeated by redundant parentheses. Contract guards in different
+// packages share it so the unwrapping rule has one implementation.
+func UnwrapParen(expr ast.Expr) ast.Expr {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = paren.X
+	}
+}
+
 // scanner accumulates identity-mutation call sites and value references
 // while walking a single file's declarations.
 type scanner struct {
@@ -491,14 +581,7 @@ func (sc *scanner) visit(n ast.Node, funcName string) {
 	case *ast.CallExpr:
 		// Unwrap parens so a parenthesized callee like (syscall.Seteuid)(0)
 		// is still recognized.
-		fun := n.Fun
-		for {
-			paren, ok := fun.(*ast.ParenExpr)
-			if !ok {
-				break
-			}
-			fun = paren.X
-		}
+		fun := UnwrapParen(n.Fun)
 
 		sel, ok := sc.trackedSelector(fun)
 		if !ok {

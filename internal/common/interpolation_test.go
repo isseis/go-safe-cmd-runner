@@ -220,6 +220,46 @@ func TestInterpolate_FreeTextTruncation(t *testing.T) {
 	}
 }
 
+func TestWithinInterpolationLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "transformed length exactly at the limit",
+			input: strings.Repeat("a", interpolationMaxBytes),
+			want:  true,
+		},
+		{
+			name:  "transformed length one byte over the limit",
+			input: strings.Repeat("a", interpolationMaxBytes+1),
+			want:  false,
+		},
+		{
+			name:  "entity escaping of ascii grows past the limit",
+			input: strings.Repeat("<>&", interpolationMaxBytes/3),
+			want:  false,
+		},
+		{
+			name:  "control character normalization brings a raw over-limit value within the limit",
+			input: strings.Repeat("a", interpolationMaxBytes-1) + "\u0085",
+			want:  true,
+		},
+		{
+			name:  "invalid utf8 run replacement brings a raw over-limit value within the limit",
+			input: strings.Repeat("a", interpolationMaxBytes-3) + "\xff\xff\xff\xff",
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, WithinInterpolationLimit(tt.input))
+		})
+	}
+}
+
 func TestInterpolate_RoleTruncation(t *testing.T) {
 	long := strings.Repeat("x", interpolationMaxBytes+100)
 

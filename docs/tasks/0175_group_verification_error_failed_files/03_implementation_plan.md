@@ -123,7 +123,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 ### 1.4 テストヘルパーの方針
 
-- **`internal/testutil/identitymutationguard/helpers.go`（既存・Classification A）**: `ParseSource`・`IsNamedType`・`ElidedCompositeLiterals` と、それらが依存する非公開の `compositeElementType`・`unwrapParen` を追加する（`internal/logging` からの移動。§1.5。Phase 1）。`go/ast` だけに依存し公開 API のみを使うため、この配置でよい。
+- **`internal/testutil/identitymutationguard/helpers.go`（既存・Classification A）**: `ParseSource`・`IsNamedType`・`ElidedCompositeLiterals`・`UnwrapParen` と、`ElidedCompositeLiterals` が依存する非公開の `compositeElementType` を追加する（`internal/logging` からの移動。§1.5。Phase 1）。`UnwrapParen` は slack_notify ガードの 3 関数も使うため公開名にする。`go/ast` だけに依存し公開 API のみを使うため、この配置でよい。
 - **`cmd/runner/integration_test_helpers.go`（既存・`//go:build test`）**: Slack モックサーバーと in-process 実行の共通手順を関数に抽出する（`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` から切り出す）。`package main` の非公開フラグ変数を退避するため Classification B である。stderr の捕捉はここに新設せず、同じ `package main` の既存 `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`。パイプを goroutine で読み切る）を再利用する。`integration_logger_test.go:220-226` の `os.Stderr` 退避・復元はパイプを持たず出力を読めないため、手本にしない。
 - **`internal/logging/test_helpers.go`（既存）**: `failed_file_paths` 付きレコードを RedactingHandler に通してビルダーへ渡す補助が 2 つ以上のテストで必要になれば、ここに置く。1 つのテストだけなら置かない。
 - 新しいヘルパーファイルは作らない。
@@ -136,7 +136,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | `internal/logging/notification_contract_guard_test.go::isNamedType` | `identitymutationguard.IsNamedType` | 移動・公開 |
 | `internal/logging/notification_contract_guard_test.go::elidedCompositeLiterals` | `identitymutationguard.ElidedCompositeLiterals` | 移動・公開 |
 | `internal/logging/notification_contract_guard_test.go::compositeElementType` | `identitymutationguard` 内の非公開 `compositeElementType` | 移動（非公開のまま） |
-| `internal/logging/notification_contract_guard_test.go::unwrapParen` | `identitymutationguard` 内の非公開 `unwrapParen` | 移動（非公開のまま） |
+| `internal/logging/notification_contract_guard_test.go::unwrapParen` | `identitymutationguard.UnwrapParen` | 移動・公開 |
 | `runerrors.ErrorSeverity`（と定数 3 件） | （なし） | 削除 |
 | `runerrors.ErrorType`（と定数 4 件） | （なし） | 削除 |
 | `runerrors.ClassifiedError` | （なし） | 削除 |
@@ -159,10 +159,10 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `notification_contract_guard_test.go` の `parseSource`・`isNamedType`・`elidedCompositeLiterals`・`compositeElementType`・`unwrapParen` を `identitymutationguard/helpers.go` へ移す（§1.5 台帳。前 3 つは公開名に、後 2 つは非公開のまま）。`internal/logging` の呼び出しを新名に置き換え、`TestPreExecutionErrorLiteralCheckRecognizesForms` と `TestProductionPreExecutionErrorLiteralsCarryNotificationContext` が引き続き通ることを確認する。Phase 2b の 4 つの静的ガード（AC-18・AC-20・AC-21・AC-22）がこれらを使う。
-- [ ] `WithinInterpolationLimit(value string) bool` を `interpolation.go` に追加する。自由文の役割の変換（切り詰めなし）を適用した長さが `interpolationMaxBytes` 以下かを返す。02_architecture.md §3.1 の doc コメントを使う。`common.Interpolate` の戻り値は測定に使わない。
-- [ ] `interpolation_test.go` に `TestWithinInterpolationLimit` を追加する。02_architecture.md §7.1 の 5 行（ちょうど上限、上限 + 1 byte、実体参照化で超える ASCII、制御文字を含むが変換後は上限内、不正な UTF-8 を含むが置換後は上限内）を表駆動で固定する。上限は既存テストと同様に `interpolationMaxBytes` を参照して組む。
-- [ ] `logschema.go` の `PreExecErrorAttrs` に `FailedFilePaths string` を追加し、値を `"failed_file_paths"` にする。
+- [x] `notification_contract_guard_test.go` の `parseSource`・`isNamedType`・`elidedCompositeLiterals`・`compositeElementType`・`unwrapParen` を `identitymutationguard/helpers.go` へ移す（§1.5 台帳。`parseSource`・`isNamedType`・`elidedCompositeLiterals`・`unwrapParen` は公開名に、`compositeElementType` は非公開のまま。`unwrapParen` は slack_notify ガードの `isStaticallyFalse`・`notificationAttributeKey`・`checkNotificationAttributeUsage` も使うため、`internal/logging` から呼べる必要があり公開名 `UnwrapParen` にする）。`internal/logging` の呼び出しを新名に置き換え、`TestPreExecutionErrorLiteralCheckRecognizesForms` と `TestProductionPreExecutionErrorLiteralsCarryNotificationContext` が引き続き通ることを確認する。Phase 2b の 4 つの静的ガード（AC-18・AC-20・AC-21・AC-22）がこれらを使う。
+- [x] `WithinInterpolationLimit(value string) bool` を `interpolation.go` に追加する。自由文の役割の変換（切り詰めなし）を適用した長さが `interpolationMaxBytes` 以下かを返す。02_architecture.md §3.1 の doc コメントを使う。`common.Interpolate` の戻り値は測定に使わない。
+- [x] `interpolation_test.go` に `TestWithinInterpolationLimit` を追加する。02_architecture.md §7.1 の 5 行（ちょうど上限、上限 + 1 byte、実体参照化で超える ASCII、制御文字を含むが変換後は上限内、不正な UTF-8 を含むが置換後は上限内）を表駆動で固定する。上限は既存テストと同様に `interpolationMaxBytes` を参照して組む。
+- [x] `logschema.go` の `PreExecErrorAttrs` に `FailedFilePaths string` を追加し、値を `"failed_file_paths"` にする。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestWithinInterpolationLimit` が、述語の判定を切り詰め後の長さに変えると失敗することを確認する。
 
@@ -178,8 +178,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: 述語の変換規則と判定時点は 02_architecture.md §3.1 に固定済みで、未確定の実装アプローチや高リスク分岐は無い。Conditional checks は、build tag 下の非テストソース `identitymutationguard/helpers.go` を同じタグでコンパイルする項目 1 件にのみ該当する（`make test` は `-tags test` でコンパイルする）。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

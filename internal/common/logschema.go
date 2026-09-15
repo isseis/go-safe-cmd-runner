@@ -35,13 +35,15 @@ var GroupSummaryAttrs = struct {
 // PreExecErrorAttrs contains attribute keys for pre-execution error logs.
 // Used in logging.HandlePreExecutionError (write) and logging.buildPreExecutionError (read).
 var PreExecErrorAttrs = struct {
-	ErrorType    string // error type identifier
-	ErrorMessage string // error message details
-	Component    string // component where error occurred
+	ErrorType       string // error type identifier
+	ErrorMessage    string // error message details
+	Component       string // component where error occurred
+	FailedFilePaths string // failed file paths ([]string)
 }{
-	ErrorType:    "error_type",
-	ErrorMessage: "error_message",
-	Component:    "component",
+	ErrorType:       "error_type",
+	ErrorMessage:    "error_message",
+	Component:       "component",
+	FailedFilePaths: "failed_file_paths",
 }
 
 // UserGroupCommandFailureAttrs contains attribute keys for user/group command
