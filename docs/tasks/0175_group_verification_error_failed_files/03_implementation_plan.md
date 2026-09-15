@@ -590,8 +590,8 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 `make test`・`make lint` が検出できない残存参照だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] 削除した `runerrors` シンボル名（`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`・`ErrorSeverity`）が `docs/`（`docs/tasks/` 以外）と `README*.md` に残っていないこと。commit `066c9e59` 時点で `rg -n "ClassifiedError|ClassifyVerificationError|LogClassifiedError|LogCriticalToStderr" --glob '!docs/tasks/**' --glob '!internal/runner/runerrors/**' .` は一致なし（実行済み）。
-- [ ] `runerrors/` の説明「一元化エラー処理」／"Centralized error handling" が `README.ja.md`・`README.md`・`docs/dev/developer_guide/package_reference.md` に残っていないこと（Phase 2a。commit `066c9e59` 時点の該当行は §1.3 に記録）。
+- [x] 削除した `runerrors` シンボル名（`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`・`ErrorSeverity`）が `docs/`（`docs/tasks/` 以外）と `README*.md` に残っていないこと。commit `066c9e59` 時点で `rg -n "ClassifiedError|ClassifyVerificationError|LogClassifiedError|LogCriticalToStderr" --glob '!docs/tasks/**' --glob '!internal/runner/runerrors/**' .` は一致なし（実行済み）。
+- [x] `runerrors/` の説明「一元化エラー処理」／"Centralized error handling" が `README.ja.md`・`README.md`・`docs/dev/developer_guide/package_reference.md` に残っていないこと（Phase 2a。commit `066c9e59` 時点の該当行は §1.3 に記録）。
 - [ ] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`make verify-docs-checks`、Phase 5）。
 - [ ] `docs/translation_glossary.md` に Phase 5 で新しく使った用語（`Files:` 節、省略件数、収集失敗）の対訳が `/mktrans` により登録されていること。
 

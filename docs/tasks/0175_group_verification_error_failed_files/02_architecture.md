@@ -344,7 +344,7 @@ type PreExecutionError struct {
 
 `internal/runner/runerrors/pre_execution.go`（新設）に置く。`runerrors` は `resource`（`verification` を含む）と `logging` を参照できる位置にある。`logging` へ `verification` を持ち込まず、かつ両発火元が同じ変換を使うことを 1 つの関数で保証するため、ここに置く。
 
-**既存シンボルの削除。** `runerrors` の既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は本番の呼び出し元を持たない（`grep -rn runerrors` の非テスト結果は README の 1 行のみ）。共有コンストラクタの追加とは別コミットでこれらとそのテスト（`classification_test.go`・`logging_test.go`）を削除し、パッケージ doc を「検証失敗を報告境界の `PreExecutionError` へ変換する」責務に書き換える。README.ja.md / README.md と `docs/dev/developer_guide/package_reference.md`（英語のみ）の `runerrors/` 行の説明も合わせる。削除後は `go test -coverprofile=c.out ./internal/runner/runerrors/` でプロファイルを作り、`go tool cover -func=c.out` を実行して、残る共有コンストラクタの行だけが報告されることを確かめる。
+**既存シンボルの削除。** `runerrors` の既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は本番の呼び出し元を持たない（`grep -rn runerrors` の非テスト結果は README の 1 行のみ）。共有コンストラクタの追加とは別コミットでこれらとそのテスト（`classification_test.go`・`logging_test.go`）を削除し、パッケージ doc を「検証失敗を報告境界の `PreExecutionError` へ変換する」責務に書き換える。README.ja.md / README.md と `docs/dev/developer_guide/package_reference.md`（英語のみ）の `runerrors/` 行の説明も合わせる。削除後は `go test -coverprofile=c.out ./internal/runner/runerrors/` でプロファイルを作り、`go tool cover -func=c.out` を実行して、関数が 1 つも報告されず `total: 0.0%` だけになることを確かめる（共有コンストラクタの行が報告されるのは、それを新設する Phase 2b.3 以降である）。
 
 ```go
 // NewVerificationPreExecutionError converts a verification failure into the
