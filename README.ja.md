@@ -143,7 +143,7 @@ internal/              # コア実装
 │   ├── config/        # 設定管理
 │   ├── debuginfo/     # デバッグ機能とユーティリティ
 │   ├── resource/      # リソース管理（通常/ドライラン）
-│   └── runerrors/     # 一元化エラー処理
+│   └── runerrors/     # 検証失敗の報告変換
 ├── safefileio/        # セキュアファイル操作
 ├── security/          # バイナリセキュリティ解析フレームワーク
 │   ├── binaryanalyzer/ # バイナリ解析共通インターフェースと型定義

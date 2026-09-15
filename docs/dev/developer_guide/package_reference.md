@@ -39,7 +39,7 @@ This document provides a detailed reference of the package structure in this cod
     - `config/`: Configuration management
     - `debuginfo/`: Debug functionality and utilities
     - `resource/`: Unified resource management (normal/dry-run)
-    - `runerrors/`: Centralized error handling
+    - `runerrors/`: Verification failure report conversion
   - `safefileio/`: Secure file operations with symlink protection
   - `security/`: Binary security analysis framework
     - `binaryanalyzer/`: Common interfaces and types for binary analysis
@@ -106,7 +106,7 @@ This document provides a detailed reference of the package structure in this cod
 - **`cmdcommon/`**: Shared command utilities
 - **`redaction/`**: Automatic sensitive data filtering
 - **`runner/debuginfo/`**: Debug functionality
-- **`runner/runerrors/`**: Centralized error handling
+- **`runner/runerrors/`**: Verification failure report conversion
 - **`runner/resource/`**: Unified resource management (normal/dry-run modes)
 - **`runner/bootstrap/`**: System initialization and bootstrap
 

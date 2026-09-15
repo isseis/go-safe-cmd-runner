@@ -143,7 +143,7 @@ internal/              # Core implementation
 │   ├── config/        # Configuration management
 │   ├── debuginfo/     # Debug functionality and utilities
 │   ├── resource/      # Resource management (normal/dry-run)
-│   └── runerrors/     # Centralized error handling
+│   └── runerrors/     # Verification failure report conversion
 ├── safefileio/        # Secure file operations with symlink protection
 ├── security/          # Binary security analysis framework
 │   ├── binaryanalyzer/ # Common interfaces and types for binary analysis
