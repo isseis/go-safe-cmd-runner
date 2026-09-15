@@ -83,13 +83,13 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 - **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。パスを含まないセンチネルの追加はこれに含まない。対象 13 の昇順正規化は `Details` の値の並びを変えるため、`Error()` が `Details` を連結する順も昇順になる（`Error()` の実装は変えない）。グローバルも共有コンストラクタでパスを含まない `Message` を受け取る。
 - **共通エンベロープ・通知種別定義・Slack フィールド集合の変更。** 新しい Slack フィールドは足さず、既存 `Error Message` の値と group の `Component` だけを組み立て直す（本文テンプレートは group の既存形へ統一する）。
 - **`error_type` の統一。** グローバルは `file_access_failed`、group は `group_file_verification_failed` のままとする（0172 の通知種別定義。報告の起点が異なるための意図的な差）。
-- **失敗対象一覧を持たない検証失敗の報告形式。** `ensureHashDirectoryValidated` が返す `*verification.OpError` など、`Details` を持たない失敗は本タスクの一覧契約の対象外とし、global は従来どおり `err.Error()`、group は既存の system_error 経路のままとする（アーキテクチャ §5.5・§9 に残存として記録、#1154）。
+- **失敗対象一覧を持たない検証失敗の報告形式。** `ensureHashDirectoryValidated` が返す `*verification.OpError` など、`Details` を持たない失敗は本タスクの一覧契約の対象外とし、global は従来どおり `err.Error()`、group は既存の system_error 経路のままとする（アーキテクチャ §5.5・§9 に残存として記録、[#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154)）。
 - **redaction の適用範囲の変更。** 既存の `RedactText` と既存の `processSlice` の挙動をそのまま使う（対象 8 は回帰固定のみ）。
 - **`user_group_command_failure` 通知の配線。** 別タスク（0174）で扱う。
-- **command 依存検証（`VerifyCommandDependencies`）とコマンドパス解決（`ResolvePath`）の失敗の通知。** [`group_executor.go`](../../../internal/runner/group_executor.go) の `verifyGroupFiles` は、動的ライブラリ・shebang の依存検証失敗とパス解決失敗を `*verification.Error` ではない生のエラーとして返す。そのため `executeGroups` の検証分岐に乗らず、`cmd/runner/main.go` で `ExecutionError`（`system_error`、`slack_notify=false`）になり、Slack へは届かない。加えて `executionResult` が未設定のため `command_group_summary` も出ない。グローバル・group のファイル検証は通知されるのに command レベルの検証だけ通知されない非対称であり、運ぶ情報が「一覧」ではなく「パス 1 件と理由」であるため本タスクの一覧契約とは別の形になる。認識済みの残存として記録し、次タスクの候補とする（アーキテクチャ §5.5・§9、#1152）。
-- **`Runner.executeGroups` が先頭のエラーしか返さない点。** 複数 group が失敗した場合、2 件目以降のエラーは `groupErrs[0]` の返却で捨てられ、`ExpandGroup` 失敗のように group executor がログしない経路はどこにも残らない。`errors.Join` への置き換えは別タスクとする（#1153）。
-- **`HandleExecutionError` が `PreExecutionError.Detail()` と同じ組み立てを重複実装している点。** 効果が小さいため、コードにコメントを残して当面据え置く（#1156）。
-- **`Component` の型付け。** `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善（`logging` は `resource` を import できないため型の移動が要る）は、対象 16 のリテラル置換で実害が消えるため別タスクとする（#1156）。
+- **command 依存検証（`VerifyCommandDependencies`）とコマンドパス解決（`ResolvePath`）の失敗の通知。** [`group_executor.go`](../../../internal/runner/group_executor.go) の `verifyGroupFiles` は、動的ライブラリ・shebang の依存検証失敗とパス解決失敗を `*verification.Error` ではない生のエラーとして返す。そのため `executeGroups` の検証分岐に乗らず、`cmd/runner/main.go` で `ExecutionError`（`system_error`、`slack_notify=false`）になり、Slack へは届かない。加えて `executionResult` が未設定のため `command_group_summary` も出ない。グローバル・group のファイル検証は通知されるのに command レベルの検証だけ通知されない非対称であり、運ぶ情報が「一覧」ではなく「パス 1 件と理由」であるため本タスクの一覧契約とは別の形になる。認識済みの残存として記録し、次タスクの候補とする（アーキテクチャ §5.5・§9、[#1152](https://github.com/isseis/go-safe-cmd-runner/issues/1152)）。
+- **`Runner.executeGroups` が先頭のエラーしか返さない点。** 複数 group が失敗した場合、2 件目以降のエラーは `groupErrs[0]` の返却で捨てられ、`ExpandGroup` 失敗のように group executor がログしない経路はどこにも残らない。`errors.Join` への置き換えは別タスクとする（[#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153)）。
+- **`HandleExecutionError` が `PreExecutionError.Detail()` と同じ組み立てを重複実装している点。** 効果が小さいため、コードにコメントを残して当面据え置く（[#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156)）。
+- **`Component` の型付け。** `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善（`logging` は `resource` を import できないため型の移動が要る）は、対象 16 のリテラル置換で実害が消えるため別タスクとする（[#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156)）。
 
 ## 決定事項
 

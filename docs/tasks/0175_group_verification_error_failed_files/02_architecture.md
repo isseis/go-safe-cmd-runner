@@ -606,9 +606,9 @@ flowchart LR
 - **`*verification.OpError` の報告。** ハッシュディレクトリ検証などの失敗は `Details` を持たず、本設計の一覧契約の対象外である。global は `err.Error()`（`Path` を含みうる）を `Message` に渡し、group は `*verification.Error` ではないため `executeGroups` の検証分岐に乗らず `system_error`（Scope は global）として報告される。パスはハッシュディレクトリの設定値であり、起動時の検証が主経路にある。
 - **コンソールログの粒度と属性名。** グローバルは失敗時に「ファイルごとの `slog.Error` + `failed_files` 配列のサマリ」を出し、group はファイルごとの `slog.Error` のみを出す（`internal/verification/manager.go:166-169`・`:223-226`）。成功時は global が `"verified"`（`cmd/runner/main.go:405-407`）、group が `"verified_files"`（`internal/runner/group_executor.go:383-386`）を使う。対話表示の優先キー（`internal/logging/message_formatter.go:89-104`）は `verified_files` を前提にしている。
 - **`error_type` の差。** グローバルは `file_access_failed`、group は `group_file_verification_failed`（0172 の定義）。報告の起点が異なるための意図的な差であり、本設計では変えない（§3.2.1）。
-- **command 依存検証・パス解決の失敗は Slack に届かない。** `DefaultGroupExecutor.verifyGroupFiles` は `ResolvePath` 失敗（`internal/runner/group_executor.go:378`）と `VerifyCommandDependencies` 失敗（`:407-412`、動的ライブラリ・shebang）を `*verification.Error` ではない生のエラーで返す。`executeGroups` の検証分岐（`runner.go:426`）に乗らないため `groupErrs` に入り、`cmd/runner/main.go:689` で `ExecutionError`（`system_error`、`slack_notify=false`）になる。この時点で `executionResult` は未設定なので `command_group_summary` も出ない。グローバル・group のファイル検証だけが通知され、command レベルの検証は通知されない非対称である。運ぶ情報は「パス 1 件と理由」で本設計の一覧契約とは形が違うため、別タスクとする（§9、#1152）。
-- **`executeGroups` は先頭のエラーしか返さない。** `runner.go:445-447` は `groupErrs[0]` だけを返す。2 件目以降の group の失敗は、group executor が自前でログしない経路（`ExpandGroup` 失敗など）ではどこにも残らない。`errors.Join` への置き換えは別タスクとする（§9、#1153）。
-- **`HandleExecutionError` の本文組み立て。** `internal/logging/pre_execution_error.go:170-180` は `PreExecutionError.Detail()` と同じ「`Message` + ユーザ向け文言または `%v`」を再実装している。効果が小さいため、コードにコメントを残して据え置く（#1156）。
+- **command 依存検証・パス解決の失敗は Slack に届かない。** `DefaultGroupExecutor.verifyGroupFiles` は `ResolvePath` 失敗（`internal/runner/group_executor.go:378`）と `VerifyCommandDependencies` 失敗（`:407-412`、動的ライブラリ・shebang）を `*verification.Error` ではない生のエラーで返す。`executeGroups` の検証分岐（`runner.go:426`）に乗らないため `groupErrs` に入り、`cmd/runner/main.go:689` で `ExecutionError`（`system_error`、`slack_notify=false`）になる。この時点で `executionResult` は未設定なので `command_group_summary` も出ない。グローバル・group のファイル検証だけが通知され、command レベルの検証は通知されない非対称である。運ぶ情報は「パス 1 件と理由」で本設計の一覧契約とは形が違うため、別タスクとする（§9、[#1152](https://github.com/isseis/go-safe-cmd-runner/issues/1152)）。
+- **`executeGroups` は先頭のエラーしか返さない。** `runner.go:445-447` は `groupErrs[0]` だけを返す。2 件目以降の group の失敗は、group executor が自前でログしない経路（`ExpandGroup` 失敗など）ではどこにも残らない。`errors.Join` への置き換えは別タスクとする（§9、[#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153)）。
+- **`HandleExecutionError` の本文組み立て。** `internal/logging/pre_execution_error.go:170-180` は `PreExecutionError.Detail()` と同じ「`Message` + ユーザ向け文言または `%v`」を再実装している。効果が小さいため、コードにコメントを残して据え置く（[#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156)）。
 
 ---
 
@@ -779,14 +779,14 @@ flowchart LR
 - `common.WithinInterpolationLimit` は他の通知本文でも再利用できる。一覧の連結形式と符号化（`strconv.Quote`）は呼び出し側が決める。
 - `failed_file_paths` の要素の redaction は既存の文字列スライス挙動に乗っている。同種のパス一覧を別の通知へ足す場合も、文字列スライス属性として運べば同じ扱いになる。
 - 収集失敗の原因（パス解決に失敗した理由）は現状ログにのみ残る。失敗理由を通知へ構造化して載せたくなったら、独立した属性として運び、ビルダーで描画する。`error_type` と通知種別定義はそのときも既存のまま使える。
-- `verification.Error.Error()` の文面（`Details` の生連結、収集失敗で「N of M files failed」と読める件数）を表示安全な要約や種別に応じた文面へ寄せる改善は別タスクとする（#1154）。通知は共有コンストラクタの本文を使い、`Error()` には依存しない（§5.5）。
-- `*verification.OpError` など失敗対象一覧を持たない検証失敗の報告形式（global の `err.Error()` と group の `system_error`）を揃える改善は別タスクとする（§5.5、#1154）。
-- コンソールログの粒度（global の失敗サマリ 1 行とファイルごとのログ、group のファイルごとのみ）と成功時の属性名（`verified` / `verified_files`）の統一は別タスクとする（§5.5、#1155）。
+- `verification.Error.Error()` の文面（`Details` の生連結、収集失敗で「N of M files failed」と読める件数）を表示安全な要約や種別に応じた文面へ寄せる改善は別タスクとする（[#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154)）。通知は共有コンストラクタの本文を使い、`Error()` には依存しない（§5.5）。
+- `*verification.OpError` など失敗対象一覧を持たない検証失敗の報告形式（global の `err.Error()` と group の `system_error`）を揃える改善は別タスクとする（§5.5、[#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154)）。
+- コンソールログの粒度（global の失敗サマリ 1 行とファイルごとのログ、group のファイルごとのみ）と成功時の属性名（`verified` / `verified_files`）の統一は別タスクとする（§5.5、[#1155](https://github.com/isseis/go-safe-cmd-runner/issues/1155)）。
 - 共有コンストラクタ `runerrors.NewVerificationPreExecutionError` は、検証以外のプリエクゼキューション失敗へ「本文テンプレート + Component + 一覧」の形を広げるときの置き場所になる。
-- コンソール向け描画（stderr・stdout）を出力先横断の単一契約にまとめる改善と、検証マネージャのファイル単位ログの 1 行化は別タスクとする（#1155）。本設計は `Message` にパスを入れないことでこのタスクの範囲を守る。
-- command 依存検証・パス解決の失敗を通知へ載せる改善は別タスクとする（§5.5、#1152）。`verifyGroupFiles` がこれらを構造化されたエラー型で返し、`executeGroups` が `*verification.Error` と同様に `PreExecutionError` へ変換する形が候補になる。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` はその変換の置き場所として再利用できる。
-- `executeGroups` の複数 group 失敗を `errors.Join` で全件返す改善は別タスクとする（§5.5、#1153）。
-- `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善は別タスクとする（#1156）。本設計は生リテラルを typed 定数へ置き換えるだけで、フィールドの型は変えない。
+- コンソール向け描画（stderr・stdout）を出力先横断の単一契約にまとめる改善と、検証マネージャのファイル単位ログの 1 行化は別タスクとする（[#1155](https://github.com/isseis/go-safe-cmd-runner/issues/1155)）。本設計は `Message` にパスを入れないことでこのタスクの範囲を守る。
+- command 依存検証・パス解決の失敗を通知へ載せる改善は別タスクとする（§5.5、[#1152](https://github.com/isseis/go-safe-cmd-runner/issues/1152)）。`verifyGroupFiles` がこれらを構造化されたエラー型で返し、`executeGroups` が `*verification.Error` と同様に `PreExecutionError` へ変換する形が候補になる。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` はその変換の置き場所として再利用できる。
+- `executeGroups` の複数 group 失敗を `errors.Join` で全件返す改善は別タスクとする（§5.5、[#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153)）。
+- `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善は別タスクとする（[#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156)）。本設計は生リテラルを typed 定数へ置き換えるだけで、フィールドの型は変えない。
 
 ---
 
