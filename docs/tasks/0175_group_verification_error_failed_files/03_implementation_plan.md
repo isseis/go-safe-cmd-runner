@@ -189,15 +189,15 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `internal/runner/runerrors/types.go` を削除する（`ErrorSeverity`・`ErrorType`・`ClassifiedError` と定数）。
-- [ ] `internal/runner/runerrors/classification.go` を削除する（`ClassifyVerificationError`）。
-- [ ] `internal/runner/runerrors/logging.go` を削除する（`LogCriticalToStderr`・`LogClassifiedError`）。
-- [ ] `internal/runner/runerrors/classification_test.go` を削除する。
-- [ ] `internal/runner/runerrors/logging_test.go` を削除する。
-- [ ] パッケージ doc を持つ `internal/runner/runerrors/doc.go` を置き、責務を「検証失敗を報告境界の `PreExecutionError` へ変換する」と英語で書く。`doc.go` は以後も残す（パッケージにファイルが 1 つも無い状態を作らず、パッケージ doc の置き場所を固定する）。
-- [ ] `README.ja.md:146` の `runerrors/` の説明を「検証失敗の報告変換」に更新し、コミットする。その後 `/mktrans` で `README.md:146` へ反映する。
-- [ ] `docs/dev/developer_guide/package_reference.md:42,109` の `runerrors/` の説明を英語で同じ内容に更新する（英語のみの文書のため直接編集する）。
-- [ ] 削除前後で `go test -tags test -coverprofile=c.out ./internal/runner/runerrors/ && go tool cover -func=c.out` を実行し、削除前は 3 関数（`ClassifyVerificationError`・`LogCriticalToStderr`・`LogClassifiedError`）、削除後は関数が 1 つも報告されず `total: 0.0%` だけになることを確認してコミットメッセージに記す（commit `066c9e59` で削除前を実行した結果: 関数 3 行 + `total` 1 行。テストファイルの無いパッケージでも `go test -coverprofile` はプロファイルを書き、`cover -func` は `total: 0.0%` を出して終了コード 0 で終わることを同時点で確認した）。
+- [x] `internal/runner/runerrors/types.go` を削除する（`ErrorSeverity`・`ErrorType`・`ClassifiedError` と定数）。
+- [x] `internal/runner/runerrors/classification.go` を削除する（`ClassifyVerificationError`）。
+- [x] `internal/runner/runerrors/logging.go` を削除する（`LogCriticalToStderr`・`LogClassifiedError`）。
+- [x] `internal/runner/runerrors/classification_test.go` を削除する。
+- [x] `internal/runner/runerrors/logging_test.go` を削除する。
+- [x] パッケージ doc を持つ `internal/runner/runerrors/doc.go` を置き、責務を「検証失敗を報告境界の `PreExecutionError` へ変換する」と英語で書く。`doc.go` は以後も残す（パッケージにファイルが 1 つも無い状態を作らず、パッケージ doc の置き場所を固定する）。
+- [x] `README.ja.md:146` の `runerrors/` の説明を「検証失敗の報告変換」に更新し、コミットする。その後 `/mktrans` で `README.md:146` へ反映する。
+- [x] `docs/dev/developer_guide/package_reference.md:42,109` の `runerrors/` の説明を英語で同じ内容に更新する（英語のみの文書のため直接編集する）。
+- [x] 削除前後で `go test -tags test -coverprofile=c.out ./internal/runner/runerrors/ && go tool cover -func=c.out` を実行し、削除前は 3 関数（`ClassifyVerificationError`・`LogCriticalToStderr`・`LogClassifiedError`）、削除後は関数が 1 つも報告されず `total: 0.0%` だけになることを確認してコミットメッセージに記す（commit `066c9e59` で削除前を実行した結果: 関数 3 行 + `total` 1 行。テストファイルの無いパッケージでも `go test -coverprofile` はプロファイルを書き、`cover -func` は `total: 0.0%` を出して終了コード 0 で終わることを同時点で確認した）。
 
 **完了条件**: `go build ./...` と `make test`・`make lint` が通る。`rg -n "runerrors" --glob '!docs/tasks/**'` の結果が README 2 件・`package_reference.md` 2 件・パッケージ自身だけであること（§8）。
 
