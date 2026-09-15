@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -167,14 +168,10 @@ func (m *Manager) VerifyGlobalFiles(input *GlobalVerificationInput) (*Result, er
 			"failed_files", result.FailedFiles,
 			"verified_files", result.VerifiedFiles,
 			"total_files", result.TotalFiles)
-		return nil, &Error{
-			Op:            "global",
-			Details:       result.FailedFiles,
-			TotalFiles:    result.TotalFiles,
-			VerifiedFiles: result.VerifiedFiles,
-			FailedFiles:   len(result.FailedFiles),
-			Err:           ErrGlobalVerificationFailed,
-		}
+		return nil, newVerificationError(
+			"global", "", result.FailedFiles,
+			result.TotalFiles, result.VerifiedFiles,
+			ErrGlobalVerificationFailed)
 	}
 
 	return result, nil
@@ -192,14 +189,15 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 	}
 
 	// Collect all files to verify (explicit files + command files)
-	allFiles, err := m.collectVerificationFiles(input)
-	if err != nil {
-		groupName := input.Name
-		return nil, &Error{
-			Op:    "group",
-			Group: groupName,
-			Err:   fmt.Errorf("failed to collect verification files: %w", err),
-		}
+	allFiles, unresolved := m.collectVerificationFiles(input)
+	if len(unresolved) > 0 {
+		// Fail closed: a target that cannot be resolved is never verified, so
+		// the whole group is rejected. The unresolved targets are reported as
+		// details, not embedded in the error text.
+		return nil, newVerificationError(
+			"group", input.Name, unresolved,
+			len(input.ExpandedVerifyFiles)+len(input.Commands), 0,
+			ErrGroupVerificationCollectionFailed)
 	}
 
 	result := &Result{
@@ -239,25 +237,39 @@ func (m *Manager) VerifyGroupFiles(input *GroupVerificationInput) (*Result, erro
 		if m.isDryRun {
 			return result, nil
 		}
-		return nil, &Error{
-			Op:            "group",
-			Group:         groupName,
-			Details:       result.FailedFiles,
-			TotalFiles:    result.TotalFiles,
-			VerifiedFiles: result.VerifiedFiles,
-			FailedFiles:   len(result.FailedFiles),
-			Err:           ErrGroupVerificationFailed,
-		}
+		return nil, newVerificationError(
+			"group", groupName, result.FailedFiles,
+			result.TotalFiles, result.VerifiedFiles,
+			ErrGroupVerificationFailed)
 	}
 
 	return result, nil
 }
 
+// newVerificationError is the only place a verification Error is constructed.
+// It sorts details into a stable ascending order and derives FailedFiles from
+// them, so report order and count cannot drift between the three failure
+// paths (global verification, group verification, group collection).
+func newVerificationError(op, group string, details []string, total, verified int, sentinel error) *Error {
+	sorted := slices.Clone(details)
+	slices.Sort(sorted)
+	return &Error{
+		Op:            op,
+		Group:         group,
+		Details:       sorted,
+		TotalFiles:    total,
+		VerifiedFiles: verified,
+		FailedFiles:   len(details),
+		Err:           sentinel,
+	}
+}
+
 // collectVerificationFiles collects all files to verify for a group.
-// Returns the file set and nil error on success.
-// Path resolution failures are treated as fail-closed: the entire group
-// verification is aborted rather than silently skipping the command.
-func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[string]struct{}, error) {
+// It returns the resolved file set and the targets whose command path could not
+// be resolved. Resolution failures are collected rather than returned on the
+// first one so the caller can report every unresolved target, but the caller
+// still fails closed: no verification runs when any target is unresolved.
+func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[string]struct{}, []string) {
 	if input == nil {
 		return make(map[string]struct{}), nil
 	}
@@ -270,6 +282,8 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[s
 		fileSet[file] = struct{}{}
 	}
 
+	var unresolved []string
+
 	// Add command files from pre-expanded runtime commands
 	if m.pathResolver != nil && len(input.Commands) > 0 {
 		for _, command := range input.Commands {
@@ -281,13 +295,14 @@ func (m *Manager) collectVerificationFiles(input *GroupVerificationInput) (map[s
 					"command", command.ExpandedCmd,
 					"reason", "path_resolution_failed",
 					"error", err.Error())
-				return nil, fmt.Errorf("failed to resolve command path for '%s': %w", command.ExpandedCmd, err)
+				unresolved = append(unresolved, command.ExpandedCmd)
+				continue
 			}
 			fileSet[resolvedPath] = struct{}{}
 		}
 	}
 
-	return fileSet, nil
+	return fileSet, unresolved
 }
 
 // ResolvePath resolves a command to its full path with security validation
