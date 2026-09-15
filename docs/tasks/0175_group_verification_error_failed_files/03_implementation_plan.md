@@ -31,7 +31,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 ### 1.2 実装方針
 
 1. 失敗ファイル一覧は `verification.Error.Details` だけから取り、自由文 `Message` へ連結しない（02_architecture.md §1.2 原則 1・3）。
-2. `PreExecutionError` の組み立ては `runerrors.NewVerificationPreExecutionError` に一本化し、両発火元はそれを呼ぶだけにする（02_architecture.md §3.2）。両発火元が実際にこれを呼ぶことは `go/ast` の静的ガードで固定する（§7.9）。
+2. `PreExecutionError` の組み立ては `runerrors.NewVerificationPreExecutionError` に一本化し、両発火元はそれを呼ぶだけにする（02_architecture.md §3.2）。両発火元が実際にこれを呼ぶことは `go/ast` の静的ガードで固定する（02_architecture.md §7.9）。
 3. `Details` の並びは `manager.go` の非公開コンストラクタでだけ正規化する。発火元もビルダーも並びを変えない（§3.2.3・§3.7）。
 4. 表示上限の判定は `common.WithinInterpolationLimit` に問い合わせ、上限値や変換規則をビルダーへ書き写さない（02_architecture.md §3.1）。
 5. redaction・通知種別定義・Slack フィールド集合・`error_type`・`verification.Error` の型と `Error()` は変更しない（§3.4）。
@@ -468,7 +468,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | PR-7 | Phase 4b | グローバル統合テスト 2 件（既存 1 件の拡張 + 新規 1 件）、redaction 回帰、ベンチマーク | frontier-required |
 | PR-8 | Phase 5 | 日英の利用者向け文書、0172 の 2 文書への追記 | standard |
 
-PR-3 → PR-4 → PR-5 の順序は Phase 2b.1 → 2b.2 → 2b.3 → 2b.4 の依存（収集失敗のセンチネル、`FailedFilePaths`、共有コンストラクタ）による。PR-5 は Phase 2b.4 と Phase 3 をまとめ、`failed_file_paths` の記録と描画を同じ PR で変える（記録だけが先行して通知からパスが消える中間状態を作らない）。PR-6 は PR-5 までの実装を前提とし、PR-7 は PR-6 の共通ヘルパを再利用するため PR-6 → PR-7 の順に依存する。PR-8 は PR-7 が観測した表示を記述の典拠にする。
+PR-3 → PR-4 → PR-5 の順序は Phase 2b.1 → 2b.2 → 2b.3 → 2b.4 の依存（収集失敗のセンチネル、`FailedFilePaths`、共有コンストラクタ）による。PR-5 は Phase 2b.4 と Phase 3 をまとめ、`failed_file_paths` の記録と描画を同じ PR で変更する（記録だけが先行して通知からパスが消える中間状態を作らない）。PR-6 は PR-5 までの実装を前提とし、PR-7 は PR-6 の共通ヘルパを再利用するため PR-6 → PR-7 の順に依存する。PR-8 は PR-7 が観測した表示を記述の典拠にする。
 
 ### 3.3 順序の根拠
 
@@ -609,6 +609,6 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 ## 10. 次のステップ
 
-- 本書のレビューと承認を受ける。承認後、Phase 1 から順に実装する。
+- 本書は承認済みである。Phase 1（PR-1）から順に実装を開始する。
 - Phase 2a は共有コンストラクタの追加と別コミットにし、`go tool cover -func` の前後をコミットメッセージに記す。
 - 実装完了後、実チャンネルで group 検証エラーと収集失敗の Slack 表示を確認する（手動。AC の対象外）。
