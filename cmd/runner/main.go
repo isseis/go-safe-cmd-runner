@@ -24,6 +24,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/cli"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runerrors"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -133,7 +134,7 @@ func reportStartupPrivilegeFailure(err error) int {
 	logging.HandlePreExecutionError(&logging.PreExecutionError{
 		Type:                logging.ErrorTypePrivilegeDrop,
 		Message:             fmt.Sprintf("Failed to drop startup privileges: %v", err),
-		Component:           "main",
+		Component:           string(resource.ComponentMain),
 		RunID:               logging.GenerateRunID(),
 		NotificationContext: common.GlobalScope(),
 	})
@@ -183,7 +184,7 @@ func main() {
 		logging.HandlePreExecutionError(&logging.PreExecutionError{
 			Type:                logging.ErrorTypeInvalidRunID,
 			Message:             fmt.Sprintf("Invalid run ID passed to --run-id: %v (accepted format: %s)", err, logging.RunIDFormatDescription()),
-			Component:           "main",
+			Component:           string(resource.ComponentMain),
 			RunID:               bootstrapID,
 			NotificationContext: common.GlobalScope(),
 		})
@@ -196,7 +197,7 @@ func main() {
 		logging.HandlePreExecutionError(&logging.PreExecutionError{
 			Type:                logging.ErrorTypeBuildConfig,
 			Message:             fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory),
-			Component:           "main",
+			Component:           string(resource.ComponentMain),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
 		})
@@ -240,7 +241,7 @@ func mainWithExitCode(runID string) int {
 			logging.HandlePreExecutionError(&logging.PreExecutionError{
 				Type:                logging.ErrorTypeSystemError,
 				Message:             err.Error(),
-				Component:           "main",
+				Component:           string(resource.ComponentMain),
 				RunID:               runID,
 				NotificationContext: common.GlobalScope(),
 			})
@@ -392,6 +393,14 @@ func run(runID string) error {
 		ExpandedVerifyFiles: runtimeGlobal.ExpandedVerifyFiles,
 	})
 	if err != nil {
+		// A verification failure goes through the shared constructor so the
+		// global and group reports use one template and carry the failed
+		// targets as a list instead of concatenated into the message. Any
+		// other failure has no target list and keeps its own error text.
+		if verErr, ok := errors.AsType[*verification.Error](err); ok {
+			return runerrors.NewVerificationPreExecutionError(
+				verErr, logging.ErrorTypeFileAccess, common.GlobalScope(), runID)
+		}
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
 			Message:             err.Error(),
@@ -689,7 +698,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 
 		return &logging.ExecutionError{
 			Message:     "error running commands",
-			Component:   "runner",
+			Component:   string(resource.ComponentRunner),
 			RunID:       runID,
 			GroupName:   groupName,
 			CommandName: commandName,

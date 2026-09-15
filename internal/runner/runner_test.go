@@ -2430,6 +2430,96 @@ func TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage(t *testing.T) 
 	assert.NotContains(t, message, "backup", "the group name must appear exactly once, in the notification context")
 }
 
+// TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent drives the
+// executeGroups verification-error branch through Execute and observes the
+// record after redaction, the shape the Slack builder receives: the failed
+// targets travel only in failed_file_paths, the component is "verification",
+// and the human-readable message names no path. The collection-failure case
+// pins the second message template of the shared constructor.
+func TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent(t *testing.T) {
+	execute := func(t *testing.T, verErr *verification.Error) tu.RecordSnapshot {
+		t.Helper()
+
+		recorder := tu.NewLogRecorder(nil)
+		originalLogger := slog.Default()
+		t.Cleanup(func() { slog.SetDefault(originalLogger) })
+		slog.SetDefault(slog.New(redaction.NewRedactingHandler(recorder, nil, nil)))
+
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
+				Timeout: new(int32(30)),
+			},
+			Groups: []runnertypes.GroupSpec{{Name: "backup"}},
+		}
+		runner, err := NewRunner(config,
+			WithVerificationManager(setupDryRunVerification(t)),
+			WithRunID("test-verification-files"),
+			WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+		require.NoError(t, err)
+
+		mockGroupExecutor := &MockGroupExecutor{}
+		mockGroupExecutor.On("ExecuteGroup", mock.Anything, mock.Anything, mock.Anything).Return(verErr)
+		runner.groupExecutor = mockGroupExecutor
+
+		require.NoError(t, runner.Execute(context.Background(), map[string]struct{}{"backup": {}}),
+			"a verification error is reported and the run continues")
+
+		record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
+		record.AssertNotificationContext(t, common.GroupScope("backup"))
+		record.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.ErrorType: string(logging.ErrorTypeGroupFileVerification),
+			common.PreExecErrorAttrs.Component: string(resource.ComponentVerification),
+		})
+		return record
+	}
+
+	t.Run("verification failure", func(t *testing.T) {
+		details := []string{"/etc/backup/a.conf", "/etc/backup/b.conf"}
+		record := execute(t, &verification.Error{
+			Op:            "group",
+			Group:         "backup",
+			Details:       details,
+			TotalFiles:    3,
+			VerifiedFiles: 1,
+			FailedFiles:   2,
+			Err:           verification.ErrGroupVerificationFailed,
+		})
+
+		// The redacting handler rewrites the slice element by element, so the
+		// list arrives as []any and is compared as strings.
+		record.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.FailedFilePaths: []any{"/etc/backup/a.conf", "/etc/backup/b.conf"},
+		})
+		message, ok := record.Attrs[common.PreExecErrorAttrs.ErrorMessage].(string)
+		require.True(t, ok, "the record must carry the rendered error message")
+		assert.Equal(t, "Total: 3, Verified: 1, Failed: 2, Error: group file verification failed", message)
+		for _, path := range details {
+			assert.NotContains(t, message, path, "paths travel only in failed_file_paths")
+		}
+	})
+
+	t.Run("collection failure", func(t *testing.T) {
+		record := execute(t, &verification.Error{
+			Op:            "group",
+			Group:         "backup",
+			Details:       []string{"/opt/missing/a", "/opt/missing/b"},
+			TotalFiles:    3,
+			VerifiedFiles: 0,
+			FailedFiles:   2,
+			Err:           verification.ErrGroupVerificationCollectionFailed,
+		})
+
+		record.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.FailedFilePaths: []any{"/opt/missing/a", "/opt/missing/b"},
+		})
+		message, ok := record.Attrs[common.PreExecErrorAttrs.ErrorMessage].(string)
+		require.True(t, ok, "the record must carry the rendered error message")
+		assert.Equal(t, "Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files", message)
+		assert.NotContains(t, message, "/opt/missing")
+	})
+}
+
 // TestCreateNormalResourceManager_Succeeds verifies that createNormalResourceManager
 // creates a resource manager without error when a verification manager is provided.
 func TestCreateNormalResourceManager_Succeeds(t *testing.T) {

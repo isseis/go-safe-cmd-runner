@@ -296,8 +296,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 2b.4 発火元の置き換えと `Component` の typed 定数化
 
@@ -305,12 +305,12 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `runner.go:426-439` の検証分岐を、`runerrors.NewVerificationPreExecutionError(verErr, logging.ErrorTypeGroupFileVerification, common.GroupScope(verErr.Group), r.runID)` の結果を `logging.HandlePreExecutionError` に渡す形へ置き換える。`errorMsg` の組み立てと `PreExecutionError` リテラルを削除する。
-- [ ] `main.go:391-402` を、`errors.AsType[*verification.Error](err)` が成立するなら `runerrors.NewVerificationPreExecutionError(verErr, logging.ErrorTypeFileAccess, common.GlobalScope(), runID)` を返し、それ以外は従来どおり `err.Error()` を `Message` に渡す形へ変える（02_architecture.md §3.2.3）。
-- [ ] `main.go:136,186,199,243` の `Component: "main"` を `string(resource.ComponentMain)` に、`main.go:692` の `Component: "runner"` を `string(resource.ComponentRunner)` に置き換える（`runner.go:435` は上の置き換えで消える）。
-- [ ] `notification_contract_guard_test.go` に `TestProductionErrorLiteralsUseTypedComponent` を追加する。既存の走査（`checkPreExecutionErrorLiterals` と同じ手法）で本番の `PreExecutionError`・`ExecutionError` 複合リテラルの `Component` キー値が、ちょうど `string(...)` 変換であり、その被演算子がセレクタ `<resource 修飾子>.Component<Name>` で、修飾子が `identitymutationguard.ResolveLocalImports` により `github.com/isseis/go-safe-cmd-runner/internal/runner/resource` に解決されることを固定する（commit `066c9e59` 時点で生リテラルでない本番の `Component:` 値はすべてこの形である。`rg -n 'Component:' cmd/runner/main.go internal/runner/runner.go`）。それ以外の式形（識別子、`fmt.Sprint(...)`、`string("main")`、他パッケージのセレクタ）はすべて失敗させる。あわせて、`internal/logging` 以外の本番ファイル（`logging` を import するファイルを走査範囲とする）で `PreExecutionError`・`ExecutionError` の値の `.Component` へのセレクタ代入（`pe.Component = ...`）が無いことも検査する。走査範囲を import で絞るこの検査は `TestNotificationContextBuiltOnlyByConstructors` と同じく意図的に不完全である（型情報を持たないため、`logging` を import しないファイルでの代入は見ない）。走査が 1 件もリテラルを見つけないときは失敗させる（AC-22）。
-- [ ] `pre_execution_guard_test.go` に `TestFiringPointsUseSharedVerificationConstructor` を追加する。`PreExecutionError` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `runerrors`・`logging` の修飾子を解決して、(a) `internal/runner/runner.go` と `cmd/runner/main.go` に `NewVerificationPreExecutionError` の呼び出しが 1 件ずつあり他の本番ファイルには無いこと、(b) `internal/runner/runerrors` 以外の本番ファイルで、`PreExecutionError` 複合リテラル（値・ポインタ・elided 形）が `FailedFilePaths` キーを設定しないこと、(c) `internal/runner/runerrors` 以外の本番ファイルに `.FailedFilePaths` へのセレクタ代入が無いこと、(d) 呼び出しが 1 件も見つからなければ失敗すること、を固定する（AC-18。02_architecture.md §7.9）。
-- [ ] `runner_test.go` に `TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` を追加する。既存の `TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage`（`:2385`）と同じ `MockGroupExecutor` 構成で、レコーダを `redaction.NewRedactingHandler` で包んで `slog.SetDefault` する。(a) `Details` 付きの検証失敗で `failed_file_paths` が `Details` と同じ要素を持ち、`component` が `verification`、`error_message` にパスが含まれないこと、(b) `ErrGroupVerificationCollectionFailed` を `Err` に持つ収集失敗で本文が `Collection failed:` で始まり `failed_file_paths` が対象名を持つこと、を固定する（AC-06 の属性側・AC-17・AC-18）。RedactingHandler を通した後の値は `[]any` になるため、要素を文字列として比較する。
+- [x] `runner.go:426-439` の検証分岐を、`runerrors.NewVerificationPreExecutionError(verErr, logging.ErrorTypeGroupFileVerification, common.GroupScope(verErr.Group), r.runID)` の結果を `logging.HandlePreExecutionError` に渡す形へ置き換える。`errorMsg` の組み立てと `PreExecutionError` リテラルを削除する。
+- [x] `main.go:391-402` を、`errors.AsType[*verification.Error](err)` が成立するなら `runerrors.NewVerificationPreExecutionError(verErr, logging.ErrorTypeFileAccess, common.GlobalScope(), runID)` を返し、それ以外は従来どおり `err.Error()` を `Message` に渡す形へ変える（02_architecture.md §3.2.3）。
+- [x] `main.go:136,186,199,243` の `Component: "main"` を `string(resource.ComponentMain)` に、`main.go:692` の `Component: "runner"` を `string(resource.ComponentRunner)` に置き換える（`runner.go:435` は上の置き換えで消える）。
+- [x] `notification_contract_guard_test.go` に `TestProductionErrorLiteralsUseTypedComponent` を追加する。既存の走査（`checkPreExecutionErrorLiterals` と同じ手法）で本番の `PreExecutionError`・`ExecutionError` 複合リテラルの `Component` キー値が、ちょうど `string(...)` 変換であり、その被演算子がセレクタ `<resource 修飾子>.Component<Name>` で、修飾子が `identitymutationguard.ResolveLocalImports` により `github.com/isseis/go-safe-cmd-runner/internal/runner/resource` に解決されることを固定する（commit `066c9e59` 時点で生リテラルでない本番の `Component:` 値はすべてこの形である。`rg -n 'Component:' cmd/runner/main.go internal/runner/runner.go`）。それ以外の式形（識別子、`fmt.Sprint(...)`、`string("main")`、他パッケージのセレクタ）はすべて失敗させる。あわせて、`internal/logging` 以外の本番ファイル（`logging` を import するファイルを走査範囲とする）で `PreExecutionError`・`ExecutionError` の値の `.Component` へのセレクタ代入（`pe.Component = ...`）が無いことも検査する。走査範囲を import で絞るこの検査は `TestNotificationContextBuiltOnlyByConstructors` と同じく意図的に不完全である（型情報を持たないため、`logging` を import しないファイルでの代入は見ない）。走査が 1 件もリテラルを見つけないときは失敗させる（AC-22）。
+- [x] `pre_execution_guard_test.go` に `TestFiringPointsUseSharedVerificationConstructor` を追加する。`PreExecutionError` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `runerrors`・`logging` の修飾子を解決して、(a) `internal/runner/runner.go` と `cmd/runner/main.go` に `NewVerificationPreExecutionError` の呼び出しが 1 件ずつあり他の本番ファイルには無いこと、(b) `internal/runner/runerrors` 以外の本番ファイルで、`PreExecutionError` 複合リテラル（値・ポインタ・elided 形）が `FailedFilePaths` キーを設定しないこと、(c) `internal/runner/runerrors` 以外の本番ファイルに `.FailedFilePaths` へのセレクタ代入が無いこと、(d) 呼び出しが 1 件も見つからなければ失敗すること、を固定する（AC-18。02_architecture.md §7.9）。
+- [x] `runner_test.go` に `TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` を追加する。既存の `TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage`（`:2385`）と同じ `MockGroupExecutor` 構成で、レコーダを `redaction.NewRedactingHandler` で包んで `slog.SetDefault` する。(a) `Details` 付きの検証失敗で `failed_file_paths` が `Details` と同じ要素を持ち、`component` が `verification`、`error_message` にパスが含まれないこと、(b) `ErrGroupVerificationCollectionFailed` を `Err` に持つ収集失敗で本文が `Collection failed:` で始まり `failed_file_paths` が対象名を持つこと、を固定する（AC-06 の属性側・AC-17・AC-18）。RedactingHandler を通した後の値は `[]any` になるため、要素を文字列として比較する。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` が共有コンストラクタ呼び出しを旧リテラルへ戻すと失敗すること、`TestFiringPointsUseSharedVerificationConstructor` が §4.4 の構築形ごとの変異（`FailedFilePaths` 付きの手組みリテラル、リテラルの後の `pe.FailedFilePaths = ...` 代入）のそれぞれで失敗すること、`TestProductionErrorLiteralsUseTypedComponent` が §4.4 の式形ごとの変異（`Component` を生リテラルに戻す、`string("main")` にする、識別子変数にする、リテラルの後に `pe.Component = ...` を代入する）のそれぞれで失敗することを確認する。`make deadcode` の出力に `internal/runner/runerrors` の行が無いことを確認する。
 
@@ -320,10 +320,10 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `slack_handler.go` に、`failed_file_paths` 属性の `slog.Value` を `[]string` へデコードする非公開補助を追加する。`[]string` と `[]any`（要素は文字列）を読み、どちらでもない表現・文字列でない要素を含む表現は「一覧なし」として扱う。
-- [ ] `buildPreExecutionError`（`:836-866`）を、`error_message` の値と一覧から `Error Message` の値を組み立てる形へ変える。本文の骨格・表示形（`strconv.Quote`）・掲載の選択・切り詰めは 02_architecture.md §3.3 の表と選択規則に従う。コードが推論できない制約は 2 つ: 上限値・変換規則をビルダーに書かず `common.WithinInterpolationLimit` だけに問い合わせること、最後の `common.Interpolate(..., InterpolationRoleFreeText)` は既存のまま 1 回だけ通すこと。一覧が空（属性はあるが要素 0 件）のときは `Files:` 節を付けない。
-- [ ] `slack_handler_test.go` に `TestBuildPreExecutionError_FailedFilePaths` を追加する。レコードは必ず `redaction.NewRedactingHandler` で包んだハンドラを通す（`TestSlackHandler_WithRedactingHandler`（`:1002`）と同じ手法）。02_architecture.md §7.2 の 12 行（一覧なし、区切り文字衝突の 2 集合、`\n` と空白、`"`・`\`・制御文字・不正 UTF-8、丸ごと収まらない長いパスの閉じ引用符と `…`、全件表示、部分表示の k と m、先頭が長く後続が短い一覧、丸ごと 0 件の切り詰めと m = n - 1、実体参照化で膨らむ要素、渡した順の描画、raw の候補が `WithinInterpolationLimit` を満たすこと）を固定する（AC-01・AC-02・AC-03・AC-08）。部分表示の行は、掲載パスが `failed_file_paths` の要素そのものであること（切り詰めでないこと）と `(+m more)` の m が `n - 掲載件数` に等しいことを見る。
-- [ ] 同ファイルに `TestBuildPreExecutionError_FailedFilePathsMalformedValue` を追加する。`failed_file_paths` に文字列でない要素を含むスライス・非スライス値・要素 0 件のスライス（`[]any{}`）を置いたレコードで、いずれも `Error Message` が `error_message` の値と等しく `Files:` を含まないことを固定する（AC-04 の一覧なし規則の producer 欠陥側）。
+- [x] `slack_handler.go` に、`failed_file_paths` 属性の `slog.Value` を `[]string` へデコードする非公開補助を追加する。`[]string` と `[]any`（要素は文字列）を読み、どちらでもない表現・文字列でない要素を含む表現は「一覧なし」として扱う。
+- [x] `buildPreExecutionError`（`:836-866`）を、`error_message` の値と一覧から `Error Message` の値を組み立てる形へ変える。本文の骨格・表示形（`strconv.Quote`）・掲載の選択・切り詰めは 02_architecture.md §3.3 の表と選択規則に従う。コードが推論できない制約は 2 つ: 上限値・変換規則をビルダーに書かず `common.WithinInterpolationLimit` だけに問い合わせること、最後の `common.Interpolate(..., InterpolationRoleFreeText)` は既存のまま 1 回だけ通すこと。一覧が空（属性はあるが要素 0 件）のときは `Files:` 節を付けない。
+- [x] `slack_handler_test.go` に `TestBuildPreExecutionError_FailedFilePaths` を追加する。レコードは必ず `redaction.NewRedactingHandler` で包んだハンドラを通す（`TestSlackHandler_WithRedactingHandler`（`:1002`）と同じ手法）。02_architecture.md §7.2 の 12 行（一覧なし、区切り文字衝突の 2 集合、`\n` と空白、`"`・`\`・制御文字・不正 UTF-8、丸ごと収まらない長いパスの閉じ引用符と `…`、全件表示、部分表示の k と m、先頭が長く後続が短い一覧、丸ごと 0 件の切り詰めと m = n - 1、実体参照化で膨らむ要素、渡した順の描画、raw の候補が `WithinInterpolationLimit` を満たすこと）を固定する（AC-01・AC-02・AC-03・AC-08）。部分表示の行は、掲載パスが `failed_file_paths` の要素そのものであること（切り詰めでないこと）と `(+m more)` の m が `n - 掲載件数` に等しいことを見る。
+- [x] 同ファイルに `TestBuildPreExecutionError_FailedFilePathsMalformedValue` を追加する。`failed_file_paths` に文字列でない要素を含むスライス・非スライス値・要素 0 件のスライス（`[]any{}`）を置いたレコードで、いずれも `Error Message` が `error_message` の値と等しく `Files:` を含まないことを固定する（AC-04 の一覧なし規則の producer 欠陥側）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。表の各行について、対応する分岐（省略通知の組み立て・丸ごと優先の走査・k = 0 の切り詰め・要素の型検査）を外すと当該行が失敗することを確認する（§4.4）。
 
@@ -339,8 +339,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: Phase 2b.4 は両発火元の `Component`・`Message` という可視挙動を変えながら構築形を列挙する `go/ast` ガード 2 件を導入し、Phase 3 は予算内掲載の選択・切り詰め探索・省略件数計算を述語への問い合わせだけで行う。いずれも孤立した高リスク・複雑ステップだが、`failed_file_paths` の記録と描画を同一 PR に入れて段階的な raise/lower を作らないため panel-mode トリガーには該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

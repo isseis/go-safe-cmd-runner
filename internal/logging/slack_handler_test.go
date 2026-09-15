@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -2175,4 +2177,190 @@ func TestSlackHandler_GenericMessageHasEnvelope(t *testing.T) {
 	assert.Equal(t, colorGood, message.Attachments[0].Color)
 	assertTrailingEnvelopeFields(t, message.Attachments[0])
 	assert.Equal(t, "(global)", attachmentFieldValue(t, message.Attachments[0], fieldTitleScope))
+}
+
+// failedFilesDetail is the error_message value of the failed-files builder
+// tests, the free-text detail the Files section follows.
+const failedFilesDetail = "Total: 3, Verified: 1, Failed: 2, Error: group file verification failed"
+
+// redactedPreExecutionErrorMessage renders the Error Message field of a
+// pre-execution error record whose error_message is failedFilesDetail and
+// whose failed_file_paths attribute holds failedPaths (nil for no attribute).
+// The record is passed through a RedactingHandler first, as in production, so
+// the builder sees the []any shape the handler produces rather than the
+// []string the firing point wrote.
+func redactedPreExecutionErrorMessage(t *testing.T, failedPaths any) string {
+	t.Helper()
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, "Pre-execution error occurred", 0)
+	record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GroupScope("backup"))...)
+	record.AddAttrs(
+		slog.String(common.PreExecErrorAttrs.ErrorType, string(ErrorTypeGroupFileVerification)),
+		slog.String(common.PreExecErrorAttrs.ErrorMessage, failedFilesDetail),
+		slog.String(common.PreExecErrorAttrs.Component, "verification"),
+	)
+	if failedPaths != nil {
+		record.AddAttrs(slog.Any(common.PreExecErrorAttrs.FailedFilePaths, failedPaths))
+	}
+
+	var redacted slog.Record
+	handler := redaction.NewRedactingHandler(tu.NewCallbackHandler(func(r slog.Record) {
+		redacted = r
+	}), nil, nil)
+	require.NoError(t, handler.Handle(context.Background(), record))
+
+	details := buildPreExecutionError(redacted)
+	for _, field := range details.fields {
+		if field.Title == "Error Message" {
+			return field.Value
+		}
+	}
+	t.Fatalf("no Error Message field: %v", details.fields)
+	return ""
+}
+
+// omissionCount parses the trailing " (+m more)" notice of a rendered Error
+// Message and returns m, or 0 when there is no notice.
+func omissionCount(t *testing.T, value string) int {
+	t.Helper()
+	match := regexp.MustCompile(` \(\+(\d+) more\)$`).FindStringSubmatch(value)
+	if match == nil {
+		return 0
+	}
+	m, err := strconv.Atoi(match[1])
+	require.NoError(t, err)
+	return m
+}
+
+// TestBuildPreExecutionError_FailedFilePaths pins how the failed targets are
+// rendered into the Error Message: one quoted path per element so the list
+// syntax cannot be forged, every path when the whole list fits the free-text
+// limit, otherwise the paths that fit whole plus an omission count, and a
+// truncated first path only when nothing fits whole.
+func TestBuildPreExecutionError_FailedFilePaths(t *testing.T) {
+	const detail = failedFilesDetail
+	longPath := "/" + strings.Repeat("x", 600)
+
+	t.Run("no attribute leaves the detail alone", func(t *testing.T) {
+		assert.Equal(t, common.Interpolate(detail, common.InterpolationRoleFreeText),
+			redactedPreExecutionErrorMessage(t, nil))
+	})
+
+	t.Run("a separator inside a path cannot forge a second path", func(t *testing.T) {
+		first := redactedPreExecutionErrorMessage(t, []string{"/a, /b", "/c"})
+		second := redactedPreExecutionErrorMessage(t, []string{"/a", "/b, /c"})
+		assert.NotEqual(t, first, second)
+		assert.Equal(t, detail+`, Files: "/a, /b", "/c"`, first)
+		assert.Equal(t, detail+`, Files: "/a", "/b, /c"`, second)
+	})
+
+	t.Run("a newline and a space stay distinct after interpolation", func(t *testing.T) {
+		newline := redactedPreExecutionErrorMessage(t, []string{"/a\nb"})
+		space := redactedPreExecutionErrorMessage(t, []string{"/a b"})
+		assert.NotEqual(t, newline, space)
+		assert.Equal(t, detail+`, Files: "/a\nb"`, newline)
+		assert.Equal(t, detail+`, Files: "/a b"`, space)
+	})
+
+	t.Run("quotes, backslashes, control characters and invalid UTF-8 are visible escapes", func(t *testing.T) {
+		got := redactedPreExecutionErrorMessage(t, []string{"/p\"q\\r\x01\xff\u2028z"})
+		assert.Equal(t, detail+`, Files: "/p\"q\\r\x01\xff\u2028z"`, got)
+		assertDisplaySafeProperties(t, got)
+	})
+
+	t.Run("a path that does not fit whole keeps its closing quote before the ellipsis", func(t *testing.T) {
+		// Two-byte escapes: a split escape would leave a lone backslash.
+		path := "/" + strings.Repeat("\t", 600)
+		got := redactedPreExecutionErrorMessage(t, []string{path})
+		assert.Regexp(t, `^`+regexp.QuoteMeta(detail)+`, Files: "/(\\t)+"\x{2026}$`, got)
+		assert.NotContains(t, got, "more)", "a single path has nothing to omit")
+		assert.True(t, common.WithinInterpolationLimit(renderFailedFiles(detail, []string{path})))
+	})
+
+	t.Run("a short list is shown whole", func(t *testing.T) {
+		got := redactedPreExecutionErrorMessage(t, []string{"/etc/a&b.conf", "/etc/c.conf"})
+		assert.Equal(t, detail+`, Files: "/etc/a&amp;b.conf", "/etc/c.conf"`, got)
+	})
+
+	t.Run("a long list shows whole paths and counts the rest", func(t *testing.T) {
+		paths := make([]string, 40)
+		for i := range paths {
+			paths[i] = fmt.Sprintf("/var/lib/backup/%02d/snapshot-with-a-long-name.tar", i)
+		}
+		got := redactedPreExecutionErrorMessage(t, paths)
+
+		listing := strings.TrimPrefix(got, detail+", Files: ")
+		require.NotEqual(t, got, listing, "the Files section must follow the detail")
+		omitted := omissionCount(t, got)
+		require.Positive(t, omitted, "a list this long cannot be shown whole")
+		listing = strings.TrimSuffix(listing, omissionNotice(omitted))
+		shown := strings.Split(listing, ", ")
+		for i, q := range shown {
+			assert.Equal(t, strconv.Quote(paths[i]), q, "shown path %d must be an element, not a truncation", i)
+		}
+		assert.Equal(t, len(paths), len(shown)+omitted, "shown + omitted must equal the list length")
+		assert.True(t, common.WithinInterpolationLimit(renderFailedFiles(detail, paths)))
+	})
+
+	t.Run("a long first path is skipped in favor of the short ones after it", func(t *testing.T) {
+		got := redactedPreExecutionErrorMessage(t, []string{longPath, "/short/a", "/short/b"})
+		assert.Equal(t, detail+`, Files: "/short/a", "/short/b" (+1 more)`, got)
+	})
+
+	t.Run("when nothing fits whole the first path is truncated and the rest counted", func(t *testing.T) {
+		paths := []string{longPath, longPath + "/2", longPath + "/3"}
+		got := redactedPreExecutionErrorMessage(t, paths)
+		assert.Regexp(t, `^`+regexp.QuoteMeta(detail)+`, Files: "/x+"\x{2026} \(\+2 more\)$`, got)
+		assert.Equal(t, len(paths)-1, omissionCount(t, got))
+		assert.True(t, common.WithinInterpolationLimit(renderFailedFiles(detail, paths)))
+	})
+
+	t.Run("entity escaping at the boundary does not push the notice off the end", func(t *testing.T) {
+		paths := make([]string, 30)
+		for i := range paths {
+			paths[i] = fmt.Sprintf("/%02d/%s", i, strings.Repeat("&<>", 10))
+		}
+		got := redactedPreExecutionErrorMessage(t, paths)
+		assert.Regexp(t, ` \(\+\d+ more\)$`, got, "the notice must survive interpolation")
+		assert.Contains(t, got, "&amp;&lt;&gt;")
+		assert.True(t, common.WithinInterpolationLimit(renderFailedFiles(detail, paths)))
+	})
+
+	t.Run("paths are rendered in the order given", func(t *testing.T) {
+		got := redactedPreExecutionErrorMessage(t, []string{"/b", "/a", "/c"})
+		assert.Equal(t, detail+`, Files: "/b", "/a", "/c"`, got)
+	})
+}
+
+// TestDecodeFailedFilePaths_StringSlice pins the []string shape of the
+// decoder, which only a record that bypasses the RedactingHandler carries: the
+// rendering tests above all go through the handler and so reach only the
+// []any branch.
+func TestDecodeFailedFilePaths_StringSlice(t *testing.T) {
+	assert.Equal(t, []string{"/b", "/a"}, decodeFailedFilePaths(slog.AnyValue([]string{"/b", "/a"})))
+}
+
+// TestBuildPreExecutionError_FailedFilePathsMalformedValue pins that a
+// failed_file_paths value the builder cannot read as a list of strings, or an
+// empty list, leaves the Error Message equal to the detail: a producer defect
+// must not hide the detail or render a partial list.
+func TestBuildPreExecutionError_FailedFilePathsMalformedValue(t *testing.T) {
+	const detail = failedFilesDetail
+
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "slice with a non-string element", value: []any{"/a", 1}},
+		{name: "non-slice value", value: "/a"},
+		{name: "slice of a non-string type", value: []int{1, 2}},
+		{name: "empty slice", value: []any{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactedPreExecutionErrorMessage(t, tt.value)
+			assert.Equal(t, common.Interpolate(detail, common.InterpolationRoleFreeText), got)
+			assert.NotContains(t, got, "Files:")
+		})
+	}
 }
