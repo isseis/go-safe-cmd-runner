@@ -76,7 +76,7 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象の一覧を `verification.Error.Details` に設定する。通知へ載せる一覧の出所は常に `Details` であり、収集失敗だけ別経路にしない。`Details` が空のまま残るのは、`*verification.Error` 以外の失敗と、失敗対象を持たない検証エラーに限る。
 
-収集失敗の `Message` には対象名を入れない。`Err` にはパスを含まないセンチネル（"failed to collect verification files"）を用い、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。件数は、対象総数（`verify_files` とコマンド数の合計）・検証済み 0・解決に失敗した対象数とする。
+収集失敗の `Message` には対象名を入れない。`Err` にはパスを含まないセンチネル（"failed to collect verification files"）を用い、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`Total`／`Verified`／`Failed` の検証サマリを提示しない。本文は対象総数（`verify_files` とコマンド数の合計）と解決に失敗した対象数による収集段階の件数（例: `Collection failed: 1 of 3 targets unresolved`）で示す。
 
 ### group 名は Scope に一本化する
 
@@ -136,7 +136,7 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 - **AC-14**: グローバル／group 検証エラーの通知レコードは、失敗対象（失敗ファイルまたは収集で解決に失敗したコマンド）を持つとき専用属性 `failed_file_paths` にそれを記録し、`handleErrorCommon` が stderr へ書く `Message` はパスを含まない（検証マネージャが各失敗ファイルを別途ログする経路と、console ハンドラが属性を描画する点は残存リスク）。
 - **AC-15**: `failed_file_paths` の各要素は、値形式の機密（トークン等）がマスクされ、`key` などを通常含むパス（例: `/opt/monkey/data`）はマスクされない。これは文字列スライス属性に対する既存の redaction 挙動であり、本タスクは redaction を変更しない。
 - **AC-16**: グローバル検証エラーの通知も、`Runner.Execute` ではなく `cmd/runner` の報告境界を通したテストで、`failed_file_paths` が `Error Message` に描画されることを固定する。
-- **AC-17**: 検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象が全て `failed_file_paths` に記録され、`Error Message` に表示される。`HandlePreExecutionError` が記録する `Message` と `handleErrorCommon` が stderr へ書く文字列は対象名を含まず、対象名は検証マネージャの構造化ログに残る。
+- **AC-17**: 検証対象の収集失敗（コマンドのパス解決失敗）でも、解決に失敗した対象が全て `failed_file_paths` に記録され、`Error Message` に表示される。収集失敗の `Error Message` は `Total`／`Verified`／`Failed` の検証サマリを提示せず、収集段階の件数（解決に失敗した対象数と対象総数）を示す。`HandlePreExecutionError` が記録する `Message` と `handleErrorCommon` が stderr へ書く文字列は対象名を含まず、対象名は検証マネージャの構造化ログに残る。
 
 ## Success Criteria（要件レベル）
 

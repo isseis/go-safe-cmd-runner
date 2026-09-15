@@ -318,7 +318,7 @@ type PreExecutionError struct {
 
 **group（`Runner.executeGroups`）**
 
-- `Message` は既存の `Total: %d, Verified: %d, Failed: %d, Error: %v` のまま（パスを含めない）。
+- `Message` は検証失敗では既存の `Total: %d, Verified: %d, Failed: %d, Error: %v` のまま（パスを含めない）。収集失敗では検証の内訳を提示せず、収集段階の件数に基づく本文とする（§3.7）。
 - `FailedFilePaths` は `verErr.Details` を複製して昇順に並べたもの。`verErr.Details` 自体の順序は変えない。
 - 収集失敗でも `verErr.Details` に解決失敗の対象が入るため（§3.7）、`FailedFilePaths` の設定経路はこの 1 つに閉じる。本文の `Error: %v` はパスを含まないセンチネルになる。
 - `Type` は `logging.ErrorTypeGroupFileVerification`、`NotificationContext` は `common.GroupScope(verErr.Group)`、`Component` は `"runner"`（いずれも既存）。
@@ -415,9 +415,9 @@ type PreExecutionError struct {
 `VerifyGroupFiles` は検証対象の収集に失敗すると group の検証を中止し（fail-closed、既存挙動）、`*verification.Error` を返す（`internal/verification/manager.go:194-203`）。本設計はこの経路でも失敗対象の一覧を運ぶ。
 
 - **一覧の収集。** `collectVerificationFiles` はパス解決に失敗したコマンドを記録し、残りのコマンドの解決を続けて、解決に失敗した対象（`command.ExpandedCmd`）を全て集める。解決に失敗した時点で group の検証は中止し、検証は 1 件も行わない（fail-closed を維持する。走査の継続は解決の試行だけで、検証も副作用も伴わない）。
-- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を `Details` に設定する。`FailedFiles` はその件数（この経路では「検証に失敗した数」ではなく「解決に失敗した対象数」を表す）、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とする。`Op`・`Group` は既存のまま。
-- **`Err`。** パスを含まない新しいセンチネル `ErrGroupVerificationCollectionFailed`（"failed to collect verification files"）を設定する。パス解決の生の原因（コマンド文字列を包む）は `collectVerificationFiles` の既存の `slog.Warn`（`internal/verification/manager.go:279-283`）に残り、`Message` へは入れない。group 本文は `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files` となり、対象名は `failed_file_paths` だけが運ぶ。
-- **`Error()`。** `verification.Error` の型と `Error()` は変更しない。`Details` が設定されるため `Error()` は既存の `Details` 分岐（`internal/verification/errors.go:171-173`）を通る。原因の文面は通知に載らないが、通知の一覧に失敗対象が現れる（AC-17）。
+- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を `Details` に設定する。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`TotalFiles`・`VerifiedFiles`・`FailedFiles` を検証の内訳として提示しない。`FailedFiles` は解決に失敗した対象数、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とし、これらは収集段階の件数として扱う（`verification.Error` の型は変えない）。`Op`・`Group` は既存のまま。
+- **`Err`。** パスを含まない新しいセンチネル `ErrGroupVerificationCollectionFailed`（"failed to collect verification files"）を設定する。パス解決の生の原因（コマンド文字列を包む）は `collectVerificationFiles` の既存の `slog.Warn`（`internal/verification/manager.go:279-283`）に残り、`Message` へは入れない。group 本文は検証の内訳ではなく収集段階の事実を示す `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files` となり、対象名は `failed_file_paths` だけが運ぶ。
+- **`Error()`。** `verification.Error` の型と `Error()` は変更しない。`Details` が設定されるため `Error()` は既存の `Details` 分岐（`internal/verification/errors.go:171-173`）を通る。本経路の通知本文は `executeGroups` が組み立てるため、`Error()` の `%d of %d files failed` 表記が検証サマリとして通知に現れることはない。原因の文面は通知に載らないが、通知の一覧に失敗対象が現れる（AC-17）。
 - **検証失敗との区別。** `ErrGroupVerificationFailed` はハッシュ不一致などの検証失敗、`ErrGroupVerificationCollectionFailed` は収集失敗を表す。`error_type` は `group_file_verification_failed` のままである（通知種別・エンベロープを変えない）。
 
 ---
@@ -431,7 +431,7 @@ type PreExecutionError struct {
 | 失敗対象なし（`Details` が空） | `error_message` のみ | 既存の `Total: ..., Error: <verErr.Err>`（後方互換） |
 | 全件が上限内 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <全件>` |
 | 上限超過 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <一部> (+m more)` |
-| 収集失敗（`Details` は解決失敗の対象） | `error_message` + `failed_file_paths` | `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files, Files: ...` |
+| 収集失敗（`Details` は解決失敗の対象） | `error_message` + `failed_file_paths` | `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files, Files: ...` |
 | 前置きと省略通知だけで上限超過 | `error_message` + `failed_file_paths` | 既存の `Total: ..., Error: ...` へ退避 |
 
 グローバルの検証エラーも同じ表に従う。`error_type` は `file_access_failed`、Scope は `(global)` で、`error_message` はパスと原因を含む `err.Error()` から `global verification failed: X of Y files failed` の形へ変わり、ファイル一覧は `failed_file_paths` から描画される。`error_message` を照合する消費者はこの変更を確認する必要がある（§5.2・§7.4）。
@@ -574,8 +574,8 @@ flowchart LR
 ### 6.5 収集失敗（パス解決失敗）
 
 1. `collectVerificationFiles` がパス解決に失敗したコマンドを記録し、残りの解決を続けて解決に失敗した対象を全て集める。group の検証は中止し、検証は 1 件も行わない（fail-closed）。
-2. `VerifyGroupFiles` が `Details`（解決失敗の対象）、`TotalFiles`（対象総数）、`FailedFiles`（解決失敗の数）、`VerifiedFiles = 0`、`Err = ErrGroupVerificationCollectionFailed` を設定して返す（§3.7）。
-3. `executeGroups` が `FailedFilePaths` に `Details` の昇順コピーを設定し、`Message` は `Total: <総数>, Verified: 0, Failed: <失敗数>, Error: failed to collect verification files` とする（パスを含まない）。
+2. `VerifyGroupFiles` が `Details`（解決失敗の対象）、`TotalFiles`（対象総数）、`FailedFiles`（解決失敗の数）、`VerifiedFiles = 0`、`Err = ErrGroupVerificationCollectionFailed` を設定して返す（§3.7）。これらは収集段階の件数であり、検証の内訳ではない。
+3. `executeGroups` が `FailedFilePaths` に `Details` の昇順コピーを設定し、`Message` は収集段階の件数による `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files` とする（パスを含まない）。
 4. 以降は 6.1 と同じ（stderr にパスは出ず、`failed_file_paths` が `Error Message` に描画される）。
 
 ---
@@ -660,9 +660,9 @@ flowchart LR
 
 すべて特権不要で `make test` に含める（統合テストを除く）。
 
-- `internal/verification/manager_test.go` に、解決に失敗するコマンドを 1 件／複数件含む group で `VerifyGroupFiles` を呼び、`Details` に解決失敗の対象が全て載ること、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`Err` の文言に対象名が含まれないことを固定する（AC-17）。
+- `internal/verification/manager_test.go` に、解決に失敗するコマンドを 1 件／複数件含む group で `VerifyGroupFiles` を呼び、`Details` に解決失敗の対象が全て載ること、`TotalFiles`（対象総数）・`FailedFiles`（解決失敗の数）・`VerifiedFiles = 0` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`Err` の文言に対象名が含まれないことを固定する（AC-17）。これらの件数は収集段階の値であり、検証の内訳として描画されないことは統合テストで固定する。
 - `internal/runner/runner_test.go` の配線テストに、`Details` を持つ収集失敗を模した入力を足し、`FailedFilePaths` が設定されることを固定する。
-- `cmd/runner` の統合テスト（§7.3 と同じ in-process ハンドラ差し替え）で、収集失敗の最終 `Error Message` に対象名が現れ、`handleErrorCommon` の stderr 出力には現れないことを固定する。
+- `cmd/runner` の統合テスト（§7.3 と同じ in-process ハンドラ差し替え）で、収集失敗の最終 `Error Message` に対象名が現れ、本文が `Collection failed: <失敗数> of <総数> targets unresolved` の形を取ること（`Total`／`Verified`／`Failed` の検証サマリを提示しないこと）、`handleErrorCommon` の stderr 出力には対象名が現れないことを固定する。
 
 ---
 
@@ -707,7 +707,7 @@ flowchart LR
 | AC-14 | §3.2・§3.3・§3.7・§4。失敗対象（失敗ファイル・解決に失敗したコマンド）を持つとき `failed_file_paths` 属性がそれを運び、人間向け `Detail()` はパスを含まない。構造化属性と検証マネージャのファイル単位ログは残存リスク（§5.2・§7.3・§7.5） |
 | AC-15 | §5.4。`failed_file_paths` の要素は文字列スライス要素として既存の `RedactText` のみを受ける（redaction は変更しない）。回帰で固定する（§7.5） |
 | AC-16 | §3.2（グローバル発火元）・§6.4・§7.4。グローバルの通知も `failed_file_paths` が `Error Message` に描画されることを固定する |
-| AC-17 | §3.7・§6.5・§7.8。収集失敗でも解決に失敗した対象を全て `Details` に載せ、`Err` はパスを含まないセンチネルとする |
+| AC-17 | §3.7・§6.5・§7.8。収集失敗でも解決に失敗した対象を全て `Details` に載せ、`Err` はパスを含まないセンチネルとし、本文は検証の内訳ではなく収集段階の件数（解決に失敗した対象数と対象総数）を示す |
 
 ## 付録B: 採らなかった案
 
