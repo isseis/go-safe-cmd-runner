@@ -75,9 +75,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # pre-commit
 RUN pip3 install --break-system-packages pre-commit
 
-# Claude Code and Codex CLIs are installed later, as the non-root user, via
-# their native curl installers (see below) so the user can self-update them
-# from inside the devcontainer without root.
+# Claude Code, Codex, and opencode CLIs are installed later, as the non-root
+# user, via their native curl installers (see below) so the user can
+# self-update them from inside the devcontainer without root.
 
 # herdr (agent session persistence tool, verified via official manifest SHA-256)
 ARG HERDR_VERSION=0.8.2
@@ -157,3 +157,10 @@ RUN curl -fsSL https://claude.ai/install.sh -o install-claude.sh && bash install
 # Codex CLI (native installer). Same per-user install/update model as above:
 # installs to ~/.local/bin and manages its own versions under ~/.codex.
 RUN curl -fsSL https://chatgpt.com/codex/install.sh -o install-codex.sh && bash install-codex.sh && rm install-codex.sh
+
+# opencode CLI (native installer). Installs to ~/.opencode/bin as this user.
+# --no-modify-path keeps the installer from editing ~/.bashrc; the directory
+# is added to PATH via ENV below instead so it applies to non-interactive
+# shells (e.g. VS Code tasks) as well.
+RUN curl -fsSL https://opencode.ai/install -o install-opencode.sh && bash install-opencode.sh --no-modify-path && rm install-opencode.sh
+ENV PATH=$PATH:/home/$USERNAME/.opencode/bin
