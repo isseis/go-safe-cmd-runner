@@ -981,23 +981,31 @@ func TestHandlePreExecutionError_FailedFilePaths(t *testing.T) {
 		assert.NotContains(t, stdout, "/a")
 	})
 
-	t.Run("omits the attribute when the list is empty", func(t *testing.T) {
-		recorder, _, _ := handle(t, nil)
+	for _, tc := range []struct {
+		name  string
+		paths []string
+	}{
+		{name: "nil list", paths: nil},
+		{name: "empty non-nil list", paths: []string{}},
+	} {
+		t.Run("omits the attribute for a "+tc.name, func(t *testing.T) {
+			recorder, _, _ := handle(t, tc.paths)
 
-		record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
-		_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
-		assert.False(t, present, "an empty list must not be recorded; attributes: %v", record.Attrs)
-		assert.Equal(t,
-			[]string{
-				common.PreExecErrorAttrs.Component,
-				common.PreExecErrorAttrs.ErrorMessage,
-				common.PreExecErrorAttrs.ErrorType,
-				msgTypeAttrKey,
-				common.NotificationContextAttrs.Key,
-				"run_id",
-				slackNotifyAttrKey,
-			},
-			slices.Sorted(maps.Keys(record.Attrs)),
-			"the record must carry only the standard attributes when there is no list")
-	})
+			record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
+			_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
+			assert.False(t, present, "a list of length %d must not be recorded; attributes: %v", len(tc.paths), record.Attrs)
+			assert.Equal(t,
+				[]string{
+					common.PreExecErrorAttrs.Component,
+					common.PreExecErrorAttrs.ErrorMessage,
+					common.PreExecErrorAttrs.ErrorType,
+					msgTypeAttrKey,
+					common.NotificationContextAttrs.Key,
+					"run_id",
+					slackNotifyAttrKey,
+				},
+				slices.Sorted(maps.Keys(record.Attrs)),
+				"the record must carry only the standard attributes when there is no list")
+		})
+	}
 }

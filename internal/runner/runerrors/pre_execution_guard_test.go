@@ -37,6 +37,37 @@ func TestRunerrorsExportsOnlyTheSharedConstructor(t *testing.T) {
 		"runerrors may export only the shared constructor")
 }
 
+// TestExportedDeclarationsRecognizesForms pins the recognizer the guard depends
+// on: exported functions, types, consts and vars are reported, while
+// unexported ones and methods are not. Without this, the guard's non-function
+// branches could break and a re-added exported type (the dead classification
+// API) would pass unnoticed.
+func TestExportedDeclarationsRecognizesForms(t *testing.T) {
+	const src = `package p
+
+import "fmt"
+
+func Exported() {}
+func unexported() {}
+
+func (r *T) Method() {}
+
+type T struct{}
+type hidden struct{}
+
+const ExportedConst = 1
+const hiddenConst = 2
+
+var ExportedVar = fmt.Sprint()
+var hiddenVar = 1
+`
+	_, file := identitymutationguard.ParseSource(t, "internal/x/x.go", src)
+	assert.ElementsMatch(t,
+		[]string{"Exported", "T", "ExportedConst", "ExportedVar"},
+		exportedDeclarations(file),
+		"only exported top-level funcs, types, consts and vars are reported; methods are excluded")
+}
+
 // exportedDeclarations returns the names of the exported top-level
 // declarations in file.
 func exportedDeclarations(file *ast.File) []string {

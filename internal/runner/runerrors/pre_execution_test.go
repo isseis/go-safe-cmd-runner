@@ -86,6 +86,33 @@ func TestNewVerificationPreExecutionError(t *testing.T) {
 			wantMessage: "Total: 0, Verified: 0, Failed: 0, Error: global file verification failed",
 			wantPaths:   nil,
 		},
+		{
+			name: "empty details keep the collection template",
+			verErr: &verification.Error{
+				Op:  "group",
+				Err: verification.ErrGroupVerificationCollectionFailed,
+			},
+			errType:     logging.ErrorTypeGroupFileVerification,
+			scope:       common.GroupScope("backup"),
+			runID:       "run-5",
+			wantMessage: "Collection failed: 0 of 0 targets unresolved, Error: failed to collect verification files",
+			wantPaths:   nil,
+		},
+		{
+			name: "preserves the given order without sorting",
+			verErr: &verification.Error{
+				Op:          "group",
+				Details:     []string{"/c", "/a", "/b"},
+				TotalFiles:  3,
+				FailedFiles: 3,
+				Err:         verification.ErrGroupVerificationFailed,
+			},
+			errType:     logging.ErrorTypeGroupFileVerification,
+			scope:       common.GroupScope("backup"),
+			runID:       "run-6",
+			wantMessage: "Total: 3, Verified: 0, Failed: 3, Error: group file verification failed",
+			wantPaths:   []string{"/c", "/a", "/b"},
+		},
 	}
 
 	for _, tt := range tests {
