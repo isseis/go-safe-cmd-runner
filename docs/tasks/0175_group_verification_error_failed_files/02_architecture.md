@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-14 |
-| Review date | `-` |
-| Reviewer | `-` |
-| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` に含める決定を反映（§1.1・§1.2・§1.3・§2.2・§2.3・§3.2・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。<br>2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタ `runerrors.NewVerificationPreExecutionError` へ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動（§1.2・§1.3・§2.1・§2.2・§2.3・§3.2・§3.3・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§5.5・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。<br>2026-09-15: コード精査の結果を反映。`runerrors` の死コード削除（§3.2.1・§3.6・§8）、`verification.Error` の非公開コンストラクタ（§3.2.3・§3.6・§3.7・§7.9・§8）、`Component` リテラルの typed 定数化（§3.6・§8）、command 依存検証の通知欠落と `executeGroups` の先頭エラーのみ返却の残存記録（§5.5・§9）、付録A に AC-20〜22 を追加。再承認を待つ。 |
+| Review date | 2026-09-15 |
+| Reviewer | `isseis` |
+| Comments | - |
 
 ## 関連文書
 
