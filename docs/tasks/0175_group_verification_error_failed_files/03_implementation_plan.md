@@ -263,10 +263,10 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `PreExecutionError` に `FailedFilePaths []string` を追加する（02_architecture.md §3.2 の doc コメントを英語で書く）。
-- [ ] `HandlePreExecutionError` が、`FailedFilePaths` が空でないときだけ `slog.Any(common.PreExecErrorAttrs.FailedFilePaths, preExecErr.FailedFilePaths)` をレコードに加えるようにする。`Detail()`・stderr・stdout の出力は変えない。
-- [ ] `HandleExecutionError`（`:171`）に、`Detail()` と同じ組み立てを重複実装している旨と [#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156) を指すコメントを英語で追加する。
-- [ ] `pre_execution_error_test.go` に `TestHandlePreExecutionError_FailedFilePaths` を追加する。既存の `captureErrorOutput`（`:428`）と RedactingHandler を通したレコーダで、(a) 一覧ありのとき `failed_file_paths` 属性がレコードにあり stderr・stdout にパスが現れないこと、(b) 一覧なしのとき属性が無くレコードが従来と同じ属性集合であることを固定する（AC-14）。
+- [x] `PreExecutionError` に `FailedFilePaths []string` を追加する（02_architecture.md §3.2 の doc コメントを英語で書く）。
+- [x] `HandlePreExecutionError` が、`FailedFilePaths` が空でないときだけ `slog.Any(common.PreExecErrorAttrs.FailedFilePaths, preExecErr.FailedFilePaths)` をレコードに加えるようにする。`Detail()`・stderr・stdout の出力は変えない。
+- [x] `HandleExecutionError`（`:171`）に、`Detail()` と同じ組み立てを重複実装している旨と [#1156](https://github.com/isseis/go-safe-cmd-runner/issues/1156) を指すコメントを英語で追加する。
+- [x] `pre_execution_error_test.go` に `TestHandlePreExecutionError_FailedFilePaths` を追加する。既存の `captureErrorOutput`（`:428`）と RedactingHandler を通したレコーダで、(a) 一覧ありのとき `failed_file_paths` 属性がレコードにあり stderr・stdout にパスが現れないこと、(b) 一覧なしのとき属性が無くレコードが従来と同じ属性集合であることを固定する（AC-14）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。(a) が属性の追加を外すと失敗し、stderr の検査が `Detail()` にパスを連結すると失敗することを確認する。
 
@@ -276,9 +276,9 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `pre_execution.go` に `NewVerificationPreExecutionError(verErr *verification.Error, errType logging.ErrorType, scope common.NotificationContext, runID string) *logging.PreExecutionError` を置く（02_architecture.md §3.2.1 のシグネチャと doc コメント）。`Message` は `errors.Is(verErr.Err, verification.ErrGroupVerificationCollectionFailed)` なら `Collection failed: %d of %d targets unresolved, Error: %v`（`FailedFiles`, `TotalFiles`, `Err`）、それ以外は `Total: %d, Verified: %d, Failed: %d, Error: %v`。`FailedFilePaths` は `slices.Clone(verErr.Details)`、`Component` は `string(resource.ComponentVerification)`、`Err` は nil。
-- [ ] `pre_execution_test.go` に `TestNewVerificationPreExecutionError` を追加する。02_architecture.md §7.9 の 5 行（group 検証失敗、グローバル検証失敗、収集失敗、`Details` が空、呼び出し後の `verErr.Details` 変更が返り値に影響しないこと）を表駆動で固定する（AC-04・AC-18）。
-- [ ] `pre_execution_guard_test.go` に `TestRunerrorsExportsOnlyTheSharedConstructor` を追加する。`identitymutationguard.ProductionGoFiles` で `internal/runner/runerrors` の本番ファイルを走査し、公開されたトップレベル宣言が `NewVerificationPreExecutionError` だけであることを固定する（AC-20）。
+- [x] `pre_execution.go` に `NewVerificationPreExecutionError(verErr *verification.Error, errType logging.ErrorType, scope common.NotificationContext, runID string) *logging.PreExecutionError` を置く（02_architecture.md §3.2.1 のシグネチャと doc コメント）。`Message` は `errors.Is(verErr.Err, verification.ErrGroupVerificationCollectionFailed)` なら `Collection failed: %d of %d targets unresolved, Error: %v`（`FailedFiles`, `TotalFiles`, `Err`）、それ以外は `Total: %d, Verified: %d, Failed: %d, Error: %v`。`FailedFilePaths` は `slices.Clone(verErr.Details)`、`Component` は `string(resource.ComponentVerification)`、`Err` は nil。
+- [x] `pre_execution_test.go` に `TestNewVerificationPreExecutionError` を追加する。02_architecture.md §7.9 の 5 行（group 検証失敗、グローバル検証失敗、収集失敗、`Details` が空、呼び出し後の `verErr.Details` 変更が返り値に影響しないこと）を表駆動で固定する（AC-04・AC-18）。
+- [x] `pre_execution_guard_test.go` に `TestRunerrorsExportsOnlyTheSharedConstructor` を追加する。`identitymutationguard.ProductionGoFiles` で `internal/runner/runerrors` の本番ファイルを走査し、公開されたトップレベル宣言が `NewVerificationPreExecutionError` だけであることを固定する（AC-20）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestNewVerificationPreExecutionError` が、`Component` を `"runner"` に変える・`slices.Clone` を外す・収集失敗の分岐を外す、のそれぞれで失敗すること、`TestRunerrorsExportsOnlyTheSharedConstructor` が公開関数を 1 つ足すと失敗することを確認する。
 
