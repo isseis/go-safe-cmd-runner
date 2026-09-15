@@ -129,7 +129,7 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 
 ### `runerrors` は共有コンストラクタだけを持つパッケージにする
 
-共有コンストラクタを置く `internal/runner/runerrors` から、本番呼び出しの無い既存シンボルを削除する（対象 14）。生きたコードと死んだコードを同居させると、パッケージの責務を読み手が誤解し、死んだ分類 API を新しい呼び出し元が使い始める余地を残すためである。削除は共有コンストラクタの追加とは別コミットで行い、`go tool cover -func` で残るシンボルのカバレッジが変わらないことを確認する。
+共有コンストラクタを置く `internal/runner/runerrors` から、本番呼び出しの無い既存シンボルを削除する（対象 14）。生きたコードと死んだコードを同居させると、パッケージの責務を読み手が誤解し、死んだ分類 API を新しい呼び出し元が使い始める余地を残すためである。削除は共有コンストラクタの追加とは別コミットで行い、`go test -coverprofile=c.out ./internal/runner/runerrors/` でプロファイルを作ってから `go tool cover -func=c.out` を実行し、残るシンボルのカバレッジが変わらないことを確認する。
 
 ### `verification.Error` は非公開コンストラクタ 1 箇所で生成する
 
@@ -182,7 +182,7 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 #### F-007: 報告の組み立ての統一
 
 **Acceptance Criteria**:
-- **AC-18**: グローバルと group の検証エラー報告は共有コンストラクタ `runerrors.NewVerificationPreExecutionError` で組み立てられ、`Component` はどちらも `verification` である。同じ `*verification.Error` から同じ本文・同じ一覧属性が得られる。
+- **AC-18**: グローバルと group の検証エラー報告は共有コンストラクタ `runerrors.NewVerificationPreExecutionError` で組み立てられ、`Component` はどちらも `verification` である。同じ `*verification.Error` から同じ本文・同じ一覧属性が得られる。両発火元が実際にこのコンストラクタを呼び、`PreExecutionError` を手組みしないことは `go/ast` の静的ガードで固定する（挙動テストは同等の手組みを検出できないため）。
 - **AC-19**: `verification.Error.Details` は Manager が `Error` を生成する時点で昇順に正規化される。発火元は並べ替えを行わず、通知ビルダーは並びを変えない。
 
 #### F-008: 周辺の整理
