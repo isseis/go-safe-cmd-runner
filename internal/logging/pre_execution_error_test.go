@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -930,4 +933,71 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			assert.Equal(t, tt.ctx, gotCtx)
 		})
 	}
+}
+
+// TestHandlePreExecutionError_FailedFilePaths pins how the failed-target list
+// travels: as the failed_file_paths attribute when there is a list, and absent
+// entirely when there is none, so the builder never confuses "no targets" with
+// "an empty list". The human-readable report must not carry the paths, since it
+// is written to stderr outside redaction. The record is observed through a
+// RedactingHandler so the test sees the []any shape the builder receives.
+func TestHandlePreExecutionError_FailedFilePaths(t *testing.T) {
+	const message = "Total: 3, Verified: 2, Failed: 1, Error: group file verification failed"
+
+	handle := func(t *testing.T, failedPaths []string) (*tu.LogRecorder, string, string) {
+		t.Helper()
+
+		recorder := tu.NewLogRecorder(nil)
+		handler := redaction.NewRedactingHandler(recorder, nil, nil)
+		originalLogger := slog.Default()
+		slog.SetDefault(slog.New(handler))
+		t.Cleanup(func() { slog.SetDefault(originalLogger) })
+
+		stdout, stderr := captureErrorOutput(t, func() {
+			HandlePreExecutionError(&PreExecutionError{
+				Type:                ErrorTypeGroupFileVerification,
+				Message:             message,
+				Component:           "verification",
+				RunID:               "test-run-files",
+				NotificationContext: common.GroupScope("backup"),
+				FailedFilePaths:     failedPaths,
+			})
+		})
+		return recorder, stdout, stderr
+	}
+
+	t.Run("records the list and keeps it out of the report", func(t *testing.T) {
+		recorder, stdout, stderr := handle(t, []string{"/b", "/a"})
+
+		record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
+		record.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.ErrorMessage:    message,
+			common.PreExecErrorAttrs.FailedFilePaths: []any{"/b", "/a"},
+		})
+
+		assert.NotContains(t, stderr, "/b")
+		assert.NotContains(t, stderr, "/a")
+		assert.NotContains(t, stdout, "/b")
+		assert.NotContains(t, stdout, "/a")
+	})
+
+	t.Run("omits the attribute when the list is empty", func(t *testing.T) {
+		recorder, _, _ := handle(t, nil)
+
+		record := recorder.RequireRecord(t, slog.LevelError, "Pre-execution error occurred")
+		_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
+		assert.False(t, present, "an empty list must not be recorded; attributes: %v", record.Attrs)
+		assert.Equal(t,
+			[]string{
+				common.PreExecErrorAttrs.Component,
+				common.PreExecErrorAttrs.ErrorMessage,
+				common.PreExecErrorAttrs.ErrorType,
+				msgTypeAttrKey,
+				common.NotificationContextAttrs.Key,
+				"run_id",
+				slackNotifyAttrKey,
+			},
+			slices.Sorted(maps.Keys(record.Attrs)),
+			"the record must carry only the standard attributes when there is no list")
+	})
 }

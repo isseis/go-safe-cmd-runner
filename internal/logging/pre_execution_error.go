@@ -57,7 +57,13 @@ type PreExecutionError struct {
 	// valid global scope, but production call sites set it explicitly with
 	// common.GlobalScope() or a group scope.
 	NotificationContext common.NotificationContext
-	Err                 error // Wrapped error for better error context preservation
+	// FailedFilePaths is the list of failed targets to report to notification
+	// consumers. It is a copy of verification.Error.Details, which the manager
+	// already normalized into ascending order. The list travels as a structured
+	// attribute and is rendered by the notification builder; it is never
+	// concatenated into the human-readable Message, which stays free of paths.
+	FailedFilePaths []string
+	Err             error // Wrapped error for better error context preservation
 }
 
 // Error implements the error interface
@@ -154,21 +160,32 @@ func handleErrorCommon(params errorHandlingParams) {
 // The notification context is always attached because the report boundary is
 // the only place that knows where the failure originated.
 func HandlePreExecutionError(preExecErr *PreExecutionError) {
+	notificationAttrs := NotificationAttrs(
+		PreExecutionErrorNotification(), preExecErr.NotificationContext)
+	// The failed-file list only reaches the notification when there is one.
+	// An empty list is left off the record entirely so the builder cannot
+	// mistake "no targets" for "a list with zero entries".
+	if len(preExecErr.FailedFilePaths) > 0 {
+		notificationAttrs = append(notificationAttrs,
+			slog.Any(common.PreExecErrorAttrs.FailedFilePaths, preExecErr.FailedFilePaths))
+	}
 	handleErrorCommon(errorHandlingParams{
-		errorType:     preExecErr.Type,
-		errorMsg:      preExecErr.Detail(),
-		component:     preExecErr.Component,
-		runID:         preExecErr.RunID,
-		slogMessage:   "Pre-execution error occurred",
-		summaryStatus: preExecutionErrorSummaryStatus(),
-		notificationAttrs: NotificationAttrs(
-			PreExecutionErrorNotification(), preExecErr.NotificationContext),
+		errorType:         preExecErr.Type,
+		errorMsg:          preExecErr.Detail(),
+		component:         preExecErr.Component,
+		runID:             preExecErr.RunID,
+		slogMessage:       "Pre-execution error occurred",
+		summaryStatus:     preExecutionErrorSummaryStatus(),
+		notificationAttrs: notificationAttrs,
 	})
 }
 
 // HandleExecutionError handles execution errors (errors that occur during command execution)
 // by logging and outputting appropriate summary information
 func HandleExecutionError(execErr *ExecutionError) {
+	// This duplicates the same "Message plus user-friendly or raw cause"
+	// assembly that PreExecutionError.Detail performs. The two paths report
+	// different error types, so collapsing them is deferred; see issue #1156.
 	// Build error message with context information
 	message := execErr.Message
 
