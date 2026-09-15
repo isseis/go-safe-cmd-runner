@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-12 |
-| Review date | `-` |
-| Reviewer | `-` |
-| Comments | 2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタへ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動。§目的・§スコープ・§決定事項・AC・Success Criteria を更新。レビューで対象 3・AC-04 の本文選択規則を `Err` 種別基準に明確化し、対象外の `Error()` に並び順の変化を注記。コード精査の結果を反映: `runerrors` の死コード削除（対象 14）、`verification.Error` の非公開コンストラクタ（対象 15）、`Component` リテラルの typed 定数化（対象 16）を対象に追加し、command 依存検証の通知欠落・`executeGroups` の先頭エラーのみ返却・`HandleExecutionError` の `Detail()` 複製を対象外に記録。再承認を待つ。 |
+| Review date | 2026-09-15 |
+| Reviewer | `isseis` |
+| Comments | - |
 
 ## 関連 Issue
 
