@@ -173,7 +173,6 @@ func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
 // Slack handler was pointed at a mock server.
 type slackRun struct {
 	exitCode int
-	stdout   string
 	stderr   string
 	payloads []logging.SlackMessage
 }
@@ -243,7 +242,14 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	cmdcommon.DefaultHashDirectory = hashDir
 	t.Cleanup(func() { cmdcommon.DefaultHashDirectory = restoreHashDir })
 
+	// Pin every Slack setting the bootstrap reads from the environment, so a
+	// value left over from a local Slack experiment (a 1ms flush timeout,
+	// say) cannot make the notification miss the mock server.
 	t.Setenv(logging.SlackWebhookURLErrorEnvVar, "https://hooks.slack.com/services/error")
+	t.Setenv(logging.SlackWebhookURLSuccessEnvVar, "")
+	t.Setenv(logging.SlackSendTimeoutEnvVar, "")
+	t.Setenv(logging.SlackFlushTimeoutEnvVar, "")
+	t.Setenv(logging.SlackSyncEnvVar, "")
 
 	restoreFactory := bootstrap.SetSlackHandlerFactory(func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
 		opts.WebhookURL = server.URL
@@ -271,21 +277,27 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	runID = ""
 
 	var exitCode int
-	stdout, stderr := captureStdoutStderr(t, func() {
+	_, stderr := captureStdoutStderr(t, func() {
 		exitCode = mainWithExitCode(spec.runID)
 		bootstrap.FlushSlackNotifications()
 	})
+	// The run's logger was bound to the pipe that captureStdoutStderr has now
+	// closed; restore the default logger right away rather than leaving it
+	// pointing at a closed writer until the test ends.
+	slog.SetDefault(originalLogger)
 
 	mu.Lock()
 	defer mu.Unlock()
-	return slackRun{exitCode: exitCode, stdout: stdout, stderr: stderr, payloads: payloads}
+	return slackRun{exitCode: exitCode, stderr: stderr, payloads: payloads}
 }
 
 // requireSinglePreExecutionError asserts that exactly one Slack payload
 // arrived and returns it with its attachment fields.
 func requireSinglePreExecutionError(t *testing.T, run slackRun) (logging.SlackMessage, []logging.SlackAttachmentField) {
 	t.Helper()
-	require.Len(t, run.payloads, 1, "the pre-execution error should reach Slack exactly once")
+	// stderr carries the undelivered-notification warning when delivery
+	// failed, which is the one line that explains an empty payload list.
+	require.Lenf(t, run.payloads, 1, "the pre-execution error should reach Slack exactly once; stderr:\n%s", run.stderr)
 	message := run.payloads[0]
 	require.Len(t, message.Attachments, 1)
 	return message, message.Attachments[0].Fields

@@ -498,7 +498,7 @@ cmd = "/bin/true"
 	require.Equal(t, 1, run.exitCode, "the global verification failure must exit non-zero")
 
 	message, fields := requireSinglePreExecutionError(t, run)
-	assert.Equal(t, "[go-safe-cmd-runner] \u274c *ERROR* \u2014 (global) : file_access_failed", message.Text)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : file_access_failed", message.Text)
 
 	require.GreaterOrEqual(t, len(fields), 3, "the envelope always appends three fields")
 	assert.Equal(t, "Scope", fields[len(fields)-3].Title)
@@ -509,9 +509,11 @@ cmd = "/bin/true"
 }
 
 // groupVerificationConfig returns a configuration whose only group lists
-// verifyFiles and runs /bin/true, the shape the group verification tests
-// share. The command's resolved path is what the group verifies, so the
-// caller records its hash to keep the failure list to verifyFiles.
+// verifyFiles and runs the "true" coreutil, the shape the group verification
+// tests share. The command's resolved path is what the group verifies, so the
+// caller records its hash to keep the failure list to verifyFiles. Paths are
+// quoted with %q, which matches TOML basic-string escaping only for the
+// control-free temporary paths these tests use.
 func groupVerificationConfig(slackHost string, verifyFiles []string) string {
 	quoted := make([]string, len(verifyFiles))
 	for i, file := range verifyFiles {
@@ -529,15 +531,15 @@ verify_files = [%s]
 
 [[groups.commands]]
 name = "noop"
-cmd = "/bin/true"
-`, slackHost, strings.Join(quoted, ", "))
+cmd = %q
+`, slackHost, strings.Join(quoted, ", "), trueCmdPath())
 }
 
-// resolvedTruePath returns the canonical path of /bin/true, the path the
-// group verification records and verifies.
+// resolvedTruePath returns the canonical path of the "true" coreutil, the
+// path the group verification records and verifies.
 func resolvedTruePath(t *testing.T) string {
 	t.Helper()
-	resolved, err := filepath.EvalSymlinks("/bin/true")
+	resolved, err := filepath.EvalSymlinks(trueCmdPath())
 	require.NoError(t, err)
 	return resolved
 }
@@ -582,8 +584,10 @@ func TestIntegration_GroupFileVerificationFailureListsFailedFiles(t *testing.T) 
 
 // TestIntegration_GroupFileVerificationFailureTruncatesLongList drives a group
 // verification failure whose failed-file list exceeds the free-text limit:
-// the Error Message must show a prefix of the sorted list whole and count the
-// rest in "(+m more)" with m = n - shown.
+// the Error Message must show sorted elements whole and count the rest in
+// "(+m more)" with m = n - shown. All generated names have the same length,
+// so the builder cannot skip one path and keep a later one; that is what lets
+// the test expect the shown paths to be exactly a prefix of the sorted list.
 func TestIntegration_GroupFileVerificationFailureTruncatesLongList(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	const n = 16
@@ -634,6 +638,9 @@ func TestIntegration_GroupCollectionFailureListsUnresolvedTargets(t *testing.T) 
 	missingB := filepath.Join(tmpDir, "missing-b")
 	missingA := filepath.Join(tmpDir, "missing-a")
 
+	// A third, resolvable command keeps the unresolved count below the total,
+	// so the two counts of the template cannot be swapped unnoticed. No hash
+	// is recorded for it: collection aborts before any file is verified.
 	run := runMainWithSlackMock(t, slackRunSpec{
 		configBody: func(slackHost string) string {
 			return fmt.Sprintf(`
@@ -652,7 +659,11 @@ cmd = %q
 [[groups.commands]]
 name = "second"
 cmd = %q
-`, slackHost, missingB, missingA)
+
+[[groups.commands]]
+name = "resolvable"
+cmd = %q
+`, slackHost, missingB, missingA, trueCmdPath())
 		},
 		runID: "test-group-collection-001",
 	})
@@ -660,11 +671,12 @@ cmd = %q
 
 	message, fields := requireSinglePreExecutionError(t, run)
 	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=backup : group_file_verification_failed", message.Text)
+	assert.Equal(t, "group=backup", attachmentField(t, fields, "Scope"))
 	assert.Equal(t, "verification", attachmentField(t, fields, "Component"))
 
 	errorMessage := attachmentField(t, fields, "Error Message")
 	assert.Equal(t,
-		fmt.Sprintf("Collection failed: 2 of 2 targets unresolved, Error: failed to collect verification files, Files: %q, %q", missingA, missingB),
+		fmt.Sprintf("Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: %q, %q", missingA, missingB),
 		errorMessage)
 	assert.NotContains(t, errorMessage, "Total:")
 	assert.NotContains(t, errorMessage, "Verified:")
