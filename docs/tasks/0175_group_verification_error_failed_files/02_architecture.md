@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-14 |
-| Review date | 2026-09-15 |
-| Reviewer | `isseis` |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-09-15 承認済み（`isseis`）。実装計画書の作成時に判明した 3 点を反映して再レビュー待ち: (1) §8 でコンポーネント単位のテストと静的ガードを対応する実装と同じ Phase に置く、(2) §5.2・§3.6 で `notification_test.go` の一覧対応テストは変更しない（フィールド見出しの集合を検査するテストであり、`failed_file_paths` はフィールドではない）、(3) §3.2.1・§3.6・§8 に `docs/dev/developer_guide/package_reference.md` の更新を追加 |
 
 ## 関連文書
 
@@ -344,7 +344,7 @@ type PreExecutionError struct {
 
 `internal/runner/runerrors/pre_execution.go`（新設）に置く。`runerrors` は `resource`（`verification` を含む）と `logging` を参照できる位置にある。`logging` へ `verification` を持ち込まず、かつ両発火元が同じ変換を使うことを 1 つの関数で保証するため、ここに置く。
 
-**既存シンボルの削除。** `runerrors` の既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は本番の呼び出し元を持たない（`grep -rn runerrors` の非テスト結果は README の 1 行のみ）。共有コンストラクタの追加とは別コミットでこれらとそのテスト（`classification_test.go`・`logging_test.go`）を削除し、パッケージ doc を「検証失敗を報告境界の `PreExecutionError` へ変換する」責務に書き換える。README.ja.md / README.md の `runerrors/` 行の説明も合わせる。削除後は `go test -coverprofile=c.out ./internal/runner/runerrors/` でプロファイルを作り、`go tool cover -func=c.out` を実行して、残る共有コンストラクタの行だけが報告されることを確かめる。
+**既存シンボルの削除。** `runerrors` の既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は本番の呼び出し元を持たない（`grep -rn runerrors` の非テスト結果は README の 1 行のみ）。共有コンストラクタの追加とは別コミットでこれらとそのテスト（`classification_test.go`・`logging_test.go`）を削除し、パッケージ doc を「検証失敗を報告境界の `PreExecutionError` へ変換する」責務に書き換える。README.ja.md / README.md と `docs/dev/developer_guide/package_reference.md`（英語のみ）の `runerrors/` 行の説明も合わせる。削除後は `go test -coverprofile=c.out ./internal/runner/runerrors/` でプロファイルを作り、`go tool cover -func=c.out` を実行して、残る共有コンストラクタの行だけが報告されることを確かめる。
 
 ```go
 // NewVerificationPreExecutionError converts a verification failure into the
@@ -447,7 +447,7 @@ func NewVerificationPreExecutionError(
 | `internal/common/logschema.go` | `PreExecErrorAttrs.FailedFilePaths` | `failed_file_paths` キー定数（新設） | 新設 | `internal/logging` テスト |
 | `internal/runner/runerrors/pre_execution.go` | `NewVerificationPreExecutionError` | `*verification.Error` から `PreExecutionError` を組み立てる唯一の場所。本文テンプレート・`Component`（`verification`）・`FailedFilePaths` の複製を担う | 新設 | `internal/runner/runerrors/pre_execution_test.go` |
 | `internal/runner/runerrors/{types,classification,logging}.go` と対応テスト | 既存の分類 API | 本番呼び出しなし | 削除（別コミット）。パッケージ doc を共有コンストラクタの責務に書き換える | `go build ./...`、`go test -coverprofile=c.out ./internal/runner/runerrors/` → `go tool cover -func=c.out` |
-| `README.ja.md` / `README.md` | パッケージ一覧 | `runerrors/` の説明 | 「検証失敗の報告変換」へ更新（英語版は `/mktrans`） | `static` |
+| `README.ja.md` / `README.md` / `docs/dev/developer_guide/package_reference.md` | パッケージ一覧 | `runerrors/` の説明 | 「検証失敗の報告変換」へ更新（README の英語版は `/mktrans`、`package_reference.md` は英語のみのため直接編集） | `static` |
 | `cmd/runner/main.go`・`internal/runner/runner.go` | `Component` の値 | `"main"`・`"runner"` の生リテラル | `string(resource.ComponentMain)` / `string(resource.ComponentRunner)` へ置換 | `grep` で生リテラルが残らないこと |
 | `internal/runner/runerrors/pre_execution_test.go` | コンストラクタテスト | 検証失敗・収集失敗の本文、`Component`、一覧の複製、`Err` が nil であることを固定（§7.9） | テストを追加 | それ自体 |
 | `internal/runner/runner.go` | `executeGroups` | `*verification.Error` を共有コンストラクタへ渡し、返った `PreExecutionError` を報告する | 発火元の組み立てを共有コンストラクタ呼び出しへ置き換える | `internal/runner/runner_test.go` |
@@ -463,7 +463,7 @@ func NewVerificationPreExecutionError(
 | `cmd/runner/main.go` | グローバル発火元 | `*verification.Error` を共有コンストラクタへ渡し、パスを含まない `Message` と `FailedFilePaths` を受け取る | 発火元の組み立てを共有コンストラクタ呼び出しへ置き換える | `cmd/runner/integration_pre_execution_error_test.go` |
 | `cmd/runner/integration_pre_execution_error_test.go` | グローバル描画テスト | グローバルも `failed_file_paths` が `Error Message` に描画され、本文と `Component` が group と同じ規則であることを固定 | アサーションを追加 | それ自体 |
 | `internal/redaction/redactor_test.go` | redaction 回帰 | 文字列スライス要素の既存挙動（機密はマスク、普通のパスは残る）を固定 | テストを追加 | それ自体 |
-| `internal/logging/notification_test.go` | 通知契約テスト | `failed_file_paths` の要素を動的な値の一覧へ加えた場合の契約を確認 | 必要に応じて更新 | それ自体 |
+| `internal/logging/notification_test.go` | 通知契約テスト | フィールド見出しの集合（`TestNotificationDefinitions_FieldsAreDeclaredInInventory`）と自由文の役割（`TestNotificationDefinitions_FieldRolesTransformValues`）を検査する。`failed_file_paths` はフィールドではなく `Error Message` の値の材料であり、`Error Message` は既に登録済み | 変更しない | それ自体 |
 | `docs/tasks/0172_slack_notification_message_unification/02_architecture.md` | 0172 の動的な値の一覧 | `failed_file_paths` の要素を自由文の役割で追加（decision change。0172 の再承認が必要） | 1 行追記 | `static` |
 | `docs/user/runner_command.ja.md` | 利用者向け文書 | group 検証エラー通知が失敗ファイルを列挙することを説明 | 追記 | `static` |
 | `docs/user/runner_command.md` | 利用者向け文書（英語） | 日本語版の英語訳 | `/mktrans` で反映 | `static` |
@@ -578,7 +578,7 @@ flowchart LR
 
 `failed_file_paths` は新しい属性で、共有コンストラクタ（§3.2.1）が `*verification.Error.Details` の複製として設定する。要素は既存の `processSlice` が `RedactText`（値形式検出と key=value 置換）だけを適用し、値全体置換は行わない（§5.4）。`failed_file_paths` は `Message` にも `handleErrorCommon` の stderr にも入らない。ビルダーが `Error Message` へ描画する文字列は、既存の自由文の役割の補間契約を通る。0172 §3.5 の「動的な値の一覧」に `failed_file_paths` の要素を自由文の役割で追加する。
 
-**他タスクのポリシー変更。** 元のポリシーは 0172 アーキテクチャ設計書 §3.5（`approved`）の「動的な値の一覧」で、通知へ到達しうる動的な値を列挙して役割を割り当てる。本タスクはここに `failed_file_paths` の要素（役割は自由文）の行を追加する。通知書式・エンベロープ・種別定義は変えない（`Component` の値は §3.2.1 で統一する）。0172 は `approved` のため、この編集は decision change として 0172 を `draft` に戻し再承認が必要である。更新するテストは 0172 の `internal/logging/notification_test.go` の一覧対応の検査で、`failed_file_paths` の行を追加する。
+**他タスクのポリシー変更。** 元のポリシーは 0172 アーキテクチャ設計書 §3.5（`approved`）の「動的な値の一覧」で、通知へ到達しうる動的な値を列挙して役割を割り当てる。本タスクはここに `failed_file_paths` の要素（役割は自由文）の行を追加する。通知書式・エンベロープ・種別定義は変えない（`Component` の値は §3.2.1 で統一する）。0172 は `approved` のため、この編集は decision change として 0172 を `draft` に戻し再承認が必要である。0172 の `internal/logging/notification_test.go` の一覧対応テストはフィールド見出しの集合を検査しており、`failed_file_paths` はフィールドではないため変更しない（§3.6）。
 
 **残余リスク（端末出力へのパス露出）。** パスは人間向け `Detail()` からは消えるが、console への経路が残る。
 
@@ -770,11 +770,13 @@ flowchart LR
 | Phase | 内容 | 主なファイル |
 |---|---|---|
 | 1 | `common.WithinInterpolationLimit` と `PreExecErrorAttrs.FailedFilePaths` を足し、契約のテストを書く | `internal/common/interpolation.go`、`internal/common/logschema.go`、`internal/common/interpolation_test.go` |
-| 2a | `runerrors` の本番呼び出しの無い既存シンボルとテストを削除し、パッケージ doc と README を更新する（単独コミット） | `internal/runner/runerrors/*.go`、`README.ja.md`（英語版は `/mktrans`） |
+| 2a | `runerrors` の本番呼び出しの無い既存シンボルとテストを削除し、パッケージ doc と README・`package_reference.md` を更新する（単独コミット） | `internal/runner/runerrors/*.go`、`README.ja.md`（英語版は `/mktrans`）、`docs/dev/developer_guide/package_reference.md` |
 | 2b | `verification` に非公開コンストラクタを設け、3 つの生成箇所を集約し、`Details` をそこで昇順に正規化する。収集失敗で `Details`・件数・センチネルを設定する。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` を新設し、両発火元がそれを呼ぶ。`HandlePreExecutionError` が `failed_file_paths` を記録する。`Component` の生リテラルを typed 定数へ置き換える | `internal/verification/manager.go`、`internal/verification/errors.go`、`internal/runner/runerrors/pre_execution.go`、`internal/runner/runner.go`、`cmd/runner/main.go`、`internal/logging/pre_execution_error.go` |
 | 3 | `buildPreExecutionError` が `error_message` 属性（`Detail()`）と `failed_file_paths`（`[]any` をデコード）から `Error Message` を組み立てる | `internal/logging/slack_handler.go` |
-| 4 | 収集失敗・配線・コンストラクタ・描画・redaction 回帰のテストとベンチマーク、グローバル回帰を足す | `internal/verification/manager_test.go`、`internal/runner/runner_test.go`、`internal/runner/runerrors/pre_execution_test.go`、`internal/runner/runerrors/pre_execution_guard_test.go`、`internal/logging/*_test.go`、`internal/redaction/redactor_test.go`、`cmd/runner/integration_pre_execution_error_test.go` |
+| 4 | 複数コンポーネントを跨ぐ検証を足す: `cmd/runner` の統合テスト（group 検証失敗・収集失敗・グローバル回帰）、redaction 回帰、描画のベンチマーク | `cmd/runner/integration_pre_execution_error_test.go`、`internal/redaction/redactor_test.go`、`internal/logging/slack_handler_benchmark_test.go` |
 | 5 | 利用者向け文書の group 検証エラー表示を追記する | `docs/user/runner_command.ja.md`（英語版は `/mktrans`） |
+
+コンポーネント単位のテストと静的ガード（`manager_test.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`pre_execution_error_test.go`・`slack_handler_test.go`、§7.9 の発火元ガードと `manager.go` の構築ガード）は、対応する実装と同じ Phase（1・2b・3）に置き、実装と検証を同じコミットのレビュー対象にする。Phase 1 には静的ガードが共用する `go/ast` 走査補助（`internal/logging` のテストから `identitymutationguard` へ移す）も含める。
 
 各 Phase の完了時に `make fmt`（Go を変更した場合）・`make test`・`make lint` を通す（AC-09）。
 
@@ -817,7 +819,7 @@ flowchart LR
 | AC-17 | §3.7・§6.5・§7.8。収集失敗でも解決に失敗した対象を全て `Details` に載せ、`Err` はパスを含まないセンチネルとし、本文は検証の内訳ではなく収集段階の件数（解決に失敗した対象数と対象総数）を示す |
 | AC-18 | §3.2.1・§7.9。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` が本文・`Component`（`verification`）・一覧の複製を担い、発火元は組み立てない。表駆動テストに加え、両発火元（`internal/runner/runner.go`・`cmd/runner/main.go`）がこのコンストラクタを呼び、`FailedFilePaths` を手組みしないことを `go/ast` の静的ガードで固定する |
 | AC-19 | §1.2・§3.2.3・§3.7・§7.9。Manager が `Error` を生成する時点で `Details` を昇順に正規化し、発火元とビルダーは並びを変えない |
-| AC-20 | §3.2.1・§3.6・§8 Phase 2a。`runerrors` の既存シンボルとテストを削除し、README を更新する |
+| AC-20 | §3.2.1・§3.6・§8 Phase 2a。`runerrors` の既存シンボルとテストを削除し、README と `package_reference.md` を更新する |
 | AC-21 | §3.2.3・§3.7・§7.9。`manager.go` の 3 つの生成箇所を非公開コンストラクタに集約し、`&Error{...}` はその中にしか現れない |
 | AC-22 | §3.6・§8 Phase 2b。`Component` の生リテラル `"main"`・`"runner"` を `resource.Component` 定数経由に置き換える |
 

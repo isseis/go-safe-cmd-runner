@@ -39,7 +39,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 7. Go のソースコメント・識別子・文字列リテラルは英語で書く。
 8. `verification.Error` と `PreExecutionError` はどちらもフィールドが公開されており（01 §対象外により型は変えない）、「唯一の生成箇所であること」と「手組みしないこと」を型で強制できない。両者は `go/ast` の静的ガードで固定し、ガードは複合リテラル（値・ポインタ・elided 形）とフィールド代入の各構築形を列挙する（Phase 2b.1・2b.4）。
 
-**02_architecture.md からの相違（editorial correction）。** 本書は次の 3 点で 02_architecture.md の記述と異なる。いずれも決定を変えないため、02_architecture.md の `Comments` に editorial correction として記録し、`Status` は `approved` のまま保つ（requirements_process.md「Editing an approved document」）。この記録は本書の承認時に行う。
+**02_architecture.md への反映。** 本書の作成時に次の 3 点が 02_architecture.md の記述と異なることが分かったため、02_architecture.md の §3.2.1・§3.6・§5.2・§8 を本書に合わせて修正し、`Status` を `draft` に戻して再レビューを依頼した（修正内容は同書の `Comments` に記録）。
 
 - §8 Phase 4 が挙げるコンポーネント単位のテストを、対応する実装と同じ Phase に置く（§3.2）。
 - §5.2 は `internal/logging/notification_test.go` の一覧対応テストに `failed_file_paths` の行を足すとするが、同テストはフィールド見出しの集合を検査しており `failed_file_paths` はフィールドではない。テストは変更せず、0172 アーキテクチャ設計書の表にだけ行を足す（§1.3）。
@@ -308,7 +308,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 ### 3.2 順序の根拠
 
-02_architecture.md §8 の 1 → 2a → 2b → 3 → 4 → 5 を保つ。Phase 1 の述語が無ければ Phase 3 のビルダーは上限を測れず、Phase 2b の属性が無ければ Phase 3 のビルダーは読む値を持たない。Phase 2a は共有コンストラクタの追加と別コミットにする要件（01 §決定事項）のため 2b の前に置く。§8 Phase 4 が挙げるテストのうち、コンポーネント単位のもの（`manager_test.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`pre_execution_error_test.go`・`slack_handler_test.go`）は対応する実装と同じ Phase へ移し、実装と検証を同じコミットのレビュー対象にする（静的ガードは、それが固定する置き換えと同じコミットに入ることで、置き換え直後から手組みへの後退を検出する）。静的ガードが依存する走査補助の移動は Phase 1 に置く。Phase 4 には複数コンポーネントを跨ぐもの（統合テスト・redaction 回帰・ベンチマーク）を残す。この配置は 02_architecture.md §8 からの editorial correction として記録する（§1.2）。Phase 4 の統合テストは Phase 2b と Phase 3 の両方が無いと最終 `Error Message` を観測できないため、この順でなければならない。Phase 5 は統合テストが観測した実際の表示を文書の典拠にするため最後に置く。
+02_architecture.md §8 の 1 → 2a → 2b → 3 → 4 → 5 を保つ。Phase 1 の述語が無ければ Phase 3 のビルダーは上限を測れず、Phase 2b の属性が無ければ Phase 3 のビルダーは読む値を持たない。Phase 2a は共有コンストラクタの追加と別コミットにする要件（01 §決定事項）のため 2b の前に置く。§8 Phase 4 が挙げるテストのうち、コンポーネント単位のもの（`manager_test.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`pre_execution_error_test.go`・`slack_handler_test.go`）は対応する実装と同じ Phase へ移し、実装と検証を同じコミットのレビュー対象にする（静的ガードは、それが固定する置き換えと同じコミットに入ることで、置き換え直後から手組みへの後退を検出する）。静的ガードが依存する走査補助の移動は Phase 1 に置く。Phase 4 には複数コンポーネントを跨ぐもの（統合テスト・redaction 回帰・ベンチマーク）を残す。この配置は 02_architecture.md §8 にも反映済みである（§1.2）。Phase 4 の統合テストは Phase 2b と Phase 3 の両方が無いと最終 `Error Message` を観測できないため、この順でなければならない。Phase 5 は統合テストが観測した実際の表示を文書の典拠にするため最後に置く。
 
 ---
 
