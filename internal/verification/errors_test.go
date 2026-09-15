@@ -376,6 +376,7 @@ func TestPredefinedErrorsComplete(t *testing.T) {
 		{"ErrConfigNil", ErrConfigNil},
 		{"ErrGlobalVerificationFailed", ErrGlobalVerificationFailed},
 		{"ErrGroupVerificationFailed", ErrGroupVerificationFailed},
+		{"ErrGroupVerificationCollectionFailed", ErrGroupVerificationCollectionFailed},
 		{"ErrPathResolverNotInitialized", ErrPathResolverNotInitialized},
 		{"ErrCommandNotFound", ErrCommandNotFound},
 	}

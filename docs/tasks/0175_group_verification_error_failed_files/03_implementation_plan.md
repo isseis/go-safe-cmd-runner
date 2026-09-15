@@ -59,7 +59,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | 収集失敗の `Err` | `manager.go:201` | `fmt.Errorf("failed to collect verification files: %w", err)` でコマンド文字列を包む。パスを含まないセンチネル `ErrGroupVerificationCollectionFailed` に置き換える |
 | センチネル | `internal/verification/errors.go:19-22` | `ErrGlobalVerificationFailed`・`ErrGroupVerificationFailed` の隣に `ErrGroupVerificationCollectionFailed` を追加する |
 | `Error.Error()` | `errors.go:161-181` | 変更しない（`Details` 分岐は `:171-173`） |
-| 解決失敗の既存テスト | `manager_test.go:773-810`（`TestCollectVerificationFiles` の `skip_command_with_expansion_error`・`skip_command_with_resolution_error`） | `collectedFiles` が nil でエラーが返ることを見ている。新しい返り値（解決に失敗した対象の一覧）に合わせて更新する |
+| 解決失敗の既存テスト | `manager_test.go:773-810`（`TestCollectVerificationFiles` の `report_command_with_expansion_error`・`report_command_with_resolution_error`。Phase 2b.1 で旧 `skip_command_with_*` から改名） | `collectedFiles` が nil でエラーが返ることを見ている。新しい返り値（解決に失敗した対象の一覧）に合わせて更新する |
 | `Details` の並びを見る既存テスト | なし（`rg -n "Details" internal/verification/manager_test.go` は一致なし） | 3 経路の昇順を新しいテストで固定する |
 
 #### 発火元と `Component` の生リテラル
@@ -215,8 +215,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2b: 収集失敗・非公開コンストラクタ・共有コンストラクタ・発火元
 
@@ -228,15 +228,15 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `errors.go:19-22` の隣に `ErrGroupVerificationCollectionFailed = errors.New("failed to collect verification files")` を追加する。
-- [ ] `manager.go` に非公開コンストラクタ `newVerificationError(op, group string, details []string, total, verified int, sentinel error) *Error` を追加する。`Details` には `details` を昇順に並べたコピーを設定し、`FailedFiles` は `len(details)` とする。`&Error{...}` はこの関数の中にだけ書く。
-- [ ] `manager.go:170`（グローバル検証失敗）・`:242`（group 検証失敗）の構造体リテラルを `newVerificationError` の呼び出しに置き換える。
-- [ ] `collectVerificationFiles` を、パス解決に失敗したコマンドを記録して残りの解決を続け、解決済みファイル集合と解決に失敗した対象（`command.ExpandedCmd`）の一覧を返す形に変える。既存の `slog.Warn`（`:279-283`）は対象ごとに残す。検証は 1 件も行わない（fail-closed を維持）。
-- [ ] `VerifyGroupFiles` の収集失敗分岐（`:196-203`）を、解決に失敗した対象の一覧・`TotalFiles = len(ExpandedVerifyFiles) + len(Commands)`・`VerifiedFiles = 0`・`Err = ErrGroupVerificationCollectionFailed` で `newVerificationError` を呼ぶ形に変える（02_architecture.md §3.7）。
-- [ ] `manager_test.go` の `TestCollectVerificationFiles` の全呼び出し 7 件（`:679,699,713,730,765,787,808`）を新しい返り値の契約に合わせて更新する。解決済みのケースは解決に失敗した対象の一覧が空であることを確認し、解決失敗のサブテスト 2 件（`:773-810`）は返り値の一覧に解決に失敗した対象が入ることを見る形にする。
-- [ ] `manager_test.go` に `TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets` を追加する。解決に失敗するコマンド 1 件／複数件で、`Details` が解決失敗の全対象を昇順で持つこと、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`verErr.Err.Error()` に対象名が含まれないことを固定する（AC-17）。
-- [ ] `manager_test.go` に `TestVerificationErrorDetailsAreSorted` を追加する。グローバル検証失敗・group 検証失敗・group 収集失敗の 3 経路を表駆動にし、map の反復順に依存しない入力（例: `/b`, `/a`, `/c` を含む集合）で `Details` が昇順になることを固定する（AC-19・AC-21）。
-- [ ] `error_construction_guard_test.go` に `TestVerificationErrorLiteralsOnlyInConstructor` を追加する。`verification.Error` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `verification` の修飾子を解決して、(a) `verification.Error` を指す複合リテラル、すなわち修飾名 `<verification 修飾子>.Error{...}` と、`internal/verification` の本番ファイル内の非修飾 `Error{...}`（値形・ポインタ形・`ElidedCompositeLiterals` が返す elided 形）が `manager.go` の `newVerificationError` の中にだけ現れること（非修飾の `Error` は他パッケージにも同名の型があり、例: `internal/runner/base/privilege/unix.go:317` の `privilege.Error`。修飾名の解決無しに全本番ファイルを走査すると偽陽性になる）、(b) `internal/verification` の本番ファイルに限って、`Details` フィールドへのセレクタ代入（`x.Details = ...`）が `newVerificationError` の外に無いこと、(c) リテラルが 1 件も見つからなければ失敗すること、を固定する（AC-21）。(a) はリポジトリ全体を走査するが、(b) を全本番ファイルへ広げない理由は次のとおりである。`go/ast` だけの走査は型を持たず（`ResolveLocalImports` が与えるのは import の修飾子であり、変数の型ではない）、`.Details` という名前のセレクタ代入は無関係な型のフィールドにも一致する（`internal/filevalidator/validator.go:2063-2065` は別の型の `pltResult.Details` に代入している）。`internal/verification` の中では修飾子なしの `Error` は `verification.Error` にしかならないため、そこに限れば名前だけの一致で足りる。したがって (b) はパッケージ外の代入を見ない点で意図的に不完全であり、これは `TestNotificationContextBuiltOnlyByConstructors`（`internal/logging/notification_contract_guard_test.go`）が走査範囲を絞っているのと同じ割り切りである。
+- [x] `errors.go:19-22` の隣に `ErrGroupVerificationCollectionFailed = errors.New("failed to collect verification files")` を追加する。
+- [x] `manager.go` に非公開コンストラクタ `newVerificationError(op, group string, details []string, total, verified int, sentinel error) *Error` を追加する。`Details` には `details` を昇順に並べたコピーを設定し、`FailedFiles` は `len(details)` とする。`&Error{...}` はこの関数の中にだけ書く。
+- [x] `manager.go:170`（グローバル検証失敗）・`:242`（group 検証失敗）の構造体リテラルを `newVerificationError` の呼び出しに置き換える。
+- [x] `collectVerificationFiles` を、パス解決に失敗したコマンドを記録して残りの解決を続け、解決済みファイル集合と解決に失敗した対象（`command.ExpandedCmd`）の一覧を返す形に変える。既存の `slog.Warn`（`:279-283`）は対象ごとに残す。検証は 1 件も行わない（fail-closed を維持）。
+- [x] `VerifyGroupFiles` の収集失敗分岐（`:196-203`）を、解決に失敗した対象の一覧・`TotalFiles` = 解決済みファイル集合の要素数 + 重複を除いた解決失敗対象の数（解決に失敗した対象は重複を除く）・`VerifiedFiles = 0`・`Err = ErrGroupVerificationCollectionFailed` で `newVerificationError` を呼ぶ形に変える（02_architecture.md §3.7）。
+- [x] `manager_test.go` の `TestCollectVerificationFiles` の全呼び出し 7 件（`:679,699,713,730,765,787,808`）を新しい返り値の契約に合わせて更新する。解決済みのケースは解決に失敗した対象の一覧が空であることを確認し、解決失敗のサブテスト 2 件（`:773-810`）は返り値の一覧に解決に失敗した対象が入ることを見る形にする。
+- [x] `manager_test.go` に `TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets` を追加する。解決に失敗するコマンド 1 件／複数件で、`Details` が解決失敗の全対象を昇順で持つこと、`TotalFiles`・`FailedFiles`・`VerifiedFiles` の件数、`errors.Is(err, ErrGroupVerificationCollectionFailed)`、`verErr.Err.Error()` に対象名が含まれないことを固定する（AC-17）。
+- [x] `manager_test.go` に `TestVerificationErrorDetailsAreSorted` を追加する。グローバル検証失敗・group 検証失敗・group 収集失敗の 3 経路を表駆動にし、map の反復順に依存しない入力（例: `/b`, `/a`, `/c` を含む集合）で `Details` が昇順になることを固定する（AC-19・AC-21）。
+- [x] `error_construction_guard_test.go` に `TestVerificationErrorLiteralsOnlyInConstructor` を追加する。`verification.Error` はフィールドが公開されており型では強制できないため（§1.2 原則 8）、ガードが構築形を列挙する。`identitymutationguard.ProductionGoFilesInRepo` で本番ファイル全件を走査し、`ResolveLocalImports` で `verification` の修飾子を解決して、(a) `verification.Error` を指す複合リテラル、すなわち修飾名 `<verification 修飾子>.Error{...}` と、`internal/verification` の本番ファイル内の非修飾 `Error{...}`（値形・ポインタ形・`ElidedCompositeLiterals` が返す elided 形）が `manager.go` の `newVerificationError` の中にだけ現れること（非修飾の `Error` は他パッケージにも同名の型があり、例: `internal/runner/base/privilege/unix.go:317` の `privilege.Error`。修飾名の解決無しに全本番ファイルを走査すると偽陽性になる）、(b) `internal/verification` の本番ファイルに限って、`Details` フィールドへのセレクタ代入（`x.Details = ...`）が `newVerificationError` の外に無いこと、(c) リテラルが 1 件も見つからなければ失敗すること、を固定する（AC-21）。(a) はリポジトリ全体を走査するが、(b) を全本番ファイルへ広げない理由は次のとおりである。`go/ast` だけの走査は型を持たず（`ResolveLocalImports` が与えるのは import の修飾子であり、変数の型ではない）、`.Details` という名前のセレクタ代入は無関係な型のフィールドにも一致する（`internal/filevalidator/validator.go:2063-2065` は別の型の `pltResult.Details` に代入している）。`internal/verification` の中では修飾子なしの `Error` は `verification.Error` にしかならないため、そこに限れば名前だけの一致で足りる。したがって (b) はパッケージ外の代入を見ない点で意図的に不完全であり、これは `TestNotificationContextBuiltOnlyByConstructors`（`internal/logging/notification_contract_guard_test.go`）が走査範囲を絞っているのと同じ割り切りである。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestVerificationErrorDetailsAreSorted` がコンストラクタの並べ替えを外すと 3 経路とも失敗すること、`TestVerificationErrorLiteralsOnlyInConstructor` が §4.4 の構築形ごとの変異（`VerifyGroupFiles` に `&Error{...}` を戻す、値形リテラルを置く、elided 形を置く、`internal/verification` の中（例: `VerifyGroupFiles`）で `newVerificationError` の外に `verErr.Details = ...` を代入する）のそれぞれで失敗することを確認する。
 
@@ -252,8 +252,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: Phase 2b.1 はファイル検証というセキュリティ境界の fail-closed 収集経路を作り替え、構築形を列挙する `go/ast` ガードを導入する孤立した高リスク・複雑ステップである。fail-closed の判定規則（未解決が 1 件でもあれば検証を実行せず拒否）は変えず、段階的な rollout や保護の raise/lower を伴わないため panel-mode トリガーには該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

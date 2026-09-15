@@ -676,8 +676,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file3.txt"})
 
 		// Collect files
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		require.NoError(t, err)
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Empty(t, unresolved)
 
 		// Should return a map with the same files
 		assert.Len(t, collectedFiles, 3)
@@ -696,8 +696,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{})
 
 		// Collect files
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		require.NoError(t, err)
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Empty(t, unresolved)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -710,8 +710,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		// Collect files with nil input
-		collectedFiles, err := manager.collectVerificationFiles(nil)
-		require.NoError(t, err)
+		collectedFiles, unresolved := manager.collectVerificationFiles(nil)
+		assert.Empty(t, unresolved)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -727,8 +727,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 		runtimeGroup := createRuntimeGroup([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
 
 		// Collect files
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		require.NoError(t, err)
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Empty(t, unresolved)
 
 		// Should automatically remove duplicates
 		assert.Len(t, collectedFiles, 3)
@@ -762,15 +762,15 @@ func TestCollectVerificationFiles(t *testing.T) {
 		}
 
 		// Collect files (should use pre-expanded command)
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		require.NoError(t, err)
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Empty(t, unresolved)
 
 		// Should resolve to the actual command path
 		assert.Len(t, collectedFiles, 1)
 		assert.Contains(t, collectedFiles, testCmd)
 	})
 
-	t.Run("skip_command_with_expansion_error", func(t *testing.T) {
+	t.Run("report_command_with_expansion_error", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
@@ -783,13 +783,14 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files: unresolvable command path now returns error (fail-closed)
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		assert.Error(t, err, "unresolvable command should return error (fail-closed)")
-		assert.Nil(t, collectedFiles)
+		// Collect files: the unresolvable target is returned for the caller to
+		// reject (fail-closed), and no file from that command is collected.
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Equal(t, []string{"%{undefined_var}/testcmd"}, unresolved)
+		assert.Empty(t, collectedFiles)
 	})
 
-	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
+	t.Run("report_command_with_resolution_error", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
@@ -804,11 +805,182 @@ func TestCollectVerificationFiles(t *testing.T) {
 			},
 		}
 
-		// Collect files should fail: path resolution errors are fail-closed
-		collectedFiles, err := manager.collectVerificationFiles(runtimeGroup)
-		assert.Error(t, err, "path resolution failure should return error (fail-closed)")
-		assert.Nil(t, collectedFiles, "fileSet should be nil on error")
+		// Collect files: the path resolution failure is reported for the caller
+		// to reject (fail-closed), not swallowed.
+		collectedFiles, unresolved := manager.collectVerificationFiles(runtimeGroup)
+		assert.Equal(t, []string{"/nonexistent/command"}, unresolved)
+		assert.Empty(t, collectedFiles)
 	})
+}
+
+// TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets verifies that
+// a group whose command paths cannot all be resolved fails closed and reports
+// every unresolved target in Details, sorted, without embedding a target name
+// in the sentinel error text.
+func TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets(t *testing.T) {
+	tests := []struct {
+		name        string
+		commands    []string
+		wantDetails []string
+	}{
+		{
+			name:        "single_unresolved_target",
+			commands:    []string{"/nonexistent/b"},
+			wantDetails: []string{"/nonexistent/b"},
+		},
+		{
+			name:        "multiple_unresolved_targets_are_sorted",
+			commands:    []string{"/nonexistent/c", "/nonexistent/a", "/nonexistent/b"},
+			wantDetails: []string{"/nonexistent/a", "/nonexistent/b", "/nonexistent/c"},
+		},
+		{
+			name:        "duplicate_unresolved_target_is_listed_once",
+			commands:    []string{"/nonexistent/b", "/nonexistent/a", "/nonexistent/b"},
+			wantDetails: []string{"/nonexistent/a", "/nonexistent/b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager, err := NewManagerForTest(tu.SafeTempDir(t), WithPathResolver(NewPathResolver("")))
+			require.NoError(t, err)
+
+			commands := make([]CommandEntry, 0, len(tt.commands))
+			for _, command := range tt.commands {
+				commands = append(commands, CommandEntry{ExpandedCmd: command})
+			}
+			input := &GroupVerificationInput{
+				Name:                "test-group",
+				ExpandedVerifyFiles: []string{"/verify/a", "/verify/b"},
+				Commands:            commands,
+			}
+
+			result, err := manager.VerifyGroupFiles(input)
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			verErr, ok := errors.AsType[*Error](err)
+			require.True(t, ok, "error must be *verification.Error")
+			assert.Equal(t, tt.wantDetails, verErr.Details)
+			// Totals count distinct targets: the explicit files plus the
+			// distinct unresolved commands, not the raw command count.
+			assert.Equal(t, len(input.ExpandedVerifyFiles)+len(tt.wantDetails), verErr.TotalFiles)
+			assert.Equal(t, len(tt.wantDetails), verErr.FailedFiles)
+			assert.Equal(t, 0, verErr.VerifiedFiles)
+			assert.ErrorIs(t, err, ErrGroupVerificationCollectionFailed)
+			assert.Equal(t, ErrGroupVerificationCollectionFailed.Error(), verErr.Err.Error())
+			for _, command := range tt.commands {
+				assert.NotContains(t, verErr.Err.Error(), command)
+			}
+		})
+	}
+
+	t.Run("mixed_resolved_and_unresolved_fails_closed", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		binDir := filepath.Join(tmpDir, "bin")
+		require.NoError(t, os.MkdirAll(binDir, 0o755))
+		resolvedCmd := filepath.Join(binDir, "okcmd")
+		require.NoError(t, os.WriteFile(resolvedCmd, []byte("#!/bin/sh\n"), 0o755))
+
+		manager, err := NewManagerForTest(tmpDir, WithPathResolver(NewPathResolver(binDir)))
+		require.NoError(t, err)
+		input := &GroupVerificationInput{
+			Name: "test-group",
+			Commands: []CommandEntry{
+				{ExpandedCmd: "okcmd"},
+				{ExpandedCmd: "/nonexistent/b"},
+			},
+		}
+
+		result, err := manager.VerifyGroupFiles(input)
+		require.Error(t, err)
+		assert.Nil(t, result, "collection failure must abort verification")
+
+		verErr, ok := errors.AsType[*Error](err)
+		require.True(t, ok, "error must be *verification.Error")
+		assert.Equal(t, []string{"/nonexistent/b"}, verErr.Details)
+		assert.ErrorIs(t, err, ErrGroupVerificationCollectionFailed)
+		assert.Equal(t, 0, verErr.VerifiedFiles,
+			"no file may be verified when any target is unresolved")
+	})
+}
+
+// TestVerificationErrorDetailsAreSorted pins the ascending normalization of
+// Error.Details at the single construction point. Each route is fed an input
+// whose iteration order is not already sorted, so removing the sort fails.
+func TestVerificationErrorDetailsAreSorted(t *testing.T) {
+	const (
+		pathA = "/nonexistent/sort/a"
+		pathB = "/nonexistent/sort/b"
+		pathC = "/nonexistent/sort/c"
+	)
+	want := []string{pathA, pathB, pathC}
+
+	tests := []struct {
+		name string
+		run  func(t *testing.T) *Error
+	}{
+		{
+			// The route-level cases below feed the group verification route
+			// through a map, whose iteration order is randomized, so on a
+			// given run that case may pass without the sort. This case calls
+			// the constructor with a fixed unsorted slice so the guard is
+			// deterministic.
+			name: "constructor_sorts_fixed_input",
+			run: func(_ *testing.T) *Error {
+				return newVerificationError("group", "test-group",
+					[]string{pathB, pathA, pathC}, 3, 0, ErrGroupVerificationFailed)
+			},
+		},
+		{
+			name: "global_verification_failure",
+			run: func(t *testing.T) *Error {
+				manager, err := NewManagerForTest(tu.SafeTempDir(t))
+				require.NoError(t, err)
+				_, err = manager.VerifyGlobalFiles(createRuntimeGlobal([]string{pathB, pathA, pathC}))
+				verErr, ok := errors.AsType[*Error](err)
+				require.True(t, ok, "error must be *verification.Error")
+				return verErr
+			},
+		},
+		{
+			name: "group_verification_failure",
+			run: func(t *testing.T) *Error {
+				manager, err := NewManagerForTest(tu.SafeTempDir(t))
+				require.NoError(t, err)
+				_, err = manager.VerifyGroupFiles(createRuntimeGroup([]string{pathB, pathA, pathC}))
+				verErr, ok := errors.AsType[*Error](err)
+				require.True(t, ok, "error must be *verification.Error")
+				return verErr
+			},
+		},
+		{
+			name: "group_collection_failure",
+			run: func(t *testing.T) *Error {
+				manager, err := NewManagerForTest(tu.SafeTempDir(t), WithPathResolver(NewPathResolver("")))
+				require.NoError(t, err)
+				input := &GroupVerificationInput{
+					Name: "test-group",
+					Commands: []CommandEntry{
+						{ExpandedCmd: pathB},
+						{ExpandedCmd: pathA},
+						{ExpandedCmd: pathC},
+					},
+				}
+				_, err = manager.VerifyGroupFiles(input)
+				verErr, ok := errors.AsType[*Error](err)
+				require.True(t, ok, "error must be *verification.Error")
+				return verErr
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			verErr := tt.run(t)
+			assert.Equal(t, want, verErr.Details)
+		})
+	}
 }
 
 // TestVerifyFile tests the verifyFile helper method
