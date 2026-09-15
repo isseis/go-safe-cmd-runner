@@ -119,7 +119,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 #### 事実として確認した既存挙動
 
 - `DefaultGroupExecutor.verifyGroupFiles`（`internal/runner/group_executor.go:359-376`）は `VerifyGroupFiles` を最初に呼ぶ。設定に存在しない絶対パスのコマンド（例: `/nonexistent/scr-0175-missing`）を置くと、`collectVerificationFiles` の `pathResolver.ResolvePath` が失敗し、収集失敗の `*verification.Error` が `executeGroups` の検証分岐（`runner.go:426`）へ届く。`internal/runner/config` にコマンドの存在を確認する処理は無い（`rg -n "os\.Stat|Lstat|LookPath" internal/runner/config/*.go` の非テスト結果は 0 件）ため、`cmd/runner` の統合テストで収集失敗を起こせる。
-- `docsguard`（`internal/testutil/docsguard/docs_guard_test.go:78`）は `Status` が `draft` の文書で `Review date`・`Reviewer` が `-` であることを `make test` で検査する。Phase 5 で 0172 アーキテクチャ設計書を `draft` に戻すときは両セルを `-` にする。
+- `docsguard`（`internal/testutil/docsguard/docs_guard_test.go:49,78`）は `docs/tasks` の表の列数と Document Status の整合を `make test` で検査する。Phase 5 の 0172 文書への追記（表の行追加・`Comments` の更新）もこの検査を通す。
 
 ### 1.4 テストヘルパーの方針
 
@@ -285,11 +285,11 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [ ] `runner_command.ja.md` の「通知されるメッセージ種別」（`:1476` の `pre_execution_error` 行の周辺）またはその直後に、検証エラー通知の `Error Message` が失敗ファイル一覧を `Files:` 節として表示すること、上限を超えるときは `(+m more)` で省略件数を示すこと、収集失敗では解決に失敗したコマンドを一覧に載せることを追記する。「ファイル検証エラー」（`:1898`）から相互参照する。記述は Phase 4 の統合テストが観測した実際の `Error Message` を典拠にする。
 - [ ] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。
-- [ ] 0172 アーキテクチャ設計書 §3.5「動的な値の一覧」（`02_architecture.md:560-580`）に `failed_file_paths` の要素（`pre_execution_error` の `Error Message` フィールドの材料、役割は自由文）の行を追加する。decision change のため `Status` を `draft` に戻し、`Review date`・`Reviewer` を `-` にし、`Comments` に本タスクからの追加である旨を書く（docsguard の規則。§1.3）。
+- [ ] 0172 アーキテクチャ設計書 §3.5「動的な値の一覧」（`02_architecture.md:560-580`）に `failed_file_paths` の要素（`pre_execution_error` の `Error Message` フィールドの材料、役割は自由文）の行を追加する。editorial correction として扱い、`Status` は `approved` のまま変えず、`Comments` に本タスク（0175）からの追加である旨と決定を変えていない旨を書く（02_architecture.md §5.2）。
 - [ ] 0172 実装計画書 §10（`03_implementation_plan.md:1746-1753`）の group 検証エラーの follow-up に、0174 と同じ形式で「解消済み（2026-MM-DD 追記）」と本タスクへのリンクを追記する。
 - [ ] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
 
-**完了条件**: 3 文書の変更が `make test`・`make verify-docs-checks` を通る。0172 アーキテクチャ設計書の再承認をレビュアーに依頼する。
+**完了条件**: 3 文書の変更が `make test`・`make verify-docs-checks` を通る。
 
 ---
 
@@ -304,7 +304,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | M3: 一覧の生成と伝搬 | Phase 2b | 3 経路の昇順・収集失敗・共有コンストラクタ・両発火元の置き換えと静的ガード 4 件が green。`make deadcode` に `runerrors` の行が無い |
 | M4: 描画 | Phase 3 | ビルダーの表駆動テストが green |
 | M5: 横断検証 | Phase 4 | redaction 回帰、ベンチマークの数値、統合テスト 5 件が green |
-| M6: 文書 | Phase 5 | 利用者向け文書と 0172 の 2 文書が更新され、0172 アーキテクチャ設計書の再承認を依頼済み |
+| M6: 文書 | Phase 5 | 利用者向け文書と 0172 の 2 文書が更新済み |
 
 ### 3.2 順序の根拠
 
@@ -369,7 +369,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 | グローバル発火元の `Message` から `err.Error()` のパスが消え、`error_message` を照合する外部消費者が影響を受ける | 運用スクリプトの不一致 | 02_architecture.md §4 の記載どおり利用者向け文書に明記する（Phase 5）。通知本文から失敗ファイルは消えず、`Files:` 節へ移る |
 | ビルダーの切り詰め探索が上限値を暗黙に前提にする | `interpolationMaxBytes` を変えたときにビルダーが壊れる | 上限値をビルダーに書かず、`WithinInterpolationLimit` だけに問い合わせる。`TestBuildPreExecutionError_FailedFilePaths` の最終行（raw の候補が述語を満たす）で固定する |
 | `cmd/runner` 統合テストで group のコマンド（`/bin/true`）が失敗ファイル一覧に混ざる | 期待値がプラットフォーム依存になる | コマンドのハッシュを登録するか、コマンドを含む形で期待値を組むかを Phase 4 で決めて固定する |
-| 0172 アーキテクチャ設計書を `draft` に戻す | 再承認までの間、0172 が未承認状態になる | 追加は 1 行で、`Comments` に理由を書く。docsguard の規則に従い `Review date`・`Reviewer` を `-` にする |
+| 完了済みタスク 0172 の承認済み文書へ追記する | プロセス上の懸念 | 決定を変えない editorial correction として `Comments` に記録し、ステータスは変えない（02_architecture.md §5.2） |
 | `identitymutationguard` への走査補助の移動で `internal/logging` の既存ガードを壊す | 既存ガードの vacuous pass | `TestPreExecutionErrorLiteralCheckRecognizesForms` が移動後も通ることを Phase 1 の作業に含める |
 | `collectVerificationFiles` の書き換えが `internal/identifier/identifier_guard_test.go:122` の固定（同関数内の `slog.Warn` 1 件）を壊す | 既存ガードの失敗 | `slog.Warn` は同じ関数・同じ属性のまま残し、補助関数へ切り出さない（§1.3） |
 | `cmd/runner` 統合テストがプロセス全体の状態を差し替える | 並列実行時の干渉、dry-run で失敗が発火しない | `t.Parallel` を使わず、ヘルパが `dryRun = false` を必ず設定する（§1.3） |
@@ -384,7 +384,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 - [ ] Phase 2b.1〜2b.4 完了（`make deadcode` に `runerrors` の行が無い）
 - [ ] Phase 3 完了
 - [ ] Phase 4 完了（ベンチマークの数値をコミットメッセージに記録）
-- [ ] Phase 5 完了（`/mktrans` 済み、0172 アーキテクチャ設計書の再承認を依頼済み）
+- [ ] Phase 5 完了（`/mktrans` 済み、0172 の 2 文書に追記済み）
 - [ ] すべての AC が §7 の検証で green
 - [ ] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録
 
@@ -435,7 +435,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 - **品質**: 各 Phase の `make fmt`・`make test`・`make lint` が green。`make deadcode` に `internal/runner/runerrors` の行が無い。§4.4 の変異確認をすべて実施し記録済み。
 - **セキュリティ**: `handleErrorCommon` の stderr 出力と `error_message` 属性に失敗ファイルのパスが現れないこと、`failed_file_paths` の要素で値形式の機密がマスクされることがテストで観測される。
 - **性能**: n = 10,000 の end-to-end 描画が 100 ms 未満で、1 件あたりのコストが n = 1,000 の 3 倍以内（ベンチマークの数値をコミットメッセージに記録）。
-- **文書**: 利用者向け文書（日英）が更新され、0172 アーキテクチャ設計書の動的な値の一覧に行が追加されて再承認を依頼済み、0172 実装計画書 §10 の follow-up に解消が記録されている。
+- **文書**: 利用者向け文書（日英）が更新され、0172 アーキテクチャ設計書の動的な値の一覧に行が追加され（`Comments` に記録）、0172 実装計画書 §10 の follow-up に解消が記録されている。
 
 ---
 
@@ -443,5 +443,4 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 - 本書のレビューと承認を受ける。承認後、Phase 1 から順に実装する。
 - Phase 2a は共有コンストラクタの追加と別コミットにし、`go tool cover -func` の前後をコミットメッセージに記す。
-- Phase 5 の後、0172 アーキテクチャ設計書の再承認をレビュアーに依頼する。
 - 実装完了後、実チャンネルで group 検証エラーと収集失敗の Slack 表示を確認する（手動。AC の対象外）。

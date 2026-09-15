@@ -8,7 +8,7 @@
 | Created | 2026-09-14 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-15 承認済み（`isseis`）。実装計画書の作成時に判明した 3 点を反映して再レビュー待ち: (1) §8 でコンポーネント単位のテストと静的ガードを対応する実装と同じ Phase に置く、(2) §5.2・§3.6 で `notification_test.go` の一覧対応テストは変更しない（フィールド見出しの集合を検査するテストであり、`failed_file_paths` はフィールドではない）、(3) §3.2.1・§3.6・§8 に `docs/dev/developer_guide/package_reference.md` の更新を追加 |
+| Comments | 2026-09-15 承認済み（`isseis`）。実装計画書の作成時に判明した 3 点を反映して再レビュー待ち: (1) §8 でコンポーネント単位のテストと静的ガードを対応する実装と同じ Phase に置く、(2) §5.2・§3.6 で `notification_test.go` の一覧対応テストは変更しない（フィールド見出しの集合を検査するテストであり、`failed_file_paths` はフィールドではない）、(3) §3.2.1・§3.6・§8 に `docs/dev/developer_guide/package_reference.md` の更新を追加、(4) §3.6・§5.2 で 0172 アーキテクチャ設計書への行追加を decision change から editorial correction（ステータス不変、`Comments` に記録）へ変更 |
 
 ## 関連文書
 
@@ -464,7 +464,7 @@ func NewVerificationPreExecutionError(
 | `cmd/runner/integration_pre_execution_error_test.go` | グローバル描画テスト | グローバルも `failed_file_paths` が `Error Message` に描画され、本文と `Component` が group と同じ規則であることを固定 | アサーションを追加 | それ自体 |
 | `internal/redaction/redactor_test.go` | redaction 回帰 | 文字列スライス要素の既存挙動（機密はマスク、普通のパスは残る）を固定 | テストを追加 | それ自体 |
 | `internal/logging/notification_test.go` | 通知契約テスト | フィールド見出しの集合（`TestNotificationDefinitions_FieldsAreDeclaredInInventory`）と自由文の役割（`TestNotificationDefinitions_FieldRolesTransformValues`）を検査する。`failed_file_paths` はフィールドではなく `Error Message` の値の材料であり、`Error Message` は既に登録済み | 変更しない | それ自体 |
-| `docs/tasks/0172_slack_notification_message_unification/02_architecture.md` | 0172 の動的な値の一覧 | `failed_file_paths` の要素を自由文の役割で追加（decision change。0172 の再承認が必要） | 1 行追記 | `static` |
+| `docs/tasks/0172_slack_notification_message_unification/02_architecture.md` | 0172 の動的な値の一覧 | `failed_file_paths` の要素を自由文の役割で追加（editorial correction。0172 のステータスは変えず `Comments` に本タスクからの追加と記録） | 1 行追記 | `static` |
 | `docs/user/runner_command.ja.md` | 利用者向け文書 | group 検証エラー通知が失敗ファイルを列挙することを説明 | 追記 | `static` |
 | `docs/user/runner_command.md` | 利用者向け文書（英語） | 日本語版の英語訳 | `/mktrans` で反映 | `static` |
 
@@ -578,7 +578,7 @@ flowchart LR
 
 `failed_file_paths` は新しい属性で、共有コンストラクタ（§3.2.1）が `*verification.Error.Details` の複製として設定する。要素は既存の `processSlice` が `RedactText`（値形式検出と key=value 置換）だけを適用し、値全体置換は行わない（§5.4）。`failed_file_paths` は `Message` にも `handleErrorCommon` の stderr にも入らない。ビルダーが `Error Message` へ描画する文字列は、既存の自由文の役割の補間契約を通る。0172 §3.5 の「動的な値の一覧」に `failed_file_paths` の要素を自由文の役割で追加する。
 
-**他タスクのポリシー変更。** 元のポリシーは 0172 アーキテクチャ設計書 §3.5（`approved`）の「動的な値の一覧」で、通知へ到達しうる動的な値を列挙して役割を割り当てる。本タスクはここに `failed_file_paths` の要素（役割は自由文）の行を追加する。通知書式・エンベロープ・種別定義は変えない（`Component` の値は §3.2.1 で統一する）。0172 は `approved` のため、この編集は decision change として 0172 を `draft` に戻し再承認が必要である。0172 の `internal/logging/notification_test.go` の一覧対応テストはフィールド見出しの集合を検査しており、`failed_file_paths` はフィールドではないため変更しない（§3.6）。
+**他タスクのポリシー変更。** 元のポリシーは 0172 アーキテクチャ設計書 §3.5（`approved`）の「動的な値の一覧」で、通知へ到達しうる動的な値を列挙して役割を割り当てる。本タスクはここに `failed_file_paths` の要素（役割は自由文）の行を追加する。通知書式・エンベロープ・種別定義は変えない（`Component` の値は §3.2.1 で統一する）。0172 は完了済みのタスクであり、この行追加は 0172 の決定（役割で適用範囲を決める）を変えず、その適用例を 1 つ足すだけである。したがって editorial correction として扱い、0172 のステータスは変えずに `Comments` へ本タスク（0175）からの追加であることを記録する（requirements_process.md「Editing an approved document」）。0172 の `internal/logging/notification_test.go` の一覧対応テストはフィールド見出しの集合を検査しており、`failed_file_paths` はフィールドではないため変更しない（§3.6）。
 
 **残余リスク（端末出力へのパス露出）。** パスは人間向け `Detail()` からは消えるが、console への経路が残る。
 
