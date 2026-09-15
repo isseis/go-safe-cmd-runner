@@ -8,7 +8,7 @@
 | Created | 2026-09-12 |
 | Review date | `-` |
 | Reviewer | `-` |
-| Comments | 2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタへ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動。§目的・§スコープ・§決定事項・AC・Success Criteria を更新。レビューで対象 3・AC-04 の本文選択規則を `Err` 種別基準に明確化し、対象外の `Error()` に並び順の変化を注記。再承認を待つ。 |
+| Comments | 2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタへ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動。§目的・§スコープ・§決定事項・AC・Success Criteria を更新。レビューで対象 3・AC-04 の本文選択規則を `Err` 種別基準に明確化し、対象外の `Error()` に並び順の変化を注記。コード精査の結果を反映: `runerrors` の死コード削除（対象 14）、`verification.Error` の非公開コンストラクタ（対象 15）、`Component` リテラルの typed 定数化（対象 16）を対象に追加し、command 依存検証の通知欠落・`executeGroups` の先頭エラーのみ返却・`HandleExecutionError` の `Detail()` 複製を対象外に記録。再承認を待つ。 |
 
 ## 関連 Issue
 
@@ -29,6 +29,18 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 ### 失敗ファイルの出所は既にある
 
 [`verification.Error`](../../../internal/verification/errors.go) は `Details []string` に失敗ファイルを持ち、`Error()` はそれを連結して返す。原因は group 側の通知経路がこの値を使っていないことにある。新たに失敗ファイルのデータを作り出す必要はない。
+
+### `runerrors` は本番で呼ばれていない
+
+共有コンストラクタの置き場所に予定している [`internal/runner/runerrors`](../../../internal/runner/runerrors/) の既存シンボル（`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は、テスト以外に呼び出し元が 1 つもない。ここへ `NewVerificationPreExecutionError` だけを足すと、生きた関数 1 つと死んだ型・関数 4 つが同じパッケージに同居し、パッケージの説明「error classification and handling」も実態と合わなくなる。
+
+### `verification.Error` の生成箇所は 3 つある
+
+`Details` の昇順正規化を「`Error` を生成する唯一の場所」で行う方針に対し、実際の生成は [`manager.go`](../../../internal/verification/manager.go) の 3 箇所（グローバル検証失敗・group 収集失敗・group 検証失敗）の構造体リテラルである。3 箇所それぞれで並べ替えを書くと、規約頼みの状態に戻る。
+
+### `Component` のリテラルが混在している
+
+`PreExecutionError.Component` / `ExecutionError.Component` には `string(resource.ComponentVerification)` のような typed 定数経由の値と、`"main"`（[`cmd/runner/main.go`](../../../cmd/runner/main.go) 4 箇所）・`"runner"`（`main.go` の `ExecutionError` と [`runner.go`](../../../internal/runner/runner.go) の group 検証分岐）の生リテラルが混在する。本タスクは group の `Component` を `verification` へ変えるため、同じ箇所を触る。
 
 ### 収集失敗では対象名が通知されない
 
@@ -62,6 +74,9 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 11. 収集失敗の `Message` から対象名を除く。`Err` の文言には対象名を含めず、パス解決の生の原因は検証マネージャの既存の構造化ログに残す。
 12. グローバルと group の検証エラー報告（`logging.PreExecutionError` の組み立て）を `internal/runner/runerrors` の共有コンストラクタ `NewVerificationPreExecutionError` に一本化する。本文は両者同じテンプレート（`Total: %d, Verified: %d, Failed: %d, Error: %v`、収集失敗は `Collection failed: %d of %d targets unresolved, Error: %v`）とし、`Component` は両者 `verification` にする。
 13. `verification.Error.Details` は Manager が `Error` を生成する時点で昇順に正規化する。通知の発火元は並べ替えず、正規化済みの `Details` から共有コンストラクタが複製する。
+14. `internal/runner/runerrors` の本番呼び出しの無い既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）とそのテストを削除し、パッケージの説明を共有コンストラクタの責務に合わせる。README.ja.md / README.md のパッケージ一覧の表記も更新する（英語版は `/mktrans`）。
+15. `verification.Error` の生成を `manager.go` の非公開コンストラクタ 1 箇所に集約し、対象 13 の昇順正規化はそのコンストラクタだけが行う。3 つの発生箇所（グローバル検証失敗・group 収集失敗・group 検証失敗）はすべてこれを経由する。
+16. `PreExecutionError.Component` / `ExecutionError.Component` に渡す生リテラル `"main"`・`"runner"` を `string(resource.ComponentMain)` / `string(resource.ComponentRunner)` に置き換える。
 
 ### 対象外
 
@@ -71,6 +86,10 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 - **失敗対象一覧を持たない検証失敗の報告形式。** `ensureHashDirectoryValidated` が返す `*verification.OpError` など、`Details` を持たない失敗は本タスクの一覧契約の対象外とし、global は従来どおり `err.Error()`、group は既存の system_error 経路のままとする（アーキテクチャ §5.5・§9 に残存として記録）。
 - **redaction の適用範囲の変更。** 既存の `RedactText` と既存の `processSlice` の挙動をそのまま使う（対象 8 は回帰固定のみ）。
 - **`user_group_command_failure` 通知の配線。** 別タスク（0174）で扱う。
+- **command 依存検証（`VerifyCommandDependencies`）とコマンドパス解決（`ResolvePath`）の失敗の通知。** [`group_executor.go`](../../../internal/runner/group_executor.go) の `verifyGroupFiles` は、動的ライブラリ・shebang の依存検証失敗とパス解決失敗を `*verification.Error` ではない生のエラーとして返す。そのため `executeGroups` の検証分岐に乗らず、`cmd/runner/main.go` で `ExecutionError`（`system_error`、`slack_notify=false`）になり、Slack へは届かない。加えて `executionResult` が未設定のため `command_group_summary` も出ない。グローバル・group のファイル検証は通知されるのに command レベルの検証だけ通知されない非対称であり、運ぶ情報が「一覧」ではなく「パス 1 件と理由」であるため本タスクの一覧契約とは別の形になる。認識済みの残存として記録し、次タスクの候補とする（アーキテクチャ §5.5・§9）。
+- **`Runner.executeGroups` が先頭のエラーしか返さない点。** 複数 group が失敗した場合、2 件目以降のエラーは `groupErrs[0]` の返却で捨てられ、`ExpandGroup` 失敗のように group executor がログしない経路はどこにも残らない。`errors.Join` への置き換えは別タスクとする。
+- **`HandleExecutionError` が `PreExecutionError.Detail()` と同じ組み立てを重複実装している点。** 効果が小さいため、コードにコメントを残して当面据え置く。
+- **`Component` の型付け。** `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善（`logging` は `resource` を import できないため型の移動が要る）は、対象 16 のリテラル置換で実害が消えるため別タスクとする。
 
 ## 決定事項
 
@@ -107,6 +126,18 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 ### 失敗ファイル一覧の並びは Manager が生成時に正規化する
 
 `verification.Error.Details` は Manager が `Error` を生成する時点で昇順に並べたコピーを設定する。group の `Details` は map に由来して順序が変わりうるが、発火元ごとの並べ替え規約に頼らず、`Error` の値を生成する唯一の場所で正規化する。`Details` の複製は共有コンストラクタが行い、通知の発火元は並べ替えもしない。ビルダーは並びを変えない。`Error()` の連結順も同時に安定する。
+
+### `runerrors` は共有コンストラクタだけを持つパッケージにする
+
+共有コンストラクタを置く `internal/runner/runerrors` から、本番呼び出しの無い既存シンボルを削除する（対象 14）。生きたコードと死んだコードを同居させると、パッケージの責務を読み手が誤解し、死んだ分類 API を新しい呼び出し元が使い始める余地を残すためである。削除は共有コンストラクタの追加とは別コミットで行い、`go tool cover -func` で残るシンボルのカバレッジが変わらないことを確認する。
+
+### `verification.Error` は非公開コンストラクタ 1 箇所で生成する
+
+`manager.go` の 3 つの生成箇所を非公開コンストラクタに集約し、`Details` の昇順コピーはそこでだけ作る（対象 15）。「唯一の場所で正規化する」を規約ではなくコード構造で保証するためである。コンストラクタは非公開のままとし、`verification.Error` の型・公開 API は変えない（対象外「`verification.Error` の型・`Error()` の変更」と矛盾しない）。
+
+### `Component` は typed 定数だけから渡す
+
+`Component` の生リテラルを `resource.Component` 定数経由に揃える（対象 16）。本タスクが group の `Component` を `"runner"` から `verification` へ変える際に同じ箇所を触るためで、値の集合を 1 箇所（`resource/types.go`）で読めるようにする。フィールドの型自体を変える改善は対象外に記録する。
 
 ### 文字列スライス要素の redaction は既存挙動を回帰で固定する
 
@@ -154,6 +185,13 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 - **AC-18**: グローバルと group の検証エラー報告は共有コンストラクタ `runerrors.NewVerificationPreExecutionError` で組み立てられ、`Component` はどちらも `verification` である。同じ `*verification.Error` から同じ本文・同じ一覧属性が得られる。
 - **AC-19**: `verification.Error.Details` は Manager が `Error` を生成する時点で昇順に正規化される。発火元は並べ替えを行わず、通知ビルダーは並びを変えない。
 
+#### F-008: 周辺の整理
+
+**Acceptance Criteria**:
+- **AC-20**: `internal/runner/runerrors` に残る本番シンボルは `NewVerificationPreExecutionError` だけである。`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr` とそのテストは削除され、README のパッケージ一覧の説明が更新されている。
+- **AC-21**: `internal/verification/manager.go` で `&Error{...}` の構造体リテラルが現れるのは非公開コンストラクタの中だけであり、グローバル検証失敗・group 収集失敗・group 検証失敗の 3 経路はすべてそれを経由する。AC-19 の昇順テストは 3 経路それぞれで通る。
+- **AC-22**: `cmd/runner`・`internal/runner` の本番コードで `PreExecutionError.Component` / `ExecutionError.Component` に渡す値はすべて `resource.Component` 定数経由であり、生リテラル `"main"`・`"runner"` は残らない。
+
 ## Success Criteria（要件レベル）
 
 - group 検証エラー通知から失敗ファイルを判別できる。
@@ -162,3 +200,5 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 - group 名が別個のメタデータとして本文へ重複しない（失敗ファイルパス内の同名文字列は除く）。
 - グローバルと group の通知が、同じ構造化属性・同じ共有コンストラクタ・同じ予算管理による失敗ファイルの提示で対称になる。
 - 通知種別定義・`error_type`・Slack フィールド集合が変わらない（`Error Message` の値と group の `Component` の組み立てだけを変える）。本文は group の既存テンプレートに統一する。
+- `runerrors` に死コードが残らず、`verification.Error` の生成と正規化が 1 箇所に集約され、`Component` の値が typed 定数だけから渡される。
+- command 依存検証の通知欠落と `executeGroups` の先頭エラーのみ返却は、認識済みの残存として文書に記録されている。

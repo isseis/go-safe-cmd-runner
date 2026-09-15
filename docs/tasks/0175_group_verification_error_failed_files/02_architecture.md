@@ -8,7 +8,7 @@
 | Created | 2026-09-14 |
 | Review date | `-` |
 | Reviewer | `-` |
-| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` に含める決定を反映（§1.1・§1.2・§1.3・§2.2・§2.3・§3.2・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。<br>2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタ `runerrors.NewVerificationPreExecutionError` へ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動（§1.2・§1.3・§2.1・§2.2・§2.3・§3.2・§3.3・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§5.5・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。 |
+| Comments | 2026-09-14: 収集失敗（コマンドのパス解決失敗）も `failed_file_paths` に含める決定を反映（§1.1・§1.2・§1.3・§2.2・§2.3・§3.2・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。<br>2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタ `runerrors.NewVerificationPreExecutionError` へ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動（§1.2・§1.3・§2.1・§2.2・§2.3・§3.2・§3.3・§3.4・§3.5・§3.6・§3.7・§4・§5.1・§5.2・§5.5・§6・§7・§8・§9・付録A・付録B）。再承認を待つ。<br>2026-09-15: コード精査の結果を反映。`runerrors` の死コード削除（§3.2.1・§3.6・§8）、`verification.Error` の非公開コンストラクタ（§3.2.3・§3.6・§3.7・§7.9・§8）、`Component` リテラルの typed 定数化（§3.6・§8）、command 依存検証の通知欠落と `executeGroups` の先頭エラーのみ返却の残存記録（§5.5・§9）、付録A に AC-20〜22 を追加。再承認を待つ。 |
 
 ## 関連文書
 
@@ -342,7 +342,9 @@ type PreExecutionError struct {
 
 #### 3.2.1 共有コンストラクタ: `runerrors.NewVerificationPreExecutionError`
 
-`internal/runner/runerrors/pre_execution.go`（新設）に置く。`runerrors` は runner のエラー分類を担うパッケージで、`resource`（`verification` を含む）と `logging` を参照できる。`logging` へ `verification` を持ち込まず、かつ両発火元が同じ変換を使うことを 1 つの関数で保証するため、ここに置く。
+`internal/runner/runerrors/pre_execution.go`（新設）に置く。`runerrors` は `resource`（`verification` を含む）と `logging` を参照できる位置にある。`logging` へ `verification` を持ち込まず、かつ両発火元が同じ変換を使うことを 1 つの関数で保証するため、ここに置く。
+
+**既存シンボルの削除。** `runerrors` の既存シンボル（`ClassifiedError`・`ErrorSeverity`・`ErrorType`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`）は本番の呼び出し元を持たない（`grep -rn runerrors` の非テスト結果は README の 1 行のみ）。共有コンストラクタの追加とは別コミットでこれらとそのテスト（`classification_test.go`・`logging_test.go`）を削除し、パッケージ doc を「検証失敗を報告境界の `PreExecutionError` へ変換する」責務に書き換える。README.ja.md / README.md の `runerrors/` 行の説明も合わせる。削除後の `go tool cover -func` は共有コンストラクタの行だけを報告する。
 
 ```go
 // NewVerificationPreExecutionError converts a verification failure into the
@@ -376,7 +378,7 @@ func NewVerificationPreExecutionError(
 - `*verification.Error` 以外（`ensureHashDirectoryValidated` の `*OpError` など）は従来どおり `err.Error()` を `Message` に渡し、`FailedFilePaths` を設定しない。この経路は失敗対象一覧を持たず、本設計の一覧契約の対象外である（§5.5）。
 - `Type` は `logging.ErrorTypeFileAccess`、`NotificationContext` は `common.GlobalScope()`（いずれも既存）。
 
-**並びの正規化。** `Details` は Manager が `Error` を生成する時点で昇順に並べたコピーを設定する（§3.7）。発火元は並べ替えず、ビルダーも並びを変えない。group の `Details` は `for file := range allFiles`（map）に由来し（`internal/verification/manager.go:218`。map の構築は `:260-291`）、グローバルの `Details` は `input.ExpandedVerifyFiles`（スライス）に由来する（`manager.go:146-157`）が、生成時に同じ規則へ揃う。収集失敗の `Details`（`input.Commands` の走査に由来。§3.7）も同じ正規化を受ける。
+**並びの正規化。** `Details` は Manager が `Error` を生成する時点で昇順に並べたコピーを設定する（§3.7）。生成は `manager.go` の非公開コンストラクタ（例: `newVerificationError(op, group string, details []string, total, verified int, sentinel error) *Error`）1 箇所に集約し、昇順コピーはそこでだけ作る。3 つの発生箇所（`VerifyGlobalFiles` の検証失敗 `:170`、`VerifyGroupFiles` の収集失敗 `:198`・検証失敗 `:242`）はすべてこのコンストラクタを呼び、構造体リテラル `&Error{...}` はコンストラクタの中にしか現れない。発火元は並べ替えず、ビルダーも並びを変えない。group の `Details` は `for file := range allFiles`（map）に由来し（`internal/verification/manager.go:218`。map の構築は `:260-291`）、グローバルの `Details` は `input.ExpandedVerifyFiles`（スライス）に由来する（`manager.go:146-157`）が、生成時に同じ規則へ揃う。収集失敗の `Details`（`input.Commands` の走査に由来。§3.7）も同じ正規化を受ける。
 
 失敗ファイル一覧を `Message` へ連結しない理由:
 
@@ -444,10 +446,13 @@ func NewVerificationPreExecutionError(
 | `internal/common/interpolation_test.go` | 契約テスト | 述語と切り詰めの境界 | テストを追加 | それ自体 |
 | `internal/common/logschema.go` | `PreExecErrorAttrs.FailedFilePaths` | `failed_file_paths` キー定数（新設） | 新設 | `internal/logging` テスト |
 | `internal/runner/runerrors/pre_execution.go` | `NewVerificationPreExecutionError` | `*verification.Error` から `PreExecutionError` を組み立てる唯一の場所。本文テンプレート・`Component`（`verification`）・`FailedFilePaths` の複製を担う | 新設 | `internal/runner/runerrors/pre_execution_test.go` |
+| `internal/runner/runerrors/{types,classification,logging}.go` と対応テスト | 既存の分類 API | 本番呼び出しなし | 削除（別コミット）。パッケージ doc を共有コンストラクタの責務に書き換える | `go build ./...`、`go tool cover -func` |
+| `README.ja.md` / `README.md` | パッケージ一覧 | `runerrors/` の説明 | 「検証失敗の報告変換」へ更新（英語版は `/mktrans`） | `static` |
+| `cmd/runner/main.go`・`internal/runner/runner.go` | `Component` の値 | `"main"`・`"runner"` の生リテラル | `string(resource.ComponentMain)` / `string(resource.ComponentRunner)` へ置換 | `grep` で生リテラルが残らないこと |
 | `internal/runner/runerrors/pre_execution_test.go` | コンストラクタテスト | 検証失敗・収集失敗の本文、`Component`、一覧の複製、`Err` が nil であることを固定（§7.9） | テストを追加 | それ自体 |
 | `internal/runner/runner.go` | `executeGroups` | `*verification.Error` を共有コンストラクタへ渡し、返った `PreExecutionError` を報告する | 発火元の組み立てを共有コンストラクタ呼び出しへ置き換える | `internal/runner/runner_test.go` |
 | `internal/runner/runner_test.go` | 配線テスト | `FailedFilePaths` と `Component`（`verification`）を固定 | テストを追加 | それ自体 |
-| `internal/verification/manager.go` | `collectVerificationFiles` / `VerifyGroupFiles` / `VerifyGlobalFiles` | 収集失敗で解決に失敗した対象を全て集め、`Details`・件数・パスを含まない `Err` を設定する。`Details` は生成時に昇順へ正規化する | 変更 | `internal/verification/manager_test.go` |
+| `internal/verification/manager.go` | `collectVerificationFiles` / `VerifyGroupFiles` / `VerifyGlobalFiles` / 非公開コンストラクタ | 収集失敗で解決に失敗した対象を全て集め、`Details`・件数・パスを含まない `Err` を設定する。`Error` の生成は非公開コンストラクタ 1 箇所に集約し、`Details` はそこで昇順へ正規化する | 変更 | `internal/verification/manager_test.go` |
 | `internal/verification/errors.go` | `ErrGroupVerificationCollectionFailed` | 収集失敗を表すパスを含まないセンチネル（新設） | 新設 | `internal/verification/manager_test.go` |
 | `internal/verification/manager_test.go` | 収集失敗テスト | `Details`（昇順）・件数・センチネル・`Err` の文言に対象名が現れないことを固定 | テストを追加 | それ自体 |
 | `internal/logging/pre_execution_error.go` | `PreExecutionError.FailedFilePaths` / `HandlePreExecutionError` | 生のパスを `failed_file_paths` 属性として記録する（`Detail()` には書かない） | 変更 | `internal/logging/pre_execution_error_test.go` |
@@ -469,7 +474,7 @@ func NewVerificationPreExecutionError(
 `VerifyGroupFiles` は検証対象の収集に失敗すると group の検証を中止し（fail-closed、既存挙動）、`*verification.Error` を返す（`internal/verification/manager.go:194-203`）。本設計はこの経路でも失敗対象の一覧を運ぶ。
 
 - **一覧の収集。** `collectVerificationFiles` はパス解決に失敗したコマンドを記録し、残りのコマンドの解決を続けて、解決に失敗した対象（`command.ExpandedCmd`）を全て集める（返り値は解決済みファイル集合と解決に失敗した対象の一覧）。解決に失敗した時点で group の検証は中止し、検証は 1 件も行わない（fail-closed を維持する。走査の継続は解決の試行だけで、検証も副作用も伴わない）。
-- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を昇順に並べたコピーとして `Details` に設定する（§3.2.3 の正規化）。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`TotalFiles`・`VerifiedFiles`・`FailedFiles` を検証の内訳として提示しない。`FailedFiles` は解決に失敗した対象数、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とし、これらは収集段階の件数として扱う（`verification.Error` の型は変えない）。`Op`・`Group` は既存のまま。
+- **`Details` と件数。** `VerifyGroupFiles` は解決に失敗した対象を §3.2.3 の非公開コンストラクタへ渡し、コンストラクタが昇順に並べたコピーを `Details` に設定する。収集失敗では検証が 1 件も実行されず、対象のすべてが検証から除外されるため、`TotalFiles`・`VerifiedFiles`・`FailedFiles` を検証の内訳として提示しない。`FailedFiles` は解決に失敗した対象数、`TotalFiles` は対象総数（`ExpandedVerifyFiles` と `Commands` の合計）、`VerifiedFiles` は 0 とし、これらは収集段階の件数として扱う（`verification.Error` の型は変えない）。`Op`・`Group` は既存のまま。
 - **`Err`。** パスを含まない新しいセンチネル `ErrGroupVerificationCollectionFailed`（"failed to collect verification files"）を設定する。パス解決の生の原因（コマンド文字列を包む）は `collectVerificationFiles` の既存の `slog.Warn`（`internal/verification/manager.go:279-283`）に残り、`Message` へは入れない。group 本文は共有コンストラクタ（§3.2.1）が組み立て、検証の内訳ではなく収集段階の事実を示す `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files` となる。対象名は `failed_file_paths` だけが運ぶ。
 - **`Error()`。** `verification.Error` の型と `Error()` は変更しない。`Details` が設定されるため `Error()` は既存の `Details` 分岐（`internal/verification/errors.go:171-173`）を通る。本経路の通知本文は共有コンストラクタが組み立てるため、`Error()` の `%d of %d files failed` 表記が検証サマリとして通知に現れることはない。原因の文面は通知に載らないが、通知の一覧に失敗対象が現れる（AC-17）。`Error()` の `%d of %d files failed` が収集段階の件数を検証の内訳として読ませる点は残存として §5.5・§9 に記録する。
 - **検証失敗との区別。** `ErrGroupVerificationFailed` はハッシュ不一致などの検証失敗、`ErrGroupVerificationCollectionFailed` は収集失敗を表す。`error_type` は `group_file_verification_failed` のままである（通知種別・エンベロープを変えない）。
@@ -601,6 +606,9 @@ flowchart LR
 - **`*verification.OpError` の報告。** ハッシュディレクトリ検証などの失敗は `Details` を持たず、本設計の一覧契約の対象外である。global は `err.Error()`（`Path` を含みうる）を `Message` に渡し、group は `*verification.Error` ではないため `executeGroups` の検証分岐に乗らず `system_error`（Scope は global）として報告される。パスはハッシュディレクトリの設定値であり、起動時の検証が主経路にある。
 - **コンソールログの粒度と属性名。** グローバルは失敗時に「ファイルごとの `slog.Error` + `failed_files` 配列のサマリ」を出し、group はファイルごとの `slog.Error` のみを出す（`internal/verification/manager.go:166-169`・`:223-226`）。成功時は global が `"verified"`（`cmd/runner/main.go:405-407`）、group が `"verified_files"`（`internal/runner/group_executor.go:383-386`）を使う。対話表示の優先キー（`internal/logging/message_formatter.go:89-104`）は `verified_files` を前提にしている。
 - **`error_type` の差。** グローバルは `file_access_failed`、group は `group_file_verification_failed`（0172 の定義）。報告の起点が異なるための意図的な差であり、本設計では変えない（§3.2.1）。
+- **command 依存検証・パス解決の失敗は Slack に届かない。** `DefaultGroupExecutor.verifyGroupFiles` は `ResolvePath` 失敗（`internal/runner/group_executor.go:378`）と `VerifyCommandDependencies` 失敗（`:407-412`、動的ライブラリ・shebang）を `*verification.Error` ではない生のエラーで返す。`executeGroups` の検証分岐（`runner.go:426`）に乗らないため `groupErrs` に入り、`cmd/runner/main.go:689` で `ExecutionError`（`system_error`、`slack_notify=false`）になる。この時点で `executionResult` は未設定なので `command_group_summary` も出ない。グローバル・group のファイル検証だけが通知され、command レベルの検証は通知されない非対称である。運ぶ情報は「パス 1 件と理由」で本設計の一覧契約とは形が違うため、別タスクとする（§9）。
+- **`executeGroups` は先頭のエラーしか返さない。** `runner.go:445-447` は `groupErrs[0]` だけを返す。2 件目以降の group の失敗は、group executor が自前でログしない経路（`ExpandGroup` 失敗など）ではどこにも残らない。`errors.Join` への置き換えは別タスクとする（§9）。
+- **`HandleExecutionError` の本文組み立て。** `internal/logging/pre_execution_error.go:170-180` は `PreExecutionError.Detail()` と同じ「`Message` + ユーザ向け文言または `%v`」を再実装している。効果が小さいため、コードにコメントを残して据え置く。
 
 ---
 
@@ -746,7 +754,7 @@ flowchart LR
 | `Details` が空 | `Total: 0, Verified: 0, Failed: 0, Error: <cause>`（一覧が空なのでビルダーは `Files:` 節を付けない） |
 | 呼び出し後に `verErr.Details` を変更 | 返った `FailedFilePaths` は変わらない（複製） |
 
-`internal/verification/manager_test.go` は、group のハッシュ不一致・グローバルの検証失敗・収集失敗のそれぞれで `Details` が昇順であることを固定する（AC-19）。入力は map の反復順に依存しない並び（例: 集合に `["/b", "/a", "/c"]` を含める）にし、`Details` が `["/a", "/b", "/c"]` になることを確認する。壊したときに落ちることを確認する手順は §7.6 に従う。
+`internal/verification/manager_test.go` は、group のハッシュ不一致・グローバルの検証失敗・収集失敗のそれぞれで `Details` が昇順であることを固定する（AC-19・AC-21。3 経路がすべて非公開コンストラクタを経由していれば、コンストラクタの並べ替えを外したときに 3 つとも落ちる）。入力は map の反復順に依存しない並び（例: 集合に `["/b", "/a", "/c"]` を含める）にし、`Details` が `["/a", "/b", "/c"]` になることを確認する。壊したときに落ちることを確認する手順は §7.6 に従う。
 
 ---
 
@@ -755,7 +763,8 @@ flowchart LR
 | Phase | 内容 | 主なファイル |
 |---|---|---|
 | 1 | `common.WithinInterpolationLimit` と `PreExecErrorAttrs.FailedFilePaths` を足し、契約のテストを書く | `internal/common/interpolation.go`、`internal/common/logschema.go`、`internal/common/interpolation_test.go` |
-| 2 | `verification` が `Details` を昇順に正規化し、収集失敗で `Details`・件数・センチネルを設定する。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` を新設し、両発火元がそれを呼ぶ。`HandlePreExecutionError` が `failed_file_paths` を記録する | `internal/verification/manager.go`、`internal/verification/errors.go`、`internal/runner/runerrors/pre_execution.go`、`internal/runner/runner.go`、`cmd/runner/main.go`、`internal/logging/pre_execution_error.go` |
+| 2a | `runerrors` の本番呼び出しの無い既存シンボルとテストを削除し、パッケージ doc と README を更新する（単独コミット） | `internal/runner/runerrors/*.go`、`README.ja.md`（英語版は `/mktrans`） |
+| 2b | `verification` に非公開コンストラクタを設け、3 つの生成箇所を集約し、`Details` をそこで昇順に正規化する。収集失敗で `Details`・件数・センチネルを設定する。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` を新設し、両発火元がそれを呼ぶ。`HandlePreExecutionError` が `failed_file_paths` を記録する。`Component` の生リテラルを typed 定数へ置き換える | `internal/verification/manager.go`、`internal/verification/errors.go`、`internal/runner/runerrors/pre_execution.go`、`internal/runner/runner.go`、`cmd/runner/main.go`、`internal/logging/pre_execution_error.go` |
 | 3 | `buildPreExecutionError` が `error_message` 属性（`Detail()`）と `failed_file_paths`（`[]any` をデコード）から `Error Message` を組み立てる | `internal/logging/slack_handler.go` |
 | 4 | 収集失敗・配線・コンストラクタ・描画・redaction 回帰のテストとベンチマーク、グローバル回帰を足す | `internal/verification/manager_test.go`、`internal/runner/runner_test.go`、`internal/runner/runerrors/pre_execution_test.go`、`internal/logging/*_test.go`、`internal/redaction/redactor_test.go`、`cmd/runner/integration_pre_execution_error_test.go` |
 | 5 | 利用者向け文書の group 検証エラー表示を追記する | `docs/user/runner_command.ja.md`（英語版は `/mktrans`） |
@@ -775,6 +784,9 @@ flowchart LR
 - コンソールログの粒度（global の失敗サマリ 1 行とファイルごとのログ、group のファイルごとのみ）と成功時の属性名（`verified` / `verified_files`）の統一は別タスクとする（§5.5）。
 - 共有コンストラクタ `runerrors.NewVerificationPreExecutionError` は、検証以外のプリエクゼキューション失敗へ「本文テンプレート + Component + 一覧」の形を広げるときの置き場所になる。
 - コンソール向け描画（stderr・stdout）を出力先横断の単一契約にまとめる改善と、検証マネージャのファイル単位ログの 1 行化は別タスクとする。本設計は `Message` にパスを入れないことでこのタスクの範囲を守る。
+- command 依存検証・パス解決の失敗を通知へ載せる改善は別タスクとする（§5.5）。`verifyGroupFiles` がこれらを構造化されたエラー型で返し、`executeGroups` が `*verification.Error` と同様に `PreExecutionError` へ変換する形が候補になる。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` はその変換の置き場所として再利用できる。
+- `executeGroups` の複数 group 失敗を `errors.Join` で全件返す改善は別タスクとする（§5.5）。
+- `resource.Component` を `common` へ移して `PreExecutionError.Component` / `ExecutionError.Component` を型付きにする改善は別タスクとする。本設計は生リテラルを typed 定数へ置き換えるだけで、フィールドの型は変えない。
 
 ---
 
@@ -798,6 +810,9 @@ flowchart LR
 | AC-17 | §3.7・§6.5・§7.8。収集失敗でも解決に失敗した対象を全て `Details` に載せ、`Err` はパスを含まないセンチネルとし、本文は検証の内訳ではなく収集段階の件数（解決に失敗した対象数と対象総数）を示す |
 | AC-18 | §3.2.1・§7.9。共有コンストラクタ `runerrors.NewVerificationPreExecutionError` が本文・`Component`（`verification`）・一覧の複製を担い、発火元は組み立てない |
 | AC-19 | §1.2・§3.2.3・§3.7・§7.9。Manager が `Error` を生成する時点で `Details` を昇順に正規化し、発火元とビルダーは並びを変えない |
+| AC-20 | §3.2.1・§3.6・§8 Phase 2a。`runerrors` の既存シンボルとテストを削除し、README を更新する |
+| AC-21 | §3.2.3・§3.7・§7.9。`manager.go` の 3 つの生成箇所を非公開コンストラクタに集約し、`&Error{...}` はその中にしか現れない |
+| AC-22 | §3.6・§8 Phase 2b。`Component` の生リテラル `"main"`・`"runner"` を `resource.Component` 定数経由に置き換える |
 
 ## 付録B: 採らなかった案
 
