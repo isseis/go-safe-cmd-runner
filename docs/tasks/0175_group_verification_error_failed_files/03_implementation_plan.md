@@ -320,10 +320,10 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `slack_handler.go` に、`failed_file_paths` 属性の `slog.Value` を `[]string` へデコードする非公開補助を追加する。`[]string` と `[]any`（要素は文字列）を読み、どちらでもない表現・文字列でない要素を含む表現は「一覧なし」として扱う。
-- [ ] `buildPreExecutionError`（`:836-866`）を、`error_message` の値と一覧から `Error Message` の値を組み立てる形へ変える。本文の骨格・表示形（`strconv.Quote`）・掲載の選択・切り詰めは 02_architecture.md §3.3 の表と選択規則に従う。コードが推論できない制約は 2 つ: 上限値・変換規則をビルダーに書かず `common.WithinInterpolationLimit` だけに問い合わせること、最後の `common.Interpolate(..., InterpolationRoleFreeText)` は既存のまま 1 回だけ通すこと。一覧が空（属性はあるが要素 0 件）のときは `Files:` 節を付けない。
-- [ ] `slack_handler_test.go` に `TestBuildPreExecutionError_FailedFilePaths` を追加する。レコードは必ず `redaction.NewRedactingHandler` で包んだハンドラを通す（`TestSlackHandler_WithRedactingHandler`（`:1002`）と同じ手法）。02_architecture.md §7.2 の 12 行（一覧なし、区切り文字衝突の 2 集合、`\n` と空白、`"`・`\`・制御文字・不正 UTF-8、丸ごと収まらない長いパスの閉じ引用符と `…`、全件表示、部分表示の k と m、先頭が長く後続が短い一覧、丸ごと 0 件の切り詰めと m = n - 1、実体参照化で膨らむ要素、渡した順の描画、raw の候補が `WithinInterpolationLimit` を満たすこと）を固定する（AC-01・AC-02・AC-03・AC-08）。部分表示の行は、掲載パスが `failed_file_paths` の要素そのものであること（切り詰めでないこと）と `(+m more)` の m が `n - 掲載件数` に等しいことを見る。
-- [ ] 同ファイルに `TestBuildPreExecutionError_FailedFilePathsMalformedValue` を追加する。`failed_file_paths` に文字列でない要素を含むスライス・非スライス値・要素 0 件のスライス（`[]any{}`）を置いたレコードで、いずれも `Error Message` が `error_message` の値と等しく `Files:` を含まないことを固定する（AC-04 の一覧なし規則の producer 欠陥側）。
+- [x] `slack_handler.go` に、`failed_file_paths` 属性の `slog.Value` を `[]string` へデコードする非公開補助を追加する。`[]string` と `[]any`（要素は文字列）を読み、どちらでもない表現・文字列でない要素を含む表現は「一覧なし」として扱う。
+- [x] `buildPreExecutionError`（`:836-866`）を、`error_message` の値と一覧から `Error Message` の値を組み立てる形へ変える。本文の骨格・表示形（`strconv.Quote`）・掲載の選択・切り詰めは 02_architecture.md §3.3 の表と選択規則に従う。コードが推論できない制約は 2 つ: 上限値・変換規則をビルダーに書かず `common.WithinInterpolationLimit` だけに問い合わせること、最後の `common.Interpolate(..., InterpolationRoleFreeText)` は既存のまま 1 回だけ通すこと。一覧が空（属性はあるが要素 0 件）のときは `Files:` 節を付けない。
+- [x] `slack_handler_test.go` に `TestBuildPreExecutionError_FailedFilePaths` を追加する。レコードは必ず `redaction.NewRedactingHandler` で包んだハンドラを通す（`TestSlackHandler_WithRedactingHandler`（`:1002`）と同じ手法）。02_architecture.md §7.2 の 12 行（一覧なし、区切り文字衝突の 2 集合、`\n` と空白、`"`・`\`・制御文字・不正 UTF-8、丸ごと収まらない長いパスの閉じ引用符と `…`、全件表示、部分表示の k と m、先頭が長く後続が短い一覧、丸ごと 0 件の切り詰めと m = n - 1、実体参照化で膨らむ要素、渡した順の描画、raw の候補が `WithinInterpolationLimit` を満たすこと）を固定する（AC-01・AC-02・AC-03・AC-08）。部分表示の行は、掲載パスが `failed_file_paths` の要素そのものであること（切り詰めでないこと）と `(+m more)` の m が `n - 掲載件数` に等しいことを見る。
+- [x] 同ファイルに `TestBuildPreExecutionError_FailedFilePathsMalformedValue` を追加する。`failed_file_paths` に文字列でない要素を含むスライス・非スライス値・要素 0 件のスライス（`[]any{}`）を置いたレコードで、いずれも `Error Message` が `error_message` の値と等しく `Files:` を含まないことを固定する（AC-04 の一覧なし規則の producer 欠陥側）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。表の各行について、対応する分岐（省略通知の組み立て・丸ごと優先の走査・k = 0 の切り詰め・要素の型検査）を外すと当該行が失敗することを確認する（§4.4）。
 

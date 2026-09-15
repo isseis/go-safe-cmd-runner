@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -832,9 +834,15 @@ func buildCommandGroupSummary(r slog.Record) messageDetails {
 
 // buildPreExecutionError returns the type-specific part of a pre-execution
 // error: the error type as the headline and the detail and component as
-// fields.
+// fields. When the record carries failed_file_paths, the Error Message value
+// is the detail followed by a "Files:" section listing the failed targets
+// (see renderFailedFiles); a missing or malformed list leaves the detail as
+// is.
 func buildPreExecutionError(r slog.Record) messageDetails {
-	var errorType, errorMsg, component string
+	var (
+		errorType, errorMsg, component string
+		failedPaths                    []string
+	)
 
 	r.Attrs(func(attr slog.Attr) bool {
 		switch attr.Key {
@@ -844,6 +852,8 @@ func buildPreExecutionError(r slog.Record) messageDetails {
 			errorMsg = attr.Value.String()
 		case common.PreExecErrorAttrs.Component:
 			component = attr.Value.String()
+		case common.PreExecErrorAttrs.FailedFilePaths:
+			failedPaths = decodeFailedFilePaths(attr.Value)
 		}
 		return true
 	})
@@ -853,7 +863,7 @@ func buildPreExecutionError(r slog.Record) messageDetails {
 		fields: []SlackAttachmentField{
 			{
 				Title: "Error Message",
-				Value: common.Interpolate(errorMsg, common.InterpolationRoleFreeText),
+				Value: common.Interpolate(renderFailedFiles(errorMsg, failedPaths), common.InterpolationRoleFreeText),
 				Short: false,
 			},
 			{
@@ -863,6 +873,140 @@ func buildPreExecutionError(r slog.Record) messageDetails {
 			},
 		},
 	}
+}
+
+// decodeFailedFilePaths reads the failed_file_paths attribute as a list of
+// strings. The firing point records a []string; the RedactingHandler rewrites
+// it element by element into a []any, so both shapes are read. Any other
+// shape, and a slice with a non-string element, is a producer defect and is
+// treated as "no list" so the detail is still delivered on its own.
+func decodeFailedFilePaths(value slog.Value) []string {
+	switch list := value.Any().(type) {
+	case []string:
+		return list
+	case []any:
+		paths := make([]string, 0, len(list))
+		for _, element := range list {
+			path, ok := element.(string)
+			if !ok {
+				return nil
+			}
+			paths = append(paths, path)
+		}
+		return paths
+	default:
+		return nil
+	}
+}
+
+const (
+	// failedFilesSeparator opens the Files section after the detail and
+	// failedFilesJoin separates the listed paths.
+	failedFilesSeparator = ", Files: "
+	failedFilesJoin      = ", "
+	// failedFilesEllipsis marks a path that is shown only as a prefix. It sits
+	// outside the closing quote, so a path that itself contains the character
+	// stays distinguishable.
+	failedFilesEllipsis = "\u2026"
+)
+
+// renderFailedFiles appends the failed targets to detail as a Files section
+// sized to the free-text interpolation limit. Each path is shown as
+// strconv.Quote(path), so separators, whitespace, quotes, control characters
+// and invalid UTF-8 inside a path cannot be confused with the list syntax or
+// with another path. The paths are rendered in the order given; the Manager
+// has already sorted them.
+//
+// The selection walks the list once and keeps every path that fits whole,
+// measuring each candidate together with the omission notice it would carry
+// (" (+m more)", m = n - k). A path that does not fit is skipped and never
+// reconsidered. When no path fits whole, the first path is shown as its
+// longest rune prefix that fits, followed by the ellipsis, and counts as one
+// shown path (m = n - 1). If not even that fits, the detail is returned
+// alone. The limit itself lives in internal/common: every candidate is judged
+// by common.WithinInterpolationLimit on the raw text, and the caller still
+// passes the result through common.Interpolate exactly once.
+func renderFailedFiles(detail string, paths []string) string {
+	n := len(paths)
+	if n == 0 {
+		return detail
+	}
+
+	quoted := make([]string, n)
+	for i, path := range paths {
+		quoted[i] = strconv.Quote(path)
+	}
+
+	if full := detail + failedFilesSeparator + strings.Join(quoted, failedFilesJoin); common.WithinInterpolationLimit(full) {
+		return full
+	}
+
+	// Partial display: keep every path that fits whole, in order. listing is
+	// the joined paths kept so far; each candidate is judged with the notice
+	// it would carry if this path were kept.
+	var listing string
+	shown := 0
+	for _, q := range quoted {
+		candidate := q
+		if shown > 0 {
+			candidate = listing + failedFilesJoin + q
+		}
+		if common.WithinInterpolationLimit(detail + failedFilesSeparator + candidate + omissionNotice(n-(shown+1))) {
+			listing = candidate
+			shown++
+		}
+	}
+	if shown > 0 {
+		return detail + failedFilesSeparator + listing + omissionNotice(n-shown)
+	}
+
+	// No path fits whole: show the longest rune prefix of the first path that
+	// fits, with the ellipsis outside the closing quote.
+	render := func(prefix string) string {
+		return detail + failedFilesSeparator + strconv.Quote(prefix) + failedFilesEllipsis + omissionNotice(n-1)
+	}
+	if prefix, ok := longestFittingRunePrefix(paths[0], func(prefix string) bool {
+		return common.WithinInterpolationLimit(render(prefix))
+	}); ok {
+		return render(prefix)
+	}
+	return detail
+}
+
+// omissionNotice returns the " (+m more)" suffix for m omitted paths, or the
+// empty string when nothing is omitted.
+func omissionNotice(omitted int) string {
+	if omitted <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (+%d more)", omitted)
+}
+
+// longestFittingRunePrefix returns the longest prefix of value, cut at a rune
+// boundary, for which fits is true, and false when not even the empty prefix
+// fits. fits must be monotone: once a prefix does not fit, no longer prefix
+// does. The search is binary over the rune boundaries, so the number of calls
+// to fits is logarithmic in the length of value.
+func longestFittingRunePrefix(value string, fits func(string) bool) (string, bool) {
+	if !fits("") {
+		return "", false
+	}
+	// boundaries[i] is the byte length of the i-rune prefix; invalid bytes
+	// count as one-byte runes.
+	boundaries := []int{0}
+	for i := range value {
+		if i > 0 {
+			boundaries = append(boundaries, i)
+		}
+	}
+	boundaries = append(boundaries, len(value))
+
+	// The first boundary whose prefix does not fit; the one before it is the
+	// answer. Index 0 fits, so the result is at least 1.
+	first := sort.Search(len(boundaries), func(i int) bool {
+		return !fits(value[:boundaries[i]])
+	})
+	return value[:boundaries[first-1]], true
 }
 
 // buildUserGroupCommandFailure returns the type-specific part of a failed
