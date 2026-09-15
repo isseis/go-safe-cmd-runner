@@ -108,10 +108,15 @@ ARG USERNAME=issei
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
+# --shell /bin/bash: without it, useradd falls back to /etc/default/useradd's
+# SHELL=/bin/sh (dash) on this base image. herdr (see below) picks the pane
+# shell from $SHELL, which only interactive bash/zsh login shells export; a
+# dash login shell leaves it unset and herdr falls back to /bin/sh, so panes
+# launch dash instead of bash.
 RUN EXISTING_USER=$(getent passwd "$USER_UID" | cut -d: -f1) \
     && if [ -n "$EXISTING_USER" ]; then userdel -r "$EXISTING_USER"; fi \
     && groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID --shell /bin/bash -m $USERNAME \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
