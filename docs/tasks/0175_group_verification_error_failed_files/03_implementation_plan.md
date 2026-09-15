@@ -59,7 +59,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | 収集失敗の `Err` | `manager.go:201` | `fmt.Errorf("failed to collect verification files: %w", err)` でコマンド文字列を包む。パスを含まないセンチネル `ErrGroupVerificationCollectionFailed` に置き換える |
 | センチネル | `internal/verification/errors.go:19-22` | `ErrGlobalVerificationFailed`・`ErrGroupVerificationFailed` の隣に `ErrGroupVerificationCollectionFailed` を追加する |
 | `Error.Error()` | `errors.go:161-181` | 変更しない（`Details` 分岐は `:171-173`） |
-| 解決失敗の既存テスト | `manager_test.go:773-810`（`TestCollectVerificationFiles` の `skip_command_with_expansion_error`・`skip_command_with_resolution_error`） | `collectedFiles` が nil でエラーが返ることを見ている。新しい返り値（解決に失敗した対象の一覧）に合わせて更新する |
+| 解決失敗の既存テスト | `manager_test.go:773-810`（`TestCollectVerificationFiles` の `report_command_with_expansion_error`・`report_command_with_resolution_error`。Phase 2b.1 で旧 `skip_command_with_*` から改名） | `collectedFiles` が nil でエラーが返ることを見ている。新しい返り値（解決に失敗した対象の一覧）に合わせて更新する |
 | `Details` の並びを見る既存テスト | なし（`rg -n "Details" internal/verification/manager_test.go` は一致なし） | 3 経路の昇順を新しいテストで固定する |
 
 #### 発火元と `Component` の生リテラル

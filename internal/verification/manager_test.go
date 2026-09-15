@@ -770,7 +770,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		assert.Contains(t, collectedFiles, testCmd)
 	})
 
-	t.Run("skip_command_with_expansion_error", func(t *testing.T) {
+	t.Run("report_command_with_expansion_error", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 
 		manager, err := NewManagerForTest(tmpDir)
@@ -790,7 +790,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		assert.Empty(t, collectedFiles)
 	})
 
-	t.Run("skip_command_with_resolution_error", func(t *testing.T) {
+	t.Run("report_command_with_resolution_error", func(t *testing.T) {
 		tmpDir := tu.SafeTempDir(t)
 
 		// Create path resolver with empty PATH (no commands can be resolved)
@@ -867,6 +867,35 @@ func TestVerifyGroupFiles_CollectionFailureCarriesUnresolvedTargets(t *testing.T
 			}
 		})
 	}
+
+	t.Run("mixed_resolved_and_unresolved_fails_closed", func(t *testing.T) {
+		tmpDir := tu.SafeTempDir(t)
+		binDir := filepath.Join(tmpDir, "bin")
+		require.NoError(t, os.MkdirAll(binDir, 0o755))
+		resolvedCmd := filepath.Join(binDir, "okcmd")
+		require.NoError(t, os.WriteFile(resolvedCmd, []byte("#!/bin/sh\n"), 0o755))
+
+		manager, err := NewManagerForTest(tmpDir, WithPathResolver(NewPathResolver(binDir)))
+		require.NoError(t, err)
+		input := &GroupVerificationInput{
+			Name: "test-group",
+			Commands: []CommandEntry{
+				{ExpandedCmd: "okcmd"},
+				{ExpandedCmd: "/nonexistent/b"},
+			},
+		}
+
+		result, err := manager.VerifyGroupFiles(input)
+		require.Error(t, err)
+		assert.Nil(t, result, "collection failure must abort verification")
+
+		verErr, ok := errors.AsType[*Error](err)
+		require.True(t, ok, "error must be *verification.Error")
+		assert.Equal(t, []string{"/nonexistent/b"}, verErr.Details)
+		assert.ErrorIs(t, err, ErrGroupVerificationCollectionFailed)
+		assert.Equal(t, 0, verErr.VerifiedFiles,
+			"no file may be verified when any target is unresolved")
+	})
 }
 
 // TestVerificationErrorDetailsAreSorted pins the ascending normalization of
