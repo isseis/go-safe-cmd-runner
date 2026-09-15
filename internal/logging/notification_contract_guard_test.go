@@ -5,7 +5,6 @@ package logging
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"path"
 	"strconv"
@@ -122,13 +121,13 @@ var notificationContextExemptFunctions = map[string]struct{}{
 func checkPreExecutionErrorLiterals(t *testing.T, filename, src string) (found int, missing []string) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
 		return importPath == loggingImportPath
 	})
 	inLogging := path.Dir(filename) == loggingPackageDir
 	isPreExecutionError := func(expr ast.Expr) bool {
-		return isNamedType(expr, qualifiers, loggingImportPath, "PreExecutionError", inLogging)
+		return identitymutationguard.IsNamedType(expr, qualifiers, loggingImportPath, "PreExecutionError", inLogging)
 	}
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -140,7 +139,7 @@ func checkPreExecutionErrorLiterals(t *testing.T, filename, src string) (found i
 		if isPreExecutionError(lit.Type) {
 			literals = append(literals, lit)
 		}
-		literals = append(literals, elidedCompositeLiterals(lit, isPreExecutionError)...)
+		literals = append(literals, identitymutationguard.ElidedCompositeLiterals(lit, isPreExecutionError)...)
 		for _, literal := range literals {
 			found++
 			if !setsNotificationContext(literal) {
@@ -174,13 +173,13 @@ func setsNotificationContext(lit *ast.CompositeLit) bool {
 func checkNotificationContextBuilds(t *testing.T, filename, src string) (violations []string, references, qualifiedReferences int) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
 		return importPath == commonImportPath
 	})
 	inCommon := path.Dir(filename) == "internal/common"
 	isType := func(expr ast.Expr) bool {
-		return isNamedType(expr, qualifiers, commonImportPath, "NotificationContext", inCommon)
+		return identitymutationguard.IsNamedType(expr, qualifiers, commonImportPath, "NotificationContext", inCommon)
 	}
 	exemptFile := filename == notificationContextFile
 
@@ -201,7 +200,7 @@ func checkNotificationContextBuilds(t *testing.T, filename, src string) (violati
 				if isType(n.Type) {
 					report(n.Pos(), "composite literal builds a NotificationContext outside the constructors")
 				}
-				for _, elided := range elidedCompositeLiterals(n, isType) {
+				for _, elided := range identitymutationguard.ElidedCompositeLiterals(n, isType) {
 					report(elided.Pos(), "composite literal with an elided type builds a NotificationContext outside the constructors")
 				}
 			case *ast.ValueSpec:
@@ -238,87 +237,6 @@ func checkNotificationContextBuilds(t *testing.T, filename, src string) (violati
 		})
 	}
 	return violations, references, qualifiedReferences
-}
-
-// elidedCompositeLiterals returns the nested composite literals that leave
-// their type implicit when the enclosing literal's element type matches
-// isType. []T{{...}} and map[K]T{k: {...}} create a T value without ever
-// spelling the type name, so a type check on the nested literal alone (whose
-// Type is nil) would miss them. The same elision is allowed for a pointer
-// element type: []*T{{...}} builds &T{...}, so *T is unwrapped to T.
-func elidedCompositeLiterals(lit *ast.CompositeLit, isType func(ast.Expr) bool) []*ast.CompositeLit {
-	element := compositeElementType(lit.Type)
-	if element == nil || !isType(element) {
-		return nil
-	}
-	var elided []*ast.CompositeLit
-	for _, elt := range lit.Elts {
-		if kv, ok := elt.(*ast.KeyValueExpr); ok {
-			elt = kv.Value
-		}
-		if inner, ok := elt.(*ast.CompositeLit); ok && inner.Type == nil {
-			elided = append(elided, inner)
-		}
-	}
-	return elided
-}
-
-// compositeElementType returns the element type of a slice, array or map type,
-// unwrapping parentheses and one level of pointer: an element of type *T may
-// elide &T in the literal, which still constructs a T.
-func compositeElementType(expr ast.Expr) ast.Expr {
-	var element ast.Expr
-	switch e := unwrapParen(expr).(type) {
-	case *ast.ArrayType:
-		element = e.Elt
-	case *ast.MapType:
-		element = e.Value
-	default:
-		return nil
-	}
-	if star, ok := unwrapParen(element).(*ast.StarExpr); ok {
-		return star.X
-	}
-	return element
-}
-
-// unwrapParen peels parenthesized type expressions.
-func unwrapParen(expr ast.Expr) ast.Expr {
-	for {
-		paren, ok := expr.(*ast.ParenExpr)
-		if !ok {
-			return expr
-		}
-		expr = paren.X
-	}
-}
-
-// isNamedType reports whether expr names the identifier name of the package at
-// importPath: qualified through an import resolved in qualifiers, or
-// unqualified because the file belongs to that package (inPackage).
-func isNamedType(expr ast.Expr, qualifiers map[string]string, importPath, name string, inPackage bool) bool {
-	switch e := unwrapParen(expr).(type) {
-	case *ast.Ident:
-		return inPackage && e.Name == name
-	case *ast.SelectorExpr:
-		pkgIdent, ok := e.X.(*ast.Ident)
-		if !ok {
-			return false
-		}
-		return e.Sel.Name == name && qualifiers[pkgIdent.Name] == importPath
-	default:
-		return false
-	}
-}
-
-// parseSource parses one file's source for the guard checks.
-func parseSource(t *testing.T, filename, src string) (*token.FileSet, *ast.File) {
-	t.Helper()
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filename, src, 0)
-	require.NoErrorf(t, err, "failed to parse %s", filename)
-	return fset, file
 }
 
 // TestPreExecutionErrorLiteralCheckRecognizesForms pins the syntax the guard
@@ -552,7 +470,7 @@ func collectNotificationRegistrySyntax(t *testing.T) notificationRegistrySyntax 
 	t.Helper()
 
 	src := identitymutationguard.ReadProductionSource(t, notificationFile)
-	_, file := parseSource(t, notificationFile, src)
+	_, file := identitymutationguard.ParseSource(t, notificationFile, src)
 
 	syntax := notificationRegistrySyntax{
 		tokenVars:     map[string]struct{}{},
@@ -644,7 +562,7 @@ func stringLiteralValue(expr ast.Expr) (string, bool) {
 // or slog.BoolValue(false), the only values the slack_notify guard accepts
 // without further analysis.
 func isStaticallyFalse(expr ast.Expr) bool {
-	expr = unwrapParen(expr)
+	expr = identitymutationguard.UnwrapParen(expr)
 	if ident, ok := expr.(*ast.Ident); ok {
 		return ident.Name == "false"
 	}
@@ -664,7 +582,7 @@ func notificationAttributeKey(expr ast.Expr) (string, bool) {
 	if value, ok := stringLiteralValue(expr); ok {
 		return value, true
 	}
-	ident, ok := unwrapParen(expr).(*ast.Ident)
+	ident, ok := identitymutationguard.UnwrapParen(expr).(*ast.Ident)
 	if !ok {
 		return "", false
 	}
@@ -708,7 +626,7 @@ func notificationAttrsFunctionRange(filename string, file *ast.File) ast.Node {
 func checkNotificationAttributeConstructions(t *testing.T, filename, src string) (slackViolations, messageTypeViolations []string, slackNotifyConstructions int) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	inLoggingPackage := path.Dir(filename) == loggingPackageDir
 	allowed := notificationAttrsFunctionRange(filename, file)
 
@@ -793,7 +711,7 @@ func checkNotificationAttributeConstructions(t *testing.T, filename, src string)
 func checkNotificationAttributeUsage(t *testing.T, filename, src string, syntax notificationRegistrySyntax) (violations []string, accessorCalls int) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	inNotificationFile := filename == notificationFile
 
 	allowedAccessorCalls := map[ast.Node]struct{}{}
@@ -812,7 +730,7 @@ func checkNotificationAttributeUsage(t *testing.T, filename, src string, syntax 
 			return true
 		}
 		first := call.Args[0]
-		accessorCall, ok := unwrapParen(first).(*ast.CallExpr)
+		accessorCall, ok := identitymutationguard.UnwrapParen(first).(*ast.CallExpr)
 		if !ok {
 			violations = append(violations, fmt.Sprintf(
 				"%s: NotificationAttrs first argument is not a registered accessor call", fset.Position(first.Pos())))
@@ -873,7 +791,7 @@ func checkNotificationAttributeUsage(t *testing.T, filename, src string, syntax 
 func checkRegisteredTypeNameLiterals(t *testing.T, filename, src string, registered map[string]struct{}) (violations []string, literals int) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	ast.Inspect(file, func(n ast.Node) bool {
 		lit, ok := n.(*ast.BasicLit)
 		if !ok || lit.Kind != token.STRING {
@@ -900,7 +818,7 @@ func checkRegisteredTypeNameLiterals(t *testing.T, filename, src string, registe
 func checkRegistryTypeNameLiterals(t *testing.T, filename, src string, registered map[string]struct{}) (violations []string, literals int) {
 	t.Helper()
 
-	fset, file := parseSource(t, filename, src)
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	allowed := map[*ast.BasicLit]struct{}{}
 	ast.Inspect(file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)

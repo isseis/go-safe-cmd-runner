@@ -60,6 +60,15 @@ func Interpolate(value string, role InterpolationRole) string {
 	}
 }
 
+// WithinInterpolationLimit reports whether value survives the free-text
+// transformations of the display-safe interpolation contract without being
+// shortened by the shared length limit. Callers that must keep a suffix
+// visible size their raw text with this predicate; the boundary still performs
+// the transformation, so the raw value is passed through unchanged.
+func WithinInterpolationLimit(value string) bool {
+	return len(transformInterpolated(value, false)) <= interpolationMaxBytes
+}
+
 // HasDisplayableContent reports whether value retains at least one rune that is
 // not Unicode White_Space after passing the interpolation contract for
 // identifiers. Configuration validation and notification context validation
