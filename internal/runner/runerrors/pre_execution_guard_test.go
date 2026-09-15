@@ -146,16 +146,8 @@ func checkVerificationConstructorUse(t *testing.T, filename, src string) (calls 
 // setsFailedFilePaths reports whether the literal sets the FailedFilePaths
 // field with a keyed element.
 func setsFailedFilePaths(lit *ast.CompositeLit) bool {
-	for _, elt := range lit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "FailedFilePaths" {
-			return true
-		}
-	}
-	return false
+	_, ok := identitymutationguard.KeyedElementValue(lit, "FailedFilePaths")
+	return ok
 }
 
 // TestVerificationConstructorUseCheckRecognizesForms pins the forms the guard

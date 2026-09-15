@@ -437,6 +437,23 @@ func IsNamedType(expr ast.Expr, qualifiers map[string]string, importPath, name s
 	}
 }
 
+// KeyedElementValue returns the value of the keyed element named key in lit,
+// so a guard can check how a struct literal sets one field. Contract guards in
+// different packages share it so the keyed-element lookup has one
+// implementation.
+func KeyedElementValue(lit *ast.CompositeLit, key string) (ast.Expr, bool) {
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == key {
+			return kv.Value, true
+		}
+	}
+	return nil, false
+}
+
 // ElidedCompositeLiterals returns the nested composite literals that leave
 // their type implicit when the enclosing literal's element type matches
 // isType. []T{{...}} and map[K]T{k: {...}} create a T value without ever

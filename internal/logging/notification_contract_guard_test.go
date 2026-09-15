@@ -194,16 +194,8 @@ func checkPreExecutionErrorLiterals(t *testing.T, filename, src string) (found i
 // setsNotificationContext reports whether the literal sets the
 // NotificationContext field with a keyed element.
 func setsNotificationContext(lit *ast.CompositeLit) bool {
-	for _, elt := range lit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "NotificationContext" {
-			return true
-		}
-	}
-	return false
+	_, ok := identitymutationguard.KeyedElementValue(lit, "NotificationContext")
+	return ok
 }
 
 // checkErrorLiteralComponents returns the number of PreExecutionError and
@@ -244,7 +236,7 @@ func checkErrorLiteralComponents(t *testing.T, filename, src string) (found int,
 			literals = append(literals, identitymutationguard.ElidedCompositeLiterals(node, isErrorType)...)
 			for _, literal := range literals {
 				found++
-				value, ok := keyedElementValue(literal, "Component")
+				value, ok := identitymutationguard.KeyedElementValue(literal, "Component")
 				switch {
 				case !ok:
 					report(literal.Pos(), "error literal leaves Component unset")
@@ -266,20 +258,6 @@ func checkErrorLiteralComponents(t *testing.T, filename, src string) (found int,
 		return true
 	})
 	return found, violations
-}
-
-// keyedElementValue returns the value of the keyed element named key in lit.
-func keyedElementValue(lit *ast.CompositeLit, key string) (ast.Expr, bool) {
-	for _, elt := range lit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == key {
-			return kv.Value, true
-		}
-	}
-	return nil, false
 }
 
 // isTypedComponentConversion reports whether expr is exactly

@@ -2185,9 +2185,10 @@ const failedFilesDetail = "Total: 3, Verified: 1, Failed: 2, Error: group file v
 
 // redactedPreExecutionErrorMessage renders the Error Message field of a
 // pre-execution error record whose error_message is failedFilesDetail and
-// whose failed_file_paths attribute holds failedPaths (nil for no attribute). The record is passed through a
-// RedactingHandler first, as in production, so the builder sees the []any
-// shape the handler produces rather than the []string the firing point wrote.
+// whose failed_file_paths attribute holds failedPaths (nil for no attribute).
+// The record is passed through a RedactingHandler first, as in production, so
+// the builder sees the []any shape the handler produces rather than the
+// []string the firing point wrote.
 func redactedPreExecutionErrorMessage(t *testing.T, failedPaths any) string {
 	t.Helper()
 
@@ -2329,6 +2330,14 @@ func TestBuildPreExecutionError_FailedFilePaths(t *testing.T) {
 		got := redactedPreExecutionErrorMessage(t, []string{"/b", "/a", "/c"})
 		assert.Equal(t, detail+`, Files: "/b", "/a", "/c"`, got)
 	})
+}
+
+// TestDecodeFailedFilePaths_StringSlice pins the []string shape of the
+// decoder, which only a record that bypasses the RedactingHandler carries: the
+// rendering tests above all go through the handler and so reach only the
+// []any branch.
+func TestDecodeFailedFilePaths_StringSlice(t *testing.T) {
+	assert.Equal(t, []string{"/b", "/a"}, decodeFailedFilePaths(slog.AnyValue([]string{"/b", "/a"})))
 }
 
 // TestBuildPreExecutionError_FailedFilePathsMalformedValue pins that a
