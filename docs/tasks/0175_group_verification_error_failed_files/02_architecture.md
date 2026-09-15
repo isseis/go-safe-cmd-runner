@@ -482,7 +482,7 @@ func NewVerificationPreExecutionError(
 
 | 状況 | レコード | Error Message |
 |---|---|---|
-| 失敗対象なし（`Details` が空） | `error_message` のみ | 共有コンストラクタの `Total: ..., Error: <verErr.Err>`（`Files:` 節なし。group は既存の文言のまま） |
+| 失敗対象なし（`Details` が空） | `error_message` のみ | `Err` 種別で選んだ同じテンプレート（検証失敗なら `Total: ..., Error: <verErr.Err>`）に `Files:` 節を付けない。group は既存の文言のまま |
 | 全件が上限内 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <全件>` |
 | 上限超過 | `error_message` + `failed_file_paths` | `Total: ..., Error: ..., Files: <一部> (+m more)` |
 | 収集失敗（`Details` は解決失敗の対象） | `error_message` + `failed_file_paths` | `Collection failed: <失敗数> of <総数> targets unresolved, Error: failed to collect verification files, Files: ...` |

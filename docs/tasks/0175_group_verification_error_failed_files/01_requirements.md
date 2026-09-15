@@ -8,7 +8,7 @@
 | Created | 2026-09-12 |
 | Review date | `-` |
 | Reviewer | `-` |
-| Comments | 2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタへ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動。§目的・§スコープ・§決定事項・AC・Success Criteria を更新。再承認を待つ。 |
+| Comments | 2026-09-15: グローバルと group の報告の組み立てを共有コンストラクタへ一本化し、本文テンプレートと `Component` を統一。`Details` の昇順正規化を Manager の生成時に移動。§目的・§スコープ・§決定事項・AC・Success Criteria を更新。レビューで対象 3・AC-04 の本文選択規則を `Err` 種別基準に明確化し、対象外の `Error()` に並び順の変化を注記。再承認を待つ。 |
 
 ## 関連 Issue
 
@@ -51,7 +51,7 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 1. `Runner.executeGroups` の group 検証エラー分岐で、`verification.Error.Details` の失敗ファイル一覧を通知へ載せる。
 2. 失敗ファイル一覧が表示上限に収まるときは全件を載せ、超えるときは上限内に収まる範囲と省略件数を載せる。
-3. `Details` が空のときは、`Total`／`Verified`／`Failed` の件数と `verErr.Err` を含む本文（`Files:` 節なし）とし、グローバルと group で同じ規則にする。
+3. 本文テンプレートは `verErr.Err` の種別で選び（収集失敗のセンチネルなら収集段階の件数、それ以外は `Total`／`Verified`／`Failed` の件数と `verErr.Err`）、`Details` の有無では変えない。`Details` が空のときは `Files:` 節だけを付けず、グローバルと group で同じ規則にする。
 4. 通知にファイル一覧が現れることを固定するテストを追加する。このテストは、`Details` を通知から落とす実装へ戻すと失敗する形にする。
 5. 利用者向け文書（`docs/user/runner_command.ja.md` など）の group 検証エラー通知の表示が不足していれば、必要に応じて追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 6. 失敗ファイル一覧を `error_message` へ連結せず、専用の構造化属性（`common.PreExecErrorAttrs.FailedFilePaths` = `failed_file_paths`）として記録する。`Message` は件数とセンチネルのみでパスを含めず、`handleErrorCommon` が stderr へ書く文字列もパスを含めない（stdout には `handleErrorCommon` は `Message` を書かない）。
@@ -65,7 +65,7 @@ Task 0172 では、group ファイル検証の失敗を通知する経路が [`R
 
 ### 対象外
 
-- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。パスを含まないセンチネルの追加はこれに含まない。グローバルも共有コンストラクタでパスを含まない `Message` を受け取る。
+- **`verification.Error` の型・`Error()` の変更。** 既存の表現を使う。パスを含まないセンチネルの追加はこれに含まない。対象 13 の昇順正規化は `Details` の値の並びを変えるため、`Error()` が `Details` を連結する順も昇順になる（`Error()` の実装は変えない）。グローバルも共有コンストラクタでパスを含まない `Message` を受け取る。
 - **共通エンベロープ・通知種別定義・Slack フィールド集合の変更。** 新しい Slack フィールドは足さず、既存 `Error Message` の値と group の `Component` だけを組み立て直す（本文テンプレートは group の既存形へ統一する）。
 - **`error_type` の統一。** グローバルは `file_access_failed`、group は `group_file_verification_failed` のままとする（0172 の通知種別定義。報告の起点が異なるための意図的な差）。
 - **失敗対象一覧を持たない検証失敗の報告形式。** `ensureHashDirectoryValidated` が返す `*verification.OpError` など、`Details` を持たない失敗は本タスクの一覧契約の対象外とし、global は従来どおり `err.Error()`、group は既存の system_error 経路のままとする（アーキテクチャ §5.5・§9 に残存として記録）。
@@ -90,7 +90,7 @@ group 名を `Group: <name>, ` のような別個のメタデータとして本�
 
 ### `Details` が空でも本文は件数と `Err` を示す
 
-`verification.Error.Details` が空でも、本文は `Total: %d, Verified: %d, Failed: %d, Error: %v` とし、`Files:` 節を付けない。一覧が無いことを空文字や空フィールドで示さない。グローバルと group で同じ規則である。収集失敗は `Details` を持つようになるため、この本文が使われるのは失敗対象を持たない経路に限られる。
+本文テンプレートは `verErr.Err` の種別で選び、`Details` の有無では変えない。`verification.Error.Details` が空でも、本文は同じテンプレート（検証失敗なら `Total: %d, Verified: %d, Failed: %d, Error: %v`）のままで、`Files:` 節だけを付けない。一覧が無いことを空文字や空フィールドで示さない。グローバルと group で同じ規則である。Manager は本タスク後 `Details` が空の `*verification.Error` を返さないため（収集失敗も `Details` を持つ）、この規則は共有コンストラクタの単体テストで固定する。
 
 ### 表示は既存の表示安全な補間契約に従う
 
@@ -120,7 +120,7 @@ Error Message は動的な値であり、0172 の表示安全な補間契約を�
 - **AC-01**: 失敗ファイル一覧の表示が表示上限に収まるとき、検証エラー通知の `Error Message` フィールドに `verification.Error.Details` の各ファイルパスが（区切りと衝突しないエンコード後の表示形で）現れる。
 - **AC-02**: 失敗ファイル一覧が表示上限（既存の表示安全な補間契約の 500 byte）を超えるとき、上限内に収まる範囲のファイルパスと、省略した件数が `Error Message` に現れる。
 - **AC-03**: group 名は通知コンテキスト（Scope）に表示され、Error Message には `Group: <name>, ` のような別個のメタデータとして重複しない。失敗ファイルパスに偶然含まれる group 名の文字列は許容する。
-- **AC-04**: `Details` が空のときは、`Total: N, Verified: N, Failed: N` と `verErr.Err` を含む本文（`Files:` 節なし）になり、グローバルと group で同じ規則である。
+- **AC-04**: 本文テンプレートは `verErr.Err` の種別で決まり、`Details` の有無で変わらない。`Details` が空のときは、同じテンプレートの本文（検証失敗なら `Total: N, Verified: N, Failed: N` と `verErr.Err`）に `Files:` 節が付かず、グローバルと group で同じ規則である。
 - **AC-05**: グローバル検証エラー通知も、group と同じ共有コンストラクタ・同じ本文テンプレート・同じ予算管理（全件、または上限内に収まる範囲と省略件数）で `failed_file_paths` を `Error Message` に描画する。
 
 #### F-002: 配線をテストで固定する
