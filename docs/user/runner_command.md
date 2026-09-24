@@ -1513,14 +1513,19 @@ runner -config config.toml
 
 **Failed File List in Pre-Execution Error Notification**
 
-The `Error Message` field of `pre_execution_error` shows the paths of the failed files as a `Files:` section. Each path is wrapped in quotes and listed in a display form that escapes `"`, `\`, control characters and the like. When the list fits within the display limit, all entries are shown; when it exceeds the limit, only the entries that fit are shown and the remainder is indicated as an omitted count with ` (+m more)`. The message body and `Component` contain no paths, and the group name appears only in Scope.
+The `Error Message` field of `pre_execution_error` shows the paths of the failed files as a `Files:` section. Each path is wrapped in quotes and listed in a display form that escapes `"`, `\`, control characters and the like. When the list fits within the display limit, all entries are shown; when it exceeds the limit, only the entries that fit are shown and the remainder is indicated as an omitted count with ` (+m more)`. The message body and `Component` contain no paths; the group name does not appear in the message body as separate metadata and is shown in Scope (a failed file path may contain a string identical to the group name). The body of a global verification error also changes to the same format, and the failed file paths previously in the body move to the `Files:` section. Update any external scripts that match on `error_message`.
 
-When collection of verification targets fails (when resolving a command's path fails), the paths of the commands that failed resolution are also shown in the same `Files:` section. In this case the message body becomes `Collection failed: <unresolved target count> of <total target count> targets unresolved`, and the verification breakdown (`Total`/`Verified`/`Failed`) is not shown.
+When collection of verification targets fails (when resolving a command's path fails), the paths of the commands that failed resolution are also shown in the same `Files:` section. In this case the message body becomes `Collection failed: <unresolved target count> of <total target count> targets unresolved, Error: failed to collect verification files`, and the verification breakdown (`Total`/`Verified`/`Failed`) is not shown.
 
-Example:
+Example (group verification failure):
 
 ```
 Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+```
+
+Example (collection failure):
+
+```
 Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
 ```
 

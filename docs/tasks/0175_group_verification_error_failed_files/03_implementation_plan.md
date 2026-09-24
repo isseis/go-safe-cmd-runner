@@ -595,7 +595,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 - [x] 削除した `runerrors` シンボル名（`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`・`ErrorSeverity`）が `docs/`（`docs/tasks/` 以外）と `README*.md` に残っていないこと。commit `066c9e59` 時点で `rg -n "ClassifiedError|ClassifyVerificationError|LogClassifiedError|LogCriticalToStderr" --glob '!docs/tasks/**' --glob '!internal/runner/runerrors/**' .` は一致なし（実行済み）。
 - [x] `runerrors/` の説明「一元化エラー処理」／"Centralized error handling" が `README.ja.md`・`README.md`・`docs/dev/developer_guide/package_reference.md` に残っていないこと（Phase 2a。commit `066c9e59` 時点の該当行は §1.3 に記録）。
-- [x] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`make verify-docs-checks`、Phase 5）。
+- [x] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`scripts/verification/compare_doc_structure.go` を直接実行して確認。見出しの数・レベルは日英で一致し、code block 数の差は本タスク以前からの既存差である。`make verify-docs-checks` は同スクリプトを実行せず、`make verify-docs` の `run_all.sh` も失敗をゲートしないため、確認は情報として行った）。
 - [x] `docs/translation_glossary.md` に Phase 5 で新しく使った用語（`Files:` 節、省略件数、収集失敗）の対訳が `/mktrans` により登録されていること。
 
 ---

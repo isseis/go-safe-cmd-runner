@@ -109,6 +109,7 @@
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
+| 表示上限 | display limit | 通知の添付フィールド値に課す長さの上限（自由文の役割で 500 byte）。失敗ファイル一覧がこれを超えると ` (+m more)` で省略件数を示す（Task 0175） |
 | データ構造 | data structure | |
 | データベース | database | |
 | デフォルト | default | |

@@ -1478,14 +1478,19 @@ runner -config config.toml
 
 **実行前エラー通知の失敗ファイル一覧**
 
-`pre_execution_error` の `Error Message` フィールドには、検証に失敗したファイルのパスが `Files:` 節として現れます。各パスは引用符で囲み、`"`・`\`・制御文字などをエスケープした表示形で並びます。一覧が表示上限に収まるときは全件を表示し、超えるときは上限内に収まる範囲だけを表示して、残りを ` (+m more)` で省略件数として示します。本文と `Component` にはパスを含めず、group 名は Scope にだけ現れます。
+`pre_execution_error` の `Error Message` フィールドには、検証に失敗したファイルのパスが `Files:` 節として現れます。各パスは引用符で囲み、`"`・`\`・制御文字などをエスケープした表示形で並びます。一覧が表示上限に収まるときは全件を表示し、超えるときは上限内に収まる範囲だけを表示して、残りを ` (+m more)` で省略件数として示します。本文と `Component` にはパスを含めず、group 名は本文へ別個のメタデータとしては現れず Scope に表示されます（失敗ファイルのパスに group 名と同名の文字列が含まれることはあります）。グローバル検証エラーの本文も同じ書式に変わり、以前は本文に含まれていた失敗ファイルのパスは `Files:` 節へ移りました。`error_message` を照合する外部スクリプトは更新してください。
 
-検証対象の収集に失敗した場合（コマンドのパス解決に失敗した場合）も、解決に失敗したコマンドのパスを同じ `Files:` 節に表示します。このとき本文は `Collection failed: <解決に失敗した対象数> of <対象総数> targets unresolved` となり、検証の内訳（`Total`／`Verified`／`Failed`）は示しません。
+検証対象の収集に失敗した場合（コマンドのパス解決に失敗した場合）も、解決に失敗したコマンドのパスを同じ `Files:` 節に表示します。このとき本文は `Collection failed: <解決に失敗した対象数> of <対象総数> targets unresolved, Error: failed to collect verification files` となり、検証の内訳（`Total`／`Verified`／`Failed`）は示しません。
 
-例:
+例（group の検証失敗）:
 
 ```
 Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+```
+
+例（収集失敗）:
+
+```
 Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
 ```
 
