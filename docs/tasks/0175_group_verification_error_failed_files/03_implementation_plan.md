@@ -386,10 +386,11 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` にアサーションを追加する。`Error Message` が `Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: ...` の形で失敗ファイルのパスを含むこと、`Component` フィールドが `verification`、stderr の `Details:` 行にパスが無いこと、`error_type` と Scope が従来どおりであること（AC-05・AC-14・AC-16）。
-- [ ] 同ファイルに `TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のグローバル `verify_files` で `(+m more)` が現れることを固定する（AC-05・AC-16）。
-- [ ] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
-- [ ] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
+- [x] `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` にアサーションを追加する。`Error Message` が `Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: ...` の形で失敗ファイルのパスを含むこと、`Component` フィールドが `verification`、stderr の `Details:` 行にパスが無いこと、`error_type` と Scope が従来どおりであること（AC-05・AC-14・AC-16）。
+- [x] 同ファイルに `TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のグローバル `verify_files` で `(+m more)` が現れることを固定する（AC-05・AC-16）。
+- [x] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
+- [x] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
+  - 実測結果（2026-09-24、linux/arm64）: スケーリングは基準を満たした（1 件あたり n = 1,000 で約 36 µs、n = 10,000 で約 36 µs）。絶対予算は満たさなかった（n = 10,000 の end-to-end が約 360 ms）。プロファイルでは約 86% が既存の `processSlice` による要素ごとの `RedactText` で、ビルダー単体は n = 10,000 で約 45 ms（予算内）だった。redaction は本タスクで変更しない（02_architecture.md §5.4）。検証マネージャのファイル単位の `slog.Error` 行も 1 件ごとに同じ redaction を通るため、この一覧が加えるのは実行がすでに払っているのと同程度のコストである。そのため CLAUDE.md「Performance」に従い最適化の仕組みは足さず、数値と結論をコミットメッセージと PR-7 に記録して閉じる。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。redaction 回帰のサブテストが `processSlice` の要素に値全体置換を足すと失敗すること、グローバルの統合テスト 2 件が `Files:` 節・省略通知・`Component`・`Detail()` へのパス連結を外すと失敗することを確認する（§4.4）。
 
