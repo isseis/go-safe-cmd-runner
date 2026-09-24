@@ -1476,6 +1476,19 @@ runner -config config.toml
 | `pre_execution_error` | 実行前エラー（対象ファイルの検証失敗など） | 高 |
 | `user_group_command_failure` | ユーザー／グループ指定コマンドの失敗 | 通常 |
 
+**実行前エラー通知の失敗ファイル一覧**
+
+`pre_execution_error` の `Error Message` フィールドには、検証に失敗したファイルのパスが `Files:` 節として現れます。各パスは引用符で囲み、`"`・`\`・制御文字などをエスケープした表示形で並びます。一覧が表示上限に収まるときは全件を表示し、超えるときは上限内に収まる範囲だけを表示して、残りを ` (+m more)` で省略件数として示します。本文と `Component` にはパスを含めず、group 名は Scope にだけ現れます。
+
+検証対象の収集に失敗した場合（コマンドのパス解決に失敗した場合）も、解決に失敗したコマンドのパスを同じ `Files:` 節に表示します。このとき本文は `Collection failed: <解決に失敗した対象数> of <対象総数> targets unresolved` となり、検証の内訳（`Total`／`Verified`／`Failed`）は示しません。
+
+例:
+
+```
+Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
+```
+
 **メッセージ書式**
 
 Slack に送信されるすべての通知は、Text 行の先頭に製品名 `go-safe-cmd-runner` を置く次の書式で統一されています。
@@ -1915,6 +1928,8 @@ record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 # 個別に検証
 verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
+
+この検証失敗は Slack の `pre_execution_error` 通知にも現れ、失敗したファイルのパスは `Error Message` の `Files:` 節に表示されます。[通知設定](#42-通知設定) の「実行前エラー通知の失敗ファイル一覧」を参照してください。
 
 詳細は [verify コマンドガイド](verify_command.ja.md) を参照してください。
 

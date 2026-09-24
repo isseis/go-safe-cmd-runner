@@ -1511,6 +1511,19 @@ runner -config config.toml
 | `pre_execution_error` | Pre-execution errors (such as target file verification failures) | High |
 | `user_group_command_failure` | Failure of a user/group-specified command | Normal |
 
+**Failed File List in Pre-Execution Error Notification**
+
+The `Error Message` field of `pre_execution_error` shows the paths of the failed files as a `Files:` section. Each path is wrapped in quotes and listed in a display form that escapes `"`, `\`, control characters and the like. When the list fits within the display limit, all entries are shown; when it exceeds the limit, only the entries that fit are shown and the remainder is indicated as an omitted count with ` (+m more)`. The message body and `Component` contain no paths, and the group name appears only in Scope.
+
+When collection of verification targets fails (when resolving a command's path fails), the paths of the commands that failed resolution are also shown in the same `Files:` section. In this case the message body becomes `Collection failed: <unresolved target count> of <total target count> targets unresolved`, and the verification breakdown (`Total`/`Verified`/`Failed`) is not shown.
+
+Example:
+
+```
+Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
+```
+
 **Message Format**
 
 All notifications sent to Slack share the following format, with the product name `go-safe-cmd-runner` at the start of the Text line.
@@ -1950,6 +1963,8 @@ record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 # Verify individually
 verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
+
+This verification failure also appears in the Slack `pre_execution_error` notification, where the paths of the failed files are shown in the `Files:` section of the `Error Message`. See "Failed File List in Pre-Execution Error Notification" in [Notification Configuration](#42-notification-configuration).
 
 For details, see [verify Command Guide](verify_command.md).
 

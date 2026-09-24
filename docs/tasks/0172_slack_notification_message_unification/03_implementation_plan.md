@@ -8,7 +8,7 @@
 | Created | 2026-09-09 |
 | Review date | 2026-09-12 |
 | Reviewer | isseis |
-| Comments | 2026-09-14: §10 の `user_group_command_failure` follow-up に解消記録を追記（タスク 0174・PR #1147）。決定を変えない editorial correction。 |
+| Comments | 2026-09-14: §10 の `user_group_command_failure` follow-up に解消記録を追記（タスク 0174・PR #1147）。決定を変えない editorial correction。<br>2026-09-24: §10 の group 検証エラー follow-up に解消記録を追記（タスク 0175）。決定を変えない editorial correction。 |
 
 ## 関連文書
 
@@ -1751,3 +1751,11 @@ AC-28 が主張する「5 個の語すべてについて 1 件以上」を確か
   表示改善（失敗ファイルを Scope と重複しない形で本文か専用フィールドへ出す）は別タスクと
   して起票する。この挙動は 0172 以前から変わっていない（旧メッセージも
   `Error: %s` に `verErr.Err.Error()` を渡していた）。
+
+  **解消済み（2026-09-24 追記）**: 上の記述は当時の記録として残す。タスク 0175
+  [`group 検証エラー通知での失敗ファイル名の表示`](../0175_group_verification_error_failed_files/01_requirements.md)
+  が、group とグローバルの検証エラー報告を共有コンストラクタ
+  `runerrors.NewVerificationPreExecutionError` に一本化し、失敗ファイル一覧を `Error Message` の
+  `Files:` 節へ `failed_file_paths` 属性として描画するようにして、本 follow-up を解消した。
+  あわせて検証対象の収集失敗でも解決に失敗したコマンドを一覧に載せる。0172 の通知種別定義・
+  共通エンベロープ・メッセージ書式・`error_type` は変更していない。

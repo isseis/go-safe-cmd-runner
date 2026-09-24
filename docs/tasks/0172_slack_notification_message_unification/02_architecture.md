@@ -8,7 +8,7 @@
 | Created | 2026-09-08 |
 | Review date | 2026-09-12 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-09-24: §3.5 の「動的な値の一覧」に `failed_file_paths` の要素の行を追加（タスク 0175）。役割の割り当て規則は同じで、適用例を 1 行足すだけの editorial correction。決定は変えていない。 |
 
 ## 関連文書
 
@@ -572,6 +572,7 @@ Text 行は常に次の形とする。
 | `user_group_command_failure` の要約（終了コード） | Text 行 | 自由文 |
 | 汎用メッセージの要約（レコードの `Message`） | Text 行 | 自由文 |
 | Error Message（`PreExecutionError.Detail()`） | `pre_execution_error` の添付フィールド | 自由文 |
+| `failed_file_paths` の要素（失敗ファイル・解決に失敗したコマンド） | `pre_execution_error` の Error Message フィールドの材料 | 自由文 |
 | Component | `pre_execution_error` の添付フィールド | 自由文 |
 | Command Count、Duration、Exit Code | 各種別の添付フィールド | 自由文 |
 | Hostname | 共通エンベロープの添付フィールド | エンベロープ値 |

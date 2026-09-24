@@ -65,6 +65,7 @@
 |--------|---------|------|
 | 能力 | capability | |
 | コードパス | code path | 実行経路の文脈 |
+| 収集失敗 | collection failure | 検証対象のコマンドパス解決に失敗し、検証を 1 件も実行しなかったこと。通知本文は検証の内訳ではなく収集段階の件数を示す（Task 0175） |
 | コマンド名分類 | command-name classification | 軸1。コマンド名だけでリスクレベルが決まる（引数を見ない）分類。軸2＝宛先パス信頼区分と対。旧称「名前固定階級」は使わない |
 | コンパイル単位 | compilation unit | ELFバイナリの文脈 |
 | 定数 | constant | プログラムの定数値 |
@@ -203,6 +204,9 @@
 | ファイル | file | |
 | ファイルパス | file path | |
 | ファイル操作コマンド | file-operation command | ファイル/ディレクトリを書込/上書/削除/リンク/展開/マウント/権限変更するコマンド（cp/rm/dd/tar/mount/chmod 等。read 専用は除く）。軸2 のパス信頼区分の判定の対象。旧称「ロケーション定義コマンド」は使わない |
+| 失敗ファイル | failed file | 検証（ハッシュ検証）に失敗したファイル、または収集で解決に失敗したコマンド（Task 0175） |
+| 失敗ファイル一覧 | failed file list | 検証エラー通知の `Error Message` に `Files:` 節として描画される失敗対象の一覧（Task 0175） |
+| `Files:` 節 | `Files:` section | 検証エラー通知の `Error Message` の末尾に失敗ファイル一覧を続ける区切り。`Files: "..."` の形（Task 0175） |
 | フィールド | field | |
 | フィールド名 | field name | |
 | 初めて | first-time | |
@@ -373,6 +377,7 @@
 | オペランド | operand | コマンド引数（宛先/source/FILE 等）。判断軸2 のゾーニングの作用対象 |
 | オペランド毎判定 | per-operand evaluation | 判断軸2 が各オペランドを個別にパス信頼区分へ分類した結果（`OperandZone` の配列・監査の `operand_zones`）。`オペランド毎`(per-operand) の判定結果を指す |
 | ordinary | ordinary | 通常パス（`/srv`・`/opt` 等、trust-critical でも safe-zone でもないパス）。判断軸2 で Medium。パス信頼区分の値の一つ |
+| 省略件数 | omitted count | 検証エラー通知で表示上限を超えた失敗ファイル一覧のうち、表示しなかった件数。` (+m more)` の m（Task 0175） |
 | オプション | optional | |
 | オプトイン | opt-in | risk_level = "high" を明示設定して許可する文脈 |
 | 最適化 | optimize / optimization | |
