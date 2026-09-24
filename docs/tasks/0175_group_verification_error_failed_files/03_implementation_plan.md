@@ -377,8 +377,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 #### 4b グローバル回帰・redaction 回帰・ベンチマーク
 
@@ -386,10 +386,12 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` にアサーションを追加する。`Error Message` が `Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: ...` の形で失敗ファイルのパスを含むこと、`Component` フィールドが `verification`、stderr の `Details:` 行にパスが無いこと、`error_type` と Scope が従来どおりであること（AC-05・AC-14・AC-16）。
-- [ ] 同ファイルに `TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のグローバル `verify_files` で `(+m more)` が現れることを固定する（AC-05・AC-16）。
-- [ ] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
-- [ ] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
+- [x] `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` にアサーションを追加する。`Error Message` が `Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: ...` の形で失敗ファイルのパスを含むこと、`Component` フィールドが `verification`、stderr の `Details:` 行にパスが無いこと、`error_type` と Scope が従来どおりであること（AC-05・AC-14・AC-16）。
+- [x] 同ファイルに `TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のグローバル `verify_files` で `(+m more)` が現れることを固定する（AC-05・AC-16）。
+- [x] `redactor_test.go` の `TestRedactingHandler_SliceStringElementRedaction`（`:2884`）にサブテスト `KeywordBearingPathElementIsKept` を追加する。`[]string{"/opt/monkey/data", "ghp_" + 36 文字のトークン形式}` のような一覧で、`key` を含むパス要素はそのまま残り、値形式の機密要素は `[REDACTED]` になること、および対照として同じ `/opt/monkey/data` を `slog.String` 属性で渡すと値全体が `[REDACTED]` になることを固定する（AC-15。層の切り分け: 値形式検出だけが動く入力と、値全体置換だけが動く入力を分ける）。
+- [x] `slack_handler_benchmark_test.go` に `BenchmarkBuildPreExecutionError_FailedFilePaths` を追加する。RedactingHandler とビルダーを通す end-to-end で、n = 1,000・n = 10,000・4 KiB のパス数件、の 3 サブベンチマークを持つ。実装時に 02_architecture.md §7.7 の基準（n = 10,000 が 100 ms 未満、1 件あたりのコストが n = 1,000 の 3 倍以内）を確認し、数値をコミットメッセージに記す。合否判定はテストに入れない。
+  - 実測結果（2026-09-24、linux/arm64）: end-to-end は n = 1,000 で約 37 ms、n = 10,000 で約 375 ms（1 件あたり約 37 µs で線形）で、絶対予算 100 ms を満たさなかった。プロファイルでは約 85% が既存の `processSlice` による要素ごとの `RedactText` だった。redaction は本タスクで変更しない（02_architecture.md §5.4）。ビルダーだけのスケーリングを end-to-end の比では検出できない（線形の redaction が大半を占めるため、ビルダーが O(n²) になっても比は 3 倍に届かない）ので、ビルダー単体の `BenchmarkRenderFailedFiles`（n = 1,000・n = 10,000）を同ファイルに追加した。ビルダー単体は n = 1,000 で約 4.3 ms、n = 10,000 で約 45 ms（1 件あたりの比は約 1.04 倍）で、予算とスケーリングの基準を満たす。
+  - 既存経路との比較: グローバル経路は `manager.go` の `"failed_files"` ログ（`[]string`）で同じ要素ごとの redaction をすでに 1 回払っている。ファイル単位の `slog.Error` も失敗ファイルごとに `file` と `error`（パスを含む）の 2 属性を redaction する。一覧の redaction は、検証エラーの報告 1 件ごと（group では失敗した group ごと）に、これと同程度のコストを加える。実行全体の wall time は測定していない。02_architecture.md §7.7 の前提（ハッシュ計算と I/O が 1 回の実行でミリ秒台）は n = 10,000 では当てはまらない。CLAUDE.md「Performance」に従い最適化の仕組みは足さない。PR-7 のレビューでレビュアーが結果を受け入れ、02_architecture.md §7.7 の予算の対象をビルダー単体に変更した（end-to-end は記録のみ）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。redaction 回帰のサブテストが `processSlice` の要素に値全体置換を足すと失敗すること、グローバルの統合テスト 2 件が `Files:` 節・省略通知・`Component`・`Detail()` へのパス連結を外すと失敗することを確認する（§4.4）。
 
@@ -405,8 +407,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: Phase 4b もプロセス全体状態を差し替えるグローバル統合テスト 2 件と end-to-end ベンチマークを含む integration-test surface で、同じ panel-mode トリガーに該当するため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -522,7 +524,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 ### 4.5 性能
 
-`BenchmarkBuildPreExecutionError_FailedFilePaths` で 02_architecture.md §7.7 の絶対予算とスケーリングを確認し、数値をコミットメッセージに記す（Phase 4b）。単体テストのしきい値にはしない。
+`BenchmarkBuildPreExecutionError_FailedFilePaths`（end-to-end）と `BenchmarkRenderFailedFiles`（ビルダー単体）で 02_architecture.md §7.7 の絶対予算とスケーリングを確認し、数値をコミットメッセージに記す（Phase 4b）。単体テストのしきい値にはしない。予算はビルダー単体に課し、end-to-end は記録のみとする（02_architecture.md §7.7。Phase 4b の実測結果を参照）。
 
 ---
 
@@ -603,7 +605,7 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 - **機能**: AC-01〜AC-08・AC-14〜AC-22 を検証するテスト・ガードが green。
 - **品質**: 各 Phase の `make fmt`・`make test`・`make lint` が green。`make deadcode` に `internal/runner/runerrors` の行が無い。§4.4 の変異確認をすべて実施し記録済み。
 - **セキュリティ**: `handleErrorCommon` の stderr 出力と `error_message` 属性に失敗ファイルのパスが現れないこと、`failed_file_paths` の要素で値形式の機密がマスクされることがテストで観測される。
-- **性能**: n = 10,000 の end-to-end 描画が 100 ms 未満で、1 件あたりのコストが n = 1,000 の 3 倍以内（ベンチマークの数値をコミットメッセージに記録）。
+- **性能**: ビルダー単体で n = 10,000 の描画が 100 ms 未満で、1 件あたりのコストが n = 1,000 の 3 倍以内。end-to-end は数値を記録する（02_architecture.md §7.7。ベンチマークの数値をコミットメッセージに記録）。
 - **文書**: 利用者向け文書（日英）が更新され、0172 アーキテクチャ設計書の動的な値の一覧に行が追加され（`Comments` に記録）、0172 実装計画書 §10 の follow-up に解消が記録されている。
 
 ---
