@@ -3,25 +3,18 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -476,38 +469,16 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 // file verification failure. The config hash is recorded in a temporary hash
 // directory, so the failure comes from the unrecorded global verify file after
 // the Slack handler is registered -- the same call site main.go reports with a
-// global scope. The in-process handler-factory seam is used because a separate
-// process cannot be handed the mock server's TLS client.
+// global scope.
 func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	unhashedFile := filepath.Join(tmpDir, "unhashed.txt")
 	require.NoError(t, os.WriteFile(unhashedFile, []byte("no hash record for this file"), 0o600))
 
-	var (
-		mu       sync.Mutex
-		payloads []logging.SlackMessage
-	)
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		var message logging.SlackMessage
-		if err := json.Unmarshal(body, &message); err == nil {
-			mu.Lock()
-			payloads = append(payloads, message)
-			mu.Unlock()
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(server.Close)
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	configFile := filepath.Join(tmpDir, "config.toml")
-	configBody := fmt.Sprintf(`
+	const runIDValue = "test-global-scope-001"
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
 version = "1.0"
 
 [global]
@@ -520,67 +491,197 @@ name = "unused_group"
 [[groups.commands]]
 name = "unused-cmd"
 cmd = "/bin/true"
-`, serverURL.Hostname(), unhashedFile)
-	require.NoError(t, os.WriteFile(configFile, []byte(configBody), 0o600))
-	configFile, err = filepath.EvalSymlinks(configFile)
-	require.NoError(t, err)
-
-	// Record the config hash with the same validator the production manager
-	// builds, so the run gets past pre-registration verification and fails on
-	// the unrecorded global target file instead.
-	hashDir := tu.SafeTempDir(t)
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
-	require.NoError(t, err)
-	_, _, err = validator.SaveRecord(configFile, true)
-	require.NoError(t, err, "recording the config hash must succeed")
-
-	restoreHashDir := cmdcommon.DefaultHashDirectory
-	cmdcommon.DefaultHashDirectory = hashDir
-	t.Cleanup(func() { cmdcommon.DefaultHashDirectory = restoreHashDir })
-
-	t.Setenv(logging.SlackWebhookURLErrorEnvVar, "https://hooks.slack.com/services/error")
-
-	restoreFactory := bootstrap.SetSlackHandlerFactory(func(opts logging.SlackHandlerOptions) (*logging.SlackHandler, error) {
-		opts.WebhookURL = server.URL
-		opts.AllowedHost = serverURL.Hostname()
-		opts.HTTPClient = server.Client()
-		return logging.NewSlackHandler(opts)
+`, slackHost, unhashedFile)
+		},
+		runID: runIDValue,
 	})
-	t.Cleanup(restoreFactory)
+	require.Equal(t, 1, run.exitCode, "the global verification failure must exit non-zero")
 
-	originalLogger := slog.Default()
-	t.Cleanup(func() { slog.SetDefault(originalLogger) })
-
-	// The package-level flag values production reads.
-	originalConfigPath, originalLogLevel, originalLogDir := configPath, logLevel, logDir
-	originalDryRun, originalGroups, originalRunID := dryRun, groups, runID
-	t.Cleanup(func() {
-		configPath, logLevel, logDir = originalConfigPath, originalLogLevel, originalLogDir
-		dryRun, groups, runID = originalDryRun, originalGroups, originalRunID
-	})
-	configPath = configFile
-	logLevel = "info"
-	logDir = tu.SafeTempDir(t)
-	dryRun = false
-	groups = ""
-	runID = ""
-
-	const runIDValue = "test-global-scope-001"
-	require.Equal(t, 1, mainWithExitCode(runIDValue), "the global verification failure must exit non-zero")
-	bootstrap.FlushSlackNotifications()
-
-	mu.Lock()
-	defer mu.Unlock()
-	require.Len(t, payloads, 1, "the global pre-execution error should reach Slack")
-	message := payloads[0]
+	message, fields := requireSinglePreExecutionError(t, run)
 	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : file_access_failed", message.Text)
 
-	require.Len(t, message.Attachments, 1)
-	fields := message.Attachments[0].Fields
 	require.GreaterOrEqual(t, len(fields), 3, "the envelope always appends three fields")
 	assert.Equal(t, "Scope", fields[len(fields)-3].Title)
 	assert.Equal(t, "(global)", fields[len(fields)-3].Value)
 	assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
 	assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
 	assert.Equal(t, runIDValue, fields[len(fields)-1].Value)
+}
+
+// groupVerificationConfig returns a configuration whose only group lists
+// verifyFiles and runs the "true" coreutil, the shape the group verification
+// tests share. The command's resolved path is what the group verifies, so the
+// caller records its hash to keep the failure list to verifyFiles. Paths are
+// quoted with %q, which matches TOML basic-string escaping only for the
+// control-free temporary paths these tests use.
+func groupVerificationConfig(slackHost string, verifyFiles []string) string {
+	quoted := make([]string, len(verifyFiles))
+	for i, file := range verifyFiles {
+		quoted[i] = fmt.Sprintf("%q", file)
+	}
+	return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "backup"
+verify_files = [%s]
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, strings.Join(quoted, ", "), trueCmdPath())
+}
+
+// resolvedTruePath returns the canonical path of the "true" coreutil, the
+// path the group verification records and verifies.
+func resolvedTruePath(t *testing.T) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(trueCmdPath())
+	require.NoError(t, err)
+	return resolved
+}
+
+// TestIntegration_GroupFileVerificationFailureListsFailedFiles drives a group
+// verification failure end to end: two unrecorded verify files, listed in a
+// non-ascending order, must reach Slack as a sorted Files section of the Error
+// Message while the human-readable stderr report names no path.
+func TestIntegration_GroupFileVerificationFailureListsFailedFiles(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	unhashedB := filepath.Join(tmpDir, "b.txt")
+	unhashedA := filepath.Join(tmpDir, "a.txt")
+	for _, file := range []string{unhashedB, unhashedA} {
+		require.NoError(t, os.WriteFile(file, []byte("no hash record"), 0o600))
+	}
+
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return groupVerificationConfig(slackHost, []string{unhashedB, unhashedA})
+		},
+		hashedFiles: []string{resolvedTruePath(t)},
+		runID:       "test-group-files-001",
+	})
+	require.Equal(t, 0, run.exitCode, "a group verification failure is reported and the run continues")
+
+	message, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=backup : group_file_verification_failed", message.Text)
+	assert.Equal(t, "group=backup", attachmentField(t, fields, "Scope"))
+	assert.Equal(t, "verification", attachmentField(t, fields, "Component"))
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Equal(t,
+		fmt.Sprintf("Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: %q, %q", unhashedA, unhashedB),
+		errorMessage)
+	assert.NotContains(t, errorMessage, "Group: backup", "the group name belongs to the scope only")
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, unhashedA)
+	assert.NotContains(t, details, unhashedB)
+	assert.NotContains(t, details, "Files:")
+}
+
+// TestIntegration_GroupFileVerificationFailureTruncatesLongList drives a group
+// verification failure whose failed-file list exceeds the free-text limit:
+// the Error Message must show sorted elements whole and count the rest in
+// "(+m more)" with m = n - shown. All generated names have the same length,
+// so the builder cannot skip one path and keep a later one; that is what lets
+// the test expect the shown paths to be exactly a prefix of the sorted list.
+func TestIntegration_GroupFileVerificationFailureTruncatesLongList(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	const n = 16
+	unhashed := make([]string, n)
+	for i := range unhashed {
+		// Descending names so the report order must come from sorting.
+		unhashed[i] = filepath.Join(tmpDir, fmt.Sprintf("snapshot-with-a-long-name-%02d.tar", n-1-i))
+		require.NoError(t, os.WriteFile(unhashed[i], []byte("no hash record"), 0o600))
+	}
+	sorted := slices.Sorted(slices.Values(unhashed))
+
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return groupVerificationConfig(slackHost, unhashed)
+		},
+		hashedFiles: []string{resolvedTruePath(t)},
+		runID:       "test-group-long-list-001",
+	})
+	require.Equal(t, 0, run.exitCode, "a group verification failure is reported and the run continues")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+	errorMessage := attachmentField(t, fields, "Error Message")
+	prefix := fmt.Sprintf("Total: %d, Verified: 1, Failed: %d, Error: group file verification failed, Files: ", n+1, n)
+	require.True(t, strings.HasPrefix(errorMessage, prefix), "unexpected Error Message: %q", errorMessage)
+
+	match := regexp.MustCompile(`^(.*) \(\+(\d+) more\)$`).FindStringSubmatch(strings.TrimPrefix(errorMessage, prefix))
+	require.NotNil(t, match, "a list this long must carry an omission notice: %q", errorMessage)
+	omitted, err := strconv.Atoi(match[2])
+	require.NoError(t, err)
+	shown := strings.Split(match[1], ", ")
+	for i, q := range shown {
+		assert.Equal(t, fmt.Sprintf("%q", sorted[i]), q, "shown path %d must be the sorted element, whole", i)
+	}
+	assert.Equal(t, n, len(shown)+omitted, "shown + omitted must equal the list length")
+	assert.Positive(t, omitted)
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, tmpDir)
+}
+
+// TestIntegration_GroupCollectionFailureListsUnresolvedTargets drives the
+// collection-failure path: two commands whose absolute paths do not exist make
+// the group fail before any file is verified, and the report must name the
+// unresolved targets only in the Files section, with the collection-stage
+// template instead of a verification summary.
+func TestIntegration_GroupCollectionFailureListsUnresolvedTargets(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	missingB := filepath.Join(tmpDir, "missing-b")
+	missingA := filepath.Join(tmpDir, "missing-a")
+
+	// A third, resolvable command keeps the unresolved count below the total,
+	// so the two counts of the template cannot be swapped unnoticed. No hash
+	// is recorded for it: collection aborts before any file is verified.
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "first"
+cmd = %q
+
+[[groups.commands]]
+name = "second"
+cmd = %q
+
+[[groups.commands]]
+name = "resolvable"
+cmd = %q
+`, slackHost, missingB, missingA, trueCmdPath())
+		},
+		runID: "test-group-collection-001",
+	})
+	require.Equal(t, 0, run.exitCode, "a collection failure is reported and the run continues")
+
+	message, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=backup : group_file_verification_failed", message.Text)
+	assert.Equal(t, "group=backup", attachmentField(t, fields, "Scope"))
+	assert.Equal(t, "verification", attachmentField(t, fields, "Component"))
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Equal(t,
+		fmt.Sprintf("Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: %q, %q", missingA, missingB),
+		errorMessage)
+	assert.NotContains(t, errorMessage, "Total:")
+	assert.NotContains(t, errorMessage, "Verified:")
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, missingA)
+	assert.NotContains(t, details, missingB)
 }

@@ -13,12 +13,9 @@ package main
 // without any test failing to announce it.
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"os"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 
@@ -113,54 +110,4 @@ func runSummaryRunID(t *testing.T, stdout string) string {
 	}
 	t.Fatalf("no RUN_SUMMARY line with a run_id field in stdout: %q", stdout)
 	return ""
-}
-
-// captureStdoutStderr runs fn with os.Stdout and os.Stderr redirected to pipes
-// and returns what it wrote to each.
-func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
-	t.Helper()
-
-	outReader, outWriter, err := os.Pipe()
-	require.NoError(t, err)
-	errReader, errWriter, err := os.Pipe()
-	require.NoError(t, err)
-
-	origStdout, origStderr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = outWriter, errWriter
-	t.Cleanup(func() {
-		os.Stdout, os.Stderr = origStdout, origStderr
-		// The write ends are normally already closed by the time fn returns;
-		// closing again here only matters if fn panicked.
-		_ = outWriter.Close()
-		_ = errWriter.Close()
-		_ = outReader.Close()
-		_ = errReader.Close()
-	})
-
-	// Drain both pipes while fn runs: a pipe holds only a fixed kernel buffer,
-	// and a writer that fills it would block forever with nobody reading.
-	var wg sync.WaitGroup
-	var outBuf, errBuf bytes.Buffer
-	for _, drain := range []struct {
-		dst *bytes.Buffer
-		src *os.File
-	}{{&outBuf, outReader}, {&errBuf, errReader}} {
-		wg.Go(func() {
-			_, _ = io.Copy(drain.dst, drain.src)
-		})
-	}
-
-	fn()
-
-	// Restore before closing, so os.Stdout and os.Stderr never name a closed
-	// pipe -- not even for the two statements below, and not if a Close error
-	// aborts this function early.
-	os.Stdout, os.Stderr = origStdout, origStderr
-
-	// Close the write ends so the drain goroutines see EOF and finish.
-	require.NoError(t, outWriter.Close())
-	require.NoError(t, errWriter.Close())
-	wg.Wait()
-
-	return outBuf.String(), errBuf.String()
 }

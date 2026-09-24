@@ -110,7 +110,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | テスト | 位置 | 影響 |
 |---|---|---|
 | `TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage` | `internal/runner/runner_test.go:2385-2431` | `tu.NewLogRecorder` を直接 `slog.SetDefault` しており RedactingHandler を通らない。既存アサーションは成立し続ける。`FailedFilePaths`・`Component` の検証は RedactingHandler を通す新しいテストで行う |
-| `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` | `cmd/runner/integration_pre_execution_error_test.go:481-586` | Slack モックサーバー・ハッシュ登録・`bootstrap.SetSlackHandlerFactory`・フラグ退避の手順がここにある。stderr は捕捉していない。group 用の 3 テストとグローバルの拡張はこの手順を共有するため、`cmd/runner/integration_test_helpers.go`（既存、`//go:build test`）へ共通部分を抽出する。stderr の捕捉には同じ `package main` にある既存の `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`）を再利用し、新しい捕捉ヘルパは作らない。同関数は `os.Stdout`・`os.Stderr` をパイプへ差し替え、両パイプを goroutine で並行して読み切り、書き込み側を閉じてから待つため、長い一覧を出す統合テストでもパイプの固定バッファが満杯になって `mainWithExitCode` が止まることがない。`integration_logger_test.go:220-226` の手法は `os.Stderr` の退避と復元だけでパイプを持たず、出力を読めないため使えない。`internal/logging` の `captureErrorOutput`（`pre_execution_error_test.go:428`）は `_test.go` にあり import できない |
+| `TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` | `cmd/runner/integration_pre_execution_error_test.go:481-586` | Slack モックサーバー・ハッシュ登録・`bootstrap.SetSlackHandlerFactory`・フラグ退避の手順がここにある。stderr は捕捉していない。group 用の 3 テストとグローバルの拡張はこの手順を共有するため、`cmd/runner/integration_test_helpers.go`（既存、`//go:build test`）へ共通部分を抽出する。stderr の捕捉には同じ `package main` にある既存の `captureStdoutStderr`（計画時点では `cmd/runner/startup_privilege_test.go:120-165`。Phase 4a で `integration_test_helpers.go` へ移した。§1.5）を再利用し、新しい捕捉ヘルパは作らない。同関数は `os.Stdout`・`os.Stderr` をパイプへ差し替え、両パイプを goroutine で並行して読み切り、書き込み側を閉じてから待つため、長い一覧を出す統合テストでもパイプの固定バッファが満杯になって `mainWithExitCode` が止まることがない。`integration_logger_test.go:220-226` の手法は `os.Stderr` の退避と復元だけでパイプを持たず、出力を読めないため使えない。`internal/logging` の `captureErrorOutput`（`pre_execution_error_test.go:428`）は `_test.go` にあり import できない |
 | 統合テストのプロセス全体状態 | 同上 `:539-570` | パッケージ変数（`configPath`・`dryRun` など）、`cmdcommon.DefaultHashDirectory`、`slog.Default`、Slack ハンドラファクトリを差し替える。これらのテストは `t.Parallel` を使わない。`dryRun = false` を必ず設定する（dry-run では `VerifyGlobalFiles`・`VerifyGroupFiles` が失敗を `result, nil` で返し（`manager.go:163-165`・`:236-238`）、検証エラーが発火しない） |
 | `TestRedactingHandler_SliceStringElementRedaction` | `internal/redaction/redactor_test.go:2884` | 機密要素のマスクと非機密要素の保持を既に固定する。`key` を含む普通のパス要素（`/opt/monkey/data`）が残ることと、同じ文字列が `KindString` 属性では値全体置換されることの対照はまだ無い。サブテストとして追加する |
 | `TestVerifyGroupFiles_OldSchema_BlocksExecution` | `internal/verification/manager_test.go:1866` | `Details` 付きの検証失敗を返す。並びは新しいテストで固定するため変更しない |
@@ -124,7 +124,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 ### 1.4 テストヘルパーの方針
 
 - **`internal/testutil/identitymutationguard/helpers.go`（既存・Classification A）**: `ParseSource`・`IsNamedType`・`ElidedCompositeLiterals`・`UnwrapParen` と、`ElidedCompositeLiterals` が依存する非公開の `compositeElementType` を追加する（`internal/logging` からの移動。§1.5。Phase 1）。`UnwrapParen` は slack_notify ガードの 3 関数も使うため公開名にする。`go/ast` だけに依存し公開 API のみを使うため、この配置でよい。
-- **`cmd/runner/integration_test_helpers.go`（既存・`//go:build test`）**: Slack モックサーバーと in-process 実行の共通手順を関数に抽出する（`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` から切り出す）。`package main` の非公開フラグ変数を退避するため Classification B である。stderr の捕捉はここに新設せず、同じ `package main` の既存 `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`。パイプを goroutine で読み切る）を再利用する。`integration_logger_test.go:220-226` の `os.Stderr` 退避・復元はパイプを持たず出力を読めないため、手本にしない。
+- **`cmd/runner/integration_test_helpers.go`（既存・`//go:build test`）**: Slack モックサーバーと in-process 実行の共通手順を関数に抽出する（`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope` から切り出す）。`package main` の非公開フラグ変数を退避するため Classification B である。stderr の捕捉はここに新設せず、同じ `package main` の既存 `captureStdoutStderr`（計画時点では `cmd/runner/startup_privilege_test.go:120-165`。パイプを goroutine で読み切る。Phase 4a で本ファイルへ移した。§1.5）を再利用する。`integration_logger_test.go:220-226` の `os.Stderr` 退避・復元はパイプを持たず出力を読めないため、手本にしない。
 - **`internal/logging/test_helpers.go`（既存）**: `failed_file_paths` 付きレコードを RedactingHandler に通してビルダーへ渡す補助が 2 つ以上のテストで必要になれば、ここに置く。1 つのテストだけなら置かない。
 - 新しいヘルパーファイルは作らない。
 
@@ -144,6 +144,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 | `runerrors.LogCriticalToStderr` | （なし） | 削除 |
 | `runerrors.LogClassifiedError` | （なし） | 削除 |
 | `internal/runner/runerrors/{types,classification,logging}.go`・`{classification,logging}_test.go` | `internal/runner/runerrors/pre_execution.go`・`pre_execution_test.go`・`pre_execution_guard_test.go`・`doc.go`（新設） | ファイルの削除と新設 |
+| `cmd/runner/startup_privilege_test.go::captureStdoutStderr` | `cmd/runner/integration_test_helpers.go::captureStdoutStderr` | 移動（内容は変えない。Phase 4a。`//go:build test` のヘルパファイルから `_test.go` の関数は参照できないため） |
 
 本書の他の箇所・AC 表・横断検索の記述は、すべてこの表に従う。
 
@@ -341,8 +342,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 横断的なテスト・redaction 回帰・ベンチマーク・グローバル回帰
 
@@ -354,11 +355,11 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `cmd/runner/integration_test_helpers.go` に、`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`（`:481-586`）の共通手順（Slack モックサーバー、設定ファイルのハッシュ登録、`bootstrap.SetSlackHandlerFactory`、フラグ変数の退避、`mainWithExitCode` の実行と `FlushSlackNotifications`）を関数に抽出し、既存テストをそれで書き直す。ヘルパは `dryRun = false` を必ず設定し（§1.3）、これを使うテストは `t.Parallel` を呼ばない。
-- [ ] stderr の捕捉には、同じ `package main` にある既存の `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`）を再利用し、`mainWithExitCode` の実行をその `fn` の中で行う。同関数は `os.Stdout`・`os.Stderr` をパイプへ差し替え、両パイプを goroutine で並行して読み切り、書き込み側を閉じてから待つため、長い一覧を出す統合テスト（`TruncatesLongList` の 2 件）でもパイプの固定バッファが満杯になって `mainWithExitCode` が止まることがない。新しい捕捉ヘルパは作らない（`integration_logger_test.go:220-226` の手法は `os.Stderr` の退避と復元だけでパイプを持たず、出力を読めない）。非対話実行の stderr には `handleErrorCommon` の `  Details:` 行のほかに、構造化ログ行（`failed_file_paths=[...]` を含む）と検証マネージャのファイル単位の `slog.Error` 行も流れる（02_architecture.md §5.2 の残存リスク）。したがって以下の統合テストの「stderr にパスが無い」アサーションは `  Details:` 行だけを対象にし、stderr 全体には広げない。
-- [ ] `integration_pre_execution_error_test.go` に `TestIntegration_GroupFileVerificationFailureListsFailedFiles` を追加する。group の `verify_files` にハッシュ未登録のファイル 2 件以上（昇順でない名前で作る）を置き、`Error Message` が `Total: N, Verified: N, Failed: N, Error: group file verification failed, Files: ...` の形で各パスを表示形で含むこと、`Component` フィールドが `verification`、Text 行の Scope が `group=<name>`、`Error Message` に `Group: <name>` が無いこと、`error_type` が `group_file_verification_failed`、stderr の `Details:` 行にパスが無いことを固定する（AC-01・AC-03・AC-05・AC-06・AC-07・AC-14）。group のコマンド（`/bin/true` など）もハッシュ対象に入るため、ハッシュを登録するか失敗一覧に含めるかを決めて期待値を組む。
-- [ ] 同ファイルに `TestIntegration_GroupFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のハッシュ未登録ファイルで、`Error Message` に `(+m more)` が現れ m が `n - 掲載件数` に等しいことを固定する（AC-02・AC-06）。
-- [ ] 同ファイルに `TestIntegration_GroupCollectionFailureListsUnresolvedTargets` を追加する。存在しない絶対パスのコマンドを 2 件以上持つ group で、`Error Message` が `Collection failed: 2 of N targets unresolved, Error: failed to collect verification files, Files: ...` の形で対象名を含み `Total:`／`Verified:` を含まないこと、stderr の `Details:` 行に対象名が無いこと、`error_type` が `group_file_verification_failed` のままであることを固定する（AC-17）。
+- [x] `cmd/runner/integration_test_helpers.go` に、`TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope`（`:481-586`）の共通手順（Slack モックサーバー、設定ファイルのハッシュ登録、`bootstrap.SetSlackHandlerFactory`、フラグ変数の退避、`mainWithExitCode` の実行と `FlushSlackNotifications`）を関数に抽出し、既存テストをそれで書き直す。ヘルパは `dryRun = false` を必ず設定し（§1.3）、これを使うテストは `t.Parallel` を呼ばない。
+- [x] stderr の捕捉には、同じ `package main` にある既存の `captureStdoutStderr`（`cmd/runner/startup_privilege_test.go:120-165`）を再利用し、`mainWithExitCode` の実行をその `fn` の中で行う。同関数は `os.Stdout`・`os.Stderr` をパイプへ差し替え、両パイプを goroutine で並行して読み切り、書き込み側を閉じてから待つため、長い一覧を出す統合テスト（`TruncatesLongList` の 2 件）でもパイプの固定バッファが満杯になって `mainWithExitCode` が止まることがない。`captureStdoutStderr` は `_test.go` に置かれていたが、`//go:build test` の `integration_test_helpers.go` から参照すると `-tags test` でのバイナリビルド（dry-run 統合テストが行う）が失敗するため、同関数をそのまま `integration_test_helpers.go` へ移した（内容は変えない）。新しい捕捉ヘルパは作らない（`integration_logger_test.go:220-226` の手法は `os.Stderr` の退避と復元だけでパイプを持たず、出力を読めない）。非対話実行の stderr には `handleErrorCommon` の `  Details:` 行のほかに、構造化ログ行（`failed_file_paths=[...]` を含む）と検証マネージャのファイル単位の `slog.Error` 行も流れる（02_architecture.md §5.2 の残存リスク）。したがって以下の統合テストの「stderr にパスが無い」アサーションは `  Details:` 行だけを対象にし、stderr 全体には広げない。
+- [x] `integration_pre_execution_error_test.go` に `TestIntegration_GroupFileVerificationFailureListsFailedFiles` を追加する。group の `verify_files` にハッシュ未登録のファイル 2 件以上（昇順でない名前で作る）を置き、`Error Message` が `Total: N, Verified: N, Failed: N, Error: group file verification failed, Files: ...` の形で各パスを表示形で含むこと、`Component` フィールドが `verification`、Text 行の Scope が `group=<name>`、`Error Message` に `Group: <name>` が無いこと、`error_type` が `group_file_verification_failed`、stderr の `Details:` 行にパスが無いことを固定する（AC-01・AC-03・AC-06・AC-07・AC-14。AC-05 はグローバル経路の基準であり §7 のとおり Phase 4b で検証する）。group のコマンド（`/bin/true` など）もハッシュ対象に入るため、ハッシュを登録するか失敗一覧に含めるかを決めて期待値を組む。
+- [x] 同ファイルに `TestIntegration_GroupFileVerificationFailureTruncatesLongList` を追加する。上限を超える件数のハッシュ未登録ファイルで、`Error Message` に `(+m more)` が現れ m が `n - 掲載件数` に等しいことを固定する（AC-02・AC-06）。
+- [x] 同ファイルに `TestIntegration_GroupCollectionFailureListsUnresolvedTargets` を追加する。存在しない絶対パスのコマンドを 2 件以上持つ group で、`Error Message` が `Collection failed: 2 of N targets unresolved, Error: failed to collect verification files, Files: ...` の形で対象名を含み `Total:`／`Verified:` を含まないこと、stderr の `Details:` 行に対象名が無いこと、`error_type` が `group_file_verification_failed` のままであることを固定する（AC-17）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。group の統合テスト 3 件が対応する分岐（`Files:` 節の付与・省略通知・収集失敗テンプレート）を外すと失敗することを確認する（§4.4）。
 
@@ -374,8 +375,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: Slack モックサーバー・プロセス全体状態の差し替え・stderr パイプ捕捉を伴う統合テスト 3 件と、既存統合テストからの共通ヘルパ抽出を含む heavy integration-test surface で、mkplan.md step 8 の panel-mode トリガーに該当するため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
