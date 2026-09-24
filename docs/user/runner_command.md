@@ -1517,7 +1517,8 @@ The `Error Message` of `pre_execution_error` shows the failed targets as a `File
 
 Display rules for the list:
 
-- When the list fits within the display limit, all targets are shown.
+- The display limit applies to the complete `Error Message` (the summary, the `Files:` separator, the list, and the omission notice). Even when the quoted paths alone are under the limit, a long summary still causes some targets to be omitted.
+- When the whole field, up to and including the list, fits within the limit, all targets are shown (no omission notice).
 - When it exceeds the limit, only the targets that fit are shown, and the remainder is indicated as an omitted count with ` (+m more)`.
 - When not even one target fits in full, the first is truncated to fit the limit and `…` is appended after the closing quote (e.g., `Files: "/very/long/pa"… (+2 more)`). Here ` (+m more)` is the count of targets other than the first, and it is not appended when there is only one target.
 - The message body and `Component` contain no paths; the group name is shown only in Scope (a path may contain a string identical to the group name).
