@@ -464,12 +464,41 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 		"the human-readable block should keep the whole guidance, not just its first line")
 }
 
+// globalVerificationConfig returns a configuration that lists verifyFiles as
+// global verify files and carries one group that never runs, the shape the
+// global verification tests share. Global verification fails before any group
+// is verified, so the group's command is not part of the failure list. Paths
+// are quoted with %q, which matches TOML basic-string escaping only for the
+// control-free temporary paths these tests use.
+func globalVerificationConfig(slackHost string, verifyFiles []string) string {
+	quoted := make([]string, len(verifyFiles))
+	for i, file := range verifyFiles {
+		quoted[i] = fmt.Sprintf("%q", file)
+	}
+	return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+verify_files = [%s]
+
+[[groups]]
+name = "unused_group"
+
+[[groups.commands]]
+name = "unused-cmd"
+cmd = "/bin/true"
+`, slackHost, strings.Join(quoted, ", "))
+}
+
 // TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope drives
 // the production reporting boundary (mainWithExitCode) up to the global target
 // file verification failure. The config hash is recorded in a temporary hash
 // directory, so the failure comes from the unrecorded global verify file after
 // the Slack handler is registered -- the same call site main.go reports with a
-// global scope.
+// global scope. The report must use the template and Component the group
+// report uses, name the failed file only in the Files section, and keep the
+// path out of the human-readable stderr report.
 func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
 	unhashedFile := filepath.Join(tmpDir, "unhashed.txt")
@@ -478,20 +507,7 @@ func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testi
 	const runIDValue = "test-global-scope-001"
 	run := runMainWithSlackMock(t, slackRunSpec{
 		configBody: func(slackHost string) string {
-			return fmt.Sprintf(`
-version = "1.0"
-
-[global]
-slack_allowed_host = %q
-verify_files = [%q]
-
-[[groups]]
-name = "unused_group"
-
-[[groups.commands]]
-name = "unused-cmd"
-cmd = "/bin/true"
-`, slackHost, unhashedFile)
+			return globalVerificationConfig(slackHost, []string{unhashedFile})
 		},
 		runID: runIDValue,
 	})
@@ -506,6 +522,79 @@ cmd = "/bin/true"
 	assert.Equal(t, "Hostname", fields[len(fields)-2].Title)
 	assert.Equal(t, "Run ID", fields[len(fields)-1].Title)
 	assert.Equal(t, runIDValue, fields[len(fields)-1].Value)
+
+	assert.Equal(t, "verification", attachmentField(t, fields, "Component"))
+	assert.Equal(t,
+		fmt.Sprintf("Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: %q", unhashedFile),
+		attachmentField(t, fields, "Error Message"))
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, unhashedFile)
+	assert.NotContains(t, details, "Files:")
+}
+
+// TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList drives
+// a global verification failure whose failed-file list exceeds the free-text
+// limit: the global report must apply the same budget as the group report,
+// showing sorted elements whole and counting the rest in "(+m more)".
+func TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	unhashed := unhashedLongNameFiles(t, tmpDir)
+
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return globalVerificationConfig(slackHost, unhashed)
+		},
+		runID: "test-global-long-list-001",
+	})
+	require.Equal(t, 1, run.exitCode, "the global verification failure must exit non-zero")
+
+	// Checked before the require-based list assertions below, so a path in
+	// the human-readable report is reported even when the list is also wrong.
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, tmpDir)
+
+	_, fields := requireSinglePreExecutionError(t, run)
+	n := len(unhashed)
+	requireSortedPrefixWithOmissionCount(t,
+		attachmentField(t, fields, "Error Message"),
+		fmt.Sprintf("Total: %d, Verified: 0, Failed: %d, Error: global file verification failed, Files: ", n, n),
+		slices.Sorted(slices.Values(unhashed)))
+}
+
+// unhashedLongNameFiles creates, in dir, more same-length unrecorded files
+// than the free-text limit can list and returns them in descending order, so
+// a sorted report order must come from sorting. The equal lengths keep the
+// builder from skipping one path and keeping a later one, which is what lets
+// requireSortedPrefixWithOmissionCount expect a prefix of the sorted list.
+func unhashedLongNameFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	const n = 16
+	files := make([]string, n)
+	for i := range files {
+		files[i] = filepath.Join(dir, fmt.Sprintf("snapshot-with-a-long-name-%02d.tar", n-1-i))
+		require.NoError(t, os.WriteFile(files[i], []byte("no hash record"), 0o600))
+	}
+	return files
+}
+
+// requireSortedPrefixWithOmissionCount asserts that errorMessage is prefix
+// followed by a leading run of sorted, each element quoted whole, and a
+// " (+m more)" notice whose m counts the elements left out.
+func requireSortedPrefixWithOmissionCount(t *testing.T, errorMessage, prefix string, sorted []string) {
+	t.Helper()
+	require.True(t, strings.HasPrefix(errorMessage, prefix), "unexpected Error Message: %q", errorMessage)
+
+	match := regexp.MustCompile(`^(.*) \(\+(\d+) more\)$`).FindStringSubmatch(strings.TrimPrefix(errorMessage, prefix))
+	require.NotNil(t, match, "a list this long must carry an omission notice: %q", errorMessage)
+	omitted, err := strconv.Atoi(match[2])
+	require.NoError(t, err)
+	shown := strings.Split(match[1], ", ")
+	for i, q := range shown {
+		assert.Equal(t, fmt.Sprintf("%q", sorted[i]), q, "shown path %d must be the sorted element, whole", i)
+	}
+	assert.Equal(t, len(sorted), len(shown)+omitted, "shown + omitted must equal the list length")
+	assert.Positive(t, omitted)
 }
 
 // groupVerificationConfig returns a configuration whose only group lists
@@ -585,19 +674,10 @@ func TestIntegration_GroupFileVerificationFailureListsFailedFiles(t *testing.T) 
 // TestIntegration_GroupFileVerificationFailureTruncatesLongList drives a group
 // verification failure whose failed-file list exceeds the free-text limit:
 // the Error Message must show sorted elements whole and count the rest in
-// "(+m more)" with m = n - shown. All generated names have the same length,
-// so the builder cannot skip one path and keep a later one; that is what lets
-// the test expect the shown paths to be exactly a prefix of the sorted list.
+// "(+m more)" with m = n - shown.
 func TestIntegration_GroupFileVerificationFailureTruncatesLongList(t *testing.T) {
 	tmpDir := tu.SafeTempDir(t)
-	const n = 16
-	unhashed := make([]string, n)
-	for i := range unhashed {
-		// Descending names so the report order must come from sorting.
-		unhashed[i] = filepath.Join(tmpDir, fmt.Sprintf("snapshot-with-a-long-name-%02d.tar", n-1-i))
-		require.NoError(t, os.WriteFile(unhashed[i], []byte("no hash record"), 0o600))
-	}
-	sorted := slices.Sorted(slices.Values(unhashed))
+	unhashed := unhashedLongNameFiles(t, tmpDir)
 
 	run := runMainWithSlackMock(t, slackRunSpec{
 		configBody: func(slackHost string) string {
@@ -608,24 +688,17 @@ func TestIntegration_GroupFileVerificationFailureTruncatesLongList(t *testing.T)
 	})
 	require.Equal(t, 0, run.exitCode, "a group verification failure is reported and the run continues")
 
-	_, fields := requireSinglePreExecutionError(t, run)
-	errorMessage := attachmentField(t, fields, "Error Message")
-	prefix := fmt.Sprintf("Total: %d, Verified: 1, Failed: %d, Error: group file verification failed, Files: ", n+1, n)
-	require.True(t, strings.HasPrefix(errorMessage, prefix), "unexpected Error Message: %q", errorMessage)
-
-	match := regexp.MustCompile(`^(.*) \(\+(\d+) more\)$`).FindStringSubmatch(strings.TrimPrefix(errorMessage, prefix))
-	require.NotNil(t, match, "a list this long must carry an omission notice: %q", errorMessage)
-	omitted, err := strconv.Atoi(match[2])
-	require.NoError(t, err)
-	shown := strings.Split(match[1], ", ")
-	for i, q := range shown {
-		assert.Equal(t, fmt.Sprintf("%q", sorted[i]), q, "shown path %d must be the sorted element, whole", i)
-	}
-	assert.Equal(t, n, len(shown)+omitted, "shown + omitted must equal the list length")
-	assert.Positive(t, omitted)
-
+	// Checked before the require-based list assertions below, so a path in
+	// the human-readable report is reported even when the list is also wrong.
 	details := stderrDetailsLine(t, run.stderr)
 	assert.NotContains(t, details, tmpDir)
+
+	_, fields := requireSinglePreExecutionError(t, run)
+	n := len(unhashed)
+	requireSortedPrefixWithOmissionCount(t,
+		attachmentField(t, fields, "Error Message"),
+		fmt.Sprintf("Total: %d, Verified: 1, Failed: %d, Error: group file verification failed, Files: ", n+1, n),
+		slices.Sorted(slices.Values(unhashed)))
 }
 
 // TestIntegration_GroupCollectionFailureListsUnresolvedTargets drives the

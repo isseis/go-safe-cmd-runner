@@ -2983,6 +2983,50 @@ func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
 		// All elements should have survived redaction
 		assert.Len(t, anySlice, len(mixedSlice))
 	})
+
+	// A failed-file list is a string slice: its elements get text-based
+	// redaction only, so a path that merely contains a sensitive word survives
+	// while a bare token inside the same list is masked. The same path as a
+	// plain string attribute is replaced whole, which is why the list must not
+	// be folded into a free-text message.
+	t.Run("KeywordBearingPathElementIsKept", func(t *testing.T) {
+		const keywordPath = "/opt/monkey/data"
+		const token = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+		key := common.PreExecErrorAttrs.FailedFilePaths
+
+		// Each input is chosen so only one layer can act on it. keywordPath is
+		// caught by the whole-value heuristic and by nothing in RedactText;
+		// token is caught by value-format detection and not by the key-name
+		// patterns.
+		require.True(t, config.patterns.IsSensitiveValue(keywordPath),
+			"the path must trip the whole-value heuristic, or keeping it proves nothing")
+		require.Equal(t, keywordPath, config.RedactText(keywordPath),
+			"text-based redaction must leave the path alone, or it cannot be what keeps the element")
+		keyNameOnly, err := NewConfig()
+		require.NoError(t, err)
+		keyNameOnly.valueDetector = nil
+		require.Equal(t, token, keyNameOnly.RedactText(token),
+			"the token must carry no key name, or masking it proves nothing about value-format detection")
+
+		mock := newMockHandler()
+		slog.New(NewRedactingHandler(mock, config, nil)).Info("Test message",
+			slog.Any(key, []string{keywordPath, token}))
+		require.Len(t, mock.records, 1)
+		var elements []any
+		mock.records[0].Attrs(func(attr slog.Attr) bool {
+			if attr.Key == key {
+				elements, _ = attr.Value.Any().([]any)
+				return false
+			}
+			return true
+		})
+		assert.Equal(t, []any{keywordPath, DefaultPlaceholder}, elements,
+			"the path element must be kept and the token element masked")
+
+		// Control: the same path as a plain string attribute is replaced whole.
+		plain := redactOneAttr(t, slog.String(key, keywordPath))
+		assert.Equal(t, DefaultPlaceholder, plain.Value.String())
+	})
 }
 
 // TestContainsRedactingHandler tests the containsRedactingHandler helper function
