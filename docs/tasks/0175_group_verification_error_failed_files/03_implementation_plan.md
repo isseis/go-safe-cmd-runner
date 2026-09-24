@@ -375,7 +375,7 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: Slack モックサーバー・プロセス全体状態の差し替え・stderr パイプ捕捉を伴う統合テスト 3 件と、既存統合テストからの共通ヘルパ抽出を含む heavy integration-test surface で、mkplan.md step 8 の panel-mode トリガーに該当するため。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
