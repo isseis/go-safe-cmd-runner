@@ -1511,6 +1511,34 @@ runner -config config.toml
 | `pre_execution_error` | Pre-execution errors (such as target file verification failures) | High |
 | `user_group_command_failure` | Failure of a user/group-specified command | Normal |
 
+**Failed File List in Pre-Execution Error Notification**
+
+The `Error Message` of `pre_execution_error` shows the failed targets as a `Files:` section. Each target is wrapped in quotes and shown with `"`, `\`, control characters and the like escaped. Keyed secrets such as `password=...` and token-like values are redacted and replaced with `[REDACTED]`.
+
+Display rules for the list:
+
+- The display limit applies to the complete `Error Message` (the summary, the `Files:` separator, the list, and the omission notice). Even when the quoted paths alone are under the limit, a long summary still causes some targets to be omitted.
+- When the whole field, up to and including the list, fits within the limit, all targets are shown (no omission notice).
+- When it exceeds the limit, only the targets that fit are shown, and the remainder is indicated as an omitted count with ` (+m more)`.
+- When not even one target fits in full, the first is truncated to fit the limit and `…` is appended after the closing quote (e.g., `Files: "/very/long/pa"… (+2 more)`). Here ` (+m more)` is the count of targets other than the first, and it is not appended when there is only one target.
+- The message body and `Component` contain no paths; the group name is shown only in Scope (a path may contain a string identical to the group name).
+
+A global verification error uses the same format, and the paths previously in the body move to the `Files:` section. `error_message` is deliberately path-free, and the `Files:` section is assembled only by the Slack notification builder, so it never appears in the structured-log `error_message`. External scripts that match on `error_message`, or structured-log consumers that extract failed paths, should read the new `failed_file_paths` attribute.
+
+When collection of verification targets fails, the commands that failed resolution are shown in the `Files:` section as written in the configuration (the value of `cmd` after variable expansion). When only a command name is specified, as in `cmd = "backup-tool"`, it is shown as `"backup-tool"` rather than as a path. The message body becomes `Collection failed: <unresolved target count> of <total target count> targets unresolved, Error: failed to collect verification files`, and `Total`/`Verified`/`Failed` are not shown.
+
+Example (group verification failure):
+
+```
+Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+```
+
+Example (collection failure):
+
+```
+Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
+```
+
 **Message Format**
 
 All notifications sent to Slack share the following format, with the product name `go-safe-cmd-runner` at the start of the Text line.
@@ -1950,6 +1978,8 @@ record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 # Verify individually
 verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
+
+This verification failure also appears in the Slack `pre_execution_error` notification, where the paths of the failed files are shown in the `Files:` section of the `Error Message`. See "Failed File List in Pre-Execution Error Notification" in [Notification Configuration](#42-notification-configuration).
 
 For details, see [verify Command Guide](verify_command.md).
 

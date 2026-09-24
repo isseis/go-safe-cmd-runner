@@ -1476,6 +1476,34 @@ runner -config config.toml
 | `pre_execution_error` | 実行前エラー（対象ファイルの検証失敗など） | 高 |
 | `user_group_command_failure` | ユーザー／グループ指定コマンドの失敗 | 通常 |
 
+**実行前エラー通知の失敗ファイル一覧**
+
+`pre_execution_error` の `Error Message` には、失敗対象が `Files:` 節として現れます。各対象は引用符で囲み、`"`・`\`・制御文字などをエスケープして表示します。`password=...` のようなキー付きの機密値やトークン形式の値は redaction され、`[REDACTED]` に置き換わります。
+
+一覧の表示規則:
+
+- 表示上限は `Error Message` 全体（本文、`Files:` の区切り、一覧、省略通知）に適用します。引用したパスだけが上限内でも、本文が長いと一部が省略されます。
+- 一覧まで含めて上限内に収まるときは全件を表示します（省略通知は付きません）。
+- 超えるときは上限内に収まる範囲だけを表示し、残りを ` (+m more)` で省略件数として示します。
+- 丸ごと収まる対象が 1 件も無いときは、先頭を上限内の長さに切り詰め、閉じ引用符の後に `…` を付けます（例: `Files: "/very/long/pa"… (+2 more)`）。このときの ` (+m more)` は先頭以外の件数で、対象が 1 件なら付きません。
+- 本文と `Component` にパスは含めず、group 名は Scope にだけ表示します（パスに同名の文字列が含まれることはあります）。
+
+グローバル検証エラーも同じ書式になり、以前は本文にあったパスは `Files:` 節へ移りました。`error_message` は意図的にパスを含まず、`Files:` 節は Slack 通知ビルダーだけが組み立てるため構造化ログの `error_message` には現れません。`error_message` を照合する外部スクリプトや、失敗したパスを抽出する構造化ログの消費者は、新しい `failed_file_paths` 属性を参照してください。
+
+検証対象の収集に失敗した場合は、解決に失敗したコマンドを設定どおり（変数展開後の `cmd` の値）`Files:` 節に表示します。`cmd = "backup-tool"` のようにコマンド名だけを指定した場合は、パスではなく `"backup-tool"` と表示します。本文は `Collection failed: <解決に失敗した対象数> of <対象総数> targets unresolved, Error: failed to collect verification files` となり、`Total`／`Verified`／`Failed` は示しません。
+
+例（group の検証失敗）:
+
+```
+Total: 3, Verified: 1, Failed: 2, Error: group file verification failed, Files: "/var/backup/a.txt", "/var/backup/b.txt"
+```
+
+例（収集失敗）:
+
+```
+Collection failed: 2 of 3 targets unresolved, Error: failed to collect verification files, Files: "/opt/missing-a", "/opt/missing-b"
+```
+
 **メッセージ書式**
 
 Slack に送信されるすべての通知は、Text 行の先頭に製品名 `go-safe-cmd-runner` を置く次の書式で統一されています。
@@ -1915,6 +1943,8 @@ record /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes -force
 # 個別に検証
 verify /usr/bin/backup.sh -d /usr/local/etc/go-safe-cmd-runner/hashes
 ```
+
+この検証失敗は Slack の `pre_execution_error` 通知にも現れ、失敗したファイルのパスは `Error Message` の `Files:` 節に表示されます。[通知設定](#42-通知設定) の「実行前エラー通知の失敗ファイル一覧」を参照してください。
 
 詳細は [verify コマンドガイド](verify_command.ja.md) を参照してください。
 

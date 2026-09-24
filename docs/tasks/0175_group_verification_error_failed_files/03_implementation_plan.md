@@ -409,8 +409,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 文書の更新
 
@@ -418,11 +418,11 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **作業内容**:
 
-- [ ] `runner_command.ja.md` の「通知されるメッセージ種別」（`:1476` の `pre_execution_error` 行の周辺）またはその直後に、検証エラー通知の `Error Message` が失敗ファイル一覧を `Files:` 節として表示すること、上限を超えるときは `(+m more)` で省略件数を示すこと、収集失敗では解決に失敗したコマンドを一覧に載せることを追記する。「ファイル検証エラー」（`:1898`）から相互参照する。記述は Phase 4a・4b の統合テストが観測した実際の `Error Message` を典拠にする。
-- [ ] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。
-- [ ] 0172 アーキテクチャ設計書 §3.5「動的な値の一覧」（`02_architecture.md:560-580`）に `failed_file_paths` の要素（`pre_execution_error` の `Error Message` フィールドの材料、役割は自由文）の行を追加する。editorial correction として扱い、`Status` は `approved` のまま変えず、`Comments` に本タスク（0175）からの追加である旨と決定を変えていない旨を書く（02_architecture.md §5.2）。
-- [ ] 0172 実装計画書 §10（`03_implementation_plan.md:1746-1753`）の group 検証エラーの follow-up に、0174 と同じ形式で「解消済み（2026-MM-DD 追記）」と本タスクへのリンクを追記する。
-- [ ] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
+- [x] `runner_command.ja.md` の「通知されるメッセージ種別」（`:1476` の `pre_execution_error` 行の周辺）またはその直後に、検証エラー通知の `Error Message` が失敗ファイル一覧を `Files:` 節として表示すること、上限を超えるときは `(+m more)` で省略件数を示すこと、収集失敗では解決に失敗したコマンドを一覧に載せることを追記する。「ファイル検証エラー」（`:1898`）から相互参照する。記述は Phase 4a・4b の統合テストが観測した実際の `Error Message` を典拠にする。
+- [x] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。
+- [x] 0172 アーキテクチャ設計書 §3.5「動的な値の一覧」（`02_architecture.md:560-580`）に `failed_file_paths` の要素（`pre_execution_error` の `Error Message` フィールドの材料、役割は自由文）の行を追加する。editorial correction として扱い、`Status` は `approved` のまま変えず、`Comments` に本タスク（0175）からの追加である旨と決定を変えていない旨を書く（02_architecture.md §5.2）。
+- [x] 0172 実装計画書 §10（`03_implementation_plan.md:1746-1753`）の group 検証エラーの follow-up に、0174 と同じ形式で「解消済み（2026-MM-DD 追記）」と本タスクへのリンクを追記する。
+- [x] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
 
 **完了条件**: 3 文書の変更が `make test`・`make verify-docs-checks` を通る。
 
@@ -438,8 +438,8 @@ group 検証エラーの Slack 通知に失敗ファイル一覧を表示し、�
 
 **判定理由**: 文書の追記と翻訳が中心で、記述の典拠は Phase 4a・4b の統合テスト出力に固定されており、Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -595,8 +595,8 @@ in-process ハンドラ差し替えで Slack モックサーバーへ流し、�
 
 - [x] 削除した `runerrors` シンボル名（`ClassifiedError`・`ClassifyVerificationError`・`LogClassifiedError`・`LogCriticalToStderr`・`ErrorSeverity`）が `docs/`（`docs/tasks/` 以外）と `README*.md` に残っていないこと。commit `066c9e59` 時点で `rg -n "ClassifiedError|ClassifyVerificationError|LogClassifiedError|LogCriticalToStderr" --glob '!docs/tasks/**' --glob '!internal/runner/runerrors/**' .` は一致なし（実行済み）。
 - [x] `runerrors/` の説明「一元化エラー処理」／"Centralized error handling" が `README.ja.md`・`README.md`・`docs/dev/developer_guide/package_reference.md` に残っていないこと（Phase 2a。commit `066c9e59` 時点の該当行は §1.3 に記録）。
-- [ ] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`make verify-docs-checks`、Phase 5）。
-- [ ] `docs/translation_glossary.md` に Phase 5 で新しく使った用語（`Files:` 節、省略件数、収集失敗）の対訳が `/mktrans` により登録されていること。
+- [x] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`scripts/verification/compare_doc_structure.go` を直接実行して確認。見出しの数・レベルは日英で一致し、code block 数の差は本タスク以前からの既存差である。`make verify-docs-checks` は同スクリプトを実行せず、`make verify-docs` の `run_all.sh` も失敗をゲートしないため、確認は情報として行った）。
+- [x] `docs/translation_glossary.md` に Phase 5 で新しく使った用語（`Files:` 節、省略件数、収集失敗）の対訳が `/mktrans` により登録されていること。
 
 ---
 
