@@ -6,9 +6,9 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-09-14 |
-| Review date | 2026-09-15 |
+| Review date | 2026-09-24 |
 | Reviewer | isseis |
-| Comments | -。2026-09-15 追記: 収集失敗の対象総数を「`verify_files` とコマンド数の合計」から「重複を除いた対象数（解決済みファイル集合と解決に失敗した対象の和）」に変更（PR #1157 のレビューで、同じ解決不能コマンドを 2 回書いた group で `Details` と件数が重複することが判明。決定を変える editorial ではない小修正のため、ステータスは変えずここに記録） |
+| Comments | -。2026-09-15 追記: 収集失敗の対象総数を「`verify_files` とコマンド数の合計」から「重複を除いた対象数（解決済みファイル集合と解決に失敗した対象の和）」に変更（PR #1157 のレビューで、同じ解決不能コマンドを 2 回書いた group で `Details` と件数が重複することが判明。決定を変える editorial ではない小修正のため、ステータスは変えずここに記録）。2026-09-24 追記（決定の変更）: §7.7 の性能予算（100 ms・3 倍）の対象を end-to-end からビルダー単体に変更し、end-to-end は記録のみとした。実測で end-to-end が約 375 ms となり、その大半が本タスクの対象外である既存の要素ごとの redaction だったため（PR #1165）。レビュアー isseis が PR #1165 のレビューで承認したため、ステータスは `approved` のまま。同時に §3.6 のベンチマークの置き場所を `slack_handler_benchmark_test.go` に訂正した（editorial correction、決定の変更なし） |
 
 ## 関連文書
 
@@ -459,7 +459,8 @@ func NewVerificationPreExecutionError(
 | `internal/logging/pre_execution_error.go` | `PreExecutionError.FailedFilePaths` / `HandlePreExecutionError` | 生のパスを `failed_file_paths` 属性として記録する（`Detail()` には書かない） | 変更 | `internal/logging/pre_execution_error_test.go` |
 | `internal/logging/pre_execution_error_test.go` | stderr 出力テスト | `handleErrorCommon` の出力にパスが出ないことを固定 | テストを追加 | それ自体 |
 | `internal/logging/slack_handler.go` | `buildPreExecutionError` / `[]any` のデコード補助 | `error_message` 属性と `failed_file_paths` から `Error Message` を組み立てる（丸ごと優先・省略記号付き切り詰め・省略件数。デコード補助も同パッケージ、新設） | 変更 | `internal/logging/slack_handler_test.go`、`internal/logging/notification_test.go` |
-| `internal/logging/slack_handler_test.go` | 描画・境界テスト・ベンチマーク | 全件・部分・切り詰め・実体参照で膨らむ入力・`[]any` 表現・RedactingHandler 経由を固定し、n=10,000 の描画時間を記録（§7.7） | テストとベンチマークを追加 | それ自体 |
+| `internal/logging/slack_handler_test.go` | 描画・境界テスト | 全件・部分・切り詰め・実体参照で膨らむ入力・`[]any` 表現・RedactingHandler 経由を固定 | テストを追加 | それ自体 |
+| `internal/logging/slack_handler_benchmark_test.go` | ベンチマーク | ビルダー単体と end-to-end の描画時間を記録（§7.7） | ベンチマークを追加 | それ自体 |
 | `cmd/runner/main.go` | グローバル発火元 | `*verification.Error` を共有コンストラクタへ渡し、パスを含まない `Message` と `FailedFilePaths` を受け取る | 発火元の組み立てを共有コンストラクタ呼び出しへ置き換える | `cmd/runner/integration_pre_execution_error_test.go` |
 | `cmd/runner/integration_pre_execution_error_test.go` | グローバル描画テスト | グローバルも `failed_file_paths` が `Error Message` に描画され、本文と `Component` が group と同じ規則であることを固定 | アサーションを追加 | それ自体 |
 | `internal/redaction/redactor_test.go` | redaction 回帰 | 文字列スライス要素の既存挙動（機密はマスク、普通のパスは残る）を固定 | テストを追加 | それ自体 |
@@ -729,11 +730,15 @@ flowchart LR
 
 ### 7.7 性能のベンチマーク
 
-一覧描画の時間は単体テストのしきい値ではなくベンチマークで確認する。`internal/logging` に、`RedactingHandler` とビルダーを通す end-to-end のベンチマークを置き、次の基準を満たすことを実装時に確認してコミットメッセージに記録する（時間はマシン依存なので単体テストの合否には使わない）。
+一覧描画の時間は単体テストのしきい値ではなくベンチマークで確認する。`internal/logging/slack_handler_benchmark_test.go` に 2 つのベンチマークを置き、数値を実装時にコミットメッセージに記録する（時間はマシン依存なので単体テストの合否には使わない）。
 
-- **絶対予算**: n = 10,000 の end-to-end が 100 ms 未満。1 回の実行はファイルのハッシュ計算と I/O にミリ秒台を使うため、メッセージ組み立てはそれに対して無視できる範囲に収める。
-- **スケーリング**: n = 1,000 と n = 10,000 を測り、1 件あたりのコストが 3 倍を超えないこと。単一の計測では O(n²) を検出できないため、2 点で確認する。
-- **長いパス**: 4 KiB のパス数件を含む行も測る（`WithinInterpolationLimit` は上限超過が確定するまでパスを変換するため O(Σ len(path))）。
+- **ビルダー単体**（`renderFailedFiles`）: 本タスクが追加する描画の費用。次の 2 つの基準を課す。
+  - **絶対予算**: n = 10,000 で 100 ms 未満。
+  - **スケーリング**: n = 1,000 と n = 10,000 を測り、1 件あたりのコストが 3 倍を超えないこと。単一の計測では O(n²) を検出できないため、2 点で確認する。
+- **end-to-end**（`RedactingHandler` とビルダー）: 本番と同じ経路の費用。数値を記録するが、予算は課さない。費用の大半は既存の `processSlice` による要素ごとの `RedactText` であり、本タスクは redaction を変更しない（§5.4）。この費用は要素数に比例し、グローバル経路では検証マネージャの `"failed_files"` ログ（`internal/verification/manager.go` の `VerifyGlobalFiles`）がすでに同じ要素ごとの redaction を 1 回払っている。
+- **長いパス**: 4 KiB のパス数件を含む行も end-to-end で測る（`WithinInterpolationLimit` は上限超過が確定するまでパスを変換するため O(Σ len(path))）。
+
+実測（2026-09-24、linux/arm64）では、ビルダー単体は n = 10,000 で約 45 ms、1 件あたりの比は約 1.04 倍、end-to-end は n = 10,000 で約 375 ms だった。
 
 ### 7.8 収集失敗のテスト
 
