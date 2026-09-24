@@ -464,17 +464,23 @@ func TestE2E_SlackWebhookEnvErrorPrintedOnce(t *testing.T) {
 		"the human-readable block should keep the whole guidance, not just its first line")
 }
 
+// tomlStringArray returns the elements of a TOML array of the given strings,
+// without the brackets. Each string is quoted with %q, which matches TOML
+// basic-string escaping only for the control-free temporary paths these tests
+// use.
+func tomlStringArray(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = fmt.Sprintf("%q", value)
+	}
+	return strings.Join(quoted, ", ")
+}
+
 // globalVerificationConfig returns a configuration that lists verifyFiles as
 // global verify files and carries one group that never runs, the shape the
 // global verification tests share. Global verification fails before any group
-// is verified, so the group's command is not part of the failure list. Paths
-// are quoted with %q, which matches TOML basic-string escaping only for the
-// control-free temporary paths these tests use.
+// is verified, so the group's command is not part of the failure list.
 func globalVerificationConfig(slackHost string, verifyFiles []string) string {
-	quoted := make([]string, len(verifyFiles))
-	for i, file := range verifyFiles {
-		quoted[i] = fmt.Sprintf("%q", file)
-	}
 	return fmt.Sprintf(`
 version = "1.0"
 
@@ -488,7 +494,7 @@ name = "unused_group"
 [[groups.commands]]
 name = "unused-cmd"
 cmd = "/bin/true"
-`, slackHost, strings.Join(quoted, ", "))
+`, slackHost, tomlStringArray(verifyFiles))
 }
 
 // TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope drives
@@ -513,6 +519,12 @@ func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testi
 	})
 	require.Equal(t, 1, run.exitCode, "the global verification failure must exit non-zero")
 
+	// Checked before the require-based payload assertions below, so a path in
+	// the human-readable report is reported even when the payload is also wrong.
+	details := stderrDetailsLine(t, run.stderr)
+	assert.NotContains(t, details, unhashedFile)
+	assert.NotContains(t, details, "Files:")
+
 	message, fields := requireSinglePreExecutionError(t, run)
 	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — (global) : file_access_failed", message.Text)
 
@@ -527,10 +539,6 @@ func TestIntegration_GlobalTargetFileVerificationFailureUsesGlobalScope(t *testi
 	assert.Equal(t,
 		fmt.Sprintf("Total: 1, Verified: 0, Failed: 1, Error: global file verification failed, Files: %q", unhashedFile),
 		attachmentField(t, fields, "Error Message"))
-
-	details := stderrDetailsLine(t, run.stderr)
-	assert.NotContains(t, details, unhashedFile)
-	assert.NotContains(t, details, "Files:")
 }
 
 // TestIntegration_GlobalTargetFileVerificationFailureTruncatesLongList drives
@@ -590,6 +598,7 @@ func requireSortedPrefixWithOmissionCount(t *testing.T, errorMessage, prefix str
 	omitted, err := strconv.Atoi(match[2])
 	require.NoError(t, err)
 	shown := strings.Split(match[1], ", ")
+	require.LessOrEqual(t, len(shown), len(sorted), "more paths shown than failed: %q", errorMessage)
 	for i, q := range shown {
 		assert.Equal(t, fmt.Sprintf("%q", sorted[i]), q, "shown path %d must be the sorted element, whole", i)
 	}
@@ -600,14 +609,8 @@ func requireSortedPrefixWithOmissionCount(t *testing.T, errorMessage, prefix str
 // groupVerificationConfig returns a configuration whose only group lists
 // verifyFiles and runs the "true" coreutil, the shape the group verification
 // tests share. The command's resolved path is what the group verifies, so the
-// caller records its hash to keep the failure list to verifyFiles. Paths are
-// quoted with %q, which matches TOML basic-string escaping only for the
-// control-free temporary paths these tests use.
+// caller records its hash to keep the failure list to verifyFiles.
 func groupVerificationConfig(slackHost string, verifyFiles []string) string {
-	quoted := make([]string, len(verifyFiles))
-	for i, file := range verifyFiles {
-		quoted[i] = fmt.Sprintf("%q", file)
-	}
 	return fmt.Sprintf(`
 version = "1.0"
 
@@ -621,7 +624,7 @@ verify_files = [%s]
 [[groups.commands]]
 name = "noop"
 cmd = %q
-`, slackHost, strings.Join(quoted, ", "), trueCmdPath())
+`, slackHost, tomlStringArray(verifyFiles), trueCmdPath())
 }
 
 // resolvedTruePath returns the canonical path of the "true" coreutil, the

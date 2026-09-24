@@ -3008,18 +3008,8 @@ func TestRedactingHandler_SliceStringElementRedaction(t *testing.T) {
 		require.Equal(t, token, keyNameOnly.RedactText(token),
 			"the token must carry no key name, or masking it proves nothing about value-format detection")
 
-		mock := newMockHandler()
-		slog.New(NewRedactingHandler(mock, config, nil)).Info("Test message",
-			slog.Any(key, []string{keywordPath, token}))
-		require.Len(t, mock.records, 1)
-		var elements []any
-		mock.records[0].Attrs(func(attr slog.Attr) bool {
-			if attr.Key == key {
-				elements, _ = attr.Value.Any().([]any)
-				return false
-			}
-			return true
-		})
+		elements, ok := redactOneAttr(t, slog.Any(key, []string{keywordPath, token})).Value.Any().([]any)
+		require.True(t, ok, "a redacted string slice must come back as []any")
 		assert.Equal(t, []any{keywordPath, DefaultPlaceholder}, elements,
 			"the path element must be kept and the token element masked")
 
