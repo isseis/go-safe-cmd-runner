@@ -3625,7 +3625,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 	oneCommandGroup := func(cmd runnertypes.CommandSpec) *runnertypes.GroupSpec {
 		return &runnertypes.GroupSpec{Name: groupName, Commands: []runnertypes.CommandSpec{cmd}}
 	}
-	requireQuotedPath := func(t *testing.T, msg, path string) {
+	assertQuotedPath := func(t *testing.T, msg, path string) {
 		t.Helper()
 		assert.Contains(t, msg, fmt.Sprintf("%q", path), "the path must appear %%q-quoted")
 		assert.NotContains(t, msg, "\n", "a quoted path must not leave a raw newline")
@@ -3760,7 +3760,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.True(t, strings.HasPrefix(msg, "command path resolution failed for "), msg)
-				requireQuotedPath(t, msg, hostilePath)
+				assertQuotedPath(t, msg, hostilePath)
 			},
 		},
 		{
@@ -3780,7 +3780,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.Equal(t, fmt.Sprintf("command dependency verification failed for %q: %s", hostilePath, errCause), msg)
-				requireQuotedPath(t, msg, hostilePath)
+				assertQuotedPath(t, msg, hostilePath)
 			},
 		},
 	}
@@ -3845,9 +3845,10 @@ func TestExecuteGroup_PreExecutionExitRules(t *testing.T) {
 
 // TestExecuteGroupRegistersExitDefer pins the wiring that
 // TestExecuteGroup_PreExecutionExitRules cannot reach: ExecuteGroup declares a
-// named error result and, before any of its own return statements, defers a
-// function literal that assigns groupExecutionExitError's result to it.
-// Returns inside function literals are not ExecuteGroup's and are ignored.
+// named error result and, as its first defer and before any of its own return
+// statements, defers a function literal that assigns
+// groupExecutionExitError(..., executionResult, <result>) to it. Returns
+// inside function literals are not ExecuteGroup's and are ignored.
 func TestExecuteGroupRegistersExitDefer(t *testing.T) {
 	const (
 		file         = "internal/runner/group_executor.go"
@@ -3879,21 +3880,21 @@ func TestExecuteGroupRegistersExitDefer(t *testing.T) {
 	require.True(t, ok && resultType.Name == "error", "ExecuteGroup's result must be an error")
 	resultName := results.List[0].Names[0].Name
 
-	var exitDefer *ast.DeferStmt
+	// The first defer runs last, so no later defer can replace the error the
+	// exit rules produced.
+	var firstDefer *ast.DeferStmt
 	for _, stmt := range fn.Body.List {
-		deferStmt, ok := stmt.(*ast.DeferStmt)
-		if !ok {
-			continue
-		}
-		lit, ok := deferStmt.Call.Fun.(*ast.FuncLit)
-		if ok && assignsExitResult(lit.Body, resultName, exitFuncName) {
-			exitDefer = deferStmt
+		if deferStmt, ok := stmt.(*ast.DeferStmt); ok {
+			firstDefer = deferStmt
 			break
 		}
 	}
-	require.NotNil(t, exitDefer,
-		"ExecuteGroup must defer, at the top level of its body, a function literal that assigns %s(...) to %s",
-		exitFuncName, resultName)
+	require.NotNil(t, firstDefer, "ExecuteGroup must defer its exit at the top level of its body")
+	lit, ok := firstDefer.Call.Fun.(*ast.FuncLit)
+	require.True(t, ok && assignsExitResult(lit.Body, resultName, exitFuncName),
+		"ExecuteGroup's first top-level defer must be a function literal that assigns %s(..., executionResult, %s) to %s",
+		exitFuncName, resultName, resultName)
+	exitDefer := firstDefer
 
 	var early []string
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -3911,7 +3912,9 @@ func TestExecuteGroupRegistersExitDefer(t *testing.T) {
 }
 
 // assignsExitResult reports whether body has a top-level statement
-// `<resultName> = <exitFuncName>(...)`.
+// `<resultName> = <exitFuncName>(<group>, executionResult, <resultName>)`.
+// The arguments are pinned because passing anything else as the execution
+// state or the error would disable the exit rules while still calling them.
 func assignsExitResult(body *ast.BlockStmt, resultName, exitFuncName string) bool {
 	for _, stmt := range body.List {
 		assign, ok := stmt.(*ast.AssignStmt)
@@ -3926,7 +3929,13 @@ func assignsExitResult(body *ast.BlockStmt, resultName, exitFuncName string) boo
 		if !ok {
 			continue
 		}
-		if callee, ok := call.Fun.(*ast.Ident); ok && callee.Name == exitFuncName {
+		callee, ok := call.Fun.(*ast.Ident)
+		if !ok || callee.Name != exitFuncName || len(call.Args) != 3 {
+			continue
+		}
+		state, stateOK := call.Args[1].(*ast.Ident)
+		passed, passedOK := call.Args[2].(*ast.Ident)
+		if stateOK && state.Name == "executionResult" && passedOK && passed.Name == resultName {
 			return true
 		}
 	}

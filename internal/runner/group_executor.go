@@ -145,9 +145,9 @@ func NewDefaultGroupExecutor(
 // ExecuteGroup executes all commands in a group sequentially.
 //
 // An error returned before the first command runs always carries a
-// *GroupStageError naming the failed stage; an error from command execution
-// never does. The deferred exit registered first enforces both rules, so it is
-// registered before any return.
+// *GroupStageError naming the failed stage; the deferred exit adds no stage to
+// an error from command execution. The exit is deferred first, before any
+// return, so it runs last and sees the final error.
 func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) (err error) {
 	startTime := time.Now()
 
