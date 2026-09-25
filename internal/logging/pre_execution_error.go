@@ -140,6 +140,12 @@ type errorHandlingParams struct {
 	summaryStatus string
 }
 
+// stderrDetailsPrefix labels the message line of the stderr report, and
+// stderrDetailsIndent is the same width in spaces.
+const stderrDetailsPrefix = "  Details: "
+
+var stderrDetailsIndent = strings.Repeat(" ", len(stderrDetailsPrefix))
+
 // handleErrorCommon is a private helper that contains the common error handling logic
 // for both pre-execution and execution errors
 func handleErrorCommon(params errorHandlingParams) {
@@ -150,7 +156,10 @@ func handleErrorCommon(params errorHandlingParams) {
 	if record.component != "" {
 		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", record.component)
 	}
-	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", record.errorMsg)
+	// Continuation lines of a multi-line message are aligned under the first
+	// so they stay visibly inside the Details field.
+	fmt.Fprintf(&stderrBuilder, "%s%s\n", stderrDetailsPrefix,
+		strings.ReplaceAll(record.errorMsg, "\n", "\n"+stderrDetailsIndent))
 	if record.runID != "" {
 		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", record.runID)
 	}
@@ -237,8 +246,14 @@ func HandleExecutionError(execErr *ExecutionError) {
 	// This duplicates the same "Message plus user-friendly or raw cause"
 	// assembly that PreExecutionError.Detail performs. The two paths report
 	// different error types, so collapsing them is deferred; see issue #1156.
-	// Build error message with context information
 	message := execErr.Message
+
+	// The context (group and command names) goes right after Message, before
+	// the cause: a cause may span several lines (e.g. an errors.Join of group
+	// errors), and a suffix would read as belonging to its last line only.
+	if contextStr := execErr.ContextString(); contextStr != "" {
+		message = fmt.Sprintf("%s (%s)", message, contextStr)
+	}
 
 	// Check if the error provides a user-friendly message
 	if userMsg := GetUserFriendlyMessage(execErr.Err); userMsg != "" {
@@ -246,11 +261,6 @@ func HandleExecutionError(execErr *ExecutionError) {
 	} else if execErr.Err != nil {
 		// If no user-friendly message, include the raw error
 		message = fmt.Sprintf("%s: %v", message, execErr.Err)
-	}
-
-	// Add context information (group and command names)
-	if contextStr := execErr.ContextString(); contextStr != "" {
-		message = fmt.Sprintf("%s (%s)", message, contextStr)
 	}
 
 	handleErrorCommon(errorHandlingParams{
