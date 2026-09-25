@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/token"
 	"io"
 	"log/slog"
 	"os"
@@ -26,6 +28,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/testutil"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/testutil/identitymutationguard"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	"github.com/stretchr/testify/assert"
@@ -3580,4 +3583,393 @@ func TestAuditGroupDirPermissions_AbsolutePathContainingBraceIsStillChecked(t *t
 	require.NoError(t, ge.auditGroupDirPermissions(rg))
 	assert.Contains(t, checker.paths, braceDir,
 		"an absolute path containing %%{ must still be checked; it is a literal, not an unexpanded reference")
+}
+
+// TestExecuteGroup_PreExecutionStageErrors fails ExecuteGroup at each
+// pre-execution failure site and pins the stage, the group and command names,
+// and the message the returned *GroupStageError carries. Rows that feed
+// hostile text also pin the precondition the Slack builder relies on: a raw
+// template reaches the message as is (newlines included), while command paths
+// are %q-quoted so their newlines and format characters are escaped.
+func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
+	const (
+		groupName = "test-group"
+		cmdName   = "test-cmd"
+		// A path whose newline and U+202E (right-to-left override) must not
+		// reach the message unescaped.
+		hostilePath = "/opt/tools/evil\n\u202ename"
+	)
+	errCause := errors.New("injected cause")
+
+	runtimeGlobal := func() *runnertypes.RuntimeGlobal {
+		return &runnertypes.RuntimeGlobal{
+			Spec:         &runnertypes.GlobalSpec{Timeout: new(int32(30))},
+			ExpandedVars: map[string]string{},
+		}
+	}
+	// The resource manager has no expectations, so a command that runs fails
+	// the test.
+	executorWith := func(t *testing.T, vm verification.ManagerInterface, opts ...GroupExecutorOption) *DefaultGroupExecutor {
+		t.Helper()
+		mockValidator, _ := setupMocksForTest(t)
+		return NewTestGroupExecutorWithConfig(
+			TestGroupExecutorConfig{
+				Config:              &runnertypes.ConfigSpec{Global: runnertypes.GlobalSpec{Timeout: new(int32(30))}},
+				Validator:           mockValidator,
+				VerificationManager: vm,
+				ResourceManager:     new(runnertestutil.MockResourceManager),
+			},
+			opts...,
+		)
+	}
+	oneCommandGroup := func(cmd runnertypes.CommandSpec) *runnertypes.GroupSpec {
+		return &runnertypes.GroupSpec{Name: groupName, Commands: []runnertypes.CommandSpec{cmd}}
+	}
+	assertQuotedPath := func(t *testing.T, msg, path string) {
+		t.Helper()
+		assert.Contains(t, msg, fmt.Sprintf("%q", path), "the path must appear %%q-quoted")
+		assert.NotContains(t, msg, "\n", "a quoted path must not leave a raw newline")
+		assert.NotContains(t, msg, "\u202e", "a quoted path must not leave a raw format character")
+	}
+
+	tests := []struct {
+		name        string
+		setup       func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec)
+		wantStage   GroupStage
+		wantCommand string
+		checkErr    func(t *testing.T, err error, msg string)
+	}{
+		{
+			// #1: group expansion. The template is multi-line, as a TOML
+			// multi-line string would be, and is embedded in the message raw.
+			name: "group expansion",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				ge := executorWith(t, nil)
+				group := oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo"})
+				group.EnvVars = []string{"MULTI=first line\n%{UNDEFINED_VAR}\nlast line"}
+				return ge, group
+			},
+			wantStage: GroupStageGroupPreparation,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, config.ErrUndefinedVariable)
+				assert.True(t, strings.HasPrefix(msg, "failed to expand group[test-group]: "), msg)
+				assert.Contains(t, msg, "first line\n%{UNDEFINED_VAR}\nlast line",
+					"the raw template, newlines included, reaches the message")
+			},
+		},
+		{
+			// #2: group working directory resolution.
+			name: "group workdir resolution",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				ge := executorWith(t, nil)
+				group := oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo"})
+				group.WorkDir = "/tmp/%{UNDEFINED_VAR}/path"
+				return ge, group
+			},
+			wantStage: GroupStageGroupPreparation,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, config.ErrUndefinedVariable)
+				assert.True(t, strings.HasPrefix(msg, "failed to resolve work directory: "), msg)
+			},
+		},
+		{
+			// #3: command expansion. The group prefix is added once, inside
+			// preExpandCommands, not again by ExecuteGroup.
+			name: "command expansion",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				ge := executorWith(t, nil)
+				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo", Args: []string{"%{UNDEFINED_VAR}"}})
+			},
+			wantStage:   GroupStageCommandPreparation,
+			wantCommand: cmdName,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, config.ErrUndefinedVariable)
+				assert.True(t, strings.HasPrefix(msg, "failed to pre-expand commands for group[test-group]: command[test-cmd] (index 0): "), msg)
+				assert.Equal(t, 1, strings.Count(msg, "failed to pre-expand commands"), msg)
+			},
+		},
+		{
+			// #3: command working directory resolution.
+			name: "command workdir resolution",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				ge := executorWith(t, nil)
+				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo", WorkDir: new("/tmp/%{UNDEFINED_VAR}/path")})
+			},
+			wantStage:   GroupStageCommandPreparation,
+			wantCommand: cmdName,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, config.ErrUndefinedVariable)
+				assert.True(t, strings.HasPrefix(msg,
+					"failed to pre-expand commands for group[test-group]: command[test-cmd] (index 0): failed to resolve workdir: "), msg)
+				assert.Equal(t, 1, strings.Count(msg, "failed to pre-expand commands"), msg)
+			},
+		},
+		{
+			// #4: directory permission audit over a world-writable directory.
+			name: "directory permission audit",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				auditor, err := isec.NewDirectoryPermChecker()
+				require.NoError(t, err)
+				worldWritable := tu.SafeTempDir(t)
+				require.NoError(t, os.Chmod(worldWritable, 0o777))
+				t.Cleanup(func() { _ = os.Chmod(worldWritable, 0o755) })
+
+				ge := executorWith(t, nil, WithGroupDirPermAuditor(auditor))
+				// A relative command is left out of the audit, so only the
+				// verify_files directory can produce the violation.
+				group := oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "echo"})
+				group.VerifyFiles = []string{filepath.Join(worldWritable, "target.txt")}
+				return ge, group
+			},
+			wantStage: GroupStageDirPermissionAudit,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, ErrDirPermViolation)
+				assert.True(t, strings.HasPrefix(msg, "directory permission audit failed for group[test-group]: "), msg)
+			},
+		},
+		{
+			// #5: group file verification. The cause is returned as is.
+			name: "group file verification",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				vm := new(verificationtestutil.MockManager)
+				vm.On("VerifyGroupFiles", mock.Anything).
+					Return(nil, &verification.OpError{Op: "verify", Path: "/etc/target.conf", Err: errCause})
+				ge := executorWith(t, vm)
+				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo"})
+			},
+			wantStage: GroupStageFileVerification,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, errCause)
+				opErr, ok := errors.AsType[*verification.OpError](err)
+				require.True(t, ok, "the cause must stay reachable through Unwrap")
+				assert.Equal(t, opErr.Error(), msg, "the stage error adds nothing to the cause's message")
+			},
+		},
+		{
+			// #6: command path re-resolution.
+			name: "command path resolution",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				vm := new(verificationtestutil.MockManager)
+				vm.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+				vm.On("ResolvePath", hostilePath).Return("", errCause)
+				ge := executorWith(t, vm)
+				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: hostilePath})
+			},
+			wantStage:   GroupStageCommandVerification,
+			wantCommand: cmdName,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, errCause)
+				assert.True(t, strings.HasPrefix(msg, "command path resolution failed for "), msg)
+				assertQuotedPath(t, msg, hostilePath)
+			},
+		},
+		{
+			// #7: command dependency verification. The message names the
+			// resolved command path, quoted, and keeps the cause.
+			name: "command dependency verification",
+			setup: func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec) {
+				vm := new(verificationtestutil.MockManager)
+				vm.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+				vm.On("ResolvePath", "/usr/local/bin/deploy.sh").Return(hostilePath, nil)
+				vm.On("VerifyCommandDependencies", hostilePath, mock.Anything).Return(errCause)
+				ge := executorWith(t, vm)
+				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/usr/local/bin/deploy.sh"})
+			},
+			wantStage:   GroupStageCommandVerification,
+			wantCommand: cmdName,
+			checkErr: func(t *testing.T, err error, msg string) {
+				require.ErrorIs(t, err, errCause)
+				assert.Equal(t, fmt.Sprintf("command dependency verification failed for %q: %s", hostilePath, errCause), msg)
+				assertQuotedPath(t, msg, hostilePath)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ge, group := tt.setup(t)
+
+			err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal())
+
+			require.Error(t, err)
+			stageErr, ok := errors.AsType[*GroupStageError](err)
+			require.True(t, ok, "a pre-execution failure must carry a *GroupStageError; got %T", err)
+			assert.Equal(t, tt.wantStage, stageErr.Stage())
+			assert.Equal(t, groupName, stageErr.GroupName())
+			assert.Equal(t, tt.wantCommand, stageErr.CommandName())
+			tt.checkErr(t, err, stageErr.Error())
+		})
+	}
+}
+
+// TestExecuteGroup_PreExecutionExitRules calls the exit function directly:
+// every failure site now declares its stage, so no failure without one can be
+// injected through ExecuteGroup. TestExecuteGroupRegistersExitDefer pins that
+// ExecuteGroup actually routes its result through this function.
+func TestExecuteGroup_PreExecutionExitRules(t *testing.T) {
+	errCause := errors.New("undeclared pre-execution failure")
+	commandsRan := &groupExecutionResult{status: GroupExecutionStatusError}
+
+	t.Run("nil error stays nil", func(t *testing.T) {
+		assert.NoError(t, groupExecutionExitError("test-group", nil, nil))
+		assert.NoError(t, groupExecutionExitError("test-group", commandsRan, nil))
+	})
+
+	t.Run("undeclared error before commands is wrapped as unknown", func(t *testing.T) {
+		err := groupExecutionExitError("test-group", nil, errCause)
+
+		stageErr, ok := errors.AsType[*GroupStageError](err)
+		require.True(t, ok, "an undeclared pre-execution error must be wrapped")
+		assert.Equal(t, GroupStageUnknown, stageErr.Stage())
+		assert.Equal(t, "test-group", stageErr.GroupName())
+		assert.Empty(t, stageErr.CommandName())
+		assert.Same(t, errCause, stageErr.Unwrap())
+	})
+
+	t.Run("declared error before commands is returned unchanged", func(t *testing.T) {
+		declared := fmt.Errorf("context: %w", newGroupStageError(GroupStageGroupPreparation, "test-group", errCause))
+
+		err := groupExecutionExitError("test-group", nil, declared)
+
+		assert.Same(t, declared, err, "a declared stage must not be wrapped again")
+	})
+
+	t.Run("error after commands ran is not given a stage", func(t *testing.T) {
+		err := groupExecutionExitError("test-group", commandsRan, errCause)
+
+		assert.Same(t, errCause, err)
+		_, ok := errors.AsType[*GroupStageError](err)
+		assert.False(t, ok, "a command execution failure must not carry a stage")
+	})
+}
+
+// TestExecuteGroupRegistersExitDefer pins the wiring that
+// TestExecuteGroup_PreExecutionExitRules cannot reach: ExecuteGroup declares a
+// named error result and, as its first defer and before any of its own return
+// statements, defers a function literal that assigns
+// groupExecutionExitError(..., executionResult, <result>) to it. Returns
+// inside function literals are not ExecuteGroup's and are ignored.
+func TestExecuteGroupRegistersExitDefer(t *testing.T) {
+	const (
+		file         = "internal/runner/group_executor.go"
+		exitFuncName = "groupExecutionExitError"
+	)
+
+	src := identitymutationguard.ReadProductionSource(t, file)
+	fset, parsed := identitymutationguard.ParseSource(t, file, src)
+
+	var fn *ast.FuncDecl
+	for _, decl := range parsed.Decls {
+		d, ok := decl.(*ast.FuncDecl)
+		if !ok || d.Name.Name != "ExecuteGroup" || d.Recv == nil || len(d.Recv.List) != 1 {
+			continue
+		}
+		if star, ok := d.Recv.List[0].Type.(*ast.StarExpr); ok {
+			if ident, ok := star.X.(*ast.Ident); ok && ident.Name == "DefaultGroupExecutor" {
+				fn = d
+			}
+		}
+	}
+	require.NotNil(t, fn, "DefaultGroupExecutor.ExecuteGroup not found in %s", file)
+
+	results := fn.Type.Results
+	require.NotNil(t, results, "ExecuteGroup must return an error")
+	require.Len(t, results.List, 1, "ExecuteGroup must return a single result")
+	require.Len(t, results.List[0].Names, 1, "ExecuteGroup's error result must be named so the deferred exit can replace it")
+	resultType, ok := results.List[0].Type.(*ast.Ident)
+	require.True(t, ok && resultType.Name == "error", "ExecuteGroup's result must be an error")
+	resultName := results.List[0].Names[0].Name
+
+	// The first defer runs last, so no later defer can replace the error the
+	// exit rules produced.
+	var firstDefer *ast.DeferStmt
+	for _, stmt := range fn.Body.List {
+		if deferStmt, ok := stmt.(*ast.DeferStmt); ok {
+			firstDefer = deferStmt
+			break
+		}
+	}
+	require.NotNil(t, firstDefer, "ExecuteGroup must defer its exit at the top level of its body")
+	lit, ok := firstDefer.Call.Fun.(*ast.FuncLit)
+	require.True(t, ok && assignsExitResult(lit.Body, resultName, exitFuncName),
+		"ExecuteGroup's first top-level defer must be a function literal that assigns %s(..., executionResult, %s) to %s",
+		exitFuncName, resultName, resultName)
+	exitDefer := firstDefer
+
+	var early []string
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if node.Pos() < exitDefer.Pos() {
+				early = append(early, fset.Position(node.Pos()).String())
+			}
+		}
+		return true
+	})
+	assert.Empty(t, early, "these returns bypass the deferred exit:\n%s", strings.Join(early, "\n"))
+}
+
+// assignsExitResult reports whether body has a top-level statement
+// `<resultName> = <exitFuncName>(<group>, executionResult, <resultName>)`.
+// The arguments are pinned because passing anything else as the execution
+// state or the error would disable the exit rules while still calling them.
+func assignsExitResult(body *ast.BlockStmt, resultName, exitFuncName string) bool {
+	for _, stmt := range body.List {
+		assign, ok := stmt.(*ast.AssignStmt)
+		if !ok || assign.Tok != token.ASSIGN || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			continue
+		}
+		lhs, ok := assign.Lhs[0].(*ast.Ident)
+		if !ok || lhs.Name != resultName {
+			continue
+		}
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		callee, ok := call.Fun.(*ast.Ident)
+		if !ok || callee.Name != exitFuncName || len(call.Args) != 3 {
+			continue
+		}
+		state, stateOK := call.Args[1].(*ast.Ident)
+		passed, passedOK := call.Args[2].(*ast.Ident)
+		if stateOK && state.Name == "executionResult" && passedOK && passed.Name == resultName {
+			return true
+		}
+	}
+	return false
+}
+
+// TestExecuteGroup_CommandExecutionFailureHasNoStageError pins that a failure
+// of a command that ran is not reported as a pre-execution stage: the group
+// summary already reports it.
+func TestExecuteGroup_CommandExecutionFailureHasNoStageError(t *testing.T) {
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockVM.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
+	mockRM := new(runnertestutil.MockResourceManager)
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		resource.CommandToken(""), &resource.ExecutionResult{ExitCode: 1, Stderr: "command failed"}, nil,
+	)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              &runnertypes.ConfigSpec{Global: runnertypes.GlobalSpec{Timeout: new(int32(30))}},
+		Validator:           mockValidator,
+		VerificationManager: mockVM,
+		ResourceManager:     mockRM,
+	})
+	group := &runnertypes.GroupSpec{
+		Name:     "test-group",
+		Commands: []runnertypes.CommandSpec{{Name: "test-cmd", Cmd: "/bin/false"}},
+	}
+	runtimeGlobal := &runnertypes.RuntimeGlobal{Spec: &runnertypes.GlobalSpec{Timeout: new(int32(30))}}
+
+	err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal)
+
+	require.ErrorIs(t, err, ErrCommandFailed)
+	_, ok := errors.AsType[*GroupStageError](err)
+	assert.False(t, ok, "a command execution failure must not carry a stage")
+	mockRM.AssertCalled(t, "ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

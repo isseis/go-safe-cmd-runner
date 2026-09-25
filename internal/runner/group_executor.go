@@ -142,9 +142,20 @@ func NewDefaultGroupExecutor(
 	}
 }
 
-// ExecuteGroup executes all commands in a group sequentially
-func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) error {
+// ExecuteGroup executes all commands in a group sequentially.
+//
+// An error returned before the first command runs always carries a
+// *GroupStageError naming the failed stage; the deferred exit adds no stage to
+// an error from command execution. The exit is deferred first, before any
+// return, so it runs last and sees the final error.
+func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) (err error) {
 	startTime := time.Now()
+
+	// Set only once commands have run; read by both deferred functions below.
+	var executionResult *groupExecutionResult
+	defer func() {
+		err = groupExecutionExitError(groupSpec.Name, executionResult, err)
+	}()
 
 	if groupSpec.Description != "" {
 		slog.Info("Executing group", slog.Any("name", identifier.NewIdentifier(groupSpec.Name)), slog.String("description", groupSpec.Description))
@@ -154,7 +165,8 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	if err != nil {
-		return fmt.Errorf("failed to expand group[%s]: %w", groupSpec.Name, err)
+		return newGroupStageError(GroupStageGroupPreparation, groupSpec.Name,
+			fmt.Errorf("failed to expand group[%s]: %w", groupSpec.Name, err))
 	}
 
 	if ge.isDryRun {
@@ -162,7 +174,6 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// Deferred so the notification is sent on failure as well as success.
-	var executionResult *groupExecutionResult
 	defer func() {
 		if executionResult != nil && ge.notificationFunc != nil {
 			ge.notificationFunc(groupSpec, executionResult, time.Since(startTime))
@@ -171,7 +182,8 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
 	if err != nil {
-		return fmt.Errorf("failed to resolve work directory: %w", err)
+		return newGroupStageError(GroupStageGroupPreparation, groupSpec.Name,
+			fmt.Errorf("failed to resolve work directory: %w", err))
 	}
 
 	if tempDirMgr != nil && !ge.keepTempDirs {
@@ -191,7 +203,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
 
 	if err := ge.preExpandCommands(groupSpec, runtimeGroup, runtimeGlobal); err != nil {
-		return fmt.Errorf("failed to pre-expand commands for group[%s]: %w", groupSpec.Name, err)
+		return err
 	}
 
 	// Runs after expansion: group-level verify_files and command paths may hold
@@ -218,6 +230,22 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	slog.Info("Group completed successfully", slog.Any("name", identifier.NewIdentifier(groupSpec.Name)))
 	return nil
+}
+
+// groupExecutionExitError applies ExecuteGroup's exit rules to the error it is
+// about to return. Before any command ran (executionResult is nil), an error
+// that carries no *GroupStageError is wrapped under GroupStageUnknown, so a
+// failure site that forgot to declare its stage is still reported. After
+// commands ran, the error is returned unchanged: command failures are reported
+// by the group summary, and a stage would report them twice.
+func groupExecutionExitError(groupName string, executionResult *groupExecutionResult, err error) error {
+	if err == nil || executionResult != nil {
+		return err
+	}
+	if _, ok := errors.AsType[*GroupStageError](err); ok {
+		return err
+	}
+	return newGroupStageError(GroupStageUnknown, groupName, err)
 }
 
 // executeAllCommands executes all commands in a group sequentially.
@@ -266,7 +294,8 @@ func (ge *DefaultGroupExecutor) executeAllCommands(
 }
 
 // preExpandCommands expands every command of the group into
-// runtimeGroup.Commands, resolving each one's working directory as it goes.
+// runtimeGroup.Commands, resolving each one's working directory as it goes. A
+// failure is returned as a command-level GroupStageCommandPreparation error.
 //
 // Expanding up front rather than per command at execution time gives
 // verification the same variables execution will see (including command-level
@@ -283,6 +312,10 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 
 	for i := range groupSpec.Commands {
 		cmdSpec := &groupSpec.Commands[i]
+		stageErr := func(cause error) error {
+			return newCommandStageError(GroupStageCommandPreparation, groupSpec.Name, cmdSpec.Name,
+				fmt.Errorf("failed to pre-expand commands for group[%s]: command[%s] (index %d): %w", groupSpec.Name, cmdSpec.Name, i, cause))
+		}
 
 		runtimeCmd, err := config.ExpandCommand(
 			cmdSpec,
@@ -293,12 +326,12 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 			globalOutputSizeLimit,
 		)
 		if err != nil {
-			return fmt.Errorf("command[%s] (index %d): %w", cmdSpec.Name, i, err)
+			return stageErr(err)
 		}
 
 		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
 		if err != nil {
-			return fmt.Errorf("command[%s] (index %d): failed to resolve workdir: %w", cmdSpec.Name, i, err)
+			return stageErr(fmt.Errorf("failed to resolve workdir: %w", err))
 		}
 		runtimeCmd.EffectiveWorkDir = workDir
 
@@ -310,7 +343,7 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 
 // auditGroupDirPermissions audits directory permissions using the fully-expanded
 // group paths. It is a no-op when dirPermAuditor is nil.
-// Returns an error if any violation is detected.
+// Returns a GroupStageDirPermissionAudit error if any violation is detected.
 func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertypes.RuntimeGroup) error {
 	if ge.dirPermAuditor == nil {
 		return nil
@@ -337,7 +370,8 @@ func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertyp
 			// tree to check.
 		default:
 			// See errUnhandledCheckSkipReason.
-			return fmt.Errorf("%w: %d for path %s", errUnhandledCheckSkipReason, reason, p)
+			return newGroupStageError(GroupStageDirPermissionAudit, runnertypes.ExtractGroupName(runtimeGroup),
+				fmt.Errorf("%w: %d for path %s", errUnhandledCheckSkipReason, reason, p))
 		}
 	}
 
@@ -349,8 +383,10 @@ func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertyp
 	dirs := isec.CollectPermissionCheckDirs(resolved, nil)
 	violations := isec.AuditDirectoryPermissions(ge.dirPermAuditor, dirs, slog.Default()).Violations
 	if len(violations) > 0 {
-		return fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
-			ErrDirPermViolation, runnertypes.ExtractGroupName(runtimeGroup), len(violations))
+		groupName := runnertypes.ExtractGroupName(runtimeGroup)
+		return newGroupStageError(GroupStageDirPermissionAudit, groupName,
+			fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
+				ErrDirPermViolation, groupName, len(violations)))
 	}
 	return nil
 }
@@ -358,13 +394,17 @@ func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertyp
 // verifyGroupFiles verifies files specified in the group before execution.
 // After successful verification it copies the computed content hashes into each
 // RuntimeCommand so that downstream ELF analysis can skip re-hashing the binary.
+// A failure is returned as a GroupStageFileVerification error for the group
+// files and a GroupStageCommandVerification error for a command.
 func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) error {
 	if ge.verificationManager == nil {
 		return nil
 	}
 
+	groupName := runnertypes.ExtractGroupName(runtimeGroup)
+
 	input := &verification.GroupVerificationInput{
-		Name:                runnertypes.ExtractGroupName(runtimeGroup),
+		Name:                groupName,
 		ExpandedVerifyFiles: runtimeGroup.ExpandedVerifyFiles,
 		Commands:            make([]verification.CommandEntry, 0, len(runtimeGroup.Commands)),
 	}
@@ -374,10 +414,10 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 
 	result, err := ge.verificationManager.VerifyGroupFiles(input)
 	if err != nil {
-		return err
+		// Whether err is a *verification.Error is decided by the caller, which
+		// keeps that case on the existing verification notification path.
+		return newGroupStageError(GroupStageFileVerification, groupName, err)
 	}
-
-	groupName := runnertypes.ExtractGroupName(runtimeGroup)
 
 	if result.TotalFiles > 0 {
 		slog.Info("Group file verification completed",
@@ -391,7 +431,8 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 	for _, cmd := range runtimeGroup.Commands {
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
-			return fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr)
+			return newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(),
+				fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr))
 		}
 
 		// Pinned once, here: the risk evaluator binds this exact path and inode for
@@ -409,7 +450,10 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 				slog.Any("group", identifier.NewIdentifier(groupName)),
 				"command", resolvedPath,
 				"error", depErr)
-			return depErr
+			// The cause may name only a library or an interpreter, so the
+			// command path is added for the report to say which command failed.
+			return newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(),
+				fmt.Errorf("command dependency verification failed for %q: %w", resolvedPath, depErr))
 		}
 	}
 

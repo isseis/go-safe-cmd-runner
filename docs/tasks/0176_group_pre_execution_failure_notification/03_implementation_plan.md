@@ -117,7 +117,7 @@
 #### 事実として確認した既存挙動
 
 - `config.ExpandGroup` の本番呼び出しは `internal/runner/group_executor.go:155` の 1 か所だけである（`rg -n "ExpandGroup" --glob '*.go' | rg -v _test` の一致は定義とこの 1 件）。group の `vars`・`env`・`verify_files` は実行時に展開されるため、未定義変数の失敗を `Runner.Execute` 経由の統合テストで起こせる。
-- `ErrUndefinedVariableDetail` は `Context` に展開前の生テンプレートを埋め込む（`internal/runner/config/expansion.go:128-133`）。複数行の TOML 文字列をテンプレートに使うと、原因の文言に生の改行が入る（§3.7、AC-18 の前提）。
+- `ErrUndefinedVariableDetail` は `Context` に展開前の生テンプレートを埋め込む（`internal/runner/config/expansion.go:128-133`）。複数行の TOML 文字列をテンプレートに使うと、原因の文言に生の改行が入る（§3.7、AC-18 の前提）。ただし group の `vars` の未定義変数では `Context` が空になり、テンプレートは文言に入らない。生の改行を文言に載せる #1 の失敗には group の `env_vars` の値を使う（Phase 3 の実装時に確認）。
 - 既存テストの網羅は #1〜#7 で一様でない。`#2` は `TestExecuteGroup_VariableExpansionError`（`group_executor_test.go:1885`）、`#3` は `TestExecuteGroup_ExpandCommandError`（`:1999`）・`TestExecuteGroup_ResolveCommandWorkDirError`（`:2054`）・`TestPreExpandCommands_Error`（`:3014`）、`#4` は `TestWithDirPermAuditor_ReachesGroupExecution`（`runner_test.go:2551`）・`TestAuditGroupDirPermissions_ViolationReturnsError`（`group_executor_test.go:3510`）、`#6` は `TestVerifyGroupFiles_ResolvePathFailure`（`group_executor_test.go:1303`）・`TestVerifyGroupFiles_DynLibResolvePathFailure`（`:3171`）、`#7` は `TestVerifyGroupFiles_ShebangInterpreter_Error`（`:3354`）・`TestVerifyGroupFiles_ShebangInterpreter_UsesEffectiveEnvPATH`（`:3415`）が覆う。`#1`（`ExpandGroup` 失敗）と `#5`（`VerifyGroupFiles` の失敗。`*verification.Error` か否かを問わず）を覆う既存の group executor テストは無い。`#5` の `*verification.Error` の経路は group executor のテストでは無く、生の `*verification.Error` を返すモックを使う runner 境界のテスト（`runner_test.go:2385`・`:2439`）が覆う。いずれのテストも `errors.Is` / `assert.ErrorContains` で判定しており、原因の連鎖が `Unwrap` で保たれるため変更不要（§3.8）。
 
 ### 1.4 テストヘルパーの方針
@@ -201,8 +201,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: group executor の段階宣言と出口規則
 
@@ -210,23 +210,23 @@
 
 **作業内容**:
 
-- [ ] #1（`:155-158`）を `newGroupStageError(GroupStageGroupPreparation, groupSpec.Name, <現在の原因>)` に変える。
-- [ ] #2（`:172-175`）を `newGroupStageError(GroupStageGroupPreparation, groupSpec.Name, <現在の原因>)` に変える。
-- [ ] #3 を `preExpandCommands` の内側（`:296`・`:301`）で作り、`failed to pre-expand commands for group[%s]: command[%s] (index %d): ...` を原因に含めた `newCommandStageError(GroupStageCommandPreparation, groupSpec.Name, cmdSpec.Name, ...)` を返す。`ExecuteGroup:193-195` の外側の接頭辞は削除する。
-- [ ] #4（`auditGroupDirPermissions` の `:340`・`:352`）を `newGroupStageError(GroupStageDirPermissionAudit, runnertypes.ExtractGroupName(runtimeGroup), <現在の原因>)` に変える。
-- [ ] `verifyGroupFiles` の `groupName := runnertypes.ExtractGroupName(runtimeGroup)`（`:380`）を `input` の組み立て（`:366-369`）より前へ移し、`input.Name` にもこの `groupName` を使う。#5〜#7 はこの `groupName` を使う（移さないと #5 の時点で `groupName` が未宣言でコンパイルできない）。
-- [ ] #5（`verifyGroupFiles` の `:375-378`）を `newGroupStageError(GroupStageFileVerification, groupName, err)` に変える。`*verification.Error` の判定はここでは行わない。
-- [ ] #6（`:392-395`）を `newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(), <現在の原因>)` に変える。
-- [ ] #7（`:407-413`）で、`slog.Error` は残し、原因を `command dependency verification failed for %q: %w` でラップして `newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(), ...)` を返す（§3.3.4）。
-- [ ] `ExecuteGroup` の出口規則 1・2 を 1 つの非公開の出口関数に実装し、`ExecuteGroup` を named return と deferred 出口から呼ぶ形にする。出口関数は、エラーが `nil` またはコマンド実行後（`executionResult != nil`）ならそのまま返し、コマンド実行前で `*GroupStageError` を含まなければ `newGroupStageError(GroupStageUnknown, groupSpec.Name, err)` を返す。
-- [ ] `group_executor_test.go` に `TestExecuteGroup_PreExecutionStageErrors` を追加する。既存テストの手法（`TestExecuteGroup_VariableExpansionError`・`TestExecuteGroup_ExpandCommandError`・`TestExecuteGroup_ResolveCommandWorkDirError`・`TestWithDirPermAuditor_ReachesGroupExecution`・`TestVerifyGroupFiles_DynLibResolvePathFailure`・`TestVerifyGroupFiles_ResolvePathFailure`）を流用し、#1〜#7 をそれぞれ失敗させて `errors.AsType[*GroupStageError]` で段階・group 名・コマンド名と `Error()` を検証する（AC-11・AC-01〜AC-07）。#1・#2 は `GroupStageGroupPreparation`、#3 は `GroupStageCommandPreparation` とコマンド名、#4 は `GroupStageDirPermissionAudit`、#5 は `GroupStageFileVerification`、#6・#7 は `GroupStageCommandVerification` とコマンド名を確認する。#7 は `Error()` にコマンドのパスと原因の両方を含むことも確認する（AC-07）。#3 の `Error()` が接頭辞を二重に含まないことも確認する。
-- [ ] 同テストに、AC-18 の前提を作る行を追加する。#1 または #3 を複数行の TOML 文字列をテンプレートとして失敗させ、原因の文言に生の改行が含まれることを確認し、#6 では `ExpandedCmd` に、#7 では `ResolvePath` のモックが返す解決済みパス（#7 の `%q` が引用するのは `resolvedPath` であり `ExpandedCmd` ではない）に改行と `U+202E` を含め、`Error()` のパスが `%q` で引用されることを確認する。
-- [ ] `group_executor_test.go` に `TestExecuteGroup_PreExecutionExitRules` を追加する。出口関数を直接呼び、段階エラーを含まないコマンド実行前のエラーが `GroupStageUnknown` でラップされることと、コマンド実行後（`executionResult != nil`）のエラーはラップされないことを固定する（AC-10・AC-13）。
-- [ ] `group_executor_test.go` に `go/ast` のガード `TestExecuteGroupRegistersExitDefer` を追加する。段階エラーでないエラーを実行前に注入する手段が無いため、`ExecuteGroup` が出口関数を通ることを構造で固定する。`identitymutationguard.ReadProductionSource` で `internal/runner/group_executor.go` を読み、`identitymutationguard.ParseSource` で構文解析したうえで、`DefaultGroupExecutor` の `ExecuteGroup` について次を検証する。
+- [x] #1（`:155-158`）を `newGroupStageError(GroupStageGroupPreparation, groupSpec.Name, <現在の原因>)` に変える。
+- [x] #2（`:172-175`）を `newGroupStageError(GroupStageGroupPreparation, groupSpec.Name, <現在の原因>)` に変える。
+- [x] #3 を `preExpandCommands` の内側（`:296`・`:301`）で作り、`failed to pre-expand commands for group[%s]: command[%s] (index %d): ...` を原因に含めた `newCommandStageError(GroupStageCommandPreparation, groupSpec.Name, cmdSpec.Name, ...)` を返す。`ExecuteGroup:193-195` の外側の接頭辞は削除する。
+- [x] #4（`auditGroupDirPermissions` の `:340`・`:352`）を `newGroupStageError(GroupStageDirPermissionAudit, runnertypes.ExtractGroupName(runtimeGroup), <現在の原因>)` に変える。`:340` の `errUnhandledCheckSkipReason` は現状到達しないため、その段階宣言を検証するテストは無い（宣言を外しても出口規則 1 で汎用行として通知される）。
+- [x] `verifyGroupFiles` の `groupName := runnertypes.ExtractGroupName(runtimeGroup)`（`:380`）を `input` の組み立て（`:366-369`）より前へ移し、`input.Name` にもこの `groupName` を使う。#5〜#7 はこの `groupName` を使う（移さないと #5 の時点で `groupName` が未宣言でコンパイルできない）。
+- [x] #5（`verifyGroupFiles` の `:375-378`）を `newGroupStageError(GroupStageFileVerification, groupName, err)` に変える。`*verification.Error` の判定はここでは行わない。
+- [x] #6（`:392-395`）を `newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(), <現在の原因>)` に変える。
+- [x] #7（`:407-413`）で、`slog.Error` は残し、原因を `command dependency verification failed for %q: %w` でラップして `newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(), ...)` を返す（§3.3.4）。
+- [x] `ExecuteGroup` の出口規則 1・2 を 1 つの非公開の出口関数に実装し、`ExecuteGroup` を named return と deferred 出口から呼ぶ形にする。出口関数は、エラーが `nil` またはコマンド実行後（`executionResult != nil`）ならそのまま返し、コマンド実行前で `*GroupStageError` を含まなければ `newGroupStageError(GroupStageUnknown, groupSpec.Name, err)` を返す。
+- [x] `group_executor_test.go` に `TestExecuteGroup_PreExecutionStageErrors` を追加する。既存テストの手法（`TestExecuteGroup_VariableExpansionError`・`TestExecuteGroup_ExpandCommandError`・`TestExecuteGroup_ResolveCommandWorkDirError`・`TestWithDirPermAuditor_ReachesGroupExecution`・`TestVerifyGroupFiles_DynLibResolvePathFailure`・`TestVerifyGroupFiles_ResolvePathFailure`）を流用し、#1〜#7 をそれぞれ失敗させて `errors.AsType[*GroupStageError]` で段階・group 名・コマンド名と `Error()` を検証する（AC-11・AC-01〜AC-07）。#1・#2 は `GroupStageGroupPreparation`、#3 は `GroupStageCommandPreparation` とコマンド名、#4 は `GroupStageDirPermissionAudit`、#5 は `GroupStageFileVerification`、#6・#7 は `GroupStageCommandVerification` とコマンド名を確認する。#7 は `Error()` にコマンドのパスと原因の両方を含むことも確認する（AC-07）。#3 の `Error()` が接頭辞を二重に含まないことも確認する。
+- [x] 同テストに、AC-18 の前提を作る行を追加する。#1（group の `env_vars` の値。§1.3 のとおり `vars` では文言にテンプレートが入らない）を複数行の TOML 文字列をテンプレートとして失敗させ、原因の文言に生の改行が含まれることを確認し、#6 では `ExpandedCmd` に、#7 では `ResolvePath` のモックが返す解決済みパス（#7 の `%q` が引用するのは `resolvedPath` であり `ExpandedCmd` ではない）に改行と `U+202E` を含め、`Error()` のパスが `%q` で引用されることを確認する。
+- [x] `group_executor_test.go` に `TestExecuteGroup_PreExecutionExitRules` を追加する。出口関数を直接呼び、段階エラーを含まないコマンド実行前のエラーが `GroupStageUnknown` でラップされることと、コマンド実行後（`executionResult != nil`）のエラーはラップされないことを固定する（AC-10・AC-13）。
+- [x] `group_executor_test.go` に `go/ast` のガード `TestExecuteGroupRegistersExitDefer` を追加する。段階エラーでないエラーを実行前に注入する手段が無いため、`ExecuteGroup` が出口関数を通ることを構造で固定する。`identitymutationguard.ReadProductionSource` で `internal/runner/group_executor.go` を読み、`identitymutationguard.ParseSource` で構文解析したうえで、`DefaultGroupExecutor` の `ExecuteGroup` について次を検証する。
   - 結果が名前付きの `error` 1 つとして宣言されていること（named return）。
   - 本体の最上位の文の中に、関数リテラルを `defer` する文があり、その関数リテラルの本体が名前付きの結果に出口関数の呼び出し結果を代入していること（`err = <出口関数>(...)` の形。代入先の識別子が名前付きの結果と一致し、右辺が出口関数の呼び出しであること）。
-  - 本体のどこにも、その `defer` 文より前の位置にある `return` 文が無いこと（`ast.Inspect` で本体全体の `ReturnStmt` を集め、位置が `defer` 文より前のものが 0 件であること）。`defer` が本体の最初の文であることは要求しない。出口規則の行のとおり、`startTime := time.Now()` と前へ移した `var executionResult` の宣言は `defer` より前に置く。
-- [ ] 同ファイルに `TestExecuteGroup_CommandExecutionFailureHasNoStageError` を追加する。既存の `TestExecuteGroup_CommandExecutionFailure` の構成を流用し、返ったエラーが `*GroupStageError` を含まないことを固定する（AC-13）。
+  - 本体のどこにも、その `defer` 文より前の位置にある `return` 文が無いこと（`ast.Inspect` で本体全体の `ReturnStmt` を集め、位置が `defer` 文より前のものが 0 件であること）。関数リテラルの中の `return` は `ExecuteGroup` の `return` ではないため集めない。`defer` が本体の最初の文であることは要求しない。出口規則の行のとおり、`startTime := time.Now()` と前へ移した `var executionResult` の宣言は `defer` より前に置く。
+- [x] 同ファイルに `TestExecuteGroup_CommandExecutionFailureHasNoStageError` を追加する。既存の `TestExecuteGroup_CommandExecutionFailure` の構成を流用し、返ったエラーが `*GroupStageError` を含まないことを固定する（AC-13）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestExecuteGroup_PreExecutionStageErrors` が各段階の宣言を外すと失敗すること、`TestExecuteGroup_PreExecutionExitRules` が出口規則 1 を外す／規則 2 を無効化すると失敗すること、`TestExecuteGroupRegistersExitDefer` が deferred 出口の登録を削除する／`config.ExpandGroup` の失敗時の `return`（#1）より後ろへ移すと失敗することを確認する。
 
@@ -242,8 +242,8 @@
 
 **判定理由**: 7 か所のエラー生成の書き換え、接頭辞の移動、文言が変わる #7、`ExecuteGroup` の出口制御という可視挙動を持つ複数ステップで、実装モデルの能力が結果を左右しうるため。段階の raise/lower や段階的 rollout は無く panel-mode トリガーには該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -263,7 +263,7 @@
 - [ ] 同ファイルに `TestRunner_PreExecutionErrorMessageIsRedacted` を追加する。値形式の機密（GitHub トークン形式の文字列）を含むが、`key`・`token` などの語も key=value の形も含まない原因を持つ段階エラーを返すモックを使う。`redaction.NewRedactingHandler` を通したレコーダの `error_message` について、まずその入力が値全体置換の判定にも key=value のパターンにも当たらないことを確認する。そのうえで、機密の部分だけが値形式のプレースホルダに置き換わり、他の部分は残ることを検証する（AC-19）。
 - [ ] `internal/logging/slack_handler_test.go` に `TestBuildPreExecutionError_InterpolationContract` を追加する。改行・制御文字・書式制御文字（`U+202E`）を含む `error_message` と、500 byte を超える `error_message` を RedactingHandler 経由のレコードで与え、`buildPreExecutionError` の `Error Message` が 1 行で、制御文字と書式制御文字を含まず、`common.Interpolate` の上限以下であることを `assertDisplaySafeProperties` で検証する（AC-18）。
 - [ ] `integration_test_helpers.go` の `slackRun` に `stdout string` を追加し、`runMainWithSlackMock`（`:280`）が `captureStdoutStderr` の stdout も返すようにする（§1.4）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce` を追加する。`runMainWithSlackMock` と、未定義変数を参照する group 変数を持つ設定（`dryRun=false` 固定）で #1 を 1 件だけ起こし、`run.stdout` の `RUN_SUMMARY` 行がちょうど 1 行、stderr の `Error:` ブロックがちょうど 1 つ、終了コードが 1、Slack のペイロードが 1 件で `error_type` が `group_preparation_failed`・Scope が `group=<group>`、最終報告のレコード（`Execution error occurred`）が `slack_notify=false` であることを検証する（AC-15・AC-16）。ペイロードの `Error Message` が 1 行であることも確認する（AC-18）。
+- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce` を追加する。`runMainWithSlackMock` と、未定義変数を複数行の値で参照する group の `env_vars` を持つ設定（`dryRun=false` 固定。`vars` では原因に改行が入らず AC-18 の 1 行化を検証できないため、§1.3）で #1 を 1 件だけ起こし、`run.stdout` の `RUN_SUMMARY` 行がちょうど 1 行、stderr の `Error:` ブロックがちょうど 1 つ、終了コードが 1、Slack のペイロードが 1 件で `error_type` が `group_preparation_failed`・Scope が `group=<group>`、最終報告のレコード（`Execution error occurred`）が `slack_notify=false` であることを検証する（AC-15・AC-16）。ペイロードの `Error Message` が 1 行であることも確認する（AC-18）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。配線テストが 3b の分岐を 3a の前に置く／段階より先に `*verification.Error` を見ると失敗すること、`TestRunner_FileVerificationStageKeepsExistingPath` が 3a を外すと失敗すること、統合テストが `NotifyPreExecutionError` を `HandlePreExecutionError` に替える（`RUN_SUMMARY` 行が増える）と失敗することを確認する。
 

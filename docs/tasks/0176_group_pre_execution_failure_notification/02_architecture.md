@@ -693,14 +693,14 @@ flowchart LR
 | 脅威 | 対策 |
 |---|---|
 | T1: 原因の文言（展開後のパス・変数名・テンプレートを含みうる）に含まれる機密値が Slack に届く | 本文を `error_message` 属性として記録し、`RedactingHandler` の redaction（key=value 置換・値形式の検出・値全体の置換）を受けさせる（AC-19）。redaction の範囲は変えない |
-| T2: 改行や制御文字を含む値が通知の行を偽装する、または長い本文が通知を壊す | ビルダーの表示安全な補間契約（1 行化・制御文字の除去・500 byte 上限）を通す（AC-18）。#6・#7 のコマンドパスは `%q` で引用されるが、#1〜#3 の原因の文言は引用されない。未定義変数のエラーは生のテンプレートを `'%s'` と `(context: %s)` で埋め込むため（`internal/runner/config/errors.go:262-268`）、複数行の TOML 文字列がそのまま入りうる。この経路の保護は補間契約だけが担う。§7.5 は、引用を受けない #1・#3 の経路と、引用と補間契約を組み合わせた #6・#7 の経路の両方を検証する。Scope の group 名・コマンド名は識別子として補間される |
+| T2: 改行や制御文字を含む値が通知の行を偽装する、または長い本文が通知を壊す | ビルダーの表示安全な補間契約（1 行化・制御文字の除去・500 byte 上限）を通す（AC-18）。#6・#7 のコマンドパスは `%q` で引用されるが、#1〜#3 の原因の文言は引用されない。未定義変数のエラーは生のテンプレートを `(context: %s)` で埋め込むため（`internal/runner/config/errors.go:262-268`）、複数行の TOML 文字列がそのまま入りうる（group の `vars` の未定義変数では `Context` が空になり、テンプレートは入らない）。この経路の保護は補間契約だけが担う。§7.5 は、引用を受けない #1・#3 の経路と、引用と補間契約を組み合わせた #6・#7 の経路の両方を検証する。Scope の group 名・コマンド名は識別子として補間される |
 | T3: 依存ライブラリ・インタプリタの差し替えやディレクトリ権限の違反が Slack で気付かれない | #4・#6・#7 を段階エラーとして通知する（本タスクの目的）。段階の宣言を忘れた失敗も汎用行で通知する（§3.3.2） |
 
 ### 5.2 redaction の扱いと、本文が読めないときの運用
 
 原因の文言は自由文（`KindString`）の `error_message` として記録されるため、`RedactingHandler` の値全体置換を受ける。値全体置換は未アンカーの部分一致であり、`(?i)(password|token|secret|key|api_key)` や `bearer`・`basic`・`authorization` などを含む（`internal/redaction/sensitive_patterns.go:40-51`、判定は `:131-134`）。本文にこれらが含まれると、`Error Message` 全体が `[REDACTED]` になる。本設計の本文では、次のような普通の値で起きやすい。
 
-- #1〜#3: 未定義変数のエラーは変数名と生のテンプレートを含む（`internal/runner/config/errors.go:262-268`）。`api_key`・`ssh_key`・`token_file` のような変数名で必ず起きる。
+- #1〜#3: 未定義変数のエラーは変数名を含み、`vars` 以外（`env_vars`・`workdir`・`cmd` など）では生のテンプレートも含む（`internal/runner/config/errors.go:262-268`）。`api_key`・`ssh_key`・`token_file` のような変数名で必ず起きる。
 - #6・#7: `ssh-keygen` のようなコマンドパスや、`libkeyutils.so.1` のような依存ライブラリのパスで起きる。
 - 本文中の group 名・コマンド名（§3.7）が上の語を含む場合。
 
@@ -857,7 +857,7 @@ flowchart LR
 
 | # | 失敗のさせ方（既存テストの手法を流用） |
 |---|---|
-| 1 | 未定義変数を参照する group 変数（`config.ErrUndefinedVariable`） |
+| 1 | 未定義変数を参照する group の `env_vars` の値（`config.ErrUndefinedVariable`）。`vars` の未定義変数は原因の文言に展開前のテンプレートを含まないため、改行を含む原因の確認（§3.7）には `env_vars` を使う |
 | 2 | 未定義変数を参照する group の `workdir` |
 | 3 | 未定義変数を参照するコマンドの `cmd` と、コマンドの `workdir` の 2 通り |
 | 4 | world-writable なディレクトリを参照する `verify_files`（`TestWithDirPermAuditor_ReachesGroupExecution` と同じ手法） |
@@ -883,7 +883,7 @@ flowchart LR
 
 ### 7.4 統合テスト: 報告出力と最終報告（AC-15・AC-16）
 
-`cmd/runner/integration_pre_execution_error_test.go` の手法で、#1 の失敗（未定義変数を参照する group 変数）を 1 件だけ起こす設定で実行し、次を検証する。
+`cmd/runner/integration_pre_execution_error_test.go` の手法で、#1 の失敗（未定義変数を複数行の値で参照する group の `env_vars`）を 1 件だけ起こす設定で実行し、次を検証する。
 
 - stdout の `RUN_SUMMARY` 行がちょうど 1 行。
 - stderr の `Error:` ブロックがちょうど 1 つ（最終報告の分）。
