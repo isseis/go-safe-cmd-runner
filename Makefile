@@ -659,7 +659,7 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	echo "Running Slack group notification test with run ID: $$RUN_ID"; \
 	$(ENVSET) GSCR_SLACK_WEBHOOK_URL_SUCCESS="$$GSCR_SLACK_WEBHOOK_URL_SUCCESS" \
 		GSCR_SLACK_WEBHOOK_URL_ERROR="$$GSCR_SLACK_WEBHOOK_URL_ERROR" \
-		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -run-id "$$RUN_ID" \
+		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -quiet -run-id "$$RUN_ID" \
 		2>&1 | tee /tmp/slack-group-test/test-output.log || EXIT_CODE=$$?; \
 	echo ""; \
 	echo "=== Test Results ==="; \
