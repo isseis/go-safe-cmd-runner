@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"path"
 	"slices"
 	"strings"
@@ -24,19 +25,23 @@ var errGroupStageCause = errors.New("group stage cause")
 // covers every declared stage: a stage added without a row would leave a zero
 // row and report an empty error_type.
 func TestGroupStageTableHasARowForEveryStage(t *testing.T) {
-	require.Equal(t, int(groupStageCount), len(groupStageDefinitions),
-		"the table must have one row per stage")
-
 	generic := groupStageDefinitions[GroupStageUnknown]
 	for stage := range groupStageCount {
 		def, ok := groupStageDefinitionFor(stage)
-		require.True(t, ok, "stage %s has no row", stage)
+		require.True(t, ok, "the lookup must accept the declared stage %s", stage)
 		assert.NotEmpty(t, def.errorType, "stage %s has no error_type", stage)
 		assert.NotEmpty(t, def.message, "stage %s has no summary", stage)
 		if stage != GroupStageUnknown {
 			assert.NotEqual(t, generic, def, "stage %s must not reuse the generic row", stage)
 		}
 	}
+
+	// The lookup must reject the closing sentinel and negative values, so an
+	// out-of-range stage cannot silently read a real row.
+	_, ok := groupStageDefinitionFor(groupStageCount)
+	assert.False(t, ok, "the closing sentinel must not resolve to a stage")
+	_, ok = groupStageDefinitionFor(GroupStage(-1))
+	assert.False(t, ok, "a negative stage must not resolve to a row")
 }
 
 // TestGroupStagePreExecutionErrorMapping pins the error_type, summary, scope
@@ -112,6 +117,8 @@ func TestGroupStagePreExecutionErrorMapping(t *testing.T) {
 			} else {
 				stageErr = newGroupStageError(tt.stage, tt.group, cause)
 			}
+			assert.Equal(t, tt.command, stageErr.CommandName(),
+				"a group-level stage carries no command name")
 
 			got := groupStagePreExecutionError(stageErr, "run-mapping")
 
@@ -174,6 +181,9 @@ func TestGroupStageErrorZeroValueDoesNotPanic(t *testing.T) {
 	preExecErr := groupStagePreExecutionError(&zero, "run-zero")
 	assert.Equal(t, generic.errorType, preExecErr.Type)
 	assert.Equal(t, generic.message, preExecErr.Message)
+	// The zero value has no group name, so the scope is a group scope with an
+	// empty name; the display boundary reports that as an invalid scope.
+	assert.Equal(t, common.GroupScope(""), preExecErr.NotificationContext)
 }
 
 // TestGroupStagePreExecutionErrorUsesDeclaredStageNotReasonText pins that the
@@ -209,6 +219,10 @@ func TestGroupStageConstructorsPanicOnInvalidInput(t *testing.T) {
 			call: func() { newGroupStageError(GroupStage(99), "backup", cause) },
 		},
 		{
+			name: "group constructor rejects the closing sentinel",
+			call: func() { newGroupStageError(groupStageCount, "backup", cause) },
+		},
+		{
 			name: "group constructor rejects an empty group name",
 			call: func() { newGroupStageError(GroupStageGroupPreparation, "", cause) },
 		},
@@ -227,6 +241,10 @@ func TestGroupStageConstructorsPanicOnInvalidInput(t *testing.T) {
 		{
 			name: "command constructor rejects an out-of-range stage",
 			call: func() { newCommandStageError(GroupStage(99), "backup", "dump", cause) },
+		},
+		{
+			name: "command constructor rejects the closing sentinel",
+			call: func() { newCommandStageError(groupStageCount, "backup", "dump", cause) },
 		},
 		{
 			name: "command constructor rejects an empty group name",
@@ -270,24 +288,42 @@ func TestGroupStageErrorUnwrapsCause(t *testing.T) {
 // distinct, non-empty name and that a value outside the range reads
 // "unknown".
 func TestGroupStageStringCoversEveryStage(t *testing.T) {
+	tests := []struct {
+		stage GroupStage
+		want  string
+	}{
+		{GroupStageUnknown, "GroupStageUnknown"},
+		{GroupStageGroupPreparation, "GroupStageGroupPreparation"},
+		{GroupStageCommandPreparation, "GroupStageCommandPreparation"},
+		{GroupStageDirPermissionAudit, "GroupStageDirPermissionAudit"},
+		{GroupStageFileVerification, "GroupStageFileVerification"},
+		{GroupStageCommandVerification, "GroupStageCommandVerification"},
+	}
+	require.Len(t, tests, int(groupStageCount),
+		"every declared stage needs an expected name")
+
 	seen := make(map[string]GroupStage, groupStageCount)
-	for stage := range groupStageCount {
-		name := stage.String()
-		assert.NotEmpty(t, name, "stage %d has no name", stage)
-		if previous, dup := seen[name]; dup {
-			t.Errorf("stage %d duplicates the name %q of stage %d", stage, name, previous)
+	for _, tt := range tests {
+		got := tt.stage.String()
+		assert.Equal(t, tt.want, got)
+		if previous, dup := seen[got]; dup {
+			t.Errorf("stage %d duplicates the name %q of stage %d", tt.stage, got, previous)
 		}
-		seen[name] = stage
+		seen[got] = tt.stage
 	}
 
-	assert.Equal(t, "unknown", GroupStage(-1).String())
-	assert.Equal(t, "unknown", GroupStage(99).String())
+	for _, out := range []GroupStage{-1, groupStageCount, 99} {
+		assert.Equal(t, "unknown", out.String(), "stage %d is out of range", out)
+	}
 }
 
 const (
-	// groupStageErrorFile is the file that declares GroupStageError and the
-	// constructors allowed to build it.
+	// groupStageErrorFile is the file that declares GroupStageError and its
+	// constructors.
 	groupStageErrorFile = "internal/runner/group_stage.go"
+	// groupStageErrorConstructors names the functions allowed to build a
+	// GroupStageError, for the violation messages.
+	groupStageErrorConstructors = "newGroupStageError or newCommandStageError"
 	// runnerPackageDir is the package whose unqualified GroupStageError
 	// identifier names the type, and where the private fields are assignable.
 	runnerPackageDir = "internal/runner"
@@ -295,25 +331,36 @@ const (
 	runnerImportPath = "github.com/isseis/go-safe-cmd-runner/internal/runner"
 )
 
+// groupStageErrorConstructorNames are the functions allowed to build a
+// GroupStageError.
+var groupStageErrorConstructorNames = map[string]struct{}{
+	"newGroupStageError":   {},
+	"newCommandStageError": {},
+}
+
 // groupStageErrorFields are the private fields that only the constructors may
 // set.
 var groupStageErrorFields = []string{"stage", "group", "command", "err"}
 
 // TestProductionGroupStageErrorLiteralsUseConstructors fixes the construction
-// forms of GroupStageError and the field assignment that could bypass them.
-// The fields are unexported, so a same-package production file could still
-// build the struct or assign its fields directly; this go/ast guard is what
-// keeps construction in the two constructors.
+// forms of GroupStageError and the field mutation that could bypass them. The
+// fields are unexported, so a same-package production file could still build
+// the struct or assign its fields directly; this go/ast guard is what keeps
+// construction in the two constructors.
 //
 //   - A composite literal naming GroupStageError -- the qualified
 //     runner.GroupStageError{...} form anywhere, and the unqualified
-//     GroupStageError{...} form inside internal/runner -- must appear only in
-//     group_stage.go.
-//   - Inside internal/runner, a selector assignment to .stage, .group,
-//     .command or .err must not appear outside group_stage.go. The scan is
-//     limited to this package because the unqualified type name is
+//     GroupStageError{...} form inside internal/runner -- must appear only
+//     inside newGroupStageError or newCommandStageError.
+//   - Inside internal/runner, a selector assignment or increment of .stage,
+//     .group, .command or .err is reported outside those two constructors. The
+//     scan is limited to this package because the unqualified type name is
 //     unambiguous there; scanning wider would match unrelated selector
 //     assignments such as the base executor's pc.stage and *w.err.
+//   - The field-name match carries no type information, so a future struct
+//     added directly under internal/runner with a field of the same name would
+//     be a false positive. That is the known maintenance obligation of this
+//     incomplete (by design) scan, as is a mutation made through a type alias.
 //   - Test files are not scanned: they legitimately build out-of-range values
 //     that the constructors reject.
 //   - A scan that finds no literal fails rather than passing vacuously.
@@ -338,16 +385,16 @@ func TestProductionGroupStageErrorLiteralsUseConstructors(t *testing.T) {
 		"the scan found no GroupStageError literal; the scan is broken")
 	assert.Empty(t, literalViolations,
 		"GroupStageError literals may only be built in %s:\n%s",
-		groupStageErrorFile, strings.Join(literalViolations, "\n"))
+		groupStageErrorConstructors, strings.Join(literalViolations, "\n"))
 	assert.Empty(t, assignmentViolations,
 		"GroupStageError fields may only be set in %s:\n%s",
-		groupStageErrorFile, strings.Join(assignmentViolations, "\n"))
+		groupStageErrorConstructors, strings.Join(assignmentViolations, "\n"))
 }
 
 // checkGroupStageErrorConstruction scans one production file and returns the
 // number of GroupStageError literals found (value, pointer and elided forms)
-// together with the positions of those built outside group_stage.go and of any
-// assignment to one of its private fields outside it.
+// together with the positions of those built outside the two constructors and
+// of any assignment or increment of one of its private fields outside them.
 func checkGroupStageErrorConstruction(t *testing.T, filename, src string) (found int, literalViolations, assignmentViolations []string) {
 	t.Helper()
 
@@ -359,37 +406,191 @@ func checkGroupStageErrorConstruction(t *testing.T, filename, src string) (found
 	isGroupStageError := func(expr ast.Expr) bool {
 		return identitymutationguard.IsNamedType(expr, qualifiers, runnerImportPath, "GroupStageError", inPackage)
 	}
-	allowed := filename == groupStageErrorFile
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.CompositeLit:
-			literals := make([]*ast.CompositeLit, 0, 1)
-			if isGroupStageError(node.Type) {
-				literals = append(literals, node)
-			}
-			literals = append(literals, identitymutationguard.ElidedCompositeLiterals(node, isGroupStageError)...)
-			for _, literal := range literals {
-				found++
-				if !allowed {
-					literalViolations = append(literalViolations, fmt.Sprintf(
-						"%s: GroupStageError literal built outside %s", fset.Position(literal.Pos()), groupStageErrorFile))
-				}
-			}
-		case *ast.AssignStmt:
-			if !inPackage || allowed {
-				return true
-			}
-			for _, lhs := range node.Lhs {
-				sel, ok := identitymutationguard.UnwrapParen(lhs).(*ast.SelectorExpr)
-				if !ok || !slices.Contains(groupStageErrorFields, sel.Sel.Name) {
-					continue
-				}
-				assignmentViolations = append(assignmentViolations, fmt.Sprintf(
-					"%s: GroupStageError.%s assigned outside %s", fset.Position(lhs.Pos()), sel.Sel.Name, groupStageErrorFile))
-			}
+	for _, decl := range file.Decls {
+		funcName := ""
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			funcName = fn.Name.Name
 		}
-		return true
-	})
+		_, isConstructor := groupStageErrorConstructorNames[funcName]
+		allowed := filename == groupStageErrorFile && isConstructor
+
+		ast.Inspect(decl, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.CompositeLit:
+				literals := make([]*ast.CompositeLit, 0, 1)
+				if isGroupStageError(node.Type) {
+					literals = append(literals, node)
+				}
+				literals = append(literals, identitymutationguard.ElidedCompositeLiterals(node, isGroupStageError)...)
+				for _, literal := range literals {
+					found++
+					if !allowed {
+						literalViolations = append(literalViolations, fmt.Sprintf(
+							"%s: GroupStageError literal built outside %s", fset.Position(literal.Pos()), groupStageErrorConstructors))
+					}
+				}
+			case *ast.AssignStmt:
+				if !inPackage || allowed {
+					return true
+				}
+				for _, lhs := range node.Lhs {
+					reportGroupStageFieldMutation(fset, lhs, "assigned", &assignmentViolations)
+				}
+			case *ast.IncDecStmt:
+				if !inPackage || allowed {
+					return true
+				}
+				reportGroupStageFieldMutation(fset, node.X, "modified", &assignmentViolations)
+			}
+			return true
+		})
+	}
 	return found, literalViolations, assignmentViolations
+}
+
+// reportGroupStageFieldMutation appends a violation when expr is a selector for
+// one of GroupStageError's private fields.
+func reportGroupStageFieldMutation(fset *token.FileSet, expr ast.Expr, verb string, violations *[]string) {
+	sel, ok := identitymutationguard.UnwrapParen(expr).(*ast.SelectorExpr)
+	if !ok || !slices.Contains(groupStageErrorFields, sel.Sel.Name) {
+		return
+	}
+	*violations = append(*violations, fmt.Sprintf(
+		"%s: GroupStageError.%s %s outside %s", fset.Position(expr.Pos()), sel.Sel.Name, verb, groupStageErrorConstructors))
+}
+
+// TestGroupStageConstructionCheckRecognizesForms pins the forms the guard must
+// recognize, so the guard cannot become a no-op that still passes the
+// repository scan.
+func TestGroupStageConstructionCheckRecognizesForms(t *testing.T) {
+	const header = "package x\n\nimport r \"github.com/isseis/go-safe-cmd-runner/internal/runner\"\n\nvar _ = r.GroupStageUnknown\n\n"
+
+	literalTests := []struct {
+		name              string
+		path              string
+		src               string
+		wantLiterals      int
+		wantLiteralMisses int
+	}{
+		{
+			name:              "qualified pointer literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var e = &r.GroupStageError{}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "value literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var e = r.GroupStageError{}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "elided pointer literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var es = []*r.GroupStageError{{}}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "unqualified literal inside the package is reported",
+			path:              "internal/runner/x.go",
+			src:               "package runner\n\nvar e = &GroupStageError{}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "literal in a constructor is accepted",
+			path:              groupStageErrorFile,
+			src:               "package runner\n\nfunc newGroupStageError() *GroupStageError { return &GroupStageError{} }\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 0,
+		},
+		{
+			name:              "literal in another function of the constructor file is reported",
+			path:              groupStageErrorFile,
+			src:               "package runner\n\nfunc helper() *GroupStageError { return &GroupStageError{} }\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:         "a same-named type in another package is not reported",
+			path:         "internal/x/x.go",
+			src:          "package x\n\ntype GroupStageError struct{}\n\nvar e = &GroupStageError{}\n",
+			wantLiterals: 0,
+		},
+		{
+			name:         "a different type inside the package is not reported",
+			path:         "internal/runner/x.go",
+			src:          "package runner\n\nvar e = &OtherError{}\n",
+			wantLiterals: 0,
+		},
+	}
+
+	for _, tt := range literalTests {
+		t.Run(tt.name, func(t *testing.T) {
+			found, literalMisses, _ := checkGroupStageErrorConstruction(t, tt.path, tt.src)
+			assert.Equal(t, tt.wantLiterals, found)
+			assert.Len(t, literalMisses, tt.wantLiteralMisses, "literal violations: %v", literalMisses)
+		})
+	}
+
+	assignmentTests := []struct {
+		name string
+		path string
+		src  string
+		want int
+	}{
+		{
+			name: "stage assignment outside the constructors is reported",
+			path: "internal/runner/x.go",
+			src:  "package runner\n\nfunc helper(e *GroupStageError) { e.stage = GroupStageUnknown }\n",
+			want: 1,
+		},
+		{
+			name: "group assignment outside the constructors is reported",
+			path: "internal/runner/x.go",
+			src:  "package runner\n\nfunc helper(e *GroupStageError) { e.group = \"x\" }\n",
+			want: 1,
+		},
+		{
+			name: "command assignment outside the constructors is reported",
+			path: "internal/runner/x.go",
+			src:  "package runner\n\nfunc helper(e *GroupStageError) { e.command = \"x\" }\n",
+			want: 1,
+		},
+		{
+			name: "err assignment outside the constructors is reported",
+			path: "internal/runner/x.go",
+			src:  "package runner\n\nfunc helper(e *GroupStageError) { e.err = nil }\n",
+			want: 1,
+		},
+		{
+			name: "stage increment outside the constructors is reported",
+			path: "internal/runner/x.go",
+			src:  "package runner\n\nfunc helper(e *GroupStageError) { e.stage++ }\n",
+			want: 1,
+		},
+		{
+			name: "assignment in a constructor is accepted",
+			path: groupStageErrorFile,
+			src:  "package runner\n\nfunc newGroupStageError(e *GroupStageError) { e.err = nil }\n",
+			want: 0,
+		},
+		{
+			name: "unrelated field assignment in another package is not reported",
+			path: "internal/x/x.go",
+			src:  "package x\n\nfunc helper(r *result) { r.err = nil }\n",
+			want: 0,
+		},
+	}
+
+	for _, tt := range assignmentTests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, assignmentMisses := checkGroupStageErrorConstruction(t, tt.path, tt.src)
+			assert.Len(t, assignmentMisses, tt.want, "assignment violations: %v", assignmentMisses)
+		})
+	}
 }

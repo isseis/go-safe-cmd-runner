@@ -212,10 +212,15 @@ func groupStagePreExecutionError(stageErr *GroupStageError, runID string) *loggi
 }
 
 // groupStageNotificationContext builds the scope a stage's definition
-// declares: a command scope at command level, a group scope otherwise.
+// declares. An unknown level panics rather than defaulting to a group scope,
+// so a misconfigured table row fails loudly instead of mislabeling the scope.
 func groupStageNotificationContext(scope common.NotificationScope, group, command string) common.NotificationContext {
-	if scope == common.ScopeCommand {
+	switch scope {
+	case common.ScopeGroup:
+		return common.GroupScope(group)
+	case common.ScopeCommand:
 		return common.CommandScope(group, command)
+	default:
+		panic(fmt.Sprintf("groupStageNotificationContext: unexpected scope %d", scope))
 	}
-	return common.GroupScope(group)
 }
