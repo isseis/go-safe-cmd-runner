@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-24 |
-| Review date | - |
-| Reviewer | - |
-| Comments | - |
+| Review date | 2026-09-25 |
+| Reviewer | isseis |
+| Comments | 2026-09-25 追記（editorial correction、決定の変更なし）: 用語集への「ラップする」登録（Task 0176）に合わせ、エラーのラップを表す「包む」「包み」を「ラップする」「ラップ」に置き換えた。 |
 
 ## 関連 Issue
 
@@ -26,7 +26,7 @@
 | group ファイル検証の失敗（`*verification.Error`） | [`Runner.executeGroups`](../../../internal/runner/runner.go) が `pre_execution_error`（`group_file_verification_failed`）として通知する |
 | コマンド実行の失敗（`executeAllCommands` がエラーを返す） | `executionResult` が設定されるため、deferred の `command_group_summary`（status `error`）が通知する |
 
-それ以外の失敗は `executeGroups` で `groupErrs` に積まれる。[`cmd/runner/main.go`](../../../cmd/runner/main.go) がこれを `logging.ExecutionError` に包み、[`HandleExecutionError`](../../../internal/logging/pre_execution_error.go) は `slack_notify=false` 固定で記録する。`executionResult` も未設定のため `command_group_summary` も出ない。つまり Slack には何も届かない。
+それ以外の失敗は `executeGroups` で `groupErrs` に積まれる。[`cmd/runner/main.go`](../../../cmd/runner/main.go) がこれを `logging.ExecutionError` でラップし、[`HandleExecutionError`](../../../internal/logging/pre_execution_error.go) は `slack_notify=false` 固定で記録する。`executionResult` も未設定のため `command_group_summary` も出ない。つまり Slack には何も届かない。
 
 ### 無通知になる失敗
 
@@ -37,14 +37,14 @@
 | 1 | group の展開 | `config.ExpandGroup` | `failed to expand group[%s]: %w` |
 | 2 | group の作業ディレクトリ解決 | `resolveGroupWorkDir` | `failed to resolve work directory: %w` |
 | 3 | コマンドの展開・コマンドの作業ディレクトリ解決 | `preExpandCommands` | `failed to pre-expand commands for group[%s]: command[%s] (index %d): ...` |
-| 4 | group のディレクトリ権限監査 | `auditGroupDirPermissions` | `ErrDirPermViolation` を包んだエラー |
+| 4 | group のディレクトリ権限監査 | `auditGroupDirPermissions` | `ErrDirPermViolation` をラップしたエラー |
 | 5 | group ファイル検証のうち `*verification.Error` ではない失敗 | `VerifyGroupFiles`（`ensureHashDirectoryValidated` の `*verification.OpError` など） | 生のエラー |
 | 6 | コマンドのパス解決（検証後の再解決） | `verifyGroupFiles` の `ResolvePath` | `command path resolution failed for %q: %w` |
 | 7 | コマンドの依存検証（動的ライブラリ・shebang インタプリタ） | `verifyGroupFiles` の `VerifyCommandDependencies` | 生のエラー |
 
 6・7 はコマンドレベルの検証である。グローバルと group のファイル検証の失敗は通知されるのに、同じ検証系の失敗でもコマンドレベルだけ通知されない。1〜4 は同じ根（`executeGroups` が `*verification.Error` 以外を通知しない）による無通知である。
 
-6 の範囲には注意が要る。コマンドのパスが解決できないという通常の失敗は、6 より前に `VerifyGroupFiles` の対象収集（`collectVerificationFiles`）で検出され、`ErrGroupVerificationCollectionFailed` を包んだ `*verification.Error` として返る。これは既存の `group_file_verification_failed`（group スコープ、`failed_file_paths` に解決できなかったコマンドを載せる）で通知済みであり、本タスクでは変えない（対象外、AC-12）。6 は、対象収集での解決が成功したのに `verifyGroupFiles` での再解決が失敗した場合（検証と再解決の間にファイルが消えた・差し替えられたなど）に限られる。
+6 の範囲には注意が要る。コマンドのパスが解決できないという通常の失敗は、6 より前に `VerifyGroupFiles` の対象収集（`collectVerificationFiles`）で検出され、`ErrGroupVerificationCollectionFailed` をラップした `*verification.Error` として返る。これは既存の `group_file_verification_failed`（group スコープ、`failed_file_paths` に解決できなかったコマンドを載せる）で通知済みであり、本タスクでは変えない（対象外、AC-12）。6 は、対象収集での解決が成功したのに `verifyGroupFiles` での再解決が失敗した場合（検証と再解決の間にファイルが消えた・差し替えられたなど）に限られる。
 
 ### 実害
 
@@ -120,7 +120,7 @@ Task 0172 は `message_type` を本番で発火する 3 種別（`command_group_
 
 ### 段階は型で宣言する
 
-group executor は、失敗した段階を列挙型のフィールドに持つ構造化エラーを返す。`executeGroups` はそのフィールドで `error_type` と Scope を選ぶ。エラー文字列やセンチネルの包み方（`strings.Contains`、文字列の接頭辞）から段階を推測しない（CLAUDE.md「Declare, don't infer」）。
+group executor は、失敗した段階を列挙型のフィールドに持つ構造化エラーを返す。`executeGroups` はそのフィールドで `error_type` と Scope を選ぶ。エラー文字列やセンチネルのラップの仕方（`strings.Contains`、文字列の接頭辞）から段階を推測しない（CLAUDE.md「Declare, don't infer」）。
 
 列挙型のゼロ値と未知の値は「段階不明」として扱い、通知を落とさずに汎用の `error_type` で通知する（fail secure）。段階の宣言を忘れた失敗が無通知に戻ることを防ぐためである。
 
