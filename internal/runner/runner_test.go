@@ -2731,15 +2731,15 @@ func TestRunner_PreExecutionStageNotifications(t *testing.T) {
 }
 
 // TestRunner_PreExecutionStageNotificationsPerGroup fixes that every failed
-// group is notified, not only the first one whose error Execute returns.
+// group is both notified and present in the error Execute returns.
 func TestRunner_PreExecutionStageNotificationsPerGroup(t *testing.T) {
 	first, second := errors.New("first"), errors.New("second")
 	recorder, err := executeWithGroupFailures(t, false,
 		groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", first)},
 		groupFailure{group: "deploy", err: newCommandStageError(GroupStageCommandVerification, "deploy", "push", second)},
 	)
-	assert.ErrorIs(t, err, first, "the run still returns the first group's error")
-	assert.NotErrorIs(t, err, second)
+	assert.ErrorIs(t, err, first)
+	assert.ErrorIs(t, err, second, "a later group's error must not be dropped")
 
 	records := recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage)
 	require.Len(t, records, 2, "each failed group must be notified once")

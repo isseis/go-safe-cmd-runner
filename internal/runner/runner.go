@@ -451,12 +451,9 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 		}
 	}
 
-	// Return the first error if any occurred
-	if len(groupErrs) > 0 {
-		return groupErrs[0]
-	}
-
-	return nil
+	// Return every group error so failures after the first still reach the
+	// caller; errors.Join returns nil when groupErrs is empty.
+	return errors.Join(groupErrs...)
 }
 
 // isGroupFileVerificationFailure reports whether a stage error belongs on the
