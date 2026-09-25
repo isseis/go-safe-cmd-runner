@@ -200,7 +200,7 @@
 **判定理由**: 型・表・純関数の追加で、対応は [02_architecture.md](02_architecture.md) §3.2 に固定済み。走査ガードは既存の `identitymutationguard` を再利用し、未確定の実装アプローチや高リスク分岐は無い。Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
