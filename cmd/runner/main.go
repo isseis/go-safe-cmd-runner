@@ -690,11 +690,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	if execErr != nil {
-		var groupName, commandName string
-		if cmdExecErr, ok := errors.AsType[*runner.CommandExecutionError](execErr); ok {
-			groupName = cmdExecErr.GroupName
-			commandName = cmdExecErr.CommandName
-		}
+		groupName, commandName := executionErrorContext(execErr)
 
 		return &logging.ExecutionError{
 			Message:     "error running commands",
@@ -722,4 +718,20 @@ type dryRunPreviewExit struct{ code int }
 
 func (e dryRunPreviewExit) Error() string {
 	return fmt.Sprintf("dry-run preview requested exit code %d", e.code)
+}
+
+// executionErrorContext returns the group and command names to attach to an
+// execution error, or empty strings when err joins several failures. One
+// group/command pair cannot describe several failed groups, and each joined
+// line already names its own group, so attaching the first failure's names
+// would misattribute the others. Issue #1179 tracks replacing this
+// multi-error check with a dedicated error type.
+func executionErrorContext(err error) (groupName, commandName string) {
+	if _, ok := err.(interface{ Unwrap() []error }); ok {
+		return "", ""
+	}
+	if cmdExecErr, ok := errors.AsType[*runner.CommandExecutionError](err); ok {
+		return cmdExecErr.GroupName, cmdExecErr.CommandName
+	}
+	return "", ""
 }

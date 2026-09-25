@@ -19,6 +19,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -739,4 +740,49 @@ func TestNewDryRunFormatter_UnknownFormatReturnsError(t *testing.T) {
 	formatter, err := newDryRunFormatter(resource.OutputFormatJSON + 1)
 	require.ErrorIs(t, err, errUnknownDryRunOutputFormat)
 	assert.Nil(t, formatter)
+}
+
+// TestExecutionErrorContext verifies that the group/command context is taken
+// from a single command failure but left empty when several groups failed,
+// because one pair of names cannot describe a joined multi-group error.
+func TestExecutionErrorContext(t *testing.T) {
+	t.Parallel()
+
+	errCause := errors.New("exit status 1")
+	cmdErr := func(group, command string) error {
+		return fmt.Errorf("failed to execute group %s: %w", group,
+			&runner.CommandExecutionError{GroupName: group, CommandName: command, Err: errCause})
+	}
+
+	tests := []struct {
+		name        string
+		err         error
+		wantGroup   string
+		wantCommand string
+	}{
+		{
+			name:        "single wrapped command failure",
+			err:         cmdErr("group-a", "cmd-a"),
+			wantGroup:   "group-a",
+			wantCommand: "cmd-a",
+		},
+		{
+			name: "joined failures from different groups",
+			err:  errors.Join(cmdErr("group-a", "cmd-a"), cmdErr("group-b", "cmd-b")),
+		},
+		{
+			name: "non-command error",
+			err:  errCause,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotGroup, gotCommand := executionErrorContext(tt.err)
+			assert.Equal(t, tt.wantGroup, gotGroup)
+			assert.Equal(t, tt.wantCommand, gotCommand)
+		})
+	}
 }

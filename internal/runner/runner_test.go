@@ -444,6 +444,13 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
+		// A single group failure must not be a multi-error, so the caller can
+		// attach its group/command context.
+		_, isMulti := err.(interface{ Unwrap() []error })
+		assert.False(t, isMulti, "a single group failure must not be returned as a joined error")
+		cmdExecErr, ok := errors.AsType[*CommandExecutionError](err)
+		require.True(t, ok, "the single group failure must carry a CommandExecutionError")
+		assert.Equal(t, "group-1", cmdExecErr.GroupName)
 		mockResourceManager.AssertExpectations(t)
 	})
 
