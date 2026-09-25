@@ -1476,6 +1476,21 @@ runner -config config.toml
 | `pre_execution_error` | 実行前エラー（対象ファイルの検証失敗など） | 高 |
 | `user_group_command_failure` | ユーザー／グループ指定コマンドの失敗 | 通常 |
 
+**group 実行前段の失敗の通知**
+
+group のコマンドが 1 件も実行される前に失敗した場合も、`pre_execution_error` として通知されます。通知レコードは失敗した group ごとに 1 件記録され、`Error Message` には失敗の要約と原因が `<要約>: <原因>` の形で現れます。失敗した段階は `error_type` で示します。
+
+| `error_type` | 対象の段階 | Scope |
+|---|---|---|
+| `group_preparation_failed` | group またはコマンドの準備（変数展開・作業ディレクトリの解決） | group（group の準備）／コマンド（コマンドの準備） |
+| `group_dir_permission_violation` | group のディレクトリ権限監査の違反 | group |
+| `command_verification_failed` | コマンドのパスの再解決、またはコマンドの依存検証（動的ライブラリ・shebang インタプリタ） | コマンド |
+| `group_pre_execution_failed` | 段階を判別できない実行前段の失敗（汎用） | group |
+
+group のファイル検証の失敗は、従来どおり `group_file_verification_failed` として通知されます。検証の対象となったファイルの一覧は `Error Message` の `Files:` 節に現れます（次節参照）。
+
+Scope は、失敗が group に帰属するときは `group=<グループ名>`、コマンドに帰属するときは `group=<グループ名> command=<コマンド名>` と表示されます。`error_type` と Scope から、どの group・コマンドのどの段階で失敗したかを判別できます。
+
 **実行前エラー通知の失敗ファイル一覧**
 
 `pre_execution_error` の `Error Message` には、失敗対象が `Files:` 節として現れます。各対象は引用符で囲み、`"`・`\`・制御文字などをエスケープして表示します。`password=...` のようなキー付きの機密値やトークン形式の値は redaction され、`[REDACTED]` に置き換わります。

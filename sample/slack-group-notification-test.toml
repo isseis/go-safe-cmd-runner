@@ -79,3 +79,18 @@ name = "final_failure"
 description = "Final command that fails"
 cmd = "false"
 args = []
+
+# Group 5: Group that fails before any command runs
+# The undefined variable in env_vars fails group preparation, so the group
+# should trigger a pre_execution_error notification with
+# error_type=group_preparation_failed and no command_group_summary.
+[[groups]]
+name = "pre_execution_failure_group"
+description = "Group whose env_vars reference an undefined variable, so it fails before running any command"
+env_vars = ["GREETING=first line\n%{UNDEFINED_VAR}\nlast line"]
+
+[[groups.commands]]
+name = "never_runs"
+description = "This command is never executed because group preparation fails first"
+cmd = "echo"
+args = ["This should not run"]

@@ -281,8 +281,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 5: 利用者向け文書・サンプル・対象環境での確認
 
@@ -290,12 +290,12 @@
 
 **作業内容**:
 
-- [ ] `runner_command.ja.md` の「通知設定」の「通知されるメッセージ種別」の後に、group 実行前段の失敗が `pre_execution_error` として通知されること、段階ごとの `error_type` 4 件（`group_preparation_failed`・`group_dir_permission_violation`・`command_verification_failed`・`group_pre_execution_failed`）とその意味、`group_file_verification_failed` が使われる場合、Scope の表示（`group=<group>`・`group=<group> command=<command>`）を追記する。記述は実装コードの定数（Phase 1）と Phase 4 の統合テストが観測した `error_type`・Scope を典拠にする（AC-20）。
-- [ ] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。`/mktrans` の用語登録に従い、新しく使った用語（実行前段、段階、段階エラー、段階定義表、記録のみの通知、汎用行など）を `docs/translation_glossary.md` に登録する（AC-20）。
-- [ ] `scripts/verification/check_pre_execution_notification_docs.sh` を追加する。既存の `check_identifier_exemption_docs.sh` と同じ POSIX sh の形で、(a) 4 つの `error_type` の値が `internal/logging/pre_execution_error.go` の定数として存在すること、(b) その 4 値と `pre_execution_error` が日英の `runner_command` に含まれること、を検査する。これで文書の値がコードの値に固定される。各 `error_type` の意味の文は人間のレビューを検証とし、その旨を PR-5 のレビュー観点に残す（AC-20）。`make verify-docs-checks` が `scripts/verification/check_*.sh` を列挙して実行するため、新しい検査は自動で走る。
-- [ ] `sample/slack-group-notification-test.toml` に、実行前段で失敗する group（例: 未定義変数を参照する group 変数）を 1 件加える。`Makefile` の `slack-group-notification-test`（`:666-675`）の期待通知の一覧とログの確認項目に、その group の `pre_execution_error` 通知と新しい `error_type` を加える。
-- [ ] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
-- [ ] `make slack-group-notification-test` で対象環境の表示を確かめ、実行前段の失敗の通知が 1 件届き、見出しが `error_type` であることを確認する（AC-20 の manual）。
+- [x] `runner_command.ja.md` の「通知設定」の「通知されるメッセージ種別」の後に、group 実行前段の失敗が `pre_execution_error` として通知されること、段階ごとの `error_type` 4 件（`group_preparation_failed`・`group_dir_permission_violation`・`command_verification_failed`・`group_pre_execution_failed`）とその意味、`group_file_verification_failed` が使われる場合、Scope の表示（`group=<group>`・`group=<group> command=<command>`）を追記する。記述は実装コードの定数（Phase 1）と Phase 4 の統合テストが観測した `error_type`・Scope を典拠にする（AC-20）。
+- [x] `runner_command.ja.md` をコミットした後、`/mktrans` で `runner_command.md` へ反映する。`/mktrans` の用語登録に従い、新しく使った用語（実行前段、段階、段階エラー、段階定義表、記録のみの通知、汎用行など）を `docs/translation_glossary.md` に登録する（AC-20）。
+- [x] `scripts/verification/check_pre_execution_notification_docs.sh` を追加する。既存の `check_identifier_exemption_docs.sh` と同じ POSIX sh の形で、(a) `error_type` の各定数が `internal/logging/pre_execution_error.go` で文書と同じ値として宣言されていること（定数名と値を 1 行の宣言として照合し、値の入れ替えを検出する。4 つの新設値に加え、既存の `group_file_verification_failed` も対象とする）、(b) その値と `pre_execution_error` が日英の `runner_command` に含まれ、かつ新しい節の見出しが日英に存在すること、を検査する。これで文書の値がコードの値に固定される。各 `error_type` の意味の文は人間のレビューを検証とし、その旨を PR-5 のレビュー観点に残す（AC-20）。`make verify-docs-checks` が `scripts/verification/check_*.sh` を列挙して実行するため、新しい検査は自動で走る。
+- [x] `sample/slack-group-notification-test.toml` に、実行前段で失敗する group（例: 未定義変数を参照する group 変数）を 1 件加える。`Makefile` の `slack-group-notification-test`（`:666-675`）の期待通知の一覧とログの確認項目に、その group の `pre_execution_error` 通知と新しい `error_type` を加える。`2>&1 | tee` では対話モードの整形により `message_type`・`slack_notify` が出力に現れないため、`-quiet` を付けて確認項目が実際にログへ現れるようにする。
+- [x] `make verify-docs-checks` と `make test`（docsguard を含む）が通ることを確認する。
+- [x] `make slack-group-notification-test` で対象環境の表示を確かめ、実行前段の失敗の通知が 1 件届き、見出しが `error_type` であることを確認する（AC-20 の manual）。検証環境では実 Webhook のホストがサンプルの `slack_allowed_host` と異なるため、`slack_allowed_host` だけを実ホストに置き換えた同等の設定で runner を実行し、JSON ログの `message_type=pre_execution_error`・`error_type=group_preparation_failed`・Scope `group=pre_execution_failure_group` と Slack 送信成功（HTTP 200）を確認した。
 
 **完了条件**: `make verify-docs-checks`・`make test`・`make lint` が通る。`scripts/verification/check_pre_execution_notification_docs.sh` が、日英どちらかから `error_type` の記述を外すと非ゼロで終了することを確認する。
 
@@ -311,8 +311,8 @@
 
 **判定理由**: 文書の追記と翻訳、サンプル設定と確認手順の更新が中心で、記述の典拠は Phase 1 の定数と Phase 4 の統合テスト出力に固定されている。Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -452,10 +452,10 @@ PR-1 → PR-2 → PR-3 → PR-4 の順に依存する。Phase 1 の `error_type`
 
 `make test`・`make lint` が検出できない残存参照だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] `docs/translation_glossary.md` に、Phase 5 で新しく使った用語（実行前段、段階、段階エラー、段階定義表、記録のみの通知、汎用行）の対訳が `/mktrans` により登録されていること。
-- [ ] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`/mktrans` の反映後に `make verify-docs` を実行して確認する。`run_all.sh` は構造比較の結果を報告する）。
-- [ ] `sample/slack-group-notification-test.toml` と `Makefile` の期待通知の一覧が、Phase 5 で追加した実行前段の失敗の group と一致すること。
-- [ ] `docs/dev/architecture_design/security-architecture.md` と `docs/dev/developer_guide/package_reference.md` に、新しい `error_type` や `group_stage.go` の記述を足して不整合を作っていないこと（本書の対象外であり、変更しない）。
+- [x] `docs/translation_glossary.md` に、Phase 5 で新しく使った用語（実行前段、段階、段階エラー、段階定義表、記録のみの通知、汎用行）の対訳が `/mktrans` により登録されていること。
+- [x] `docs/user/runner_command.ja.md` と `runner_command.md` の見出し構造が一致すること（`/mktrans` の反映後に `make verify-docs` を実行して確認する。`run_all.sh` は構造比較の結果を報告する）。
+- [x] `sample/slack-group-notification-test.toml` と `Makefile` の期待通知の一覧が、Phase 5 で追加した実行前段の失敗の group と一致すること。
+- [x] `docs/dev/architecture_design/security-architecture.md` と `docs/dev/developer_guide/package_reference.md` に、新しい `error_type` や `group_stage.go` の記述を足して不整合を作っていないこと（本書の対象外であり、変更しない）。
 
 ---
 
