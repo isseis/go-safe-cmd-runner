@@ -106,6 +106,9 @@
 | データ送信（外部送信） | egress | 信頼境界を越える外部へのデータ送信（セキュリティの文脈）。一般的な「送信」と区別。リスクレベル分類の文脈で使用 |
 | データフロー解析 | dataflow analysis | CFGを用いたデータの流れの解析 |
 | ディレクトリ権限監査 | directory permission audit | 起動時とグループ実行の直前に、収集したディレクトリの権限・所有者・経路要素を1回ずつ検査する静的な監査。TOCTOU チェックではないため、識別子・ログ文言と新規に書く文書では「TOCTOU」を用いない（Task 0164 で用語を定義し、Task 0165 で既存の識別子とログ文言を改名済み。関数は `AuditDirectoryPermissions`、警告は `insecure directory permissions`）。Go ソースに残る `TOCTOU` は本来の race（symlink を追わない open、ファイル記述子経由の実行、ハッシュ再検証）だけを指す。ただし `docs/dev/security/README.md` の "Operational Requirements for TOCTOU Attacks" は、この監査が課す権限要件を TOCTOU 攻撃への曝露を減らす運用要件として説明しており、未整理のまま残っている |
+| 段階 | stage | group 実行前段の失敗箇所を表す列挙型 `GroupStage` の値。失敗は文字列ではなくこの型で宣言する（Task 0176） |
+| 段階エラー | stage error | 失敗した段階を型で宣言した `*GroupStageError`。`executeGroups` はエラー文字列を検査せず、この型の段階で通知を振り分ける（Task 0176） |
+| 段階定義表 | stage definition table | 段階ごとに `error_type`・Scope の水準・要約文を定めるコード上の 1 つの表。段階不明の汎用行も含む（Task 0176） |
 | 依存 / 依存解析 | dependency / dependency analysis | 動的ライブラリ依存解析の文脈 |
 | 判定メソッド | determination method | syscall番号の決定手段を示す文字列 |
 | デバッグ | debug / debugging | |
@@ -200,6 +203,7 @@
 | 前向きスキャン | forward scan | 命令列を先頭から走査する解析手法 |
 | FAQ | FAQ | Frequently Asked Questions |
 | 汎用的 | generic | |
+| 汎用行 | generic row | 段階定義表で、段階不明（ゼロ値または未知の値）の失敗に使う行。`error_type` は `group_pre_execution_failed`、Scope は group 水準（Task 0176） |
 | 機能 | feature / functionality | |
 | フィードバック | feedback | |
 | ファイル | file | |
@@ -282,6 +286,7 @@
 | 日本語 | English | 備考 |
 |--------|---------|------|
 | 受理形式 | accepted format | ユーザー入力として受け付ける値の形式。Task 0162 では run ID の受理形式を `^[A-Za-z0-9_-]{1,64}$` と定めた |
+| 実行前段 | pre-execution stage | group のコマンドが 1 件も実行される前の処理段階。Task 0176 はこの段階の失敗を `pre_execution_error` として通知する |
 
 ### K
 
@@ -290,6 +295,7 @@
 | キー | key | |
 | キー名ベース redaction | key-name-based redaction | `password` のようなキー名を手掛かりに、その直後の値を置換する層。`Config.RedactText` が `KeyValuePatterns` の各キーについて適用する（Task 0163） |
 | キー名の先頭境界 | leading boundary | キー名の直前に許される文字の条件。`monkey` の中の `key` のような部分一致を防ぐために課す。0154 が定義した「境界 redaction」（呼び出し境界で `RedactText` を適用すること）とは別の概念である（Task 0163） |
+| 記録のみの通知 | record-only notification | stderr 報告と `RUN_SUMMARY` 行を出さず、Slack 通知のための構造化ログレコードだけを記録する通知（`NotifyPreExecutionError`）。プロセス全体の報告は実行の最後に 1 回だけ行う（Task 0176） |
 | 起動時特権降格 | startup privilege drop | プロセス起動直後に実効ユーザーID・実効グループID を実ID へ降格すること（Task 0162） |
 
 ### L
@@ -817,6 +823,7 @@
 | 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映 (solve, silently)。問題を片づける文脈の訳語を「解決する」に定め「解く」を使わないこと、`silently` の訳語を「サイレントに」に定め「静かに」を使わないことを明記 |
 | 2026-09-02 | 特権の隙の縮小（Task 0171）のレビュー指摘を反映（window）。名前付きの個別の隙を指す複合語では「〜の隙」ではなく「〜区間」を使うことを明記（起動区間、kill 区間、後始末区間）。「隙」自体の訳語（window）は変更しない |
 | 2026-09-25 | group 実行前段の失敗の通知（Task 0176）のレビュー指摘を反映 (wrap)。エラーの wrap の訳語を「ラップする」に定め、「包む」「包み」を使わないことを明記 |
+| 2026-09-25 | group 実行前段の失敗の通知（Task 0176）関連の用語を追加 (pre-execution stage, stage, stage error, stage definition table, record-only notification, generic row) |
 | 2026-09-14 | 識別子の型宣言と値ベース redaction からの免除（Task 0173）関連の用語を追加 (identifier, exemption, value-based redaction, whole-value detection) |
 
 ---
