@@ -761,3 +761,67 @@ cmd = %q
 	assert.NotContains(t, details, missingA)
 	assert.NotContains(t, details, missingB)
 }
+
+// TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce drives a group
+// preparation failure end to end: a group env_vars value that references an
+// undefined variable across several lines fails the group before any command
+// runs. The group's failure must reach Slack once under its declared stage,
+// while the process still reports once at the end -- one RUN_SUMMARY line, one
+// stderr Error block, exit code 1 -- and that final report is not sent to
+// Slack a second time.
+func TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "backup"
+env_vars = ["MULTI=first line\n%%{UNDEFINED_VAR}\nlast line"]
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-group-preparation-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a group pre-execution failure still fails the run")
+
+	// The record-only notification adds no report of its own.
+	assert.Equal(t, 1, strings.Count(run.stdout, "RUN_SUMMARY "), "stdout:\n%s", run.stdout)
+	assert.Equal(t, 1, countLinesWithPrefix(run.stderr, "Error: "), "stderr:\n%s", run.stderr)
+
+	message, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=backup : group_preparation_failed", message.Text)
+	assert.Equal(t, "group=backup", attachmentField(t, fields, "Scope"))
+	assert.Equal(t, string(resource.ComponentRunner), attachmentField(t, fields, "Component"))
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.True(t, strings.HasPrefix(errorMessage, "Group preparation failed: failed to expand group[backup]: "),
+		"the summary must lead the cause: %q", errorMessage)
+	assert.Contains(t, errorMessage, "last line", "the multi-line cause must reach the notification")
+	assert.NotContains(t, errorMessage, "\n", "the Error Message must be one line")
+
+	// The final report is recorded but left out of Slack, so the one payload
+	// above is the stage notification and not a second copy of the failure.
+	finalReports := jsonLogRecords(t, run, "Execution error occurred")
+	require.Len(t, finalReports, 1)
+	assert.Equal(t, false, finalReports[0]["slack_notify"])
+	notified := jsonLogRecords(t, run, "Pre-execution error notified")
+	require.Len(t, notified, 1)
+	assert.Equal(t, true, notified[0]["slack_notify"])
+}
+
+// countLinesWithPrefix returns how many lines of text start with prefix.
+func countLinesWithPrefix(text, prefix string) int {
+	count := 0
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			count++
+		}
+	}
+	return count
+}
