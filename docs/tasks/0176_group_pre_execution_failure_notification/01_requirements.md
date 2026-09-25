@@ -150,7 +150,7 @@ group executor は、失敗した段階を列挙型のフィールドに持つ�
 - **AC-04**: group のディレクトリ権限監査で違反が検出されたとき、`error_type` が `group_dir_permission_violation`、Scope が `group=<group>` の通知レコードが 1 件記録される。
 - **AC-05**: group ファイル検証が `*verification.Error` 以外のエラーで失敗したとき、`error_type` が `group_file_verification_failed`、Scope が `group=<group>` の通知レコードが 1 件記録される。
 - **AC-06**: `verifyGroupFiles` でのコマンドのパスの再解決が失敗したとき（対象収集での解決失敗は AC-12 の既存経路）、`error_type` が `command_verification_failed`、Scope が `group=<group> command=<command>` の通知レコードが 1 件記録され、`Error Message` に解決できなかったコマンドが現れる。
-- **AC-07**: コマンドの依存検証（動的ライブラリ・shebang インタプリタ）が失敗したとき、`error_type` が `command_verification_failed`、Scope が `group=<group> command=<command>` の通知レコードが 1 件記録され、`Error Message` に失敗の理由が現れる。
+- **AC-07**: コマンドの依存検証（動的ライブラリ・shebang インタプリタ）が失敗したとき、`error_type` が `command_verification_failed`、Scope が `group=<group> command=<command>` の通知レコードが 1 件記録され、`Error Message` に依存検証に失敗したコマンドのパスと失敗の理由の両方が現れる。
 - **AC-08**: 複数の group がそれぞれ AC-01〜AC-07 のいずれかで失敗したとき、失敗した group ごとに 1 件ずつ通知レコードが記録される（先頭の group だけではない）。
 
 #### F-002: 段階を型で宣言する
@@ -158,7 +158,7 @@ group executor は、失敗した段階を列挙型のフィールドに持つ�
 **Acceptance Criteria**:
 - **AC-09**: `executeGroups` が `error_type` と Scope を選ぶ根拠は、group executor が返す構造化エラーの列挙型フィールドである。本番コードにエラー文字列を検査して段階を選ぶ分岐がない。
 - **AC-10**: 段階が未設定（ゼロ値）または未知の値の構造化エラーを受け取ったとき、通知は落ちずに汎用の `error_type`（決定事項の表の段階不明の行）と group スコープで 1 件記録される。
-- **AC-11**: 背景の表の 1〜7 の各発生箇所が、それぞれ AC-01〜AC-07 の段階を宣言したエラーを返す。いずれかの発生箇所が段階の宣言をやめると、対応する AC のテストが失敗する。
+- **AC-11**: 背景の表の 1〜7 の各発生箇所が、それぞれ AC-01〜AC-07 の段階を宣言したエラーを返す。
 
 #### F-003: 二重通知をしない・既存挙動を変えない
 
