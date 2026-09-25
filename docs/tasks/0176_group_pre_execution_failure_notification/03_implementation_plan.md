@@ -169,12 +169,12 @@
 
 **作業内容**:
 
-- [ ] `group_stage.go` に `GroupStage` 列挙型と `GroupStageUnknown`〜`GroupStageCommandVerification`・非公開の `groupStageCount` を、[02_architecture.md](02_architecture.md) §3.2.1 の doc コメント（英語）付きで定義する。`String()`（§3.2.1 の図）は各段階の Go 名を返し、範囲外の段階には `unknown` を返す。
-- [ ] 段階定義表を `groupStageCount` 個の要素を持つ配列として定義する。各要素は `error_type`（`logging.ErrorType`）・Scope の水準（`common.NotificationScope`）・要約文（`Message`）を持つ。行の値は §3.2.3 の表のとおりとし、`GroupStageUnknown` の行を汎用行にする。
-- [ ] `GroupStageError` を、フィールド `stage`・`group`・`command`・`err` を非公開にして定義する。アクセサ `Stage()`・`GroupName()`・`CommandName()`・`Error()`・`Unwrap()` を §3.2.2 のとおり実装する。`Error()` は原因の文言を返し、原因が `nil` のとき固定の文言 `group pre-execution failed` を返す。`Unwrap()` は原因を返す。
-- [ ] 構築関数 `newGroupStageError(stage GroupStage, group string, err error) *GroupStageError` と `newCommandStageError(stage GroupStage, group, command string, err error) *GroupStageError` を追加する。段階定義表を引いて水準を確認し、表にない段階と水準の食い違い、範囲外の段階、空の group 名・コマンド名、`nil` の原因を panic で拒否する（§3.2.2）。
-- [ ] 変換関数 `groupStagePreExecutionError(stageErr *GroupStageError, runID string) *logging.PreExecutionError` を追加する。段階を索引として表を引けば表の行、引けなければ汎用行を使い、`Type`・`Message`・`Component`（`string(resource.ComponentRunner)`）・`RunID`・`NotificationContext`（group 水準なら `common.GroupScope(group)`、command 水準なら `common.CommandScope(group, command)`）・`Err`（原因）を設定する。`FailedFilePaths` は設定しない。
-- [ ] `group_stage_test.go` に次を追加する。
+- [x] `group_stage.go` に `GroupStage` 列挙型と `GroupStageUnknown`〜`GroupStageCommandVerification`・非公開の `groupStageCount` を、[02_architecture.md](02_architecture.md) §3.2.1 の doc コメント（英語）付きで定義する。`String()`（§3.2.1 の図）は各段階の Go 名を返し、範囲外の段階には `unknown` を返す。
+- [x] 段階定義表を `groupStageCount` 個の要素を持つ配列として定義する。各要素は `error_type`（`logging.ErrorType`）・Scope の水準（`common.NotificationScope`）・要約文（`Message`）を持つ。行の値は §3.2.3 の表のとおりとし、`GroupStageUnknown` の行を汎用行にする。
+- [x] `GroupStageError` を、フィールド `stage`・`group`・`command`・`err` を非公開にして定義する。アクセサ `Stage()`・`GroupName()`・`CommandName()`・`Error()`・`Unwrap()` を §3.2.2 のとおり実装する。`Error()` は原因の文言を返し、原因が `nil` のとき固定の文言 `group pre-execution failed` を返す。`Unwrap()` は原因を返す。
+- [x] 構築関数 `newGroupStageError(stage GroupStage, group string, err error) *GroupStageError` と `newCommandStageError(stage GroupStage, group, command string, err error) *GroupStageError` を追加する。段階定義表を引いて水準を確認し、表にない段階と水準の食い違い、範囲外の段階、空の group 名・コマンド名、`nil` の原因を panic で拒否する（§3.2.2）。
+- [x] 変換関数 `groupStagePreExecutionError(stageErr *GroupStageError, runID string) *logging.PreExecutionError` を追加する。段階を索引として表を引けば表の行、引けなければ汎用行を使い、`Type`・`Message`・`Component`（`string(resource.ComponentRunner)`）・`RunID`・`NotificationContext`（group 水準なら `common.GroupScope(group)`、command 水準なら `common.CommandScope(group, command)`）・`Err`（原因）を設定する。`FailedFilePaths` は設定しない。
+- [x] `group_stage_test.go` に次を追加する。
   - `TestGroupStageTableHasARowForEveryStage`: `GroupStageUnknown` から `groupStageCount` の手前までを走査し、すべての段階に行があり、`GroupStageUnknown` 以外が汎用行でないことを検証する（AC-09）。
   - `TestGroupStagePreExecutionErrorMapping`: 各段階について `Type`・`Message`・`Component`・`NotificationContext`・`Err` を検証する。期待値は §3.2.3 の表から書く（AC-01〜AC-07）。
   - `TestGroupStageUnknownAndOutOfRangeUseGenericRow`: 有効な group 名と `nil` でない原因を持ち段階が `GroupStageUnknown` の段階エラーと、範囲外の段階 `GroupStage(99)` のリテラルで作った段階エラーが、汎用行の `Type`・`Message` と有効な group 水準の Scope になることを検証する（AC-10）。
