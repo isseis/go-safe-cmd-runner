@@ -118,7 +118,7 @@ func TestGroupStagePreExecutionErrorMapping(t *testing.T) {
 				stageErr = newGroupStageError(tt.stage, tt.group, cause)
 			}
 			assert.Equal(t, tt.command, stageErr.CommandName(),
-				"a group-level stage carries no command name")
+				"the command name must match the stage level")
 
 			got := groupStagePreExecutionError(stageErr, "run-mapping")
 
@@ -265,6 +265,15 @@ func TestGroupStageConstructorsPanicOnInvalidInput(t *testing.T) {
 			assert.Panics(t, tt.call)
 		})
 	}
+}
+
+// TestGroupStageNotificationContextPanicsOnUnknownScope pins that a definition
+// whose scope is neither group nor command fails loudly instead of silently
+// reporting a group scope.
+func TestGroupStageNotificationContextPanicsOnUnknownScope(t *testing.T) {
+	assert.Panics(t, func() {
+		groupStageNotificationContext(common.ScopeGlobal, "backup", "dump")
+	})
 }
 
 // TestGroupStageErrorUnwrapsCause pins that the stage error reports the
