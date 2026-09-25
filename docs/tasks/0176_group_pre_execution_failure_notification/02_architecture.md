@@ -26,7 +26,7 @@
 | 実行前段の失敗 | 要件定義書「無通知になる失敗」の表の 1〜7。本書では表の番号をそのまま「#1」〜「#7」と書く |
 | 段階 | 実行前段の失敗がどの処理で起きたか。本設計で新設する列挙型 `GroupStage` の値として宣言する |
 | 段階エラー | 本設計で新設する `*GroupStageError`。段階・group 名・コマンド名・原因のエラーを持つ |
-| 原因のエラー | 段階エラーが包むエラー。発生箇所が現在返しているエラーそのもの（§3.3.1） |
+| 原因のエラー | 段階エラーがラップするエラー。発生箇所が現在返しているエラーそのもの（§3.3.1） |
 | 段階定義表 | 段階ごとに `error_type`・Scope の水準・要約文を定めた、コード上の 1 つの表（§3.2.3）。段階不明を表す汎用行も含む |
 | Scope の水準 | 通知の Scope を group 単位にするか command 単位にするか。既存の `common.NotificationScope` の `ScopeGroup`・`ScopeCommand` で表す。本書では前者を「group 水準」、後者を「command 水準」と書き、通知に表示される Scope の値は `group=<group>`・`group=<group> command=<command>` と書く |
 | 通知レコード | Slack ハンドラが通知に変換する構造化ログレコード。`slack_notify=true` と `message_type` と通知コンテキストを持つ |
@@ -42,7 +42,7 @@
 
 ### 1.1 このタスクが解決する問題
 
-`Runner.executeGroups` は、group の失敗のうち `*verification.Error` だけを `pre_execution_error` として通知する（`internal/runner/runner.go:427-433`）。それ以外の失敗は `groupErrs` に積まれ（`:436`）、先頭の 1 件だけが返る（`:441-442`）。`cmd/runner/main.go:692-706` はこれを `ExecutionError` に包み、`HandleExecutionError` は `slack_notify=false` 固定で記録する（`internal/logging/pre_execution_error.go:185-216`、とくに `:213`）。group の完了通知（`command_group_summary`）は `executionResult` が設定されたときだけ送られ（`internal/runner/group_executor.go:164-170`）、`executionResult` を設定するのはコマンド実行の結果だけである（`:207-219`）。したがって実行前段で失敗した group では `command_group_summary` も出ない。
+`Runner.executeGroups` は、group の失敗のうち `*verification.Error` だけを `pre_execution_error` として通知する（`internal/runner/runner.go:427-433`）。それ以外の失敗は `groupErrs` に積まれ（`:436`）、先頭の 1 件だけが返る（`:441-442`）。`cmd/runner/main.go:692-706` はこれを `ExecutionError` でラップし、`HandleExecutionError` は `slack_notify=false` 固定で記録する（`internal/logging/pre_execution_error.go:185-216`、とくに `:213`）。group の完了通知（`command_group_summary`）は `executionResult` が設定されたときだけ送られ（`internal/runner/group_executor.go:164-170`）、`executionResult` を設定するのはコマンド実行の結果だけである（`:207-219`）。したがって実行前段で失敗した group では `command_group_summary` も出ない。
 
 その結果、`ExecuteGroup` のうち次の 7 か所の失敗は Slack に届かない。
 
@@ -64,7 +64,7 @@
 
 1. **段階は型で宣言する。** group executor は失敗の発生箇所で段階エラーを作り、段階を列挙型のフィールドに持たせる。`executeGroups` はエラー文字列を見ずに、`errors.AsType` で段階エラーを取り出して段階を読む（CLAUDE.md「Declare, don't infer」）。
 2. **段階の意味は 1 つの表で決める。** 段階から `error_type`・Scope の水準・要約文への対応は段階定義表だけが持つ。段階不明（`GroupStageUnknown`）も表の 1 行（汎用行）として持ち、通知を落とさない。
-3. **宣言し忘れても通知は落とさない。** `ExecuteGroup` がコマンド実行前に返すエラーで段階エラーを含まないものは、出口で `GroupStageUnknown` の段階エラーに包む（§3.3.2）。発生箇所が段階を宣言し忘れても、汎用行で通知される。
+3. **宣言し忘れても通知は落とさない。** `ExecuteGroup` がコマンド実行前に返すエラーで段階エラーを含まないものは、出口で `GroupStageUnknown` の段階エラーでラップする（§3.3.2）。発生箇所が段階を宣言し忘れても、汎用行で通知される。
 4. **通知は記録のみとする。** 新しい経路は通知レコードを記録するだけで、報告出力は出さない。報告出力は最終報告の 1 回だけのままにする。
 5. **既存の経路を優先する。** `*verification.Error` を含む失敗は既存の group ファイル検証の経路（0175）で通知し、本設計の経路は通知しない。`executeGroups` は既存の分岐を先に評価する。
 6. **戻り値と終了コードは変えない。** 通知した段階エラーも従来どおり `groupErrs` に積む。最終報告・終了コード・`Runner.Execute` の戻り値は変わらない。
@@ -374,7 +374,7 @@ func (e *GroupStageError) Unwrap() error
 
 - 拒否は panic で行う。これらの入力は設定や実行環境からは生じず、呼び出し側のコードの誤りでしか生じないためである。既存の `RuntimeCommand.Name` も同じ理由で panic する（`internal/runner/base/runnertypes/runtime.go:319-324`）。コマンド名は設定の検証で空文字列を拒否しているため（`internal/runner/config/validation.go:98-100`）、本番の設定では panic しない。§7.2 の発生箇所ごとのテストが、各呼び出しが panic しないことも確かめる。
 - 段階と Scope の水準の組み合わせを構築関数で拒否するので、「group 水準の段階にコマンド名が付く」「command 水準の段階にコマンド名が無い」という食い違いは作れない（CLAUDE.md「Reject, don't normalize」）。
-- `Error()` は原因のエラーの文言をそのまま返す。`Unwrap()` は原因のエラーを返す。`errors.Is(err, ErrDirPermViolation)` や `errors.Is(err, config.ErrUndefinedVariable)` などの既存の判定は、包んだ後も成り立つ。
+- `Error()` は原因のエラーの文言をそのまま返す。`Unwrap()` は原因のエラーを返す。`errors.Is(err, ErrDirPermViolation)` や `errors.Is(err, config.ErrUndefinedVariable)` などの既存の判定は、ラップした後も成り立つ。
 - ゼロ値の `GroupStageError{}` はパッケージ内で書けてしまう。その場合も panic しないよう、`Error()` は原因が `nil` のとき固定の文言 `group pre-execution failed` を返す。ゼロ値の段階は `GroupStageUnknown` なので、変換すると汎用行になる。group 名が空なので Scope は不正と判定され、Slack ハンドラは「不正な Scope」の表示で送る（`internal/logging/slack_handler.go:452-460`・`:490-492`）。通知は落ちない。
 
 #### 3.2.3 段階定義表と変換関数
@@ -423,31 +423,31 @@ func (e *GroupStageError) Unwrap() error
 | 4 | `auditGroupDirPermissions` の失敗 | `GroupStageDirPermissionAudit` | group | `:340` または `:352` のエラー |
 | 5 | `verifyGroupFiles` の `VerifyGroupFiles` 失敗 | `GroupStageFileVerification` | group | `VerifyGroupFiles` が返したエラー |
 | 6 | `verifyGroupFiles` の `ResolvePath` 失敗 | `GroupStageCommandVerification` | command（`cmd.Name()`） | `:394` の `command path resolution failed for %q: %w` |
-| 7 | `verifyGroupFiles` の `VerifyCommandDependencies` 失敗 | `GroupStageCommandVerification` | command（`cmd.Name()`） | 新しい包み `command dependency verification failed for %q: %w`（§3.3.4） |
+| 7 | `verifyGroupFiles` の `VerifyCommandDependencies` 失敗 | `GroupStageCommandVerification` | command（`cmd.Name()`） | 新たに加える書式 `command dependency verification failed for %q: %w`（§3.3.4） |
 
 - #3 は、コマンド名が分かる `preExpandCommands` の中で段階エラーを作る。現在 `ExecuteGroup` が外側で付けている `failed to pre-expand commands for group[%s]: ` の接頭辞は、原因のエラーの中へ移す。`ExecuteGroup` は段階エラーをそのまま返す。これで最終報告の文言は現在と同じになり、通知の本文にも接頭辞が載る。
 - #4 は `auditGroupDirPermissions` の 2 つのエラー（`ErrDirPermViolation` と `errUnhandledCheckSkipReason`）を同じ段階とする。後者は現状到達しない（`internal/runner/group_executor.go:47-52` のコメント）が、到達した場合もディレクトリ権限監査の失敗として通知される。
-- #5 は `VerifyGroupFiles` のすべてのエラーを同じ段階で包む。`*verification.Error` かどうかを group executor で判定しないのは、同じ振り分けを group executor と `executeGroups` の 2 か所に持たないためである。`*verification.Error` の通知経路は既存の `executeGroups` の分岐であり（§3.4）、本設計は段階の宣言でそれを置き換えない。
+- #5 は `VerifyGroupFiles` のすべてのエラーを同じ段階の段階エラーでラップする。`*verification.Error` かどうかを group executor で判定しないのは、同じ振り分けを group executor と `executeGroups` の 2 か所に持たないためである。`*verification.Error` の通知経路は既存の `executeGroups` の分岐であり（§3.4）、本設計は段階の宣言でそれを置き換えない。
 - group 名は `groupSpec.Name`（`ExecuteGroup`・`preExpandCommands`）または `runnertypes.ExtractGroupName(runtimeGroup)`（`auditGroupDirPermissions`・`verifyGroupFiles`）を渡す。どちらも同じ設定値 `GroupSpec.Name` に由来する。コマンド名 `cmd.Name()` は `RuntimeCommand.Spec.Name` を返す（`internal/runner/base/runnertypes/runtime.go:319-324`）。
 
-#### 3.3.2 `ExecuteGroup` の出口での包み直し
+#### 3.3.2 `ExecuteGroup` の出口でのラップ
 
 `ExecuteGroup` は、返すエラーについて出口で次の 2 つの規則を守る。
 
-1. **コマンド実行前のエラーは必ず段階エラーを含む。** `executionResult` が未設定（コマンド実行に進んでいない）でエラーを返すとき、そのエラーが段階エラーを含まなければ、`GroupStageUnknown` の段階エラー（group 水準）で包む。
+1. **コマンド実行前のエラーは必ず段階エラーを含む。** `executionResult` が未設定（コマンド実行に進んでいない）でエラーを返すとき、そのエラーが段階エラーを含まなければ、`GroupStageUnknown` の段階エラー（group 水準）でラップする。
 2. **コマンド実行後のエラーは段階エラーを含まない。** `executionResult` が設定されたあとのエラー（`executeAllCommands` の失敗）には段階エラーを付けない。
 
 `executionResult` はコマンド実行に進んだかどうかを示す既存の状態であり（`internal/runner/group_executor.go:164-170`・`:207-219`）、エラー文字列ではない。規則 1 により、将来 `ExecuteGroup` に実行前段の処理が足され、その発生箇所が段階の宣言を忘れても、失敗は汎用行（`group_pre_execution_failed`）で通知される。規則 2 により、コマンド実行の失敗が `command_group_summary` と本設計の経路の両方で通知されること（二重通知）を防ぐ。どちらの規則も §7.2 のテストで固定する。
 
 #### 3.3.3 規則 1 と要件の関係
 
-要件は「エラー文字列から段階を推測しない」「段階不明は汎用の `error_type` で通知する」と定める。規則 1 は文字列を見ず、`executionResult` と段階エラーの型だけで判定するので、前者に反しない。規則 1 で包んだエラーの段階は `GroupStageUnknown` であり、後者の「段階不明」に当たる。
+要件は「エラー文字列から段階を推測しない」「段階不明は汎用の `error_type` で通知する」と定める。規則 1 は文字列を見ず、`executionResult` と段階エラーの型だけで判定するので、前者に反しない。規則 1 でラップしたエラーの段階は `GroupStageUnknown` であり、後者の「段階不明」に当たる。
 
 #### 3.3.4 #7 の原因の文言にコマンドのパスを加える
 
-AC-07 は、#7 の `Error Message` に「依存検証に失敗したコマンドのパス」と「失敗の理由」の両方が現れることを求める。現状の #7 は `VerifyCommandDependencies` のエラーを包まずに返す（`internal/runner/group_executor.go:412`）。そのエラーはライブラリやインタプリタのパスを含むが、検証対象のコマンドのパスを含むとは限らない。
+AC-07 は、#7 の `Error Message` に「依存検証に失敗したコマンドのパス」と「失敗の理由」の両方が現れることを求める。現状の #7 は `VerifyCommandDependencies` のエラーをラップせずに返す（`internal/runner/group_executor.go:412`）。そのエラーはライブラリやインタプリタのパスを含むが、検証対象のコマンドのパスを含むとは限らない。
 
-本設計では #6 の既存の形（`:394`）に合わせ、#7 の原因を `command dependency verification failed for %q: %w`（`%q` は解決済みのコマンドパス）で包む。`%q` の引用で、パスに含まれる改行や制御文字はエスケープされる。
+本設計では #6 の既存の形（`:394`）に合わせ、#7 の原因を `command dependency verification failed for %q: %w`（`%q` は解決済みのコマンドパス）でラップする。`%q` の引用で、パスに含まれる改行や制御文字はエスケープされる。
 
 この変更により、#7 の失敗では次の出力の文言にもコマンドのパスが接頭辞として加わる。これは原則 7（エラー文言は変えない）の唯一の例外である。
 
@@ -466,10 +466,10 @@ AC-07 は、#7 の `Error Message` に「依存検証に失敗したコマンド
 4. **（新設）** エラーが `*GroupStageError` を含めば、段階定義表で `PreExecutionError` に変換し、`logging.NotifyPreExecutionError` で通知レコードを記録する。そのうえで 5 と同じく `groupErrs` に積む。
 5. 上のいずれでもなければ、`groupErrs` に積む（`:436`）。
 
-- 4 が 3 の後にあるので、`GroupStageFileVerification` で包まれた `*verification.Error` は 3 で処理され、本設計の経路では通知されない（AC-12）。
+- 4 が 3 の後にあるので、`GroupStageFileVerification` でラップされた `*verification.Error` は 3 で処理され、本設計の経路では通知されない（AC-12）。
 - 4 が 2 の後にあるので、キャンセルでは通知されない（AC-14）。
 - 4 で `continue` せず `groupErrs` に積むので、最終報告と終了コードは変わらない（AC-16）。
-- `errors.AsType` は `fmt.Errorf` の `%w` による包みを辿る。`executeGroups` が受け取るエラーは `ExecuteGroup` が返したものそのままであり（`Runner.ExecuteGroup`、`internal/runner/runner.go:491-493`）、この順序で判定できる。
+- `errors.AsType` は `fmt.Errorf` の `%w` によるラップを辿る。`executeGroups` が受け取るエラーは `ExecuteGroup` が返したものそのままであり（`Runner.ExecuteGroup`、`internal/runner/runner.go:491-493`）、この順序で判定できる。
 
 この順序は §7.3 のテストで固定する。
 
@@ -534,7 +534,7 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError)
 
 本設計の本文は「要約文: 原因の文言」であり、次の理由でこの 2 つの原則の例外になる。
 
-- **group 名・コマンド名（原則 2）。** 原因の文言は、既存の包み（`failed to expand group[%s]`・`command[%s] (index %d)` など。`internal/runner/group_executor.go:157`・`:194`・`:296`・`:301`、`config.ExpandWorkDir` に渡す `level` の `:642`・`:679`）が group 名やコマンド名をすでに含む。本設計は本文に group 名を足さないが、原因の文言から取り除かない。取り除くには原因の文言を文字列として加工するか、`config` パッケージを含む包みの形を変える必要がある。前者は「Declare, don't infer」に反し、後者は本タスクの範囲（通知経路の追加）を超え、最終報告の文言も変える。
+- **group 名・コマンド名（原則 2）。** 原因の文言には、既存のエラー書式（`failed to expand group[%s]`・`command[%s] (index %d)` など。`internal/runner/group_executor.go:157`・`:194`・`:296`・`:301`、`config.ExpandWorkDir` に渡す `level` の `:642`・`:679`）によって group 名やコマンド名がすでに含まれている。本設計は本文に group 名を足さないが、原因の文言から取り除かない。取り除くには原因の文言を文字列として加工するか、`config` パッケージを含むエラー書式を変える必要がある。前者は「Declare, don't infer」に反し、後者は本タスクの範囲（通知経路の追加）を超え、最終報告の文言も変える。
 - **パス（原則 7）。** AC-06・AC-07 は、解決できなかったコマンドや依存検証に失敗したコマンドのパスを `Error Message` に載せることを求める。#6・#7 の対象は 1 件で、0175 の一覧契約で運ぶべき「一覧」がない。また、原因の文言には作業ディレクトリや依存ライブラリのパスも含まれる。これらを構造化属性へ分けるには、原因のエラーの型ごとにパスを取り出す仕組みが要り、本タスクの範囲を超える。
 
 **既存テストへの影響。** この例外は新しい経路にだけ関わる。group ファイル検証の本文（0175）は変わらず、`TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage`・`TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent`（`internal/runner/runner_test.go`）の「本文に group 名・パスを含まない」という検証も変わらない。更新が必要な既存テストはない。
@@ -547,7 +547,7 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError)
 |---|---|
 | `internal/runner/group_executor_test.go` の `require.ErrorIs` / `assert.ErrorIs`（`ErrDirPermViolation`・`config.ErrUndefinedVariable`・注入したエラーなど） | 段階エラーの `Unwrap()` で連鎖が保たれるため、変更不要 |
 | `internal/runner/runner_test.go::TestWithDirPermAuditor_ReachesGroupExecution`（`assert.ErrorIs(t, err, ErrDirPermViolation)`） | 同上。変更不要 |
-| `internal/runner/runner_test.go::TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage`・`TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` | モックが生の `*verification.Error` を返すため、変更不要。段階エラーで包んだ場合の回帰は新しいテストで追加する（§7.3） |
+| `internal/runner/runner_test.go::TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage`・`TestRunner_VerificationErrorCarriesFailedFilePathsAndComponent` | モックが生の `*verification.Error` を返すため、変更不要。段階エラーでラップした場合の回帰は新しいテストで追加する（§7.3） |
 | `internal/runner/e2e_dynlib_verification_test.go`・`e2e_shebang_test.go` の依存検証失敗のテスト | #7 の文言にコマンドパスの接頭辞が加わる。部分一致で判定しているため変更不要（§3.3.4） |
 | `internal/logging/notification_contract_guard_test.go::TestProductionErrorLiteralsUseTypedComponent` | 新しいリテラルは 1 つで、`Component` は `string(resource.ComponentRunner)` なので通る。変更不要 |
 | 同ファイルの `TestProductionPreExecutionErrorLiteralsCarryNotificationContext`・`TestProductionCodeSetsSlackNotifyOnlyInNotificationAttrs` など | 新しいリテラルは `NotificationContext` を設定し、`slack_notify` は `NotificationAttrs` 経由で設定するため、変更不要 |
@@ -561,7 +561,7 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError)
 | `internal/runner/group_stage_test.go` | 新規 | 段階定義表の全行と網羅、汎用行、構築関数の拒否、`Error()`・`Unwrap()`・ゼロ値のテスト |
 | `internal/logging/pre_execution_error.go` | 変更 | `error_type` 定数 4 件の追加、`NotifyPreExecutionError` の追加、レコード記録部分の共有化 |
 | `internal/logging/pre_execution_error_test.go` | 変更 | `NotifyPreExecutionError` が報告出力を行わず、`HandlePreExecutionError` と同じ属性を記録するテスト |
-| `internal/runner/group_executor.go` | 変更 | #1〜#7 で段階エラーを返す。#3 の接頭辞を内側へ移す。#7 の原因をコマンドパスで包む。出口の規則 1・2 |
+| `internal/runner/group_executor.go` | 変更 | #1〜#7 で段階エラーを返す。#3 の接頭辞を内側へ移す。#7 の原因にコマンドパスを加えてラップする。出口の規則 1・2 |
 | `internal/runner/group_executor_test.go` | 変更 | 発生箇所ごとの段階・group 名・コマンド名、出口の規則 1・2 のテスト |
 | `internal/runner/runner.go` | 変更 | `executeGroups` に段階エラーの分岐を追加 |
 | `internal/runner/runner_test.go` | 変更 | `Execute` 経由の通知・振り分け順・複数 group・本文の安全性のテスト |
@@ -606,7 +606,7 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError)
 
 | 状況 | 挙動 |
 |---|---|
-| 発生箇所が段階の宣言を忘れた（コマンド実行前のエラーが段階エラーを含まない） | `ExecuteGroup` の出口で `GroupStageUnknown` に包まれ、汎用行（`group_pre_execution_failed`・group 水準）で通知される（§3.3.2 規則 1、AC-10） |
+| 発生箇所が段階の宣言を忘れた（コマンド実行前のエラーが段階エラーを含まない） | `ExecuteGroup` の出口で `GroupStageUnknown` でラップされ、汎用行（`group_pre_execution_failed`・group 水準）で通知される（§3.3.2 規則 1、AC-10） |
 | 段階がゼロ値・範囲外（ゼロ値の `GroupStageError{}` など） | 汎用行で通知される。ゼロ値で group 名が空のときは Scope が不正と表示されて送られる（§3.2.2） |
 | 構築関数に食い違う入力（段階と水準の不一致、空の名前、`nil` の原因） | panic する。呼び出し側のコードの誤りであり、§7.2 のテストで各発生箇所を実行して検出する（§3.2.2） |
 | コマンド実行後のエラーに段階エラーが付いた | 規則 2 に反する。§7.2 のテストで検出する（§3.3.2） |
@@ -820,7 +820,7 @@ flowchart LR
 
 1. `verifyGroupFiles` がコマンドのパスを再解決し、`VerifyCommandDependencies` を呼ぶ。
 2. 依存検証が失敗すると、既存の `slog.Error("Command dependency verification failed", ...)` を記録する。
-3. 原因を `command dependency verification failed for "<パス>": <原因>` で包み、`GroupStageCommandVerification`・group 名・コマンド名とともに段階エラーにして返す。
+3. 原因を `command dependency verification failed for "<パス>": <原因>` でラップし、`GroupStageCommandVerification`・group 名・コマンド名とともに段階エラーにして返す。
 4. `executeGroups` は段階エラーを `command_verification_failed`・`group=<group> command=<command>` の通知レコードに変換して記録し、`groupErrs` に積んで次の group へ進む。
 5. 全 group の後、`main.go` が最終報告（`slack_notify=false`）を 1 回行い、終了コード 1 で終わる。
 
@@ -855,7 +855,7 @@ flowchart LR
 
 出口の規則（§3.3.2）も検証する。
 
-- 規則 1: 段階の宣言を持たないコマンド実行前のエラーが `GroupStageUnknown` に包まれること。テスト用に段階エラーを返さない失敗を注入する手段（既存のモックで作れる失敗を 1 つ、段階の宣言を外した状態で通す）を実装計画で定める。
+- 規則 1: 段階の宣言を持たないコマンド実行前のエラーが `GroupStageUnknown` でラップされること。テスト用に段階エラーを返さない失敗を注入する手段（既存のモックで作れる失敗を 1 つ、段階の宣言を外した状態で通す）を実装計画で定める。
 - 規則 2: コマンド実行の失敗（`CommandExecutionError`）が段階エラーを含まないこと（AC-13）。
 
 ### 7.3 `Execute` 経由の配線テスト（AC-01〜AC-08・AC-12〜AC-14・AC-16）
@@ -864,9 +864,9 @@ flowchart LR
 
 - 各段階の段階エラー → `Pre-execution error notified` のレコードが 1 件で、`message_type`・`error_type`・通知コンテキスト・`component`・`error_message`（`<要約文>: <原因の文言>`）が期待どおり。`Execute` はエラーを返す（AC-01〜AC-07・AC-16）。
 - 2 つの group がそれぞれ段階エラーで失敗 → レコードが 2 件で、それぞれの group の Scope を持つ（AC-08）。
-- `GroupStageFileVerification` で包んだ `*verification.Error` → 既存の `Pre-execution error occurred` のレコードが 1 件だけで、本設計のレコードは 0 件。本文・`failed_file_paths`・Scope は包まない場合と同じ（AC-12）。このテストが振り分けの順序（§3.4 の 3 → 4）を固定する。
+- `GroupStageFileVerification` でラップした `*verification.Error` → 既存の `Pre-execution error occurred` のレコードが 1 件だけで、本設計のレコードは 0 件。本文・`failed_file_paths`・Scope はラップしない場合と同じ（AC-12）。このテストが振り分けの順序（§3.4 の 3 → 4）を固定する。
 - コマンド実行の失敗（`CommandExecutionError`）→ 本設計のレコードは 0 件（AC-13）。既存の `command_group_summary` のテストは変えない。
-- `context.Canceled`・`context.DeadlineExceeded` を包んだ段階エラー → 本設計のレコードは 0 件（AC-14）。
+- `context.Canceled`・`context.DeadlineExceeded` をラップした段階エラー → 本設計のレコードは 0 件（AC-14）。
 
 ### 7.4 統合テスト: 報告出力と最終報告（AC-15・AC-16）
 
@@ -902,7 +902,7 @@ flowchart LR
 |---|---|---|
 | 1 | `logging`: `error_type` 定数の追加、`NotifyPreExecutionError` とレコード記録部分の共有化 | AC-15・AC-17 |
 | 2 | `internal/runner/group_stage.go`: `GroupStage`・`GroupStageError`・構築関数・段階定義表・変換関数 | AC-09・AC-10 |
-| 3 | `group_executor`: #1〜#7 で段階エラーを返す。#3 の接頭辞の移動、#7 の原因の包み、出口の規則 1・2 | AC-11・AC-06・AC-07・AC-13 |
+| 3 | `group_executor`: #1〜#7 で段階エラーを返す。#3 の接頭辞の移動、#7 の原因のラップ、出口の規則 1・2 | AC-11・AC-06・AC-07・AC-13 |
 | 4 | `runner`: `executeGroups` の分岐。配線テストと統合テスト | AC-01〜AC-08・AC-12〜AC-16・AC-18・AC-19 |
 | 5 | 利用者向け文書（日本語 → `/mktrans` で英語）と対象環境での確認 | AC-20 |
 
@@ -915,7 +915,7 @@ flowchart LR
 - 新しい実行前段の処理を `ExecuteGroup` に足すときは、`GroupStage` に値を足し、段階定義表に行を足す。行を足し忘れると §7.1 の網羅テストが失敗する。発生箇所で段階を宣言し忘れても、出口の規則 1 で汎用行として通知される。
 - `executeGroups` が先頭のエラーしか返さない点は [#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153) で扱う。本設計の通知は group ごとに記録されるため、#1153 の変更と独立している。
 - `*verification.OpError` など失敗対象一覧を持たない検証失敗の本文を global の報告と揃える改善は [#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154) で扱う。#4 の本文に違反したディレクトリを載せる改善も同じ候補になる。
-- 本文の中の group 名・コマンド名・パス（§3.7）を取り除きたくなったら、原因の文言を加工するのではなく、包みの形（`config` パッケージを含む）を変えて、それらを文言に入れないようにする。
+- 本文の中の group 名・コマンド名・パス（§3.7）を取り除きたくなったら、原因の文言を加工するのではなく、エラー書式（`config` パッケージを含む）を変えて、それらを文言に入れないようにする。
 - group ファイル検証の通知経路が実行途中に `RUN_SUMMARY` 行を出す点と、その失敗だけでは終了コードが 0 になる点は、既存の挙動として残す（要件の対象外）。前者を直すときは、その経路を本設計の `NotifyPreExecutionError` に移せる。
 - 値全体置換で本文全体が `[REDACTED]` になる誤検出（§5.2）を減らす改善は、redaction 側の別タスクとして起票する候補とする。本設計で通知される本文は、変数名やライブラリ名によってこの誤検出に当たりやすい。
 
@@ -950,7 +950,7 @@ flowchart LR
 
 ## 付録B: 採らなかった案
 
-- **`executeGroups` で段階エラー以外のエラーも一律に汎用 `error_type` で通知する。** `executeGroups` の側ではコマンド実行前の失敗と実行後の失敗を区別できず、コマンド実行の失敗（`command_group_summary` で通知済み）も拾って二重通知になる（AC-13 に反する）。本設計は、その区別を持つ `ExecuteGroup` の出口で段階不明の失敗を包む（§3.3.2）。
+- **`executeGroups` で段階エラー以外のエラーも一律に汎用 `error_type` で通知する。** `executeGroups` の側ではコマンド実行前の失敗と実行後の失敗を区別できず、コマンド実行の失敗（`command_group_summary` で通知済み）も拾って二重通知になる（AC-13 に反する）。本設計は、その区別を持つ `ExecuteGroup` の出口で段階不明の失敗をラップする（§3.3.2）。
 - **group executor の中で通知する。** group executor は通知の組み立てを持たず、`*verification.Error` の通知は `executeGroups` が行っている。通知の振り分けを 1 か所（`executeGroups`）に置くため採らない。
 - **段階を `ExecutionError` に持たせ、`main.go` で通知する。** `main.go` には先頭の 1 件しか届かず（`internal/runner/runner.go:441-442`）、2 件目以降の group の失敗を通知できない（AC-08 に反する）。また要件の決定事項のとおり、コマンド実行後と実行前の失敗を同じ型で扱うことになる。
 - **段階ごとに `Component` を変える。** 既存のガードが `Component` を字句で検査するため、段階ごとにリテラルを分ける必要があり、段階の意味が 1 つの表に収まらなくなる（§3.2.3）。
