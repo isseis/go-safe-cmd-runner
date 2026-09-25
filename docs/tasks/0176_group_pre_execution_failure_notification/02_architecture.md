@@ -857,7 +857,7 @@ flowchart LR
 
 | # | 失敗のさせ方（既存テストの手法を流用） |
 |---|---|
-| 1 | 未定義変数を参照する group 変数（`config.ErrUndefinedVariable`） |
+| 1 | 未定義変数を参照する group の `env_vars` の値（`config.ErrUndefinedVariable`）。`vars` の未定義変数は原因の文言に展開前のテンプレートを含まないため、改行を含む原因の確認（§3.7）には `env_vars` を使う |
 | 2 | 未定義変数を参照する group の `workdir` |
 | 3 | 未定義変数を参照するコマンドの `cmd` と、コマンドの `workdir` の 2 通り |
 | 4 | world-writable なディレクトリを参照する `verify_files`（`TestWithDirPermAuditor_ReachesGroupExecution` と同じ手法） |
