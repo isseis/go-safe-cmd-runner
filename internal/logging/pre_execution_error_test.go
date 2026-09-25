@@ -71,6 +71,14 @@ func TestPreExecutionError_Detail(t *testing.T) {
 			err:  friendlyTestError{},
 			want: "Failed to load the configuration: friendly text",
 		},
+		{
+			// A friendly child of a join must not hide its plain sibling:
+			// errors.AsType walks every branch, so substituting the friendly
+			// message for the whole join would drop "standard error".
+			name: "joined errors each rendered on their own line",
+			err:  errors.Join(errStandardError, fmt.Errorf("wrap: %w", friendlyTestError{})),
+			want: "Failed to load the configuration: standard error\nfriendly text",
+		},
 	}
 
 	for _, tt := range tests {
@@ -596,6 +604,60 @@ func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
 	assert.Equal(t, "error running commands", errorMsg)
 	assert.Equal(t, "runner", component)
 	assert.Equal(t, "test-run-exec", runID)
+}
+
+// TestHandleExecutionError_CauseFormatting pins the Details text of an
+// execution error whose cause is user-friendly, alone or joined with a plain
+// error. The joined case is what executeGroups returns when several groups
+// fail: one group's friendly error must not replace the other groups' errors.
+func TestHandleExecutionError_CauseFormatting(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantMsg string
+	}{
+		{
+			name:    "single friendly error uses its user message",
+			err:     fmt.Errorf("wrap: %w", friendlyTestError{}),
+			wantMsg: "error running commands: friendly text",
+		},
+		{
+			name:    "joined errors keep every child, one per line",
+			err:     errors.Join(errStandardError, fmt.Errorf("wrap: %w", friendlyTestError{})),
+			wantMsg: "error running commands: standard error\nfriendly text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var captured []slog.Record
+			originalLogger := slog.Default()
+			t.Cleanup(func() { slog.SetDefault(originalLogger) })
+			slog.SetDefault(slog.New(tu.NewCallbackHandler(func(r slog.Record) {
+				captured = append(captured, r)
+			})))
+
+			_, stderr := captureErrorOutput(t, func() {
+				HandleExecutionError(&ExecutionError{
+					Message:   "error running commands",
+					Component: "runner",
+					RunID:     "test-run-exec",
+					Err:       tt.err,
+				})
+			})
+
+			require.Len(t, captured, 1)
+			var errorMsg string
+			captured[0].Attrs(func(a slog.Attr) bool {
+				if a.Key == common.PreExecErrorAttrs.ErrorMessage {
+					errorMsg = a.Value.String()
+				}
+				return true
+			})
+			assert.Equal(t, tt.wantMsg, errorMsg)
+			assert.Contains(t, stderr, "  Details: "+tt.wantMsg+"\n")
+		})
+	}
 }
 
 func TestHandleExecutionError_WithWrappedError(t *testing.T) {

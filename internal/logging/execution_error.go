@@ -35,6 +35,28 @@ func GetUserFriendlyMessage(err error) string {
 	return ""
 }
 
+// formatCause renders an error cause for a user-facing report: each error's
+// UserMessage when it has one, otherwise its raw text. A multi-error (such as
+// the errors.Join of every failed group) is split into its children first,
+// because GetUserFriendlyMessage walks every branch of the join and would
+// replace the whole report with the one friendly child, dropping its
+// siblings. Children are joined with "\n", the separator errors.Join itself
+// uses, so the report stays one line per error.
+func formatCause(err error) string {
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		children := multi.Unwrap()
+		parts := make([]string, 0, len(children))
+		for _, child := range children {
+			parts = append(parts, formatCause(child))
+		}
+		return strings.Join(parts, "\n")
+	}
+	if userMsg := GetUserFriendlyMessage(err); userMsg != "" {
+		return userMsg
+	}
+	return err.Error()
+}
+
 // ContextString returns the context information (group and command names) as a formatted string
 // Returns empty string if no context is available
 func (e *ExecutionError) ContextString() string {

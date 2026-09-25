@@ -94,10 +94,7 @@ func (e *PreExecutionError) Detail() string {
 	if e.Err == nil {
 		return e.Message
 	}
-	if userMsg := GetUserFriendlyMessage(e.Err); userMsg != "" {
-		return fmt.Sprintf("%s: %s", e.Message, userMsg)
-	}
-	return fmt.Sprintf("%s: %v", e.Message, e.Err)
+	return fmt.Sprintf("%s: %s", e.Message, formatCause(e.Err))
 }
 
 // Is implements error wrapping for errors.Is
@@ -234,18 +231,14 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError) {
 // HandleExecutionError handles execution errors (errors that occur during command execution)
 // by logging and outputting appropriate summary information
 func HandleExecutionError(execErr *ExecutionError) {
-	// This duplicates the same "Message plus user-friendly or raw cause"
-	// assembly that PreExecutionError.Detail performs. The two paths report
-	// different error types, so collapsing them is deferred; see issue #1156.
-	// Build error message with context information
+	// The cause is rendered by formatCause, the same helper PreExecutionError.Detail
+	// uses, so both report paths agree on friendly-versus-raw text and on how a
+	// joined multi-error is split. Only the surrounding "Message: cause" assembly
+	// is repeated, because the two paths report different error types; see
+	// issue #1156.
 	message := execErr.Message
-
-	// Check if the error provides a user-friendly message
-	if userMsg := GetUserFriendlyMessage(execErr.Err); userMsg != "" {
-		message = fmt.Sprintf("%s: %s", message, userMsg)
-	} else if execErr.Err != nil {
-		// If no user-friendly message, include the raw error
-		message = fmt.Sprintf("%s: %v", message, execErr.Err)
+	if execErr.Err != nil {
+		message = fmt.Sprintf("%s: %s", message, formatCause(execErr.Err))
 	}
 
 	// Add context information (group and command names)
