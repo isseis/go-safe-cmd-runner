@@ -423,6 +423,20 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 				return err
 			}
 
+			// A declared pre-execution stage is read before the verification
+			// error, so a command-level failure whose cause chain happens to
+			// carry a *verification.Error is still reported under its own stage
+			// and still counts toward the run's result. Only a file verification
+			// stage wrapping a *verification.Error falls through to the existing
+			// verification path below.
+			if stageErr, ok := errors.AsType[*GroupStageError](err); ok && !isGroupFileVerificationFailure(stageErr, err) {
+				// Record-only: the process-level report is made once at the end
+				// of the run from the returned error.
+				logging.NotifyPreExecutionError(groupStagePreExecutionError(stageErr, r.runID))
+				groupErrs = append(groupErrs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
+				continue
+			}
+
 			// Check if this is a verification error - if so, notify via Slack and continue
 			if verErr, ok := errors.AsType[*verification.Error](err); ok {
 				// The shared constructor owns the message template, the
@@ -443,6 +457,17 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 	}
 
 	return nil
+}
+
+// isGroupFileVerificationFailure reports whether a stage error belongs on the
+// existing group file verification path: the declared stage is file
+// verification and the chain carries a *verification.Error.
+func isGroupFileVerificationFailure(stageErr *GroupStageError, err error) bool {
+	if stageErr.Stage() != GroupStageFileVerification {
+		return false
+	}
+	_, ok := errors.AsType[*verification.Error](err)
+	return ok
 }
 
 // Execute executes the specified groups

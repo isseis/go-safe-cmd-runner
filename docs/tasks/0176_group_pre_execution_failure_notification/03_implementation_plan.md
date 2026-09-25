@@ -125,7 +125,7 @@
 - 新しいクロスパッケージのヘルパ・モックは作らない。既存の `verificationtestutil.MockManager`・`MockGroupExecutor`・`tu.NewLogRecorder`・`runMainWithSlackMock` で足りる。
 - `internal/runner/group_stage_test.go` は新規テストファイル（`package runner`）として追加する。`DefaultGroupExecutor` を直接組む必要があるテストは `group_executor_test.go` に置き、新しい `test_helpers*.go` は作らない。
 - `internal/logging` のビルダー検査は `slack_handler_test.go` に追加し、既存の `assertDisplaySafeProperties`・`redactedPreExecutionErrorMessage` の手法を再利用する。
-- `cmd/runner` の統合テストは `integration_test_helpers.go` の既存ヘルパを使い、新しいファイルは追加しない。ただし現行の `runMainWithSlackMock` は `captureStdoutStderr` の stdout を返さない（`integration_test_helpers.go:280` の `_, stderr := ...`）。AC-15 の `RUN_SUMMARY` 行数を観測するため、`slackRun` に `stdout string` フィールドを足し、`runMainWithSlackMock` が stdout も返すようにする（Phase 4）。既存の呼び出し元はフィールド追加の影響を受けない。
+- `cmd/runner` の統合テストは `integration_test_helpers.go` の既存ヘルパを使い、新しいファイルは追加しない。ただし現行の `runMainWithSlackMock` は `captureStdoutStderr` の stdout を返さない（`integration_test_helpers.go:280` の `_, stderr := ...`）。AC-15 の `RUN_SUMMARY` 行数を観測するため、`slackRun` に `stdout string` フィールドを足し、`runMainWithSlackMock` が stdout も返すようにする（Phase 4）。AC-16 の最終報告の `slack_notify=false` はコンソールのログ行に出ないため、`slackRun` に実行のログディレクトリも足し、JSON ログのレコードで観測する（Phase 4）。既存の呼び出し元はフィールド追加の影響を受けない。
 
 ---
 
@@ -244,8 +244,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: `executeGroups` の振り分け・配線テスト・統合テスト・本文の安全性
 
@@ -253,17 +253,17 @@
 
 **作業内容**:
 
-- [ ] `runner.go` の `executeGroups`（`:420-437`）で、`:422-424` のキャンセル判定の後、`:427` の `*verification.Error` 判定の前に `errors.AsType[*GroupStageError]` の分岐を追加する。段階が `GroupStageFileVerification` で `errors.AsType[*verification.Error]` が成立すれば既存の `runerrors.NewVerificationPreExecutionError` + `logging.HandlePreExecutionError` 経路（`continue` する）、それ以外は `groupStagePreExecutionError` で変換して `logging.NotifyPreExecutionError` を呼び、`groupErrs` に積む。
-- [ ] `runner_test.go` に `TestRunner_PreExecutionStageNotifications` を追加する。`MockGroupExecutor` が各段階の段階エラーを返すようにし、`tu.NewLogRecorder` で `Pre-execution error notified` のレコードが 1 件、`message_type`・`error_type`・通知コンテキスト・`component`・`error_message`（`<要約文>: <原因>`）が期待どおりで、`Execute` がエラーを返すことを検証する（AC-01〜AC-07・AC-16）。段階 `GroupStageUnknown` の行も含める（AC-10）。
-- [ ] 同ファイルに `TestRunner_PreExecutionStageNotificationsPerGroup` を追加する。2 つの group がそれぞれ段階エラーで失敗し、レコードが 2 件で各 group の Scope を持つことを検証する（AC-08）。group ごとに異なる段階エラーを返すには、`MockGroupExecutor` の `mock.MatchedBy` で group 名を照合するか、`ExecuteGroup` を `groupSpec.Name` で場合分けする小さなテスト用実装を使う（`mock.Anything` のままでは 1 件しか区別できない）。
-- [ ] 同ファイルに `TestRunner_FileVerificationStageKeepsExistingPath` を追加する。`newGroupStageError(GroupStageFileVerification, "backup", verErr)` を返すモックで、既存の `Pre-execution error occurred` のレコードが 1 件だけで本設計のレコードは 0 件、本文・`failed_file_paths`・Scope がラップしない場合と同じであることを検証する（AC-12）。
-- [ ] 同ファイルに `TestRunner_StageDispatchPrefersStageOverVerificationError` を追加する。`GroupStageCommandVerification` の段階エラーの原因が `*verification.Error` のときに、`Pre-execution error notified` がちょうど 1 件で `error_type` が `command_verification_failed`・command 水準の Scope になり、既存の `Pre-execution error occurred` は 0 件で `Execute` の戻り値がこのエラーを含むことを検証する（AC-09・§3.4 の 3b）。
-- [ ] 同ファイルに `TestRunner_CancellationSkipsStageNotification` を追加する。`context.Canceled`・`context.DeadlineExceeded` をラップした段階エラーで本設計のレコードが 0 件であることを検証する（AC-14）。
-- [ ] 同ファイルに `TestRunner_CommandExecutionFailureSkipsStageNotification` を追加する。`*CommandExecutionError` を返すモックで本設計のレコードが 0 件であることを検証する（AC-13）。
-- [ ] 同ファイルに `TestRunner_PreExecutionErrorMessageIsRedacted` を追加する。値形式の機密（GitHub トークン形式の文字列）を含むが、`key`・`token` などの語も key=value の形も含まない原因を持つ段階エラーを返すモックを使う。`redaction.NewRedactingHandler` を通したレコーダの `error_message` について、まずその入力が値全体置換の判定にも key=value のパターンにも当たらないことを確認する。そのうえで、機密の部分だけが値形式のプレースホルダに置き換わり、他の部分は残ることを検証する（AC-19）。
-- [ ] `internal/logging/slack_handler_test.go` に `TestBuildPreExecutionError_InterpolationContract` を追加する。改行・制御文字・書式制御文字（`U+202E`）を含む `error_message` と、500 byte を超える `error_message` を RedactingHandler 経由のレコードで与え、`buildPreExecutionError` の `Error Message` が 1 行で、制御文字と書式制御文字を含まず、`common.Interpolate` の上限以下であることを `assertDisplaySafeProperties` で検証する（AC-18）。
-- [ ] `integration_test_helpers.go` の `slackRun` に `stdout string` を追加し、`runMainWithSlackMock`（`:280`）が `captureStdoutStderr` の stdout も返すようにする（§1.4）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce` を追加する。`runMainWithSlackMock` と、未定義変数を複数行の値で参照する group の `env_vars` を持つ設定（`dryRun=false` 固定。`vars` では原因に改行が入らず AC-18 の 1 行化を検証できないため、§1.3）で #1 を 1 件だけ起こし、`run.stdout` の `RUN_SUMMARY` 行がちょうど 1 行、stderr の `Error:` ブロックがちょうど 1 つ、終了コードが 1、Slack のペイロードが 1 件で `error_type` が `group_preparation_failed`・Scope が `group=<group>`、最終報告のレコード（`Execution error occurred`）が `slack_notify=false` であることを検証する（AC-15・AC-16）。ペイロードの `Error Message` が 1 行であることも確認する（AC-18）。
+- [x] `runner.go` の `executeGroups`（`:420-437`）で、`:422-424` のキャンセル判定の後、`:427` の `*verification.Error` 判定の前に `errors.AsType[*GroupStageError]` の分岐を追加する。段階が `GroupStageFileVerification` で `errors.AsType[*verification.Error]` が成立すれば既存の `runerrors.NewVerificationPreExecutionError` + `logging.HandlePreExecutionError` 経路（`continue` する）、それ以外は `groupStagePreExecutionError` で変換して `logging.NotifyPreExecutionError` を呼び、`groupErrs` に積む。既存経路へは、段階の分岐をこの場合だけ素通りさせて後続の `*verification.Error` 分岐に落とすことで振り分ける（判定は非公開関数 `isGroupFileVerificationFailure`）。`TestFiringPointsUseSharedVerificationConstructor` は `runner.go` の `NewVerificationPreExecutionError` 呼び出しを 1 件に固定しているため、呼び出しを段階の分岐に複製しない。
+- [x] `runner_test.go` に `TestRunner_PreExecutionStageNotifications` を追加する。`MockGroupExecutor` が各段階の段階エラーを返すようにし、`tu.NewLogRecorder` で `Pre-execution error notified` のレコードが 1 件、`message_type`・`error_type`・通知コンテキスト・`component`・`error_message`（`<要約文>: <原因>`）が期待どおりで、`Execute` がエラーを返すことを検証する（AC-01〜AC-07・AC-16）。段階 `GroupStageUnknown` の行も含める（AC-10）。
+- [x] 同ファイルに `TestRunner_PreExecutionStageNotificationsPerGroup` を追加する。2 つの group がそれぞれ段階エラーで失敗し、レコードが 2 件で各 group の Scope を持つことを検証する（AC-08）。group ごとに異なる段階エラーを返すには、`MockGroupExecutor` の `mock.MatchedBy` で group 名を照合するか、`ExecuteGroup` を `groupSpec.Name` で場合分けする小さなテスト用実装を使う（`mock.Anything` のままでは 1 件しか区別できない）。
+- [x] 同ファイルに `TestRunner_FileVerificationStageKeepsExistingPath` を追加する。`newGroupStageError(GroupStageFileVerification, "backup", verErr)` を返すモックで、既存の `Pre-execution error occurred` のレコードが 1 件だけで本設計のレコードは 0 件、本文・`failed_file_paths`・Scope がラップしない場合と同じであることを検証する（AC-12）。
+- [x] 同ファイルに `TestRunner_StageDispatchPrefersStageOverVerificationError` を追加する。`GroupStageCommandVerification` の段階エラーの原因が `*verification.Error` のときに、`Pre-execution error notified` がちょうど 1 件で `error_type` が `command_verification_failed`・command 水準の Scope になり、既存の `Pre-execution error occurred` は 0 件で `Execute` の戻り値がこのエラーを含むことを検証する（AC-09・§3.4 の 3b）。
+- [x] 同ファイルに `TestRunner_CancellationSkipsStageNotification` を追加する。`context.Canceled`・`context.DeadlineExceeded` をラップした段階エラーで本設計のレコードが 0 件であることを検証する（AC-14）。
+- [x] 同ファイルに `TestRunner_CommandExecutionFailureSkipsStageNotification` を追加する。`*CommandExecutionError` を返すモックで本設計のレコードが 0 件であることを検証する（AC-13）。
+- [x] 同ファイルに `TestRunner_PreExecutionErrorMessageIsRedacted` を追加する。値形式の機密（GitHub トークン形式の文字列）を含むが、`key`・`token` などの語も key=value の形も含まない原因を持つ段階エラーを返すモックを使う。`redaction.NewRedactingHandler` を通したレコーダの `error_message` について、まずその入力が値全体置換の判定にも key=value のパターンにも当たらないことを確認する。そのうえで、機密の部分だけが値形式のプレースホルダに置き換わり、他の部分は残ることを検証する（AC-19）。
+- [x] `internal/logging/slack_handler_test.go` に `TestBuildPreExecutionError_InterpolationContract` を追加する。改行・制御文字・書式制御文字（`U+202E`）・Slack の記法を含む `error_message`（引用しないものと `%q` で引用したパスを含むもの）と、500 byte を超える `error_message` を RedactingHandler 経由のレコードで与え、`buildPreExecutionError` の `Error Message` が 1 行で、制御文字と書式制御文字を含まず、`common.Interpolate` の上限以下であることを `assertDisplaySafeProperties` で検証する（AC-18）。各本文が redaction で置き換わらずに残ることも確認し、プレースホルダだけで性質が満たされる空振りを防ぐ。`%q` で引用済みのパスを含む行も置く。`%q` は改行・制御文字をエスケープするが、Slack の記法（`<`・`>`・`&`）と上限はビルダーの補間が担うため、この行の入力には `<!channel>&` を含め、ビルダーの補間を外すと失敗するようにする。各行で要約文が本文の先頭に残ることも確認する。既存の `redactedPreExecutionErrorMessage` は本文を引数に取る `redactedPreExecutionErrorField` を呼ぶ形にして共有する。
+- [x] `integration_test_helpers.go` の `slackRun` に `stdout string` を追加し、`runMainWithSlackMock`（`:280`）が `captureStdoutStderr` の stdout も返すようにする（§1.4）。あわせて `slackRun` に実行のログディレクトリ `logDir` を加え、JSON ログのレコードを読む `jsonLogRecords` を追加する。コンソールのログ行は `slack_notify` を出さないため、最終報告の `slack_notify=false` は JSON ログで観測する。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce` を追加する。`runMainWithSlackMock` と、未定義変数を複数行の値で参照する group の `env_vars` を持つ設定（`dryRun=false` 固定。`vars` では原因に改行が入らず AC-18 の 1 行化を検証できないため、§1.3）で #1 を 1 件だけ起こし、`run.stdout` の `RUN_SUMMARY` 行がちょうど 1 行、stderr の `Error:` ブロックがちょうど 1 つ、終了コードが 1、Slack のペイロードが 1 件で `error_type` が `group_preparation_failed`・Scope が `group=<group>`、最終報告のレコード（`Execution error occurred`）が `slack_notify=false` であることを検証する（AC-15・AC-16）。ペイロードの `Error Message` が 1 行であることも確認する（AC-18）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。配線テストが 3b の分岐を 3a の前に置く／段階より先に `*verification.Error` を見ると失敗すること、`TestRunner_FileVerificationStageKeepsExistingPath` が 3a を外すと失敗すること、統合テストが `NotifyPreExecutionError` を `HandlePreExecutionError` に替える（`RUN_SUMMARY` 行が増える）と失敗することを確認する。
 
@@ -279,8 +279,8 @@
 
 **判定理由**: 通知の振り分けという可視挙動の中核と、Slack モックサーバー・プロセス全体状態の差し替えを伴う統合テストを含むため。段階エラーの記録と振り分けを同一 PR に入れ、段階的な raise/lower を作らないので panel-mode トリガーには該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 

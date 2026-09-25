@@ -173,8 +173,12 @@ func captureStdoutStderr(t *testing.T, fn func()) (stdout, stderr string) {
 // Slack handler was pointed at a mock server.
 type slackRun struct {
 	exitCode int
+	stdout   string
 	stderr   string
 	payloads []logging.SlackMessage
+	// logDir holds the run's JSON log file, the records with every attribute
+	// the console log line leaves out.
+	logDir string
 }
 
 // slackRunSpec describes the run: configBody receives the mock Slack server's
@@ -271,13 +275,14 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	})
 	configPath = configFile
 	logLevel = "info"
-	logDir = tu.SafeTempDir(t)
+	runLogDir := tu.SafeTempDir(t)
+	logDir = runLogDir
 	dryRun = false
 	groups = ""
 	runID = ""
 
 	var exitCode int
-	_, stderr := captureStdoutStderr(t, func() {
+	stdout, stderr := captureStdoutStderr(t, func() {
 		exitCode = mainWithExitCode(spec.runID)
 		bootstrap.FlushSlackNotifications()
 	})
@@ -288,7 +293,28 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 
 	mu.Lock()
 	defer mu.Unlock()
-	return slackRun{exitCode: exitCode, stderr: stderr, payloads: payloads}
+	return slackRun{exitCode: exitCode, stdout: stdout, stderr: stderr, payloads: payloads, logDir: runLogDir}
+}
+
+// jsonLogRecords returns the records of the run's JSON log file whose message
+// is msg.
+func jsonLogRecords(t *testing.T, run slackRun, msg string) []map[string]any {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(run.logDir, "*.json"))
+	require.NoError(t, err)
+	require.Len(t, files, 1, "the run must write exactly one JSON log file")
+	content, err := os.ReadFile(files[0])
+	require.NoError(t, err)
+
+	var records []map[string]any
+	for line := range strings.SplitSeq(strings.TrimSpace(string(content)), "\n") {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record), "log line: %s", line)
+		if record["msg"] == msg {
+			records = append(records, record)
+		}
+	}
+	return records
 }
 
 // requireSinglePreExecutionError asserts that exactly one Slack payload

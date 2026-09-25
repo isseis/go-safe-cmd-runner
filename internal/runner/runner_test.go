@@ -2588,3 +2588,288 @@ func TestWithDirPermAuditor_ReachesGroupExecution(t *testing.T) {
 	require.Error(t, err, "the configured auditor must be consulted during group execution")
 	assert.ErrorIs(t, err, ErrDirPermViolation)
 }
+
+// Messages of the two pre-execution records: the record-only notification
+// this runner emits for a declared stage, and the reporting path kept for
+// group file verification.
+const (
+	preExecutionNotifiedMessage = "Pre-execution error notified"
+	preExecutionOccurredMessage = "Pre-execution error occurred"
+)
+
+// groupFailure is the error the mock group executor returns for one group.
+type groupFailure struct {
+	group string
+	err   error
+}
+
+// executeWithGroupFailures runs Execute over one group per failure, in order,
+// with a mock group executor that returns each group's error. When redact is
+// true the recorder sits behind the production RedactingHandler, so it sees the
+// record the Slack builder receives.
+func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailure) (*tu.LogRecorder, error) {
+	t.Helper()
+
+	recorder := tu.NewLogRecorder(nil)
+	var handler slog.Handler = recorder
+	if redact {
+		handler = redaction.NewRedactingHandler(recorder, nil, nil)
+	}
+	groups := make([]runnertypes.GroupSpec, 0, len(failures))
+	mockGroupExecutor := &MockGroupExecutor{}
+	for _, failure := range failures {
+		groups = append(groups, runnertypes.GroupSpec{Name: failure.group})
+		name := failure.group
+		mockGroupExecutor.On("ExecuteGroup", mock.Anything,
+			mock.MatchedBy(func(spec *runnertypes.GroupSpec) bool { return spec.Name == name }),
+			mock.Anything).Return(failure.err)
+	}
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			Timeout: new(int32(30)),
+		},
+		Groups: groups,
+	}
+	runner, err := NewRunner(config,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-pre-execution-stage"),
+		WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+	require.NoError(t, err)
+	runner.groupExecutor = mockGroupExecutor
+
+	// The default logger is restored before returning rather than at cleanup,
+	// so a test can call this helper twice: RedactingHandler rejects a failure
+	// logger (the default one) that already redacts.
+	execErr := func() error {
+		originalLogger := slog.Default()
+		defer slog.SetDefault(originalLogger)
+		slog.SetDefault(slog.New(handler))
+		return runner.Execute(context.Background(), nil)
+	}()
+	mockGroupExecutor.AssertNumberOfCalls(t, "ExecuteGroup", len(failures))
+	return recorder, execErr
+}
+
+// TestRunner_PreExecutionStageNotifications drives each declared stage through
+// Execute and checks the record-only notification: one record carrying the
+// stage's error_type, scope level, the runner component and the summary line
+// in front of the cause, while the run still fails with the cause.
+func TestRunner_PreExecutionStageNotifications(t *testing.T) {
+	cause := errors.New("cause of the failure")
+	tests := []struct {
+		name        string
+		stageErr    *GroupStageError
+		wantType    logging.ErrorType
+		wantScope   common.NotificationContext
+		wantMessage string
+	}{
+		{
+			name:        "group preparation",
+			stageErr:    newGroupStageError(GroupStageGroupPreparation, "backup", cause),
+			wantType:    logging.ErrorTypeGroupPreparation,
+			wantScope:   common.GroupScope("backup"),
+			wantMessage: "Group preparation failed: cause of the failure",
+		},
+		{
+			name:        "command preparation",
+			stageErr:    newCommandStageError(GroupStageCommandPreparation, "backup", "dump", cause),
+			wantType:    logging.ErrorTypeGroupPreparation,
+			wantScope:   common.CommandScope("backup", "dump"),
+			wantMessage: "Command preparation failed: cause of the failure",
+		},
+		{
+			name:        "directory permission audit",
+			stageErr:    newGroupStageError(GroupStageDirPermissionAudit, "backup", cause),
+			wantType:    logging.ErrorTypeGroupDirPermissionViolation,
+			wantScope:   common.GroupScope("backup"),
+			wantMessage: "Group directory permission audit failed: cause of the failure",
+		},
+		{
+			name:        "file verification without a verification error",
+			stageErr:    newGroupStageError(GroupStageFileVerification, "backup", cause),
+			wantType:    logging.ErrorTypeGroupFileVerification,
+			wantScope:   common.GroupScope("backup"),
+			wantMessage: "Group file verification failed: cause of the failure",
+		},
+		{
+			name:        "command verification",
+			stageErr:    newCommandStageError(GroupStageCommandVerification, "backup", "dump", cause),
+			wantType:    logging.ErrorTypeCommandVerification,
+			wantScope:   common.CommandScope("backup", "dump"),
+			wantMessage: "Command verification failed: cause of the failure",
+		},
+		{
+			name:        "undeclared stage",
+			stageErr:    newGroupStageError(GroupStageUnknown, "backup", cause),
+			wantType:    logging.ErrorTypeGroupPreExecution,
+			wantScope:   common.GroupScope("backup"),
+			wantMessage: "Group pre-execution failed: cause of the failure",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder, err := executeWithGroupFailures(t, false, groupFailure{group: "backup", err: tt.stageErr})
+
+			require.Error(t, err, "a pre-execution failure still fails the run")
+			assert.ErrorIs(t, err, cause)
+
+			record := recorder.RequireRecord(t, slog.LevelError, preExecutionNotifiedMessage)
+			record.AssertNotificationContext(t, tt.wantScope)
+			record.AssertAttrs(t, map[string]any{
+				"message_type":                        logging.NotificationMessageType(logging.PreExecutionErrorNotification()),
+				common.PreExecErrorAttrs.ErrorType:    string(tt.wantType),
+				common.PreExecErrorAttrs.ErrorMessage: tt.wantMessage,
+				common.PreExecErrorAttrs.Component:    string(resource.ComponentRunner),
+				"run_id":                              "test-pre-execution-stage",
+			})
+			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage),
+				"the record-only path must not also take the reporting path")
+		})
+	}
+}
+
+// TestRunner_PreExecutionStageNotificationsPerGroup fixes that every failed
+// group is notified, not only the first one whose error Execute returns.
+func TestRunner_PreExecutionStageNotificationsPerGroup(t *testing.T) {
+	first, second := errors.New("first"), errors.New("second")
+	recorder, err := executeWithGroupFailures(t, false,
+		groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", first)},
+		groupFailure{group: "deploy", err: newCommandStageError(GroupStageCommandVerification, "deploy", "push", second)},
+	)
+	assert.ErrorIs(t, err, first, "the run still returns the first group's error")
+	assert.NotErrorIs(t, err, second)
+
+	records := recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage)
+	require.Len(t, records, 2, "each failed group must be notified once")
+	records[0].AssertNotificationContext(t, common.GroupScope("backup"))
+	records[0].AssertAttrs(t, map[string]any{
+		common.PreExecErrorAttrs.ErrorType: string(logging.ErrorTypeGroupPreparation),
+	})
+	records[1].AssertNotificationContext(t, common.CommandScope("deploy", "push"))
+	records[1].AssertAttrs(t, map[string]any{
+		common.PreExecErrorAttrs.ErrorType: string(logging.ErrorTypeCommandVerification),
+	})
+}
+
+// TestRunner_FileVerificationStageKeepsExistingPath fixes that a
+// *verification.Error declared under the file verification stage is reported
+// exactly as the bare *verification.Error is: same record, same message, same
+// failed-file list and scope, and no record-only notification.
+func TestRunner_FileVerificationStageKeepsExistingPath(t *testing.T) {
+	newVerErr := func() *verification.Error {
+		return &verification.Error{
+			Op:            "group",
+			Group:         "backup",
+			Details:       []string{"/etc/backup/a.conf"},
+			TotalFiles:    2,
+			VerifiedFiles: 1,
+			FailedFiles:   1,
+			Err:           verification.ErrGroupVerificationFailed,
+		}
+	}
+	reported := func(t *testing.T, groupErr error) tu.RecordSnapshot {
+		t.Helper()
+		recorder, err := executeWithGroupFailures(t, true, groupFailure{group: "backup", err: groupErr})
+		require.NoError(t, err, "a verification error is reported and the run continues")
+		assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage),
+			"a file verification failure must not also be notified by the stage path")
+		return recorder.RequireRecord(t, slog.LevelError, preExecutionOccurredMessage)
+	}
+
+	bare := reported(t, newVerErr())
+	wrapped := reported(t, newGroupStageError(GroupStageFileVerification, "backup", newVerErr()))
+
+	for _, key := range []string{
+		common.PreExecErrorAttrs.ErrorType,
+		common.PreExecErrorAttrs.ErrorMessage,
+		common.PreExecErrorAttrs.FailedFilePaths,
+		common.PreExecErrorAttrs.Component,
+	} {
+		require.Contains(t, bare.Attrs, key, "the bare report must carry %s, or comparing it proves nothing", key)
+		assert.Equal(t, bare.Attrs[key], wrapped.Attrs[key], "attribute %s", key)
+	}
+	wrapped.AssertNotificationContext(t, common.GroupScope("backup"))
+}
+
+// TestRunner_StageDispatchPrefersStageOverVerificationError fixes the dispatch
+// order: a command verification failure whose cause chain carries a
+// *verification.Error is notified under its declared stage and counts toward
+// the run's result, instead of being taken for a group file verification
+// failure and skipped.
+func TestRunner_StageDispatchPrefersStageOverVerificationError(t *testing.T) {
+	verErr := &verification.Error{
+		Op:    "group",
+		Group: "backup",
+		Err:   verification.ErrGroupVerificationFailed,
+	}
+	stageErr := newCommandStageError(GroupStageCommandVerification, "backup", "dump", verErr)
+
+	recorder, err := executeWithGroupFailures(t, false, groupFailure{group: "backup", err: stageErr})
+
+	require.Error(t, err, "the failure must be collected into the run's result")
+	assert.ErrorIs(t, err, stageErr)
+	record := recorder.RequireRecord(t, slog.LevelError, preExecutionNotifiedMessage)
+	record.AssertNotificationContext(t, common.CommandScope("backup", "dump"))
+	record.AssertAttrs(t, map[string]any{
+		common.PreExecErrorAttrs.ErrorType: string(logging.ErrorTypeCommandVerification),
+	})
+	assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage),
+		"the stage must be read before the verification error")
+}
+
+// TestRunner_CancellationSkipsStageNotification fixes that a cancelled run is
+// not notified as a pre-execution failure even when the stage was declared.
+func TestRunner_CancellationSkipsStageNotification(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			recorder, err := executeWithGroupFailures(t, false,
+				groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", cause)})
+
+			assert.ErrorIs(t, err, cause)
+			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage))
+		})
+	}
+}
+
+// TestRunner_CommandExecutionFailureSkipsStageNotification fixes that a failure
+// after commands started is left to the existing group summary.
+func TestRunner_CommandExecutionFailureSkipsStageNotification(t *testing.T) {
+	recorder, err := executeWithGroupFailures(t, false, groupFailure{
+		group: "backup",
+		err:   &CommandExecutionError{GroupName: "backup", CommandName: "dump", Err: ErrExecutionFailed},
+	})
+
+	require.Error(t, err)
+	assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+	assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage))
+}
+
+// TestRunner_PreExecutionErrorMessageIsRedacted fixes that the notification
+// body goes through the production redaction. The cause carries a value-format
+// secret and nothing the other layers react to, so only value-format detection
+// can mask it, and the rest of the body must survive.
+func TestRunner_PreExecutionErrorMessageIsRedacted(t *testing.T) {
+	const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789ab"
+	cause := errors.New("cloning as " + secret + " over https")
+	body := "Group preparation failed: " + cause.Error()
+
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(body),
+		"the body must not trip the whole-value heuristic, or masking it proves nothing about value-format detection")
+	lowered := strings.ToLower(body)
+	for _, pattern := range redaction.DefaultKeyValuePatterns() {
+		require.NotContains(t, lowered, strings.ToLower(pattern.Literal),
+			"the body must carry no key name, or masking it proves nothing about value-format detection")
+	}
+
+	recorder, err := executeWithGroupFailures(t, true,
+		groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", cause)})
+	require.Error(t, err)
+
+	record := recorder.RequireRecord(t, slog.LevelError, preExecutionNotifiedMessage)
+	record.AssertAttrs(t, map[string]any{
+		common.PreExecErrorAttrs.ErrorMessage: "Group preparation failed: cloning as " + redaction.DefaultPlaceholder + " over https",
+	})
+}

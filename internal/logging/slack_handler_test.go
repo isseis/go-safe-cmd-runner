@@ -2191,12 +2191,23 @@ const failedFilesDetail = "Total: 3, Verified: 1, Failed: 2, Error: group file v
 // []string the firing point wrote.
 func redactedPreExecutionErrorMessage(t *testing.T, failedPaths any) string {
 	t.Helper()
+	return redactedPreExecutionErrorField(t, failedFilesDetail, failedPaths)
+}
+
+// redactedPreExecutionErrorField renders the Error Message field of a
+// pre-execution error record whose error_message is errorMessage and whose
+// failed_file_paths attribute holds failedPaths (nil for no attribute), after
+// passing the record through a RedactingHandler as in production. The
+// error_type and component are fixed placeholders: the Error Message field
+// does not depend on them.
+func redactedPreExecutionErrorField(t *testing.T, errorMessage string, failedPaths any) string {
+	t.Helper()
 
 	record := slog.NewRecord(time.Now(), slog.LevelError, "Pre-execution error occurred", 0)
 	record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GroupScope("backup"))...)
 	record.AddAttrs(
 		slog.String(common.PreExecErrorAttrs.ErrorType, string(ErrorTypeGroupFileVerification)),
-		slog.String(common.PreExecErrorAttrs.ErrorMessage, failedFilesDetail),
+		slog.String(common.PreExecErrorAttrs.ErrorMessage, errorMessage),
 		slog.String(common.PreExecErrorAttrs.Component, "verification"),
 	)
 	if failedPaths != nil {
@@ -2217,6 +2228,49 @@ func redactedPreExecutionErrorMessage(t *testing.T, failedPaths any) string {
 	}
 	t.Fatalf("no Error Message field: %v", details.fields)
 	return ""
+}
+
+// TestBuildPreExecutionError_InterpolationContract fixes that a free-text
+// error_message of the shape the group pre-execution notification carries --
+// a summary line, then a cause that may hold raw newlines, control and
+// format-control characters, Slack markup or a %q-quoted command path, or run
+// past the limit -- renders as one display-safe line within the shared limit.
+// %q escapes newlines and control characters but leaves Slack markup and the
+// length to the builder, so the quoted row carries markup. Each body is checked
+// to survive redaction, so the properties are not met merely by a placeholder.
+func TestBuildPreExecutionError_InterpolationContract(t *testing.T) {
+	tests := []struct {
+		name     string
+		message  string
+		survives string
+	}{
+		{
+			name:     "raw newlines and control characters in the cause",
+			message:  "Group preparation failed: failed to expand group[backup]: first line\nsecond line <!channel> & more\r\n\x01\x7f\u202eend",
+			survives: "second line",
+		},
+		{
+			name: "a quoted command path with Slack markup",
+			message: fmt.Sprintf("Command verification failed: command dependency verification failed for %q: missing library",
+				"/opt/<!channel>&\nbin/\u202edump"),
+			survives: "missing library",
+		},
+		{
+			name:     "a body over the shared limit keeps its summary",
+			message:  "Group preparation failed: " + strings.Repeat("x", 600),
+			survives: "Group preparation failed: ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := redactedPreExecutionErrorField(t, tt.message, nil)
+			assert.Contains(t, got, tt.survives, "the body must survive redaction, or its properties prove nothing")
+			assert.True(t, strings.HasPrefix(got, strings.SplitN(tt.message, ":", 2)[0]+":"),
+				"the summary must stay at the head of the body: %q", got)
+			assertDisplaySafeProperties(t, got)
+		})
+	}
 }
 
 // omissionCount parses the trailing " (+m more)" notice of a rendered Error
