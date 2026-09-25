@@ -563,20 +563,39 @@ func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
 
 	require.Len(t, captured, 1, "HandleExecutionError should emit exactly one record")
 
-	var slackNotify bool
-	var messageType string
+	var (
+		slackNotify bool
+		messageType string
+		errorType   string
+		errorMsg    string
+		component   string
+		runID       string
+	)
 	captured[0].Attrs(func(a slog.Attr) bool {
 		switch a.Key {
-		case "slack_notify":
+		case slackNotifyAttrKey:
 			slackNotify = a.Value.Bool()
-		case "message_type":
+		case msgTypeAttrKey:
 			messageType = a.Value.String()
+		case common.PreExecErrorAttrs.ErrorType:
+			errorType = a.Value.String()
+		case common.PreExecErrorAttrs.ErrorMessage:
+			errorMsg = a.Value.String()
+		case common.PreExecErrorAttrs.Component:
+			component = a.Value.String()
+		case "run_id":
+			runID = a.Value.String()
 		}
 		return true
 	})
 
 	assert.False(t, slackNotify, "execution errors must not reach Slack")
 	assert.Equal(t, "execution_error", messageType)
+	// The shared record helper must keep the execution error's attributes.
+	assert.Equal(t, string(ErrorTypeSystemError), errorType)
+	assert.Equal(t, "error running commands", errorMsg)
+	assert.Equal(t, "runner", component)
+	assert.Equal(t, "test-run-exec", runID)
 }
 
 func TestHandleExecutionError_WithWrappedError(t *testing.T) {
@@ -1084,11 +1103,19 @@ func TestNotifyPreExecutionError_RecordsWithoutReport(t *testing.T) {
 		})
 	})
 
-	t.Run("omits the failed-file list when there is none", func(t *testing.T) {
-		record, _, _ := captureRecord(t, "Pre-execution error notified", func() {
-			NotifyPreExecutionError(newError(nil))
+	for _, tc := range []struct {
+		name  string
+		paths []string
+	}{
+		{name: "nil list", paths: nil},
+		{name: "empty non-nil list", paths: []string{}},
+	} {
+		t.Run("omits the failed-file list for a "+tc.name, func(t *testing.T) {
+			record, _, _ := captureRecord(t, "Pre-execution error notified", func() {
+				NotifyPreExecutionError(newError(tc.paths))
+			})
+			_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
+			assert.False(t, present, "a list of length %d must not be recorded; attributes: %v", len(tc.paths), record.Attrs)
 		})
-		_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
-		assert.False(t, present, "a nil list must not be recorded; attributes: %v", record.Attrs)
-	})
+	}
 }

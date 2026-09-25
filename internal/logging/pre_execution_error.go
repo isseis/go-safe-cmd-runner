@@ -120,40 +120,48 @@ func (e *PreExecutionError) Unwrap() error {
 	return e.Err
 }
 
-// errorHandlingParams contains parameters for error handling
-type errorHandlingParams struct {
-	errorType     ErrorType
-	errorMsg      string
-	component     string
-	runID         string
-	slogMessage   string
-	summaryStatus string
+// errorRecordParams are the fields of the structured error log line. They are
+// separate from errorHandlingParams because the record-only notification path
+// has no RUN_SUMMARY status to carry.
+type errorRecordParams struct {
+	errorType   ErrorType
+	errorMsg    string
+	component   string
+	runID       string
+	slogMessage string
 	// notificationAttrs are recorded with the structured log line. The caller
 	// decides which notification attributes, if any, the record carries.
 	notificationAttrs []slog.Attr
 }
 
+// errorHandlingParams contains parameters for error handling
+type errorHandlingParams struct {
+	record        errorRecordParams
+	summaryStatus string
+}
+
 // handleErrorCommon is a private helper that contains the common error handling logic
 // for both pre-execution and execution errors
 func handleErrorCommon(params errorHandlingParams) {
+	record := params.record
 	// Build stderr output atomically to prevent interleaved output in concurrent scenarios
 	var stderrBuilder strings.Builder
-	fmt.Fprintf(&stderrBuilder, "Error: %s\n", params.errorType)
-	if params.component != "" {
-		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", params.component)
+	fmt.Fprintf(&stderrBuilder, "Error: %s\n", record.errorType)
+	if record.component != "" {
+		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", record.component)
 	}
-	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", params.errorMsg)
-	if params.runID != "" {
-		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", params.runID)
+	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", record.errorMsg)
+	if record.runID != "" {
+		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", record.runID)
 	}
 	// Write to stderr atomically
 	fmt.Fprint(os.Stderr, stderrBuilder.String())
 
-	writeErrorLogRecord(params)
+	writeErrorLogRecord(record)
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
 	var stdoutBuilder strings.Builder
-	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=%s duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", params.errorType, params.runID, params.summaryStatus)
+	fmt.Fprintf(&stdoutBuilder, "Error: %s\nRUN_SUMMARY run_id=%s exit_code=1 status=%s duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", record.errorType, record.runID, params.summaryStatus)
 	// Write to stdout atomically
 	fmt.Print(stdoutBuilder.String())
 }
@@ -162,7 +170,7 @@ func handleErrorCommon(params errorHandlingParams) {
 // the single place that assembles the standard record attributes and appends
 // the caller's notification attributes, so the report path and the record-only
 // notification path cannot drift.
-func writeErrorLogRecord(params errorHandlingParams) {
+func writeErrorLogRecord(params errorRecordParams) {
 	logger := slog.Default()
 	if logger == nil {
 		return
@@ -191,17 +199,16 @@ func preExecutionNotificationAttrs(preExecErr *PreExecutionError) []slog.Attr {
 	return notificationAttrs
 }
 
-// preExecutionErrorParams assembles the record parameters of a pre-execution
-// error. Both the report path and the record-only notification path go through
-// it so their records carry the same attributes and message body.
-func preExecutionErrorParams(preExecErr *PreExecutionError, slogMessage, summaryStatus string) errorHandlingParams {
-	return errorHandlingParams{
+// preExecutionRecordParams assembles the record of a pre-execution error. Both
+// the report path and the record-only notification path go through it so their
+// records carry the same attributes and message body.
+func preExecutionRecordParams(preExecErr *PreExecutionError, slogMessage string) errorRecordParams {
+	return errorRecordParams{
 		errorType:         preExecErr.Type,
 		errorMsg:          preExecErr.Detail(),
 		component:         preExecErr.Component,
 		runID:             preExecErr.RunID,
 		slogMessage:       slogMessage,
-		summaryStatus:     summaryStatus,
 		notificationAttrs: preExecutionNotificationAttrs(preExecErr),
 	}
 }
@@ -210,8 +217,10 @@ func preExecutionErrorParams(preExecErr *PreExecutionError, slogMessage, summary
 // The notification context is always attached because the report boundary is
 // the only place that knows where the failure originated.
 func HandlePreExecutionError(preExecErr *PreExecutionError) {
-	handleErrorCommon(preExecutionErrorParams(
-		preExecErr, "Pre-execution error occurred", preExecutionErrorSummaryStatus()))
+	handleErrorCommon(errorHandlingParams{
+		record:        preExecutionRecordParams(preExecErr, "Pre-execution error occurred"),
+		summaryStatus: preExecutionErrorSummaryStatus(),
+	})
 }
 
 // NotifyPreExecutionError records the pre-execution error notification record
@@ -219,8 +228,7 @@ func HandlePreExecutionError(preExecErr *PreExecutionError) {
 // the RUN_SUMMARY line: the caller continues, and the process-level report is
 // made once at the end of the run.
 func NotifyPreExecutionError(preExecErr *PreExecutionError) {
-	writeErrorLogRecord(preExecutionErrorParams(
-		preExecErr, "Pre-execution error notified", ""))
+	writeErrorLogRecord(preExecutionRecordParams(preExecErr, "Pre-execution error notified"))
 }
 
 // HandleExecutionError handles execution errors (errors that occur during command execution)
@@ -246,15 +254,17 @@ func HandleExecutionError(execErr *ExecutionError) {
 	}
 
 	handleErrorCommon(errorHandlingParams{
-		errorType:     ErrorTypeSystemError,
-		errorMsg:      message,
-		component:     execErr.Component,
-		runID:         execErr.RunID,
-		slogMessage:   "Execution error occurred",
-		summaryStatus: "execution_error",
-		notificationAttrs: []slog.Attr{
-			slog.Bool("slack_notify", false),
-			slog.String("message_type", "execution_error"),
+		record: errorRecordParams{
+			errorType:   ErrorTypeSystemError,
+			errorMsg:    message,
+			component:   execErr.Component,
+			runID:       execErr.RunID,
+			slogMessage: "Execution error occurred",
+			notificationAttrs: []slog.Attr{
+				slog.Bool("slack_notify", false),
+				slog.String("message_type", "execution_error"),
+			},
 		},
+		summaryStatus: "execution_error",
 	})
 }
