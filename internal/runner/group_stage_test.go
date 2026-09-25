@@ -126,9 +126,9 @@ func TestGroupStagePreExecutionErrorMapping(t *testing.T) {
 	}
 }
 
-// TestGroupStageUnknownAndOutOfRangeUseGenericRow pins AC-10's fail-secure
-// path: an undeclared or out-of-range stage still notifies, under the generic
-// row and a valid group scope.
+// TestGroupStageUnknownAndOutOfRangeUseGenericRow pins the fail-secure path:
+// an undeclared or out-of-range stage still notifies, under the generic row
+// and a valid group scope.
 func TestGroupStageUnknownAndOutOfRangeUseGenericRow(t *testing.T) {
 	generic := groupStageDefinitions[GroupStageUnknown]
 	cause := fmt.Errorf("wrapped: %w", errGroupStageCause)
@@ -176,8 +176,8 @@ func TestGroupStageErrorZeroValueDoesNotPanic(t *testing.T) {
 	assert.Equal(t, generic.message, preExecErr.Message)
 }
 
-// TestGroupStagePreExecutionErrorUsesDeclaredStageNotReasonText pins AC-09:
-// the error_type follows the declared stage, never words in the cause.
+// TestGroupStagePreExecutionErrorUsesDeclaredStageNotReasonText pins that the
+// error_type follows the declared stage, never words in the cause.
 func TestGroupStagePreExecutionErrorUsesDeclaredStageNotReasonText(t *testing.T) {
 	cause := fmt.Errorf("verification permission token failed: %w", errGroupStageCause)
 	stageErr := newGroupStageError(GroupStageGroupPreparation, "backup", cause)
