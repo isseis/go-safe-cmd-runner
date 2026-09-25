@@ -655,7 +655,10 @@ func TestHandleExecutionError_CauseFormatting(t *testing.T) {
 				return true
 			})
 			assert.Equal(t, tt.wantMsg, errorMsg)
-			assert.Contains(t, stderr, "  Details: "+tt.wantMsg+"\n")
+			// Continuation lines of a multi-line cause are indented under the
+			// Details field, so the stderr report indents them too.
+			wantDetails := strings.ReplaceAll(tt.wantMsg, "\n", "\n"+stderrDetailsIndent)
+			assert.Contains(t, stderr, "  Details: "+wantDetails+"\n")
 		})
 	}
 }
@@ -667,77 +670,70 @@ func TestHandleExecutionError_WithWrappedError(t *testing.T) {
 		err       error
 		groupName string
 		cmdName   string
-		wantMsg   string
+		// wantDetails is the Details field of the stderr report, from the
+		// "  Details: " prefix to the final newline.
+		wantDetails string
 	}{
 		{
-			name:      "with wrapped error",
+			name:        "with wrapped error",
+			message:     "error running commands",
+			err:         fmt.Errorf("command execution failed: %w", errExitStatus),
+			groupName:   "backup_group",
+			cmdName:     "backup_db",
+			wantDetails: "  Details: error running commands (group: backup_group, command: backup_db): command execution failed: exit status 1\n",
+		},
+		{
+			name:        "with nil error",
+			message:     "error running commands",
+			err:         nil,
+			groupName:   "test_group",
+			cmdName:     "test_cmd",
+			wantDetails: "  Details: error running commands (group: test_group, command: test_cmd)\n",
+		},
+		{
+			name:        "with error but no context",
+			message:     "error running commands",
+			err:         fmt.Errorf("undefined variable: __runner_datetime: %w", errVariableUndefined),
+			wantDetails: "  Details: error running commands: undefined variable: __runner_datetime: undefined variable\n",
+		},
+		{
+			name:        "with group name only",
+			message:     "group execution failed",
+			err:         errVariableExpansion,
+			groupName:   "test_group",
+			wantDetails: "  Details: group execution failed (group: test_group): failed to expand variables\n",
+		},
+		{
+			// The context stays on the first line instead of trailing the
+			// last group's error, and continuation lines are indented.
+			name:      "with multi-line joined error",
 			message:   "error running commands",
-			err:       fmt.Errorf("command execution failed: %w", errExitStatus),
+			err:       errors.Join(errExitStatus, errVariableExpansion),
 			groupName: "backup_group",
 			cmdName:   "backup_db",
-			wantMsg:   "error running commands: command execution failed: exit status 1 (group: backup_group, command: backup_db)",
-		},
-		{
-			name:      "with nil error",
-			message:   "error running commands",
-			err:       nil,
-			groupName: "test_group",
-			cmdName:   "test_cmd",
-			wantMsg:   "error running commands (group: test_group, command: test_cmd)",
-		},
-		{
-			name:      "with error but no context",
-			message:   "error running commands",
-			err:       fmt.Errorf("undefined variable: __runner_datetime: %w", errVariableUndefined),
-			groupName: "",
-			cmdName:   "",
-			wantMsg:   "error running commands: undefined variable: __runner_datetime",
-		},
-		{
-			name:      "with group name only",
-			message:   "group execution failed",
-			err:       errVariableExpansion,
-			groupName: "test_group",
-			cmdName:   "",
-			wantMsg:   "group execution failed: failed to expand variables (group: test_group)",
+			wantDetails: "  Details: error running commands (group: backup_group, command: backup_db): exit status 1\n" +
+				"           failed to expand variables\n",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stderr to verify error message
-			oldStderr := os.Stderr
-			r, w, _ := os.Pipe()
-			os.Stderr = w
+			_, stderr := captureErrorOutput(t, func() {
+				HandleExecutionError(&ExecutionError{
+					Message:     tt.message,
+					Component:   "runner",
+					RunID:       "test-run-123",
+					GroupName:   tt.groupName,
+					CommandName: tt.cmdName,
+					Err:         tt.err,
+				})
+			})
 
-			execErr := &ExecutionError{
-				Message:     tt.message,
-				Component:   "runner",
-				RunID:       "test-run-123",
-				GroupName:   tt.groupName,
-				CommandName: tt.cmdName,
-				Err:         tt.err,
-			}
-
-			HandleExecutionError(execErr)
-
-			// Restore stderr
-			w.Close()
-			os.Stderr = oldStderr
-
-			var buf strings.Builder
-			_, err := io.Copy(&buf, r)
-			require.NoError(t, err, "io.Copy should not fail")
-			output := buf.String()
-
-			// Verify that HandleExecutionError() outputs context information to stderr
-			// This indirectly tests that ContextString() is working correctly
-			if tt.groupName != "" {
-				assert.Contains(t, output, tt.groupName, "Output should contain group name")
-			}
-			if tt.cmdName != "" {
-				assert.Contains(t, output, tt.cmdName, "Output should contain command name")
-			}
+			wantStderr := "Error: " + string(ErrorTypeSystemError) + "\n" +
+				"  Component: runner\n" +
+				tt.wantDetails +
+				"  Run ID: test-run-123\n"
+			assert.Equal(t, wantStderr, stderr)
 		})
 	}
 }

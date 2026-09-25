@@ -137,6 +137,12 @@ type errorHandlingParams struct {
 	summaryStatus string
 }
 
+// stderrDetailsPrefix labels the message line of the stderr report, and
+// stderrDetailsIndent is the same width in spaces.
+const stderrDetailsPrefix = "  Details: "
+
+var stderrDetailsIndent = strings.Repeat(" ", len(stderrDetailsPrefix))
+
 // handleErrorCommon is a private helper that contains the common error handling logic
 // for both pre-execution and execution errors
 func handleErrorCommon(params errorHandlingParams) {
@@ -147,7 +153,11 @@ func handleErrorCommon(params errorHandlingParams) {
 	if record.component != "" {
 		fmt.Fprintf(&stderrBuilder, "  Component: %s\n", record.component)
 	}
-	fmt.Fprintf(&stderrBuilder, "  Details: %s\n", record.errorMsg)
+	// Continuation lines of a multi-line message are aligned under the first
+	// so they stay visibly inside the Details field.
+	msg := strings.TrimRight(record.errorMsg, "\r\n")
+	fmt.Fprintf(&stderrBuilder, "%s%s\n", stderrDetailsPrefix,
+		strings.ReplaceAll(msg, "\n", "\n"+stderrDetailsIndent))
 	if record.runID != "" {
 		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", record.runID)
 	}
@@ -237,13 +247,16 @@ func HandleExecutionError(execErr *ExecutionError) {
 	// is repeated, because the two paths report different error types; see
 	// issue #1156.
 	message := execErr.Message
-	if execErr.Err != nil {
-		message = fmt.Sprintf("%s: %s", message, formatCause(execErr.Err))
-	}
 
-	// Add context information (group and command names)
+	// The context (group and command names) goes right after Message, before
+	// the cause: a cause may span several lines (e.g. an errors.Join of group
+	// errors), and a suffix would read as belonging to its last line only.
 	if contextStr := execErr.ContextString(); contextStr != "" {
 		message = fmt.Sprintf("%s (%s)", message, contextStr)
+	}
+
+	if execErr.Err != nil {
+		message = fmt.Sprintf("%s: %s", message, formatCause(execErr.Err))
 	}
 
 	handleErrorCommon(errorHandlingParams{
