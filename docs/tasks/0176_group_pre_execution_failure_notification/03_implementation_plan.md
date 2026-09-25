@@ -107,10 +107,10 @@
 
 `GroupStageError` は `internal/runner` の新しいファイル `group_stage.go` に置く（§2.2）。フィールドを非公開にして構築を `newGroupStageError` / `newCommandStageError` に限るのは [02_architecture.md](02_architecture.md) §3.2.2 の決定であり、その不変条件を本計画がどう守るかを次に定める。型を葉パッケージへ移さないのは、`internal/runner` の中だけで使う型であり、`CommandExecutionError`（`group_executor.go:27-41`）も同じパッケージにあるためである。フィールドが非公開なので他パッケージからは構築関数しか使えないが、同一パッケージの本番コードは複合リテラルでも構築できる。コンパイラで強制できないその分を `go/ast` のガード（Phase 2）で列挙して固定する。列挙する構築形は次の 2 つである。
 
-- `group_stage.go` 以外の本番ファイルの `GroupStageError` 複合リテラル（値形・ポインタ形・elided 形）。修飾形 `runner.GroupStageError{...}` はリポジトリ全体で、修飾なしの `GroupStageError{...}` は `internal/runner` 直下のファイルでだけ検出する。
-- `internal/runner` 直下（`filepath.Dir(file) == "internal/runner"`、つまり `runner` パッケージ）の `group_stage.go` 以外の本番ファイルにある `.stage`・`.group`・`.command`・`.err` へのセレクタ代入。フィールドは非公開なので `runner` パッケージの外からは代入できず（コンパイルエラーになる）、この範囲に限っても漏れはない。また現時点で `internal/runner` 直下の本番ファイルにこれらの名前のセレクタへの代入は無いため、`go/types` で受け手の型を解決しなくても名前だけの照合で足りる。パッケージの外まで走査すると、`internal/runner/base/executor` の `pc.stage = ...`（`command_lifecycle.go:383`）や `*w.err = nil`（`executor.go:433`）のような無関係な代入に誤反応する。
+- `GroupStageError` 複合リテラル（値形・ポインタ形・elided 形）。修飾形 `runner.GroupStageError{...}` はリポジトリ全体で、修飾なしの `GroupStageError{...}` は `internal/runner` 直下のファイルでだけ検出し、`group_stage.go` の `newGroupStageError`・`newCommandStageError` の外にあるものを違反とする。関数単位で免除するのは、既存の `TestVerificationErrorLiteralsOnlyInConstructor`（`internal/verification/error_construction_guard_test.go`）の規則 (a) と同じである。
+- `internal/runner` 直下（`filepath.Dir(file) == "internal/runner"`、つまり `runner` パッケージ）の本番ファイルにある `.stage`・`.group`・`.command`・`.err` へのセレクタ代入とインクリメント。同じ 2 つの構築関数の外にあるものを違反とする。フィールドは非公開なので `runner` パッケージの外からは代入できず（コンパイルエラーになる）、この範囲に限っても漏れはない。また現時点で `internal/runner` 直下の本番ファイルにこれらの名前のセレクタへの代入は無いため、`go/types` で受け手の型を解決しなくても名前だけの照合で足りる。パッケージの外まで走査すると、`internal/runner/base/executor` の `pc.stage = ...`（`command_lifecycle.go:383`）や `*w.err = nil`（`executor.go:433`）のような無関係な代入に誤反応する。
 
-テストファイルは走査対象に含めない（`identitymutationguard.ProductionGoFilesInRepo` を使う）。この絞り方は既存の `TestVerificationErrorLiteralsOnlyInConstructor`（`internal/verification/error_construction_guard_test.go`）の規則 (b) と同じである。このガードは §3.2.2 の決定を変えず、その実効性を検証する追加である。
+テストファイルは走査対象に含めない（`identitymutationguard.ProductionGoFilesInRepo` を使う）。この絞り方は既存の `TestVerificationErrorLiteralsOnlyInConstructor` の規則 (b) と同じである。このガードは §3.2.2 の決定を変えず、その実効性を検証する追加である。また、ガード自身の検出器が空振りしないことは、`test_helpers` の形式に倣った認識対象の表テスト（`TestGroupStageConstructionCheckRecognizesForms`）で固定する。
 
 出口規則 1・2 も [02_architecture.md](02_architecture.md) §3.3.2 が規則だけを定め、実装の機構は定めていない。同書 §7.2 は「段階エラーを返さない失敗を注入する手段を実装計画で定める」としているため、本計画は規則 1・2 を非公開の出口関数 1 つに実装し、その関数を直接呼ぶテストで規則 1・2 を固定する。直接呼ぶテストは、`ExecuteGroup` が最初の `return` より前に deferred 出口を登録し、named return をその出口に通すことまでは示さない。Phase 3 の後は #1〜#7 のどれも段階エラーでないエラーを返さず、段階エラーでないエラーを実行前に注入する手段も無いため、この配線は `go/ast` のガード `TestExecuteGroupRegistersExitDefer`（Phase 3）で構造として固定する。この選択は規則の内容を変えない。
 
@@ -160,8 +160,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: `internal/runner/group_stage.go`（段階エラー・段階定義表・変換関数）
 
@@ -169,12 +169,12 @@
 
 **作業内容**:
 
-- [ ] `group_stage.go` に `GroupStage` 列挙型と `GroupStageUnknown`〜`GroupStageCommandVerification`・非公開の `groupStageCount` を、[02_architecture.md](02_architecture.md) §3.2.1 の doc コメント（英語）付きで定義する。`String()`（§3.2.1 の図）は各段階の Go 名を返し、範囲外の段階には `unknown` を返す。
-- [ ] 段階定義表を `groupStageCount` 個の要素を持つ配列として定義する。各要素は `error_type`（`logging.ErrorType`）・Scope の水準（`common.NotificationScope`）・要約文（`Message`）を持つ。行の値は §3.2.3 の表のとおりとし、`GroupStageUnknown` の行を汎用行にする。
-- [ ] `GroupStageError` を、フィールド `stage`・`group`・`command`・`err` を非公開にして定義する。アクセサ `Stage()`・`GroupName()`・`CommandName()`・`Error()`・`Unwrap()` を §3.2.2 のとおり実装する。`Error()` は原因の文言を返し、原因が `nil` のとき固定の文言 `group pre-execution failed` を返す。`Unwrap()` は原因を返す。
-- [ ] 構築関数 `newGroupStageError(stage GroupStage, group string, err error) *GroupStageError` と `newCommandStageError(stage GroupStage, group, command string, err error) *GroupStageError` を追加する。段階定義表を引いて水準を確認し、表にない段階と水準の食い違い、範囲外の段階、空の group 名・コマンド名、`nil` の原因を panic で拒否する（§3.2.2）。
-- [ ] 変換関数 `groupStagePreExecutionError(stageErr *GroupStageError, runID string) *logging.PreExecutionError` を追加する。段階を索引として表を引けば表の行、引けなければ汎用行を使い、`Type`・`Message`・`Component`（`string(resource.ComponentRunner)`）・`RunID`・`NotificationContext`（group 水準なら `common.GroupScope(group)`、command 水準なら `common.CommandScope(group, command)`）・`Err`（原因）を設定する。`FailedFilePaths` は設定しない。
-- [ ] `group_stage_test.go` に次を追加する。
+- [x] `group_stage.go` に `GroupStage` 列挙型と `GroupStageUnknown`〜`GroupStageCommandVerification`・非公開の `groupStageCount` を、[02_architecture.md](02_architecture.md) §3.2.1 の doc コメント（英語）付きで定義する。`String()`（§3.2.1 の図）は各段階の Go 名を返し、範囲外の段階には `unknown` を返す。
+- [x] 段階定義表を `groupStageCount` 個の要素を持つ配列として定義する。各要素は `error_type`（`logging.ErrorType`）・Scope の水準（`common.NotificationScope`）・要約文（`Message`）を持つ。行の値は §3.2.3 の表のとおりとし、`GroupStageUnknown` の行を汎用行にする。
+- [x] `GroupStageError` を、フィールド `stage`・`group`・`command`・`err` を非公開にして定義する。アクセサ `Stage()`・`GroupName()`・`CommandName()`・`Error()`・`Unwrap()` を §3.2.2 のとおり実装する。`Error()` は原因の文言を返し、原因が `nil` のとき固定の文言 `group pre-execution failed` を返す。`Unwrap()` は原因を返す。
+- [x] 構築関数 `newGroupStageError(stage GroupStage, group string, err error) *GroupStageError` と `newCommandStageError(stage GroupStage, group, command string, err error) *GroupStageError` を追加する。段階定義表を引いて水準を確認し、表にない段階と水準の食い違い、範囲外の段階、空の group 名・コマンド名、`nil` の原因を panic で拒否する（§3.2.2）。
+- [x] 変換関数 `groupStagePreExecutionError(stageErr *GroupStageError, runID string) *logging.PreExecutionError` を追加する。段階を索引として表を引けば表の行、引けなければ汎用行を使い、`Type`・`Message`・`Component`（`string(resource.ComponentRunner)`）・`RunID`・`NotificationContext`（group 水準なら `common.GroupScope(group)`、command 水準なら `common.CommandScope(group, command)`）・`Err`（原因）を設定する。`FailedFilePaths` は設定しない。
+- [x] `group_stage_test.go` に次を追加する。
   - `TestGroupStageTableHasARowForEveryStage`: `GroupStageUnknown` から `groupStageCount` の手前までを走査し、すべての段階に行があり、`GroupStageUnknown` 以外が汎用行でないことを検証する（AC-09）。
   - `TestGroupStagePreExecutionErrorMapping`: 各段階について `Type`・`Message`・`Component`・`NotificationContext`・`Err` を検証する。期待値は §3.2.3 の表から書く（AC-01〜AC-07）。
   - `TestGroupStageUnknownAndOutOfRangeUseGenericRow`: 有効な group 名と `nil` でない原因を持ち段階が `GroupStageUnknown` の段階エラーと、範囲外の段階 `GroupStage(99)` のリテラルで作った段階エラーが、汎用行の `Type`・`Message` と有効な group 水準の Scope になることを検証する（AC-10）。
@@ -183,7 +183,7 @@
   - `TestGroupStageConstructorsPanicOnInvalidInput`: 水準の不一致・範囲外の段階・空の名前・`nil` の原因で panic することを検証する。
   - `TestGroupStageErrorUnwrapsCause`: `Error()` が原因の文言と一致し、`errors.Is` / `errors.AsType` が原因の連鎖を辿れることを検証する。
   - `TestGroupStageStringCoversEveryStage`: `GroupStageUnknown` から `groupStageCount` の手前までが互いに異なる非空文字列を返し、範囲外の段階が `unknown` を返すことを検証する。
-  - `TestProductionGroupStageErrorLiteralsUseConstructors`: `identitymutationguard.ProductionGoFilesInRepo` で本番ファイルを走査し、`group_stage.go` 以外に `GroupStageError` 複合リテラルが無いこと、および `internal/runner` 直下の `group_stage.go` 以外の本番ファイルに `.stage`・`.group`・`.command`・`.err` へのセレクタ代入が無いことを固定する（§1.3 の構築経路の扱い）。走査が空振りしていないことは、`group_stage.go` 自身の中に構築関数が作る `GroupStageError` 複合リテラルが 1 件以上見つかることで確かめ、見つからなければ失敗させる（Phase 2 の時点では `group_stage.go` 以外に構築関数の本番呼び出しが無いため、呼び出しの件数を空振り検出に使わない）。
+  - `TestProductionGroupStageErrorLiteralsUseConstructors`: `identitymutationguard.ProductionGoFilesInRepo` で本番ファイルを走査し、`group_stage.go` の 2 つの構築関数の外に `GroupStageError` 複合リテラルが無いこと、および `internal/runner` 直下の本番ファイルに、2 つの構築関数の外で `.stage`・`.group`・`.command`・`.err` へのセレクタ代入とインクリメントが無いことを固定する（§1.3 の構築経路の扱い）。走査が空振りしていないことは、`group_stage.go` 自身の中に構築関数が作る `GroupStageError` 複合リテラルが 1 件以上見つかることで確かめ、見つからなければ失敗させる（Phase 2 の時点では `group_stage.go` 以外に構築関数の本番呼び出しが無いため、呼び出しの件数を空振り検出に使わない）。検出器そのものが動くことは `TestGroupStageConstructionCheckRecognizesForms`（値・ポインタ・elided 形、`.stage`・`.group`・`.command`・`.err` の代入とインクリメント、許容形、別パッケージの同名型）で固定する。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestGroupStageTableHasARowForEveryStage` が表の行を 1 つ削ると失敗すること、`TestGroupStageUnknownAndOutOfRangeUseGenericRow` が範囲外の索引を専用行に変えると失敗すること、`TestProductionGroupStageErrorLiteralsUseConstructors` が `group_executor.go` に直接リテラルを置く／`.stage` に代入すると失敗し、`internal/runner/base/executor` の既存の `.stage`・`.err` への代入には反応しない（壊していない状態で `make test` が通る）ことを確認する。
 
@@ -199,8 +199,8 @@
 
 **判定理由**: 型・表・純関数の追加で、対応は [02_architecture.md](02_architecture.md) §3.2 に固定済み。走査ガードは既存の `identitymutationguard` を再利用し、未確定の実装アプローチや高リスク分岐は無い。Conditional checks・panel-mode トリガーのいずれにも該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
