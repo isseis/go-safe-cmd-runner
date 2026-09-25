@@ -44,6 +44,18 @@ const (
 	// ErrorTypeInvalidRunID represents a --run-id value that does not match the
 	// accepted format.
 	ErrorTypeInvalidRunID ErrorType = "invalid_run_id"
+	// ErrorTypeGroupPreparation represents a group or command preparation failure
+	// (expansion or working directory resolution) before any command ran.
+	ErrorTypeGroupPreparation ErrorType = "group_preparation_failed"
+	// ErrorTypeGroupDirPermissionViolation represents a group-level directory
+	// permission audit violation.
+	ErrorTypeGroupDirPermissionViolation ErrorType = "group_dir_permission_violation"
+	// ErrorTypeCommandVerification represents a command-level verification
+	// failure (path re-resolution or dependency verification).
+	ErrorTypeCommandVerification ErrorType = "command_verification_failed"
+	// ErrorTypeGroupPreExecution is the generic type for a group pre-execution
+	// failure whose stage was not declared.
+	ErrorTypeGroupPreExecution ErrorType = "group_pre_execution_failed"
 )
 
 // PreExecutionError represents an error that occurs before command execution
@@ -137,17 +149,7 @@ func handleErrorCommon(params errorHandlingParams) {
 	// Write to stderr atomically
 	fmt.Fprint(os.Stderr, stderrBuilder.String())
 
-	// Try to log through slog if available
-	if logger := slog.Default(); logger != nil {
-		attrs := []slog.Attr{
-			slog.String(common.PreExecErrorAttrs.ErrorType, string(params.errorType)),
-			slog.String(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
-			slog.String(common.PreExecErrorAttrs.Component, params.component),
-			slog.String("run_id", params.runID),
-		}
-		attrs = append(attrs, params.notificationAttrs...)
-		logger.LogAttrs(context.Background(), slog.LevelError, params.slogMessage, attrs...)
-	}
+	writeErrorLogRecord(params)
 
 	// Build stdout output atomically to prevent interleaved output in concurrent scenarios
 	var stdoutBuilder strings.Builder
@@ -156,28 +158,69 @@ func handleErrorCommon(params errorHandlingParams) {
 	fmt.Print(stdoutBuilder.String())
 }
 
-// HandlePreExecutionError handles pre-execution errors by logging and notifying.
-// The notification context is always attached because the report boundary is
-// the only place that knows where the failure originated.
-func HandlePreExecutionError(preExecErr *PreExecutionError) {
+// writeErrorLogRecord writes the structured log line for an error report. It is
+// the single place that assembles the standard record attributes and appends
+// the caller's notification attributes, so the report path and the record-only
+// notification path cannot drift.
+func writeErrorLogRecord(params errorHandlingParams) {
+	logger := slog.Default()
+	if logger == nil {
+		return
+	}
+	attrs := []slog.Attr{
+		slog.String(common.PreExecErrorAttrs.ErrorType, string(params.errorType)),
+		slog.String(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
+		slog.String(common.PreExecErrorAttrs.Component, params.component),
+		slog.String("run_id", params.runID),
+	}
+	attrs = append(attrs, params.notificationAttrs...)
+	logger.LogAttrs(context.Background(), slog.LevelError, params.slogMessage, attrs...)
+}
+
+// preExecutionNotificationAttrs builds the notification attributes of a
+// pre-execution error record. The failed-file list only reaches the
+// notification when there is one: an empty list is left off the record entirely
+// so the builder cannot mistake "no targets" for "a list with zero entries".
+func preExecutionNotificationAttrs(preExecErr *PreExecutionError) []slog.Attr {
 	notificationAttrs := NotificationAttrs(
 		PreExecutionErrorNotification(), preExecErr.NotificationContext)
-	// The failed-file list only reaches the notification when there is one.
-	// An empty list is left off the record entirely so the builder cannot
-	// mistake "no targets" for "a list with zero entries".
 	if len(preExecErr.FailedFilePaths) > 0 {
 		notificationAttrs = append(notificationAttrs,
 			slog.Any(common.PreExecErrorAttrs.FailedFilePaths, preExecErr.FailedFilePaths))
 	}
-	handleErrorCommon(errorHandlingParams{
+	return notificationAttrs
+}
+
+// preExecutionErrorParams assembles the record parameters of a pre-execution
+// error. Both the report path and the record-only notification path go through
+// it so their records carry the same attributes and message body.
+func preExecutionErrorParams(preExecErr *PreExecutionError, slogMessage, summaryStatus string) errorHandlingParams {
+	return errorHandlingParams{
 		errorType:         preExecErr.Type,
 		errorMsg:          preExecErr.Detail(),
 		component:         preExecErr.Component,
 		runID:             preExecErr.RunID,
-		slogMessage:       "Pre-execution error occurred",
-		summaryStatus:     preExecutionErrorSummaryStatus(),
-		notificationAttrs: notificationAttrs,
-	})
+		slogMessage:       slogMessage,
+		summaryStatus:     summaryStatus,
+		notificationAttrs: preExecutionNotificationAttrs(preExecErr),
+	}
+}
+
+// HandlePreExecutionError handles pre-execution errors by logging and notifying.
+// The notification context is always attached because the report boundary is
+// the only place that knows where the failure originated.
+func HandlePreExecutionError(preExecErr *PreExecutionError) {
+	handleErrorCommon(preExecutionErrorParams(
+		preExecErr, "Pre-execution error occurred", preExecutionErrorSummaryStatus()))
+}
+
+// NotifyPreExecutionError records the pre-execution error notification record
+// only. Unlike HandlePreExecutionError it writes neither the stderr report nor
+// the RUN_SUMMARY line: the caller continues, and the process-level report is
+// made once at the end of the run.
+func NotifyPreExecutionError(preExecErr *PreExecutionError) {
+	writeErrorLogRecord(preExecutionErrorParams(
+		preExecErr, "Pre-execution error notified", ""))
 }
 
 // HandleExecutionError handles execution errors (errors that occur during command execution)

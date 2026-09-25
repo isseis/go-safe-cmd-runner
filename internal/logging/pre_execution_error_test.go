@@ -1009,3 +1009,86 @@ func TestHandlePreExecutionError_FailedFilePaths(t *testing.T) {
 		})
 	}
 }
+
+// TestNotifyPreExecutionError_RecordsWithoutReport pins the record-only
+// notification: it records the same attributes as the report path (message
+// aside) and writes neither the stderr report nor the RUN_SUMMARY line, so
+// calling it once per failed group cannot inflate the report.
+func TestNotifyPreExecutionError_RecordsWithoutReport(t *testing.T) {
+	const (
+		runID     = "test-run-notify"
+		summary   = "Group preparation failed"
+		component = "runner"
+	)
+	ctx := common.GroupScope("backup")
+	cause := errors.New("failed to expand group[backup]")
+
+	newError := func(paths []string) *PreExecutionError {
+		return &PreExecutionError{
+			Type:                ErrorTypeGroupPreparation,
+			Message:             summary,
+			Component:           component,
+			RunID:               runID,
+			NotificationContext: ctx,
+			FailedFilePaths:     paths,
+			Err:                 cause,
+		}
+	}
+
+	// captureRecord installs a fresh recorder, runs call, and returns the one
+	// record it produced plus whatever call wrote to stdout and stderr.
+	captureRecord := func(t *testing.T, message string, call func()) (record tu.RecordSnapshot, stdout, stderr string) {
+		t.Helper()
+		recorder := tu.NewLogRecorder(nil)
+		originalLogger := slog.Default()
+		slog.SetDefault(slog.New(recorder))
+		t.Cleanup(func() { slog.SetDefault(originalLogger) })
+		stdout, stderr = captureErrorOutput(t, call)
+		return recorder.RequireRecord(t, slog.LevelError, message), stdout, stderr
+	}
+
+	wantDetail := summary + ": " + cause.Error()
+
+	t.Run("records the notification without writing the report", func(t *testing.T) {
+		record, stdout, stderr := captureRecord(t, "Pre-execution error notified", func() {
+			NotifyPreExecutionError(newError(nil))
+		})
+
+		assert.Empty(t, stdout, "the record-only path must not write the RUN_SUMMARY line")
+		assert.Empty(t, stderr, "the record-only path must not write the stderr report")
+		record.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.ErrorType:    string(ErrorTypeGroupPreparation),
+			common.PreExecErrorAttrs.ErrorMessage: wantDetail,
+			common.PreExecErrorAttrs.Component:    component,
+			"run_id":                              runID,
+			slackNotifyAttrKey:                    true,
+			msgTypeAttrKey:                        PreExecutionErrorNotification().typeName(),
+		})
+		record.AssertNotificationContext(t, ctx)
+	})
+
+	t.Run("carries the same attributes as the report path, message aside", func(t *testing.T) {
+		notifyRecord, _, _ := captureRecord(t, "Pre-execution error notified", func() {
+			NotifyPreExecutionError(newError([]string{"/b", "/a"}))
+		})
+		handleRecord, _, _ := captureRecord(t, "Pre-execution error occurred", func() {
+			HandlePreExecutionError(newError([]string{"/b", "/a"}))
+		})
+
+		assert.NotEqual(t, handleRecord.Message, notifyRecord.Message,
+			"the two paths must be tellable apart in the log")
+		assert.Equal(t, handleRecord.Attrs, notifyRecord.Attrs,
+			"the record-only path must carry the same attributes as the report path")
+		notifyRecord.AssertAttrs(t, map[string]any{
+			common.PreExecErrorAttrs.FailedFilePaths: []string{"/b", "/a"},
+		})
+	})
+
+	t.Run("omits the failed-file list when there is none", func(t *testing.T) {
+		record, _, _ := captureRecord(t, "Pre-execution error notified", func() {
+			NotifyPreExecutionError(newError(nil))
+		})
+		_, present := record.Attrs[common.PreExecErrorAttrs.FailedFilePaths]
+		assert.False(t, present, "a nil list must not be recorded; attributes: %v", record.Attrs)
+	})
+}

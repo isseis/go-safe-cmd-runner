@@ -139,10 +139,10 @@
 
 **作業内容**:
 
-- [ ] `pre_execution_error.go` の `ErrorType` 定数に、`ErrorTypeGroupPreparation`（`"group_preparation_failed"`）・`ErrorTypeGroupDirPermissionViolation`（`"group_dir_permission_violation"`）・`ErrorTypeCommandVerification`（`"command_verification_failed"`）・`ErrorTypeGroupPreExecution`（`"group_pre_execution_failed"`）を、[02_architecture.md](02_architecture.md) §3.5.1 の doc コメント（英語）付きで追加する。
-- [ ] `handleErrorCommon`（`:126-157`）から slog の記録部分を非公開関数へ切り出し、`handleErrorCommon` と新設の `NotifyPreExecutionError` が同じ部分を通るようにする。stderr 出力・slog 記録・stdout の `RUN_SUMMARY` の内容と順序は変えない。
-- [ ] `NotifyPreExecutionError(preExecErr *PreExecutionError)` を追加する。`NotificationAttrs` で `slack_notify=true` と通知コンテキストを組み立て、`FailedFilePaths` が空でないときだけ属性を加え、レベル ERROR・メッセージ `Pre-execution error notified` で記録する。stderr・stdout には書かない。
-- [ ] `pre_execution_error_test.go` に `TestNotifyPreExecutionError_RecordsWithoutReport` を追加する。既存の `captureErrorOutput` と `tu.NewLogRecorder` で、(a) stdout・stderr に何も書かないこと、(b) `HandlePreExecutionError` と同じ属性（`error_type`・`error_message`・`component`・`run_id`・通知コンテキスト・`slack_notify`）を記録しメッセージだけが異なること、(c) `FailedFilePaths` 付きのときだけ `failed_file_paths` を加えること、を固定する。
+- [x] `pre_execution_error.go` の `ErrorType` 定数に、`ErrorTypeGroupPreparation`（`"group_preparation_failed"`）・`ErrorTypeGroupDirPermissionViolation`（`"group_dir_permission_violation"`）・`ErrorTypeCommandVerification`（`"command_verification_failed"`）・`ErrorTypeGroupPreExecution`（`"group_pre_execution_failed"`）を、[02_architecture.md](02_architecture.md) §3.5.1 の doc コメント（英語）付きで追加する。
+- [x] `handleErrorCommon`（`:126-157`）から slog の記録部分を非公開関数へ切り出し、`handleErrorCommon` と新設の `NotifyPreExecutionError` が同じ部分を通るようにする。stderr 出力・slog 記録・stdout の `RUN_SUMMARY` の内容と順序は変えない。
+- [x] `NotifyPreExecutionError(preExecErr *PreExecutionError)` を追加する。`NotificationAttrs` で `slack_notify=true` と通知コンテキストを組み立て、`FailedFilePaths` が空でないときだけ属性を加え、レベル ERROR・メッセージ `Pre-execution error notified` で記録する。stderr・stdout には書かない。
+- [x] `pre_execution_error_test.go` に `TestNotifyPreExecutionError_RecordsWithoutReport` を追加する。既存の `captureErrorOutput` と `tu.NewLogRecorder` で、(a) stdout・stderr に何も書かないこと、(b) `HandlePreExecutionError` と同じ属性（`error_type`・`error_message`・`component`・`run_id`・通知コンテキスト・`slack_notify`）を記録しメッセージだけが異なること、(c) `FailedFilePaths` 付きのときだけ `failed_file_paths` を加えること、を固定する。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestNotifyPreExecutionError_RecordsWithoutReport` が、stderr 書き出しを足す／`slack_notify` の設定を外す／メッセージを `HandlePreExecutionError` と同一にすると失敗することを確認する。
 
