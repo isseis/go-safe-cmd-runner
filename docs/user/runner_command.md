@@ -1511,6 +1511,21 @@ runner -config config.toml
 | `pre_execution_error` | Pre-execution errors (such as target file verification failures) | High |
 | `user_group_command_failure` | Failure of a user/group-specified command | Normal |
 
+**Group Pre-Execution Stage Failure Notification**
+
+A failure that occurs before any of a group's commands runs is also notified as a `pre_execution_error`. One notification record is recorded for each failed group, and its `Error Message` shows the failure summary and cause in the form `<summary>: <cause>`. The failed stage is shown by `error_type`.
+
+| `error_type` | Target Stage | Scope |
+|---|---|---|
+| `group_preparation_failed` | Group or command preparation (variable expansion and working directory resolution) | Group (group preparation) / Command (command preparation) |
+| `group_dir_permission_violation` | A group directory permission audit violation | Group |
+| `command_verification_failed` | Command path re-resolution or command dependency verification (dynamic library and shebang interpreter) | Command |
+| `group_pre_execution_failed` | A pre-execution stage failure whose stage cannot be determined (generic) | Group |
+
+A group file verification failure is still notified as `group_file_verification_failed`. The list of files targeted by verification appears in the `Files:` section of the `Error Message` (see the next section).
+
+The `Scope` is shown as `group=<group name>` when the failure belongs to the group, and as `group=<group name> command=<command name>` when it belongs to a command. The `error_type` and `Scope` let you identify which group and command failed at which stage.
+
 **Failed File List in Pre-Execution Error Notification**
 
 The `Error Message` of `pre_execution_error` shows the failed targets as a `Files:` section. Each target is wrapped in quotes and shown with `"`, `\`, control characters and the like escaped. Keyed secrets such as `password=...` and token-like values are redacted and replaced with `[REDACTED]`.
