@@ -155,8 +155,9 @@ func handleErrorCommon(params errorHandlingParams) {
 	}
 	// Continuation lines of a multi-line message are aligned under the first
 	// so they stay visibly inside the Details field.
+	msg := strings.TrimRight(record.errorMsg, "\r\n")
 	fmt.Fprintf(&stderrBuilder, "%s%s\n", stderrDetailsPrefix,
-		strings.ReplaceAll(record.errorMsg, "\n", "\n"+stderrDetailsIndent))
+		strings.ReplaceAll(msg, "\n", "\n"+stderrDetailsIndent))
 	if record.runID != "" {
 		fmt.Fprintf(&stderrBuilder, "  Run ID: %s\n", record.runID)
 	}
