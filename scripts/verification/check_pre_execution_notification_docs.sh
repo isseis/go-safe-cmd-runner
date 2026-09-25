@@ -60,7 +60,7 @@ check_declaration() {
         return 0
     fi
 
-    pattern="${constant}[[:space:]]+ErrorType[[:space:]]*=[[:space:]]*\"${value}\""
+    pattern="^[[:space:]]*${constant}[[:space:]]+ErrorType[[:space:]]*=[[:space:]]*\"${value}\"[[:space:]]*$"
     if ! grep -E -e "$pattern" "$ERRORS_GO" >/dev/null 2>&1; then
         echo "FAIL: $ERRORS_GO does not declare '$constant' as \"$value\" ($description)"
         status=1
