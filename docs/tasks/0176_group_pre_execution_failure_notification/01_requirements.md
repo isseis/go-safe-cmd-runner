@@ -6,7 +6,7 @@
 |---|---|
 | Status | `approved` |
 | Created | 2026-09-24 |
-| Review date | 2026-09-95 |
+| Review date | 2026-09-25 |
 | Reviewer | isseis |
 | Comments | - |
 
