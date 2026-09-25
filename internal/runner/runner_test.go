@@ -2722,6 +2722,7 @@ func TestRunner_PreExecutionStageNotifications(t *testing.T) {
 				common.PreExecErrorAttrs.ErrorType:    string(tt.wantType),
 				common.PreExecErrorAttrs.ErrorMessage: tt.wantMessage,
 				common.PreExecErrorAttrs.Component:    string(resource.ComponentRunner),
+				"run_id":                              "test-pre-execution-stage",
 			})
 			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage),
 				"the record-only path must not also take the reporting path")
@@ -2732,11 +2733,13 @@ func TestRunner_PreExecutionStageNotifications(t *testing.T) {
 // TestRunner_PreExecutionStageNotificationsPerGroup fixes that every failed
 // group is notified, not only the first one whose error Execute returns.
 func TestRunner_PreExecutionStageNotificationsPerGroup(t *testing.T) {
+	first, second := errors.New("first"), errors.New("second")
 	recorder, err := executeWithGroupFailures(t, false,
-		groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", errors.New("first"))},
-		groupFailure{group: "deploy", err: newCommandStageError(GroupStageCommandVerification, "deploy", "push", errors.New("second"))},
+		groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", first)},
+		groupFailure{group: "deploy", err: newCommandStageError(GroupStageCommandVerification, "deploy", "push", second)},
 	)
-	require.Error(t, err)
+	assert.ErrorIs(t, err, first, "the run still returns the first group's error")
+	assert.NotErrorIs(t, err, second)
 
 	records := recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage)
 	require.Len(t, records, 2, "each failed group must be notified once")
@@ -2826,6 +2829,7 @@ func TestRunner_CancellationSkipsStageNotification(t *testing.T) {
 
 			assert.ErrorIs(t, err, cause)
 			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage))
 		})
 	}
 }
@@ -2840,6 +2844,7 @@ func TestRunner_CommandExecutionFailureSkipsStageNotification(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+	assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage))
 }
 
 // TestRunner_PreExecutionErrorMessageIsRedacted fixes that the notification

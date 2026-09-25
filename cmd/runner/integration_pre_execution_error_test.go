@@ -792,7 +792,7 @@ cmd = %q
 	require.Equal(t, 1, run.exitCode, "a group pre-execution failure still fails the run")
 
 	// The record-only notification adds no report of its own.
-	assert.Equal(t, 1, strings.Count(run.stdout, "RUN_SUMMARY "), "stdout:\n%s", run.stdout)
+	assert.Equal(t, 1, countLinesWithPrefix(run.stdout, "RUN_SUMMARY "), "stdout:\n%s", run.stdout)
 	assert.Equal(t, 1, countLinesWithPrefix(run.stderr, "Error: "), "stderr:\n%s", run.stderr)
 
 	message, fields := requireSinglePreExecutionError(t, run)
@@ -813,6 +813,7 @@ cmd = %q
 	notified := jsonLogRecords(t, run, "Pre-execution error notified")
 	require.Len(t, notified, 1)
 	assert.Equal(t, true, notified[0]["slack_notify"])
+	assert.Equal(t, "test-group-preparation-001", notified[0]["run_id"])
 }
 
 // countLinesWithPrefix returns how many lines of text start with prefix.
