@@ -343,7 +343,7 @@ func (s GroupStage) String() string
 ```
 
 - 要件定義書の決定事項の表では、#1・#2 と #3 が同じ `error_type`（`group_preparation_failed`）を共有し、Scope だけが異なる。段階を `GroupStageGroupPreparation` と `GroupStageCommandPreparation` に分けるのは、Scope の水準を段階だけから決められるようにするためである。command 水準の通知の見出しが `group_preparation_failed` になるのは要件の決定どおりであり、要約文（`Command preparation failed`）で区別できる。
-- 非公開の `groupStageCount` は列挙の範囲を閉じる。段階定義表は `groupStageCount` 個の要素を持つ配列とし、テストは `GroupStageUnknown` から `groupStageCount` の手前までを走査して、すべての段階に行があることを検証する（§7.1）。段階を足して表の行を足し忘れると、このテストが失敗する。
+- 非公開の `groupStageCount` は列挙の範囲を閉じる。段階定義表は `groupStageCount` 個の要素を持つ配列とし、テストは `GroupStageUnknown` から `groupStageCount` の手前までを走査して、すべての段階に行があることを検証する（§7.1）。
 
 #### 3.2.2 段階エラー
 
@@ -567,6 +567,7 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError)
 | `internal/runner/runner_test.go` | 変更 | `Execute` 経由の通知・振り分け順・複数 group・本文の安全性のテスト |
 | `cmd/runner/integration_pre_execution_error_test.go` | 変更 | stdout の `RUN_SUMMARY` 行、stderr の `Error:` ブロック、終了コード、最終報告、通知レコードの件数のテスト |
 | `sample/slack-group-notification-test.toml` | 変更 | 実行前段の失敗の場面を加え、対象環境で表示を確かめる（§5.3） |
+| `Makefile` | 変更 | `slack-group-notification-test` の期待通知の一覧とログの確認項目に、追加した実行前段の失敗の場面の `pre_execution_error` 通知と新しい `error_type` を加える（§5.3） |
 | `docs/user/runner_command.ja.md` | 変更 | 「通知設定」に group 実行前段の失敗の通知、新しい `error_type`、Scope を追記 |
 | `docs/user/runner_command.md` | 変更 | 日本語版から `/mktrans` で反映 |
 
@@ -711,7 +712,7 @@ flowchart LR
 
 ### 5.3 外部 API と対象環境
 
-新しい Slack の機能（Block Kit 要素など）は使わない。既存の `pre_execution_error` のビルダーとフィールドをそのまま使い、新しいのは `error_type` の値（見出し）と本文の内容だけである。表示の形式は既存の `pre_execution_error` と同じになる。実装では `sample/slack-group-notification-test.toml` に実行前段の失敗（例: 未定義変数を参照する group）の場面を加え、`make slack-group-notification-test` で対象環境の表示を確かめてから PR を完了とする。
+新しい Slack の機能（Block Kit 要素など）は使わない。既存の `pre_execution_error` のビルダーとフィールドをそのまま使い、新しいのは `error_type` の値（見出し）と本文の内容だけである。表示の形式は既存の `pre_execution_error` と同じになる。実装では `sample/slack-group-notification-test.toml` に実行前段の失敗（例: 未定義変数を参照する group）の場面を加え、`make slack-group-notification-test` で対象環境の表示を確かめてから PR を完了とする。あわせて、このターゲットの期待通知の一覧とログの確認項目（`Makefile:666-675`）にこの通知（`message_type=pre_execution_error` と新しい `error_type`）を加え、手動確認で何が現れるべきかをレビュアーに示す。
 
 ### 5.4 dry-run の副作用
 
@@ -835,7 +836,7 @@ flowchart LR
 - `GroupStageUnknown` から `groupStageCount` の手前までを走査し、すべての段階に表の行があること、`GroupStageUnknown` 以外の段階が汎用行ではないことを検証する。
 - 各段階について、変換結果の `Type`・`Message`・`Component`・`NotificationContext`・`Err` を検証する。期待値は要件定義書の決定事項の表から書く。
 - `GroupStageUnknown`・範囲外の値（`GroupStage(99)`）・ゼロ値の `GroupStageError{}` が汎用行と group 水準になること（ゼロ値は Scope が不正になること）を検証する（AC-10）。
-- 原因の文言が別の段階を示唆する入力（例: 原因の文言に `verification` や `permission` を含むが、段階は `GroupStageGroupPreparation`）で、`error_type` が宣言された段階に従うことを検証する（AC-09）。文字列から推測する実装ではこのテストが失敗する。
+- 原因の文言が別の段階を示唆する入力（例: 原因の文言に `verification` や `permission` を含むが、段階は `GroupStageGroupPreparation`）で、`error_type` が宣言された段階に従うことを検証する（AC-09）。
 - 構築関数が、段階と水準の不一致・空の名前・`nil` の原因で panic することを検証する。
 - `Error()` が原因の文言と一致し、`errors.Is` / `errors.AsType` が原因の連鎖を辿れることを検証する。ゼロ値の `Error()` が panic せず固定の文言を返すことも検証する。
 
@@ -912,7 +913,7 @@ flowchart LR
 
 ## 9. 将来の拡張性
 
-- 新しい実行前段の処理を `ExecuteGroup` に足すときは、`GroupStage` に値を足し、段階定義表に行を足す。行を足し忘れると §7.1 の網羅テストが失敗する。発生箇所で段階を宣言し忘れても、出口の規則 1 で汎用行として通知される。
+- 新しい実行前段の処理を `ExecuteGroup` に足すときは、`GroupStage` に値を足し、段階定義表に行を足す。§7.1 の網羅テストは、すべての段階に段階定義表の行があることを検証する。発生箇所で段階を宣言し忘れても、出口の規則 1 で汎用行として通知される。
 - `executeGroups` が先頭のエラーしか返さない点は [#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153) で扱う。本設計の通知は group ごとに記録されるため、#1153 の変更と独立している。
 - `*verification.OpError` など失敗対象一覧を持たない検証失敗の本文を global の報告と揃える改善は [#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154) で扱う。#4 の本文に違反したディレクトリを載せる改善も同じ候補になる。
 - 本文の中の group 名・コマンド名・パス（§3.7）を取り除きたくなったら、原因の文言を加工するのではなく、エラー書式（`config` パッケージを含む）を変えて、それらを文言に入れないようにする。
