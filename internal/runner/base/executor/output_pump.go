@@ -42,11 +42,10 @@ type pumpStream struct {
 	done      chan error
 }
 
-// newOutputPump creates the pipes and wrappers the pump owns. stderrLimit
-// bounds how many bytes the stderr wrapper retains in memory; 0 means
-// unbounded. The stdout wrapper is always unbounded, as it was before the
-// pump existed.
-func newOutputPump(writer OutputWriter, stderrLimit int) (*outputPump, error) {
+// newOutputPump creates the pipes and wrappers the pump owns. Both wrappers
+// retain at most retainedOutputLimit bytes in memory; writer, when non-nil,
+// still receives every byte.
+func newOutputPump(writer OutputWriter) (*outputPump, error) {
 	stdoutRead, stdoutWrite, err := pipeFn()
 	if err != nil {
 		return nil, fmt.Errorf("%w: stdout: %w", ErrOutputPipe, err)
@@ -61,13 +60,13 @@ func newOutputPump(writer OutputWriter, stderrLimit int) (*outputPump, error) {
 		stdout: &pumpStream{
 			childEnd:  stdoutWrite,
 			parentEnd: stdoutRead,
-			wrapper:   newOutputWrapper(writer, StdoutStream, 0),
+			wrapper:   newOutputWrapper(writer, StdoutStream, retainedOutputLimit),
 			done:      make(chan error, 1),
 		},
 		stderr: &pumpStream{
 			childEnd:  stderrWrite,
 			parentEnd: stderrRead,
-			wrapper:   newOutputWrapper(writer, StderrStream, stderrLimit),
+			wrapper:   newOutputWrapper(writer, StderrStream, retainedOutputLimit),
 			done:      make(chan error, 1),
 		},
 	}, nil
@@ -219,29 +218,35 @@ func closeUnlessClosed(f *os.File) error {
 	return err
 }
 
-// boundedBuffer reproduces the rule os/exec's unexported prefixSuffixSaver
-// applies to Cmd.Output's stderr, so callers with no OutputWriter keep
-// seeing the same output as today. A limit of 0 disables the bound and the
-// type degenerates to bytes.Buffer. limit must be non-negative.
+// boundedBuffer retains the leading limit bytes written to it (the leading
+// window) and counts the rest without keeping them. A limit of 0 disables the
+// bound and the type degenerates to bytes.Buffer; production always passes
+// retainedOutputLimit. limit must be non-negative.
+//
+// Contract of Bytes: without an overflow it returns exactly what was written;
+// after an overflow it returns only complete lines -- the leading window cut
+// back to its last newline -- followed by the omission marker, whose count
+// is every written byte not returned. Never returning a partial line is what
+// keeps redaction sound on the retained text: a secret's marker (key=,
+// Bearer, a PEM BEGIN line) precedes its value, so a kept value keeps its
+// marker, and a value is never cut into a fragment redaction cannot
+// recognize.
 //
 // Write never fails and never signals the limit to its caller: reaching the
-// bound must not stop the reader draining stderr, since a command that
+// bound must not stop the reader draining the stream, since a command that
 // writes past the bound and then exits successfully must keep succeeding.
 // Stopping the child on overflow is a different mechanism, applied
 // elsewhere, not by this type.
 type boundedBuffer struct {
 	limit     int          // 0 = unbounded
 	unbounded bytes.Buffer // collects every byte when limit == 0
-	prefix    []byte       // first limit bytes
-	suffix    []byte       // ring buffer holding the last limit bytes
-	suffixW   int          // write position in suffix
-	skipped   int64        // bytes dropped between prefix and suffix
+	prefix    []byte       // the leading window: the first limit bytes
+	skipped   int64        // bytes written after the leading window filled
 }
 
-// newBoundedBuffer builds a buffer bounded to limit bytes of prefix and
-// limit bytes of suffix; 0 means unbounded. A negative limit is a
-// programming error: Write would slice p past its length on the first call
-// larger than the limit, so it is rejected here rather than reached there.
+// newBoundedBuffer builds a buffer retaining the first limit bytes; 0 means
+// unbounded. A negative limit is a programming error and is rejected here
+// rather than surfacing as a slice bound panic inside Write.
 func newBoundedBuffer(limit int) *boundedBuffer {
 	if limit < 0 {
 		panic(fmt.Sprintf("newBoundedBuffer: limit must not be negative, got %d", limit))
@@ -255,56 +260,29 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		_, _ = b.unbounded.Write(p) // bytes.Buffer.Write never fails
 		return len(p), nil
 	}
-	lenp := len(p)
-	p = b.fill(&b.prefix, p)
-	if overage := len(p) - b.limit; overage > 0 {
-		p = p[overage:]
-		b.skipped += int64(overage)
-	}
-	p = b.fill(&b.suffix, p)
-	// The suffix is full now if p is non-empty; overwrite it in a circle.
-	for len(p) > 0 {
-		n := copy(b.suffix[b.suffixW:], p)
-		p = p[n:]
-		b.skipped += int64(n)
-		b.suffixW += n
-		if b.suffixW == b.limit {
-			b.suffixW = 0
-		}
-	}
-	return lenp, nil
+	add := min(len(p), b.limit-len(b.prefix))
+	b.prefix = append(b.prefix, p[:add]...)
+	b.skipped += int64(len(p) - add)
+	return len(p), nil
 }
 
-// fill appends up to len(p) bytes of p to *dst, such that *dst does not grow
-// larger than the limit. It returns the un-appended suffix of p.
-func (b *boundedBuffer) fill(dst *[]byte, p []byte) []byte {
-	if remain := b.limit - len(*dst); remain > 0 {
-		add := min(len(p), remain)
-		*dst = append(*dst, p[:add]...)
-		p = p[add:]
-	}
-	return p
-}
-
-// Bytes returns prefix + omission marker + suffix, in the same shape
-// os/exec reports the retained stderr of a failed Cmd.Output.
+// Bytes returns the retained output as described in the type's contract.
+// The marker is "\n... omitting N bytes ...\n"; with no newline in the
+// leading window it is all that is returned.
 func (b *boundedBuffer) Bytes() []byte {
 	if b.limit == 0 {
 		return b.unbounded.Bytes()
 	}
-	if b.suffix == nil {
+	if b.skipped == 0 {
 		return b.prefix
 	}
-	if b.skipped == 0 {
-		return append(b.prefix, b.suffix...)
-	}
+	kept := bytes.LastIndexByte(b.prefix, '\n') + 1 // 0 when there is no newline
+	omitted := b.skipped + int64(len(b.prefix)-kept)
 	var buf bytes.Buffer
-	buf.Grow(len(b.prefix) + len(b.suffix) + omissionMarkerCapacity)
-	buf.Write(b.prefix)
+	buf.Grow(kept + omissionMarkerCapacity)
+	buf.Write(b.prefix[:kept])
 	buf.WriteString("\n... omitting ")
-	buf.WriteString(strconv.FormatInt(b.skipped, 10))
+	buf.WriteString(strconv.FormatInt(omitted, 10))
 	buf.WriteString(" bytes ...\n")
-	buf.Write(b.suffix[b.suffixW:])
-	buf.Write(b.suffix[:b.suffixW])
 	return buf.Bytes()
 }

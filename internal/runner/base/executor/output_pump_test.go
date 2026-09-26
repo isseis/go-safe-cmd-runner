@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,12 +43,12 @@ func TestBoundedBuffer_UnlimitedBehavesLikeBytesBuffer(t *testing.T) {
 	assert.Equal(t, reference.String(), string(limitless.Bytes()))
 }
 
-// TestBoundedBuffer_KeepsPrefixAndSuffix checks the bounded case: the first
-// limit bytes and the last limit bytes survive, the middle is replaced by
-// the omission marker, and no marker appears while the total stays within
-// 2*limit.
-func TestBoundedBuffer_KeepsPrefixAndSuffix(t *testing.T) {
-	const limit = 4
+// TestBoundedBuffer_KeepsCompletePrefixLines checks the bounded case: output
+// that fits the leading window comes back unchanged; output that overflows it
+// comes back as the complete lines of the window plus the omission marker,
+// whose count is every written byte not returned.
+func TestBoundedBuffer_KeepsCompletePrefixLines(t *testing.T) {
+	const limit = 8
 	tests := []struct {
 		name  string
 		input string   // written in one Write; empty when parts is set
@@ -55,44 +56,44 @@ func TestBoundedBuffer_KeepsPrefixAndSuffix(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "exactly limit",
-			input: "abcd",
-			want:  "abcd",
+			name:  "within limit",
+			input: "abc",
+			want:  "abc",
 		},
 		{
-			name:  "limit plus one",
-			input: "abcda",
-			want:  "abcda",
+			name:  "exactly limit without newline",
+			input: "abcdefgh",
+			want:  "abcdefgh",
 		},
 		{
-			name:  "twice limit",
-			input: "abcdabcd",
-			want:  "abcdabcd",
+			name:  "no newline in window",
+			input: "abcdefghi",
+			want:  "\n... omitting 9 bytes ...\n",
 		},
 		{
-			name:  "twice limit plus one",
-			input: "abcdabcda",
-			want:  "abcd\n... omitting 1 bytes ...\nbcda",
+			name:  "newline ends window",
+			input: "abcdefg\nXYZ",
+			want:  "abcdefg\n\n... omitting 3 bytes ...\n",
 		},
 		{
-			name:  "beyond twice limit",
-			input: strings.Repeat("abcd", 4),
-			want:  "abcd\n... omitting 8 bytes ...\nabcd",
+			name:  "short line then long line",
+			input: "ab\ncdefghijkl",
+			want:  "ab\n\n... omitting 10 bytes ...\n",
+		},
+		{
+			name:  "several complete lines",
+			input: "a\nb\ncdefghij",
+			want:  "a\nb\n\n... omitting 8 bytes ...\n",
 		},
 		{
 			name:  "across multiple writes",
-			parts: []string{"abcd", "abcde", "fgh"},
-			want:  "abcd\n... omitting 4 bytes ...\nefgh",
+			parts: []string{"ab\n", "cdef", "ghij\n"},
+			want:  "ab\n\n... omitting 9 bytes ...\n",
 		},
 		{
-			name:  "ring wrap",
-			parts: []string{"abcd", "efgh", "ijklm"}, // the ring copy wraps its write position
-			want:  "abcd\n... omitting 5 bytes ...\njklm",
-		},
-		{
-			name:  "two-iteration ring",
-			parts: []string{"abcd", "efgh", "ij", "klmno"}, // one write overruns a full ring
-			want:  "abcd\n... omitting 7 bytes ...\nlmno",
+			name:  "write after the window is full",
+			parts: []string{"abc\ndefg", "h"},
+			want:  "abc\n\n... omitting 5 bytes ...\n",
 		},
 	}
 
@@ -108,14 +109,16 @@ func TestBoundedBuffer_KeepsPrefixAndSuffix(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, len(part), n)
 			}
-			assert.Equal(t, tt.want, string(buf.Bytes()))
+			got := buf.Bytes()
+			assert.Equal(t, tt.want, string(got))
+			assert.LessOrEqual(t, len(got), limit+omissionMarkerCapacity)
 		})
 	}
 }
 
 // TestBoundedBuffer_WriteNeverFails checks that Write keeps returning
 // (len(p), nil) once the bound is exceeded: the reader must keep draining
-// stderr, and a command that writes past the bound and then exits
+// the stream, and a command that writes past the bound and then exits
 // successfully must keep succeeding.
 func TestBoundedBuffer_WriteNeverFails(t *testing.T) {
 	buf := newBoundedBuffer(4)
@@ -128,7 +131,69 @@ func TestBoundedBuffer_WriteNeverFails(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len("more"), n)
 
-	assert.Equal(t, "abcd\n... omitting 4 bytes ...\nmore", string(buf.Bytes()))
+	assert.Equal(t, "\n... omitting 12 bytes ...\n", string(buf.Bytes()))
+}
+
+// TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret checks that cutting
+// the leading window back to complete lines never hands redaction a secret it
+// cannot recognize. The corpus holds one line per value-format detector whose
+// match depends on the whole value (PEM private key, GitHub token, Bearer
+// token, GCP key ID, single-line URL credential). For every window size, the
+// bounded output is redacted and no fragment of any secret may survive.
+func TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret(t *testing.T) {
+	// Fragments shorter than this are not treated as leaks: a short run of
+	// base64 or hex characters is indistinguishable from ordinary output.
+	const minFragment = 6
+
+	secrets := []string{
+		"MIIEpAIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo",
+		"4lgOEePzNm0tRgeLezV6ffAt0gunVTLw7onL",
+		"aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab",
+		"Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0",
+		"abcd1234ef5678abcd1234ef5678abcd1234ef56",
+		"Hunter2Hunter2",
+	}
+	corpus := "starting deploy\n" +
+		"-----BEGIN RSA PRIVATE KEY-----\n" +
+		secrets[0] + "\n" +
+		secrets[1] + "\n" +
+		"-----END RSA PRIVATE KEY-----\n" +
+		"using ghp_" + secrets[2] + "\n" +
+		"curl -H 'Bearer " + secrets[3] + "'\n" +
+		`{"type": "service_account", "private_key_id": "` + secrets[4] + `"}` + "\n" +
+		"fetch https://admin:" + secrets[5] + "@api.internal.example.com/v1\n" +
+		"done\n"
+
+	cfg := redaction.DefaultConfig()
+
+	// leaked returns the first fragment of a secret found in text.
+	leaked := func(text string) (string, bool) {
+		for _, secret := range secrets {
+			for i := 0; i+minFragment <= len(secret); i++ {
+				if fragment := secret[i : i+minFragment]; strings.Contains(text, fragment) {
+					return fragment, true
+				}
+			}
+		}
+		return "", false
+	}
+
+	// The corpus must be one the detectors match: redacted whole, nothing
+	// leaks, while the raw corpus holds every secret.
+	for _, secret := range secrets {
+		require.Contains(t, corpus, secret)
+	}
+	fragment, found := leaked(cfg.RedactText(corpus))
+	require.False(t, found, "the uncut corpus leaks %q: a secret line is not matched by redaction", fragment)
+
+	for limit := 1; limit <= len(corpus); limit++ {
+		buf := newBoundedBuffer(limit)
+		_, _ = buf.Write([]byte(corpus))
+		redacted := cfg.RedactText(string(buf.Bytes()))
+		if fragment, found := leaked(redacted); found {
+			t.Errorf("limit %d: fragment %q survives redaction in %q", limit, fragment, redacted)
+		}
+	}
 }
 
 // TestOutputPump_SeparatesStreams checks that the two streams reach the
@@ -136,7 +201,7 @@ func TestBoundedBuffer_WriteNeverFails(t *testing.T) {
 // reader goroutines.
 func TestOutputPump_SeparatesStreams(t *testing.T) {
 	recorder := &streamRecorder{}
-	pump, err := newOutputPump(recorder, 0)
+	pump, err := newOutputPump(recorder)
 	require.NoError(t, err)
 	stdoutFile, stderrFile := pump.childFiles()
 	pump.start()
@@ -191,7 +256,7 @@ func (w *streamFailWriter) Close() error { return nil }
 func TestOutputPump_WriteErrorPrefersStdout(t *testing.T) {
 	stdoutErr := errors.New("stdout size limit exceeded")
 	stderrErr := errors.New("stderr size limit exceeded")
-	pump, err := newOutputPump(&streamFailWriter{stdoutErr: stdoutErr, stderrErr: stderrErr}, 0)
+	pump, err := newOutputPump(&streamFailWriter{stdoutErr: stdoutErr, stderrErr: stderrErr})
 	require.NoError(t, err)
 	stdoutFile, stderrFile := pump.childFiles()
 	pump.start()
@@ -217,7 +282,7 @@ func TestOutputPump_WriteErrorPrefersStdout(t *testing.T) {
 // how a later kill path stops a reader still running.
 func TestOutputPump_WaitDeadlineReadsFinishedStreamOnly(t *testing.T) {
 	recorder := &streamRecorder{}
-	pump, err := newOutputPump(recorder, 0)
+	pump, err := newOutputPump(recorder)
 	require.NoError(t, err)
 	stdoutFile, stderrFile := pump.childFiles()
 	pump.start()
@@ -266,7 +331,7 @@ func TestOutputPump_PipeCreationFailureReleasesDescriptors(t *testing.T) {
 	}
 	t.Cleanup(func() { pipeFn = origPipeFn })
 
-	pump, err := newOutputPump(nil, 0)
+	pump, err := newOutputPump(nil)
 	require.ErrorIs(t, err, ErrOutputPipe)
 	require.Nil(t, pump)
 	// The underlying failure stays reachable: a caller that wants to tell
@@ -284,7 +349,7 @@ func TestOutputPump_PipeCreationFailureReleasesDescriptors(t *testing.T) {
 // releaseChildEnds can be called repeatedly on a pump whose readers were
 // never started, without an error.
 func TestOutputPump_ReleaseIsIdempotent(t *testing.T) {
-	pump, err := newOutputPump(&streamRecorder{}, 0)
+	pump, err := newOutputPump(&streamRecorder{})
 	require.NoError(t, err)
 
 	require.NoError(t, pump.releaseChildEnds())
@@ -299,7 +364,7 @@ func TestOutputPump_ReleaseIsIdempotent(t *testing.T) {
 // below into the wrapper buffer before the deadline fires; a wait that read
 // the unfinished buffer would race that write under -race.
 func TestOutputPump_WaitDeadlineDoesNotReadUnfinishedStream(t *testing.T) {
-	pump, err := newOutputPump(&streamRecorder{}, 0)
+	pump, err := newOutputPump(&streamRecorder{})
 	require.NoError(t, err)
 	stdoutFile, stderrFile := pump.childFiles()
 	pump.start()
@@ -339,10 +404,10 @@ var errSecondPipe = errors.New("second pipe creation failed")
 func TestNewBoundedBuffer_RejectsNegativeLimit(t *testing.T) {
 	assert.Panics(t, func() { newBoundedBuffer(-1) })
 
-	// The limits the executor actually passes must stay constructible: 0 for
-	// the OutputWriter path, nilWriterStderrLimit for the Cmd.Output path.
-	// This fails if either is ever edited into an invalid shape.
-	for _, limit := range []int{0, nilWriterStderrLimit} {
+	// The limits in use must stay constructible: retainedOutputLimit is the
+	// one production passes, 0 the unbounded form the wrapper tests use. This
+	// fails if either is ever edited into an invalid shape.
+	for _, limit := range []int{0, retainedOutputLimit} {
 		assert.NotPanics(t, func() { newBoundedBuffer(limit) })
 	}
 }
@@ -352,7 +417,7 @@ func TestNewBoundedBuffer_RejectsNegativeLimit(t *testing.T) {
 // done, which has room for a single value -- a goroutine leak no test could
 // see, since the read ends are closed by then.
 func TestOutputPump_StartRejectsSecondCall(t *testing.T) {
-	pump, err := newOutputPump(nil, 0)
+	pump, err := newOutputPump(nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = pump.release() })
 

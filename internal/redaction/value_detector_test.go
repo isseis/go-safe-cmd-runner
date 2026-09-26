@@ -16,6 +16,12 @@ func TestValueDetector_Mask_PositiveCases(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
+		// secret, when set, is key material that pemPrivate alone leaves in
+		// input (checked first, so the row can only pass through
+		// pemPrivateUnterminated) and that Mask must remove.
+		secret string
+		// keep, when set, is text Mask must leave in place.
+		keep string
 	}{
 		{
 			name:  "AWS access key ID AKIA",
@@ -66,6 +72,29 @@ MHQCAQEEI...
 -----END EC PRIVATE KEY-----`,
 		},
 		{
+			name:   "PEM BEGIN line alone",
+			input:  "-----BEGIN RSA PRIVATE KEY-----\n",
+			secret: "-----BEGIN RSA PRIVATE KEY-----",
+		},
+		{
+			name:   "PEM BEGIN line with a preceding line and body lines",
+			input:  "writing key:\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEF\nAASCBKcwggSjAgEAAoIBAQC7\n",
+			secret: "MIIEvQIBADANBgkqhkiG9w0BAQEF",
+			keep:   "writing key:\n",
+		},
+		{
+			name:   "PEM BEGIN line followed by the omission marker",
+			input:  "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmU\n\n... omitting 70000 bytes ...\n",
+			secret: "b3BlbnNzaC1rZXktdjEAAAAABG5vbmU",
+		},
+		{
+			name:   "complete PEM block followed by a BEGIN line alone",
+			input:  "-----BEGIN EC PRIVATE KEY-----\nMHQCAQEEI\n-----END EC PRIVATE KEY-----\nnext step\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAx\n",
+			secret: "MIIEpAIBAAKCAQEAx",
+			// The complete block is masked alone, so the line after it survives.
+			keep: "\nnext step\n",
+		},
+		{
 			name:  "Bearer token in Authorization header",
 			input: "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
 		},
@@ -81,11 +110,21 @@ MHQCAQEEI...
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.secret != "" {
+				require.Contains(t, valueDetectorPatterns.pemPrivate.ReplaceAllString(tt.input, placeholder), tt.secret,
+					"pemPrivate alone must leave the secret, or the row does not exercise the unterminated rule")
+			}
 			result := d.Mask(tt.input)
 			assert.NotEqual(t, tt.input, result,
 				"expected input to be modified by masking")
 			assert.Contains(t, result, placeholder,
 				"masked output must contain the placeholder")
+			if tt.secret != "" {
+				assert.NotContains(t, result, tt.secret)
+			}
+			if tt.keep != "" {
+				assert.Contains(t, result, tt.keep)
+			}
 		})
 	}
 }
