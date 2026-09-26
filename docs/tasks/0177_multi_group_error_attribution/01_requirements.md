@@ -8,7 +8,7 @@
 | Created | 2026-09-25 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: PR #1185 のレビューを受けて改訂した。編集上の修正は 1 件で、AC-28 が出力ファイルに全体が書かれると過大に述べていたのを、メモリ上の上限が出力ファイルに書かれる内容を減らさない、という主張に改めた（スコープ 11、決定事項「コマンドの出力はメモリ上で常に上限付きにする」、AC-31 もこれに合わせた。この修正は決定を変えない）。決定の変更は次の 3 件で、このため状態を `draft` に戻した。(1) コマンドのタイムアウトは `Error()`・`Details:` の文言に `failed to execute group <g>: ` が付くようになるので、AC-09・AC-11 と Success Criteria の「文言は変わらない」から除外した。(2) タイムアウト後に実行される group の通知を加え、AC-12 を実行エラーのレコードに限定し、AC-32 を追加した。(3) 複数行の原因の続きの行を group の行より深く字下げすることにし、AC-09 を 1 行の原因に限定し、AC-33 を追加した。 |
+| Comments | 2026-09-26: PR #1185 のレビューを受けて改訂した。編集上の修正は 1 件で、AC-28 が出力ファイルに全体が書かれると過大に述べていたのを、メモリ上の上限が出力ファイルに書かれる内容を減らさない、という主張に改めた（スコープ 11、決定事項「コマンドの出力はメモリ上で常に上限付きにする」、AC-31 もこれに合わせた。この修正は決定を変えない）。決定の変更は次の 3 件で、このため状態を `draft` に戻した。(1) コマンドのタイムアウトは `Error()`・`Details:` の文言に `failed to execute group <g>: ` が付くようになるので、AC-09・AC-11 と Success Criteria の「文言は変わらない」から除外した。(2) タイムアウト後に実行される group の通知を加え、AC-12 を実行エラーのレコードに限定し、AC-32 を追加した。(3) 複数行の原因の続きの行を group の行より深く字下げすることにし、AC-09 を 1 行の原因に限定し、AC-33 を追加した。 同日、コードレビューを受けて次を改訂した（決定の変更）。AC-22 を「タイムアウトが唯一の group の失敗のとき」に限り、先に別の group が失敗していれば外側の context は空になることを明記した。対象 9 と AC-26 に、負の値が設定の読み込みで拒否されることの記載を加えた。 |
 
 ## 関連 Issue
 
@@ -118,7 +118,7 @@ executor は、コマンドの stdout・stderr をメモリ上にも保持する
 6. 本番コードで使われていない `CaptureError.GetType`・`GetPath` を削除する。
 7. `executeGroups` は、実行全体の中断を実行全体の context の状態で判定する。コマンド自身のタイムアウトは group の失敗として集め、後続の group を実行する。
 8. `Capture.WriteOutput` は、上限 0 を無制限として扱う。サイズ超過のエラーは、正の上限値を持つときだけ作られる。
-9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であることを追記する。同じ文書の timeout の節に、コマンドのタイムアウト後も後続の group が実行されること、タイムアウトしたコマンドのプロセスが残りうることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
+9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であること、負の値は設定の読み込みで拒否されることを追記する。同じ文書の timeout の節に、コマンドのタイムアウト後も後続の group が実行されること、タイムアウトしたコマンドのプロセスが残りうることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 10. 負の `output_size_limit`（グローバル・テンプレート・コマンド）を、`timeout` と同じく設定の読み込みで拒否する。
 11. すべてのコマンドについて、メモリ上に保持する stdout・stderr を、出力ファイルの有無と `output_size_limit` によらず上限付き（先頭と末尾を保持し、間を省略する）にする。メモリ上の上限は、出力ファイルに書かれる内容を減らさない（出力ファイルには、変更前と同じバイトが書かれる）。
 
@@ -276,7 +276,7 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-19**: group-1 のコマンドが自身の `timeout` でタイムアウトし、実行全体は中断されていないとき、group-2 が実行される。戻り値は group-1 の失敗を含む専用の型であり、`errors.Is(err, context.DeadlineExceeded)` が成り立つ。
 - **AC-20**: group-1 がコマンドの失敗（0 以外の終了コード）で失敗し、group-2 のコマンドがタイムアウトしたとき、stderr の `Details:` に group-1 と group-2 の両方の失敗が、それぞれ `failed to execute group <group>: ` で始まる行として出る。
 - **AC-21**: 実行全体の context が取り消されたとき（例: コマンドの実行中に SIGINT・SIGTERM を受けた）、`executeGroups` は残りの group を実行せずに返す（現状どおり）。この判定は実行全体の context の状態で行い、本番コードに、エラーが `context.Canceled`・`context.DeadlineExceeded` を含むかどうかで中断を判定する分岐がない。
-- **AC-22**: コマンドのタイムアウトが 1 件だけのとき、外側の context は変更前と同じ（そのコマンドの group 名・command 名）である。
+- **AC-22**: group の失敗がコマンドのタイムアウトの 1 件だけのとき、外側の context は変更前と同じ（そのコマンドの group 名・command 名）である。先に別の group が失敗していたときは、失敗が 2 件以上になるので、外側の context は AC-05 のとおり空になる（変更前は、先の失敗を捨ててタイムアウトしたコマンドの group 名・command 名が付いていた）。
 - **AC-32**: コマンドがタイムアウトした後に実行される各 group は、ほかのコマンドの失敗の後と同じく、通常の通知（実行前段の失敗の通知、`command_group_summary`）を行う。つまり、コマンドのタイムアウトの後は、変更前より後続の group の分だけ Slack 通知が増える。
 
 #### F-007: `output_size_limit = 0` を無制限として扱う
@@ -285,7 +285,7 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-23**: 上限 0 の出力キャプチャは、書き込むデータの大きさによらずサイズ超過のエラーを返さない。
 - **AC-24**: `output_size_limit = 0` を設定し出力ファイルを指定したコマンドが、出力サイズ超過で失敗せずに完了する。
 - **AC-25**: 上限値が 0 以下のサイズ超過のエラーは作られない。本番の構築経路は、上限値が 0 以下の入力を拒否する。
-- **AC-26**: `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限を表すことが記載され、英語版 `docs/user/toml_config/04_global_level.md` に `/mktrans` で反映されている。
+- **AC-26**: `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限を表すこと、負の値は設定の読み込みで拒否されることが記載され、英語版 `docs/user/toml_config/04_global_level.md` に `/mktrans` で反映されている。
 
 #### F-008: 設定と出力の保持の上限
 

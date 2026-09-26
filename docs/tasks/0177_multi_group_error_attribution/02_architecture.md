@@ -8,7 +8,7 @@
 | Created | 2026-09-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 |
+| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 同日、コードレビューを受けて §3.3・§4.2・§4.3 の AC-22 の記述と、§3.7 の表のデバッグログ・Slack の行（先頭 32 KiB に改行が無い出力は先頭が残らない）を改訂した。 |
 
 ## 0. 前提
 
@@ -296,7 +296,7 @@ func NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors
 
 2 が残るのは、`executeGroups` が `*GroupErrors` を経由せずにエラーを返す経路、つまり実行全体の中断（§3.2 の 2）があるためである。コマンドの実行中に中断されると、戻り値は `errors.Join(ctx.Err(), <*CommandExecutionError を含むエラー>)` になり、2 はその group 名・command 名を返す。変更前も、この経路のエラーには外側の context が付いていた（`cmd/runner/main.go:733-735`）。2 が `*GroupStageError` を読まないのも現状と同じである。
 
-コマンドのタイムアウトは、§3.2 の変更により `*GroupErrors` の要素になるので、1 で判定される。タイムアウトが 1 件だけのとき、1 はそのコマンドの group 名・command 名を返す。これは変更前に 2 が返していた値と同じである（AC-22）。タイムアウトのエラーが `*CommandExecutionError` を含むことは次による。
+コマンドのタイムアウトは、§3.2 の変更により `*GroupErrors` の要素になるので、1 で判定される。失敗がタイムアウトの 1 件だけのとき、1 はそのコマンドの group 名・command 名を返す。これは変更前に 2 が返していた値と同じである（AC-22）。先に別の group が失敗していたときは要素が 2 件になり、1 は空を返す。変更前は先の失敗を捨ててタイムアウトのエラーだけを返していたので、2 がタイムアウトしたコマンドの group 名・command 名を返していた（§4.3）。タイムアウトのエラーが `*CommandExecutionError` を含むことは次による。
 
 - `executeSingleCommand` は各コマンドを、コマンドの `timeout` を期限とする context で実行する（`internal/runner/group_executor.go:574-589`）。
 - 期限切れのとき、executor は `ctx.Err()` をコマンドのエラーに `errors.Join` で加える（`internal/runner/base/executor/command_lifecycle.go:890-891`）。
@@ -394,10 +394,10 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 
 | 使う箇所 | 変更前 | 変更後 |
 |---|---|---|
-| デバッグログ `Command execution result` の `stdout`（`internal/runner/group_executor.go:602-603`） | 切り詰めて記録 | 変わらない |
+| デバッグログ `Command execution result` の `stdout`（`internal/runner/group_executor.go:602-603`） | 切り詰めて記録 | 省略が無い出力と、先頭の 32 KiB に改行がある出力では変わらない。省略があり先頭の 32 KiB に改行が無い出力では、§3.7 の規則で先頭が残らないので、省略の印から始まる |
 | デバッグログ `Command execution result` の `stderr`（`group_executor.go:605-606`） | 出力ファイルありは全体（最大 `output_size_limit`）、なしは 32 KiB ずつ | 先頭と末尾の 32 KiB ずつ |
 | `command_group_summary` の構造化ログレコードの `output`（`internal/common/logschema.go:122-128` で全体を記録） | 全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし） | 先頭と末尾の 32 KiB ずつ |
-| Slack の `command_group_summary` の出力（`internal/logging/slack_handler.go:21` の stdout 1000 文字、`:22` の stderr 500 文字で切り詰め） | 切り詰めて表示 | 変わらない（先頭側で切り詰められる） |
+| Slack の `command_group_summary` の出力（`internal/logging/slack_handler.go:21` の stdout 1000 文字、`:22` の stderr 500 文字で切り詰め） | 切り詰めて表示 | 省略が無い出力と、先頭の 32 KiB に改行がある出力では変わらない（先頭側で切り詰められる）。省略があり先頭の 32 KiB に改行が無い出力では、省略の印から始まる |
 | `Command failed`・`Command failed with non-zero exit code` の構造化ログの `stderr`（`group_executor.go:639-643`、`:659-665`） | 出力ファイルありは全体（最大 `output_size_limit`）、なしは 32 KiB ずつ | 先頭と末尾の 32 KiB ずつ |
 | executor の `Command execution failed` のログの `stderr`（`internal/runner/base/executor/command_lifecycle.go:789-793`） | 同上 | 先頭と末尾の 32 KiB ずつ |
 | `run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121`）と、その Slack 通知（`user_group_command_failure`、`slack_handler.go:1033-1063`） | 監査ログの stdout は全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし）、stderr は上の行と同じ。Slack は切り詰めて表示 | 監査ログは先頭と末尾の 32 KiB ずつ、Slack は変わらない |
@@ -459,7 +459,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | 失敗 2 件以上 | `error running commands: failed to execute group g1: ...` の後に、各 group の文言が `failed to execute group gN: ...` で続く（AC-01、AC-02、AC-05） |
 | 出力サイズ超過を含む原因 | 末尾が `output capture error during execution phase: output size limit exceeded for '<path>' (limit: <N> bytes)`（AC-16） |
 | 書き込み失敗（`ErrorTypeFileSystem`）を含む原因 | 末尾が `output capture error during execution phase: filesystem error for '<path>': <OS のエラー>`（変更前は `UserMessage` で OS のエラーが落ちていた、AC-03） |
-| コマンドのタイムアウト | 失敗の 1 件として扱われ、他の失敗と同じく `failed to execute group g: ` で始まる。変更前はこれが付かなかった（AC-09・AC-11 の例外）。原因は複数行になり、続きの行は下の行のとおり字下げされる。1 件だけなら外側の context は変更前と同じ（AC-22） |
+| コマンドのタイムアウト | 失敗の 1 件として扱われ、他の失敗と同じく `failed to execute group g: ` で始まる。変更前はこれが付かなかった（AC-09・AC-11 の例外）。原因は複数行になり、続きの行は下の行のとおり字下げされる。失敗がこの 1 件だけなら外側の context は変更前と同じ（AC-22）。先に別の group が失敗していれば、外側の context は空になる（AC-05） |
 | 原因が複数行の group | 先頭の行は `failed to execute group g: ...`、続きの行は `Details:` の字下げに加えて空白 2 文字深く字下げされる（§3.1、§2.3 の例、AC-33） |
 | 実行全体の中断 | 先頭の行が `context canceled`、続く行が中断時の `ExecuteGroup` のエラー（§3.2 の 2）。外側の context は §3.3 の 2 で決まる |
 | 負の `output_size_limit` | 設定の読み込みエラー。`ErrNegativeOutputSizeLimit` の文言に、値と設定箇所が続く（AC-27） |
@@ -477,6 +477,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | 失敗 1 件が `*GroupStageError` のときの `Details:` | `error running commands: ...` | `error running commands (group: g[, command: c]): ...` |
 | コマンドのタイムアウト後 | 残りの group を実行せず、先の失敗を報告しない | 残りの group を実行し、すべての失敗を報告する |
 | コマンドのタイムアウトの報告の文言（`Details:`・`error_message`・`Error()`） | `error running commands (group: g, command: c): command c in group g failed: command execution failed: context deadline exceeded` の後に続きの行 | `error running commands (group: g, command: c): failed to execute group g: command c in group g failed: ...`。続きの行は字下げされる。外側の context は変わらない |
+| 先に別の group が失敗した後のコマンドのタイムアウトの外側の context | タイムアウトしたコマンドの `(group: g, command: c)`（先の失敗は捨てられる） | 失敗が 2 件になるので付かない（AC-05）。各行の `failed to execute group <g>: ` で帰属が分かる |
 | コマンドのタイムアウト後の Slack 通知 | 後続の group は実行されないので、その通知は無い | 後続の各 group が、ほかの失敗の後と同じく、実行前段の失敗の通知と `command_group_summary` を送る（`internal/runner/group_executor.go:175-180`、AC-32）。通知の件数が増える |
 | 原因が複数行の group の `Error()`・`Details:` | 続きの行は字下げされず、`Details:` では他の group の行と同じ字下げで並ぶ | 続きの行は group の行より 2 文字深く字下げされる（AC-33）。原因が 1 行の group の文言は変わらない |
 | 1 回の実行にかかる時間 | タイムアウトが起きた時点で実行が終わる | タイムアウト後も残りの group を実行するので、最長で全コマンドの `timeout` の合計まで延びうる。cron・systemd でタイムアウトを実行時間の上限として使っている運用は、実行の重なりや `TimeoutStartSec` を見直す必要がありうる |
