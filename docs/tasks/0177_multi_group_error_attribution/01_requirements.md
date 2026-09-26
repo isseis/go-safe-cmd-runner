@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-25 |
-| Review date | 2026-09-26 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-09-26: PR #1185 のレビューを受けて改訂した。編集上の修正は 1 件で、AC-28 が出力ファイルに全体が書かれると過大に述べていたのを、メモリ上の上限が出力ファイルに書かれる内容を減らさない、という主張に改めた（スコープ 11、決定事項「コマンドの出力はメモリ上で常に上限付きにする」、AC-31 もこれに合わせた。この修正は決定を変えない）。決定の変更は次の 3 件で、このため状態を `draft` に戻した。(1) コマンドのタイムアウトは `Error()`・`Details:` の文言に `failed to execute group <g>: ` が付くようになるので、AC-09・AC-11 と Success Criteria の「文言は変わらない」から除外した。(2) タイムアウト後に実行される group の通知を加え、AC-12 を実行エラーのレコードに限定し、AC-32 を追加した。(3) 複数行の原因の続きの行を group の行より深く字下げすることにし、AC-09 を 1 行の原因に限定し、AC-33 を追加した。 |
 
 ## 関連 Issue
 
@@ -120,7 +120,7 @@ executor は、コマンドの stdout・stderr をメモリ上にも保持する
 8. `Capture.WriteOutput` は、上限 0 を無制限として扱う。サイズ超過のエラーは、正の上限値を持つときだけ作られる。
 9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であることを追記する。同じ文書の timeout の節に、コマンドのタイムアウト後も後続の group が実行されること、タイムアウトしたコマンドのプロセスが残りうることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 10. 負の `output_size_limit`（グローバル・テンプレート・コマンド）を、`timeout` と同じく設定の読み込みで拒否する。
-11. すべてのコマンドについて、メモリ上に保持する stdout・stderr を、出力ファイルの有無と `output_size_limit` によらず上限付き（先頭と末尾を保持し、間を省略する）にする。出力ファイルには全体を書く。
+11. すべてのコマンドについて、メモリ上に保持する stdout・stderr を、出力ファイルの有無と `output_size_limit` によらず上限付き（先頭と末尾を保持し、間を省略する）にする。メモリ上の上限は、出力ファイルに書かれる内容を減らさない（出力ファイルには、変更前と同じバイトが書かれる）。
 
 ### 対象外
 
@@ -128,8 +128,8 @@ executor は、コマンドの stdout・stderr をメモリ上にも保持する
 - **`output.ErrOutputSizeLimitExceeded`（`manager.go`）と `ErrOutputSizeExceeded` の重複。** 同じ文言の 2 つのセンチネルがある。前者を返す `DefaultOutputCaptureManager.WriteOutput` は本番コードから呼ばれていない。本 issue とは独立しているので [#1181](https://github.com/isseis/go-safe-cmd-runner/issues/1181) で扱う。
 - **各行に `(group: ..., command: ...)` を付ける表示。** 原因の文言が `failed to execute group <name>` を含むので不要である。
 - **`ExecutionError.GroupName`・`CommandName` に複数の group を持たせること。** 決定事項「複数失敗時の `GroupName` は空のまま」を参照。
-- **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、通知の内容・件数は変えない。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
-- **dry-run の実行エラー記録（`SetDryRunExecutionError`）。** `Error()` の文言を使っており、その文言は変えない（AC-09）ので影響しない。
+- **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、Slack へは送らない。各通知の内容は変えない。コマンドのタイムアウトの後に後続の group が実行されることで、その group の通知が加わる点だけが変わる（AC-32）。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
+- **dry-run の実行エラー記録（`SetDryRunExecutionError`）。** `Error()` の文言を使っており、1 行の原因ではその文言は変えない（AC-09）ので影響しない。文言が変わるコマンドのタイムアウトは、コマンドを実行しない dry-run では起きない。
 - **group ファイル検証の失敗（`*verification.Error`）。** 現状どおり、集める対象に入らない。
 - **実行全体の中断時に集めた失敗を報告すること。** SIGINT・SIGTERM で実行全体が中断されたときは、現状どおり中断のエラーをすぐに返し、それまでに集めた失敗は報告しない。中断は利用者の操作であり、残りの結果が無いことを利用者が知っているためである。
 - **タイムアウトしたコマンドのプロセスを確実に止めること。** プロセスグループへの kill など、孫プロセスまで止める仕組みは本タスクでは加えない。子を kill・回収できなかった場合（`ErrKillAfterCancel`・`ErrChildNotReaped`）も、後続の group を実行する（決定事項「タイムアウト後に残るプロセスは受け入れる」）。
@@ -170,7 +170,9 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 
 エラーが `context.DeadlineExceeded` を含むかどうかは、どの context が期限切れになったかを表さない。実行全体の context の状態は、中断されたかどうかを直接表す（CLAUDE.md「Declare, don't infer」）。
 
-この変更で、コマンドがタイムアウトしても後続の group が実行されるようになる。コマンドが 0 以外の終了コードで失敗したときと同じ挙動である。タイムアウトしたコマンドの group では、現状どおりそのコマンドで group の実行が止まり、`command_group_summary` が通知される。
+この変更で、コマンドがタイムアウトしても後続の group が実行されるようになる。コマンドが 0 以外の終了コードで失敗したときと同じ挙動である。タイムアウトしたコマンドの group では、現状どおりそのコマンドで group の実行が止まり、`command_group_summary` が通知される。後続の各 group も、ほかのコマンドの失敗の後と同じく、それぞれの通知（実行前段の失敗の通知、`command_group_summary`）を行う（AC-32）。
+
+また、タイムアウトの失敗も group の失敗として集めるので、その文言には他の失敗と同じく `failed to execute group <g>: ` が付く。変更前は、タイムアウトのエラーはこれを付けずにそのまま返されていた（`internal/runner/runner.go:422-424`）。帰属を示すための変化であり、外側の context は変わらない（AC-22）ので受け入れる。
 
 ### `output_size_limit = 0` を無制限として扱う
 
@@ -188,7 +190,7 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 
 すべてのコマンドについて、メモリ上の stdout・stderr の保持を、出力ファイルが無いときの stderr と同じ上限付きの形（先頭と末尾を保持し、省略した量を示す）にする。上限は出力ファイルの有無と `output_size_limit` によらない一定の値とする（具体値は設計段階で決める）。これにより、runner のメモリ使用量はコマンドの出力の大きさに比例しない。
 
-- 出力ファイルを指定したコマンドでは、出力の全体は出力ファイルに書かれるので、情報は失われない。
+- 出力ファイルを指定したコマンドでは、メモリ上の上限は出力ファイルに書かれる内容を変えない。出力ファイルには変更前と同じバイトが書かれる。ただし、出力ファイルに出力の全体が残るのは、コマンドが成功し、出力が `output_size_limit` に収まったとき（または上限が 0 のとき）である。上限を超えると、超える書き込みは拒否され（`internal/runner/base/output/capture.go:42-58`）、コマンドが失敗すると出力の一時ファイルは削除される（`internal/runner/resource/normal_manager.go:270-275`）。これは変更前と同じである。
 - 出力ファイルを指定しないコマンドでは、上限を超えた部分の出力はどこにも残らなくなる。現状でも、この出力を全体として表示・保存するのは構造化ログ（`command_group_summary` の `output` など）だけである。出力の全体が必要なコマンドには、出力ファイルを指定する。
 
 ### group の失敗は件数によらず専用の型で表す
@@ -217,7 +219,12 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 
 ### `Error()` の文言と `errors.Is`・`errors.AsType` の到達性は変えない
 
-新しい型の `Error()` は、変更前の戻り値と同じ文言を返す。失敗 1 件なら `failed to execute group <name>: ...` の 1 行、2 件以上ならそれを改行で並べたもの（`errors.Join` の文言）である。報告の各行と、dry-run の実行エラー記録など `Error()` の文言を使う箇所の出力を変えないためである。また、`errors.Is`・`errors.AsType` が各 group の原因に届くことを保つ。
+新しい型の `Error()` は、各 group の原因が 1 行であれば、変更前の戻り値と同じ文言を返す。失敗 1 件なら `failed to execute group <name>: ...` の 1 行、2 件以上ならそれを改行で並べたもの（`errors.Join` の文言）である。報告の各行と、dry-run の実行エラー記録など `Error()` の文言を使う箇所の出力を変えないためである。また、`errors.Is`・`errors.AsType` が各 group の原因に届くことを保つ。
+
+次の 2 つは例外とする。
+
+- **複数行の原因は字下げする。** 原因の `Error()` が複数行のとき（コマンドのタイムアウトや kill の失敗が加わったエラー）、2 行目以降は `failed to execute group` で始まらない。字下げしなければ、複数 group の失敗で続きの行がどの group に属するか分からない。そこで、原因の 2 行目以降を group の行より深く字下げする（AC-33）。
+- **コマンドのタイムアウトには `failed to execute group <g>: ` が付く。** 決定事項「実行全体の中断は context の状態で判定する」のとおりである。
 
 ### 検討して採らなかった案
 
@@ -239,6 +246,7 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-04**: 構造化ログの `error_message` にも、AC-01〜AC-03 と同じ文言が出る。
 - **AC-05**: 複数 group の失敗では、外側の context（`error running commands (group: ..., command: ...)`）は付かない（`ExecutionError.GroupName`・`CommandName` は空）。
 - **AC-06**: `UserFriendlyError`・`GetUserFriendlyMessage`・`CaptureError.UserMessage` は本番コードに存在しない。`PreExecutionError.Detail` と `HandleExecutionError` は原因の `Error()` の文言をそのまま使う。
+- **AC-33**: 1 つの group の原因が複数行のとき（例: コマンドのタイムアウト、kill の失敗が加わったエラー）、stderr の `Details:` で、その原因の 2 行目以降の各行は、group の行（`failed to execute group <group>: ` で始まる行）より深く字下げされ、直前の group の行に属することが分かる。
 
 #### F-002: 型による宣言
 
@@ -249,10 +257,10 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 #### F-003: 既存挙動の維持
 
 **Acceptance Criteria**:
-- **AC-09**: 失敗が 1 件のときも 2 件以上のときも、戻り値の `Error()` の文言は変更前と同じである。
+- **AC-09**: 失敗が 1 件のときも 2 件以上のときも、各 group の原因の `Error()` が 1 行であれば、戻り値の `Error()` の文言は変更前と同じである。ただし、コマンドのタイムアウトは除く（コマンドのタイムアウトの原因は通常複数行であり、また変更前は `failed to execute group <g>: ` を付けずに返されていた。AC-20 のとおり、変更後はこれが付く）。原因が複数行のときの文言は AC-33 で定める。
 - **AC-10**: 失敗が 1 件のときも 2 件以上のときも、`errors.Is`・`errors.AsType` が各 group の原因（`*CommandExecutionError`、`output.CaptureError` など）に届く。
-- **AC-11**: 失敗が 1 group だけで、原因が `*CommandExecutionError` であり `CaptureError` を含まないとき、stderr の `Details:`・構造化ログの `error_message`・`ExecutionError.GroupName`・`CommandName` は変更前と同じである。
-- **AC-12**: 実行エラーの構造化ログレコードは `slack_notify=false` のままで、Slack 通知の件数・内容は変わらない。プロセスの終了コードと `RUN_SUMMARY` 行も変わらない。
+- **AC-11**: 失敗が 1 group だけで、原因が `*CommandExecutionError` であり `CaptureError` を含まず、その `Error()` が 1 行であるとき、stderr の `Details:`・構造化ログの `error_message`・`ExecutionError.GroupName`・`CommandName` は変更前と同じである。コマンドのタイムアウトは除く。コマンドのタイムアウトでは、`Details:`・`error_message` の原因の文言の先頭に `failed to execute group <g>: ` が付き、続きの行は AC-33 のとおり字下げされる。外側の context は AC-22 のとおり変わらない。
+- **AC-12**: 実行エラーの構造化ログレコードは `slack_notify=false` のままであり、このレコードが Slack へ送られないことは変わらない。プロセスの終了コードと `RUN_SUMMARY` 行も変わらない。コマンドのタイムアウト後に実行される group の通知は AC-32 で定める。
 - **AC-15**: 失敗が 1 group だけで、原因が `*CommandExecutionError` ではないとき（例: group の展開の失敗）、外側の context に `group: <group>` が付く。command レベルの段階の `*GroupStageError` では `command: <command>` も付く。Details の原因の文言は変更前と同じである。
 
 #### F-004: `CaptureError` の整理
@@ -269,6 +277,7 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-20**: group-1 がコマンドの失敗（0 以外の終了コード）で失敗し、group-2 のコマンドがタイムアウトしたとき、stderr の `Details:` に group-1 と group-2 の両方の失敗が、それぞれ `failed to execute group <group>: ` で始まる行として出る。
 - **AC-21**: 実行全体の context が取り消されたとき（例: コマンドの実行中に SIGINT・SIGTERM を受けた）、`executeGroups` は残りの group を実行せずに返す（現状どおり）。この判定は実行全体の context の状態で行い、本番コードに、エラーが `context.Canceled`・`context.DeadlineExceeded` を含むかどうかで中断を判定する分岐がない。
 - **AC-22**: コマンドのタイムアウトが 1 件だけのとき、外側の context は変更前と同じ（そのコマンドの group 名・command 名）である。
+- **AC-32**: コマンドがタイムアウトした後に実行される各 group は、ほかのコマンドの失敗の後と同じく、通常の通知（実行前段の失敗の通知、`command_group_summary`）を行う。つまり、コマンドのタイムアウトの後は、変更前より後続の group の分だけ Slack 通知が増える。
 
 #### F-007: `output_size_limit = 0` を無制限として扱う
 
@@ -282,10 +291,10 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 
 **Acceptance Criteria**:
 - **AC-27**: 負の `output_size_limit` をグローバル・テンプレート・コマンドのいずれかに含む設定は、読み込み時に拒否され、どの group も実行されない。エラーには値と設定箇所が含まれる。dry-run でも同じく拒否される。
-- **AC-28**: すべてのコマンドについて、メモリ上に保持される stdout・stderr の大きさは、出力ファイルの有無と `output_size_limit`（0 を含む）によらず一定の上限を超えない。出力ファイルを指定したコマンドでは、出力ファイルに stdout・stderr の全体が書かれる。
+- **AC-28**: すべてのコマンドについて、メモリ上に保持される stdout・stderr の大きさは、出力ファイルの有無と `output_size_limit`（0 を含む）によらず一定の上限を超えない。出力ファイルを指定したコマンドでは、メモリ上の上限は出力ファイルに書かれる内容を減らさない。出力ファイルには変更前と同じバイトが書かれる。
 - **AC-29**: AC-28 の上限を超えたとき、保持される stdout・stderr は先頭と末尾を含み、省略があったことを示す印を含む。
 - **AC-30**: 利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の timeout の節）に、コマンドのタイムアウト後も後続の group が実行されること、および既知の制限として、タイムアウトしたコマンドのプロセス（孫プロセスを含む）が残りうることが記載され、英語版に `/mktrans` で反映されている。
-- **AC-31**: 利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」）に、メモリ上に保持される出力には一定の上限があり、上限を超えた出力の全体が必要なら出力ファイルを指定することが記載され、英語版に `/mktrans` で反映されている。
+- **AC-31**: 利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」）に、メモリ上に保持される出力には一定の上限があり、上限を超えた出力の全体が必要なら出力ファイルを指定すること、および出力ファイルに出力の全体が残るのは、コマンドが成功し出力が `output_size_limit` に収まったとき（または上限が 0 のとき）であることが記載され、英語版に `/mktrans` で反映されている。
 
 #### F-005: 全体の健全性
 
@@ -295,11 +304,11 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 
 ## Success Criteria（要件レベル）
 
-- 複数 group が失敗したとき、stderr と構造化ログの各行から、その行の group（と command）を他のレコードと突き合わせずに判別できる。
+- 複数 group が失敗したとき、stderr と構造化ログの各行から、その行の group（と command）を他のレコードと突き合わせずに判別できる。原因が複数行の group では、続きの行は字下げにより直前の group の行に属することが分かる。
 - 報告に出る原因から、ラップの文言と原因の詳細が失われない。
 - 出力サイズ超過の報告は、上限値を含み、同じ事実を繰り返さない。
 - group の失敗が件数によらず同じ型で宣言され、`errors.Join` の形からの推測がなくなる。
-- `Error()` の文言、Slack 通知、終了コードは変わらない。
+- `Error()` の文言、実行エラーのレコードを Slack へ送らないこと、終了コードは変わらない。ただし、コマンドのタイムアウトの文言には `failed to execute group <g>: ` が付き、複数行の原因の続きの行は字下げされる。コマンドのタイムアウトの後は、後続の group の通知（`command_group_summary` など）が加わる。
 - コマンドのタイムアウトで、先に失敗した group の報告が失われず、後続の group が実行される。実行全体の中断では、現状どおり残りの group を実行しない。
 - `output_size_limit = 0` のコマンドが、出力サイズ超過で失敗しない。
 - runner のメモリ使用量が、出力ファイルの有無によらず、コマンドの出力の大きさに比例しない。

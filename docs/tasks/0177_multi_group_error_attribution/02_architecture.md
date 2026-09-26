@@ -8,11 +8,11 @@
 | Created | 2026-09-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。 |
+| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 |
 
 ## 0. 前提
 
-- 要件: [`01_requirements.md`](01_requirements.md)（`approved`）
+- 要件: [`01_requirements.md`](01_requirements.md)（2026-09-26 に PR #1185 のレビューで改訂し、`draft` に戻った）
 - 本書の現状の記述と `file:line` は、コミット `8f7f7681` のコードを読んで確認したものである（それ以降、Go のコードは変更されていない）。
 - 用語（要件と同じ）:
   - 「外側の context」は、`ExecutionError.GroupName`・`CommandName` から作る `(group: ..., command: ...)` の表示を指す。
@@ -30,7 +30,7 @@
 - **不変条件は型で守る。** 新しい型のフィールドは非公開とし、生成は構築関数だけが行う。構築関数は呼び出し側の誤り（空の一覧・nil の要素・空の group 名・nil の原因）を panic で拒否する（CLAUDE.md「Enforce invariants with the type」「Reject, don't normalize」）。既存の `GroupStageError`（`internal/runner/group_stage.go:113-118`、構築関数 `:150-197`）と同じ形にそろえる。
 - **中断は実行全体の context の状態で判定する。** エラーが `context.Canceled`・`context.DeadlineExceeded` を含むかどうかは、どの context が取り消されたかを表さない。実行全体の context の状態は、中断されたかどうかを直接表す。
 - **設定の誤りは読み込みで拒否する。** 負の `output_size_limit` は、負の `timeout` と同じく設定の読み込みで拒否する。以後の処理は、上限が 0 以上であることを前提にできる。
-- **文言の互換を保つ。** 新しい型の `Error()` は、変更前の戻り値（`fmt.Errorf("failed to execute group %s: %w", ...)` と `errors.Join`）と同じ組み立て方の文言を返す。
+- **文言の互換を保つ。** 新しい型の `Error()` は、原因が 1 行であれば、変更前の戻り値（`fmt.Errorf("failed to execute group %s: %w", ...)` と `errors.Join`）と同じ組み立て方の文言を返す。原因が複数行のときは、続きの行を字下げして帰属を示す（AC-33）。
 
 ### 1.2 概念モデル
 
@@ -199,6 +199,14 @@ sequenceDiagram
            failed to execute group group-2: command cap-cmd in group group-2 failed: command execution failed: output capture error during execution phase: output size limit exceeded for '/path/to/out' (limit: 1048576 bytes)
 ```
 
+group-2 の原因がコマンドのタイムアウトのとき、原因は複数行になる（§3.1）。続きの行は group の行より深く字下げされる（途中の文言は例）。
+
+```
+  Details: error running commands: failed to execute group group-1: command fail-cmd in group group-1 failed: ...
+           failed to execute group group-2: command slow-cmd in group group-2 failed: command execution failed: context deadline exceeded
+             signal: killed
+```
+
 ## 3. コンポーネント設計
 
 ### 3.1 `internal/runner`: `GroupError` と `GroupErrors`（新規）
@@ -237,7 +245,11 @@ func newGroupErrors(errs []*GroupError) *GroupErrors
   - `ExecuteGroup` の本番実装が返すエラーは、この 2 型のどちらかを含む。コマンド実行前の失敗は `groupExecutionExitError` が `*GroupStageError` にそろえる（`internal/runner/group_executor.go:241-249`）。コマンド実行後の失敗は `executeSingleCommand` が `*CommandExecutionError` を返す（`:645-649`、`:668-672`）。
   - どちらも含まないエラー（テストのモックなど）では、command 名は空になる。
 - **構築関数の拒否。** `newGroupError` は空の group 名と nil の原因で、`newGroupErrors` は空の一覧と nil の要素で panic する。`newGroupErrors` は受け取ったスライスをコピーして持つ。
-- **`Error()`。** `GroupError.Error()` は `fmt` で `failed to execute group <group>: <原因の Error()>` を組み立てる。`GroupErrors.Error()` は各要素の `Error()` を `"\n"` でつなぐ。これは変更前の `fmt.Errorf("failed to execute group %s: %w", ...)` と `errors.Join` と同じ組み立て方である。AC-09 は「同じ原因から変更前の組み立て方で作った文言と一致する」と読む（原因の文言そのものは AC-16 で変わりうる）。
+- **`Error()`。** `GroupError.Error()` は `failed to execute group <group>: <原因の Error()>` を組み立てる。原因の `Error()` が複数行のときは、2 行目以降の各行の先頭に字下げ（空白 2 文字）を加える。1 行目は字下げしない。`GroupErrors.Error()` は各要素の `Error()` を `"\n"` でつなぐ。
+  - 原因が 1 行のとき、これは変更前の `fmt.Errorf("failed to execute group %s: %w", ...)` と `errors.Join` と同じ組み立て方である。AC-09 は「原因が 1 行のとき、同じ原因から変更前の組み立て方で作った文言と一致する」と読む（原因の文言そのものは AC-16 で変わりうる）。
+  - 原因が複数行のとき、各 group の行は字下げ無しで始まり、続きの行は字下げされるので、`GroupErrors.Error()` の各行がどの group に属するかは字下げで分かる。stderr の `Details:` では、`handleErrorCommon` が 2 行目以降のすべての行を `Details:` の幅だけ字下げする（`internal/logging/pre_execution_error.go:156-159`）ので、続きの行はその group の `failed to execute group <g>:` の行の下に、さらに 2 文字深く並ぶ（AC-33、§2.3 の例）。
+  - コマンドのタイムアウトの原因は複数行になる。executor は期限切れのとき、context のエラーと `Wait()` のエラーを `errors.Join` でつなぐ（`internal/runner/base/executor/command_lifecycle.go:890-891`）。書き込みエラーが優先されるとき（`:888-889`）はこの形にならない。kill・回収の失敗も `errors.Join` で加わる（`:788`）。
+  - コマンドのタイムアウトは、変更前は `failed to execute group <g>: ` を付けずにそのまま返されていた（`internal/runner/runner.go:422-424`）。変更後は他の失敗と同じく `GroupError` になるので、これが付く。AC-09・AC-11 はコマンドのタイムアウトを除く。外側の context は変わらない（AC-22、§3.3）。
 - **`Unwrap() []error`。** 各 `GroupError` を返す。`GroupError.Unwrap()` は原因を返す。これにより `errors.Is`・`errors.AsType` が各 group の原因に届く（AC-10）。`Unwrap() []error` は到達のためだけに持ち、「複数 group の失敗」の判定には使わない。
 - **`Errors()` はコピーを返す。** 呼び出し側が一覧を書き換えて不変条件を崩せないようにする。
 
@@ -265,7 +277,7 @@ func NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors
    - `ctx.Err()` を加えるのは、中断を戻り値で宣言するためである。利用者の Ctrl-C や systemd の停止はプロセスグループ全体（systemd では cgroup 全体）に届くので、コマンドの子プロセスも同じシグナルで終わる。子の終了が executor の中断の検出より先に観測されると、`ExecuteGroup` のエラーは `context.Canceled` を含まず「終了コード 130」などになる（`internal/runner/base/executor/command_lifecycle.go:687-693` の `select` はどちらが先に準備できたかに依存する）。`ctx.Err()` を加えれば、`errors.Is(err, context.Canceled)` が常に成り立ち、報告に `context canceled` が出る。`ExecuteGroup` のエラーも到達可能なまま残る。
    - それまでに集めた失敗は報告しない（要件の対象外「実行全体の中断時に集めた失敗を報告すること」、§4.4）。
 3. **実行前段の失敗（`*GroupStageError`、1 の対象を除く）を通知し、集める。** 現状の分岐（`:432-436`）のとおり。1 と 3 の振り分けは現状と同じであり、既存のテスト `TestRunner_StageDispatchPrefersStageOverVerificationError`・`TestRunner_FileVerificationStageKeepsExistingPath`（`internal/runner/runner_test.go`）が引き続き通ることで確かめる。中断された実行では 2 で返るので通知しない。この順序は現状と同じである（Task 0176 のテスト `TestRunner_CancellationSkipsStageNotification` が固定している）。
-4. **それ以外を集める。** コマンドのタイムアウト（エラーが `context.DeadlineExceeded` を含む）もここに入り、次の group へ進む（AC-19、AC-20）。
+4. **それ以外を集める。** コマンドのタイムアウト（エラーが `context.DeadlineExceeded` を含む）もここに入り、次の group へ進む（AC-19、AC-20）。後続の group は、ほかの失敗の後と同じく、それぞれの通知（実行前段の失敗の通知、`command_group_summary`）を行う（AC-32）。
 
 **変えないもの。**
 
@@ -297,7 +309,7 @@ func NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors
 - `UserFriendlyError`（`internal/logging/execution_error.go:22-27`）・`GetUserFriendlyMessage`（`:31-36`）・`formatCause`（`:45-58`）を削除する。
 - `PreExecutionError.Detail()`（`internal/logging/pre_execution_error.go:93-98`）と `HandleExecutionError`（`:243-276`）は、原因として `Err.Error()` をそのまま使う。
 - `HandleExecutionError` の「外側の context を `Message` の直後、原因の前に置く」順序と、`handleErrorCommon` の複数行の字下げ（`:156-159`）は変えない。
-- 複数 group の失敗では、`GroupErrors.Error()` が各 group の文言を改行でつなぐ。各 group の文言の**先頭の行**は `failed to execute group <group>: ` で始まる（AC-01、AC-02）。1 つの group の原因が複数行のときの扱いは §4.4 を参照。
+- 複数 group の失敗では、`GroupErrors.Error()` が各 group の文言を改行でつなぐ。各 group の文言の**先頭の行**は `failed to execute group <group>: ` で始まる（AC-01、AC-02）。1 つの group の原因が複数行のときは、続きの行が字下げされる（§3.1、AC-33）。
 
 `PreExecutionError.Detail()` の文言への影響は次のとおりである。
 
@@ -364,10 +376,18 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | 出力ファイルなし | 上限なし | 32 KiB（`nilWriterStderrLimit`: `internal/runner/base/executor/executor.go:33-36`） |
 
 - **すべての場合に同じ上限を使う（AC-28、AC-29）。** 出力ファイルの有無によらず、stdout・stderr の両方を、メモリ上では先頭と末尾の 32 KiB ずつに限って保持する。上限は現状の `nilWriterStderrLimit` と同じ値とし、定数は 1 つにまとめて用途に合う名前にする。上限が場合によって変わらなくなるので、`command_lifecycle.go:437-441` の出力ファイルの有無による分岐は無くなり、`newOutputPump`（`output_pump.go:49`）は stdout・stderr の両方に同じ上限を使う。
-- **保持の仕組み。** 既存の `boundedBuffer`（`output_pump.go:245-310`）をそのまま使う。先頭と末尾を保持し、間に `... omitting N bytes ...` を入れる。
-- **出力ファイルへの書き込みは変えない。** 上限はメモリ上の保持だけにかかり、`OutputWriter` にはすべてのバイトを渡す（`executor.go:678-693`）。
+- **保持の仕組み。** 既存の `boundedBuffer`（`output_pump.go:222-310`）を使う。書き込み時の保持（`Write`: `:253-277`）は変えず、先頭と末尾の最大 32 KiB ずつを保持する。
+- **省略の境目にかかる途中の行を捨てる。** 省略があったとき（上限を超えたとき）、`boundedBuffer` が保持した出力を返す処理（`Bytes`: `output_pump.go:291-310`）は、次の規則で先頭と末尾を切り詰めてから、間に `... omitting N bytes ...` を入れる。省略が無いとき（出力が先頭と末尾に収まったとき）は切り詰めない。
+  - 先頭は、保持した先頭の中の最後の改行までを残す（改行を含む）。先頭に改行が無ければ、先頭は何も残さない。
+  - 末尾は、保持した末尾の中の最初の改行の後ろからを残す。末尾に改行が無ければ、末尾は何も残さない。
+  - `N` は、書き込み時に保持しなかったバイト数に、ここで捨てたバイト数を加えたものとする。
+  - 目的は、redaction に途中で切れた値を渡さないことである。redaction（`SanitizeOutputForLogging`: `internal/runner/base/security/logging_security.go:30`、`RedactText`: `internal/redaction/redactor.go:272`）は、`key=value` の並びと値の形（トークンなど）を検出する。PEM の秘密鍵のブロックを除き、これらは 1 行の中に収まる。省略の境目で行が途中で切れると、境目にかかったトークンの断片や、`key=` を失った値の断片が残り、検出に一致せずに出力されうる。境目にかかる行を丸ごと捨てれば、残る行はすべて元の出力の完全な行になり、redaction は変更前と同じ単位で働く。
+  - この規則は、出力ファイルが無いときの stderr の保持（現状の 32 KiB の上限）にも適用されるので、その表示も変わる（§4.3）。
+- **出力ファイルへの書き込みは変えない。** 上限はメモリ上の保持だけにかかり、`OutputWriter` には、変更前と同じくすべてのバイトを渡す（`executor.go:678-693`）。出力ファイルに書かれる内容は、変更前と同じである（AC-28）。ただし、出力ファイルに出力の全体が残るのは、コマンドが成功し、出力が `output_size_limit` に収まったとき（または上限が 0 のとき）に限られる。これは変更前と同じである。
+  - 正の上限を超える書き込みは、`Capture.WriteOutput` が書き込まずに拒否する（`internal/runner/base/output/capture.go:42-58`）。
+  - コマンドが失敗すると（上限の超過を含む）、`NormalResourceManager.executeCommandWithOutput` は出力の一時ファイルを削除し、出力ファイルは作られない（`internal/runner/resource/normal_manager.go:270-275`）。
 - **出力ファイルが無いときの stderr の報告の条件は変えない。** 出力ファイルが無いとき、`Result.Stderr` はコマンドが異常終了したときだけ設定され、正常終了では空になる（`command_lifecycle.go:774-780`、`Cmd.Output` に合わせたもの）。stdout にはこの条件が無い。本タスクは保持の上限だけをそろえ、この非対称は変えない。
-- **出力ファイルが無いコマンドの stdout。** 上限を超えた部分は、どこにも残らなくなる。runner はコマンドの出力を自身の標準出力へ表示しない。この stdout を全体として保存していたのは、下の表の構造化ログだけである。出力の全体が必要なコマンドには出力ファイルを指定する（利用者向け文書に記載する、AC-31）。
+- **出力ファイルが無いコマンドの stdout。** 上限を超えた部分（と、上の規則で捨てた途中の行）は、どこにも残らなくなる。runner はコマンドの出力を自身の標準出力へ表示しない。この stdout を全体として保存していたのは、下の表の構造化ログだけである。出力の全体が必要なコマンドには出力ファイルを指定する。出力ファイルに全体が残るのは、上の項目の条件を満たすときである（利用者向け文書に記載する、AC-31）。
 - **`Cmd.Output` との違い。** 出力ファイルが無いときの stderr の上限は、`os/exec` の `Cmd.Output` が stderr に適用する上限に合わせたものである（`executor.go:33-35` のコメント）。`Cmd.Output` は stdout を全体で返すが、本タスクの後は stdout にも上限がかかる。executor の `Execute` を呼ぶのは runner の `NormalResourceManager.executeCommandInternal` だけ（`internal/runner/resource/normal_manager.go:299`）であり、stdout の全体を必要とする呼び出し元は無い。
 
 保持した出力を使う箇所と、変わる点は次のとおりである。いずれも全体を必要としない。
@@ -397,10 +417,10 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `internal/runner/config/errors.go` | 変更 | `ErrNegativeOutputSizeLimit` の追加 |
 | `internal/runner/config/validation.go` | 変更 | `ValidateOutputSizeLimits` の追加 |
 | `internal/runner/config/loader.go` | 変更 | テンプレートを合流した後に `ValidateOutputSizeLimits` を呼ぶ |
-| `internal/runner/base/executor/output_pump.go` | 変更 | `newOutputPump` が stdout・stderr に同じ上限を使う |
+| `internal/runner/base/executor/output_pump.go` | 変更 | `newOutputPump` が stdout・stderr に同じ上限を使う。`boundedBuffer.Bytes` が省略の境目にかかる途中の行を捨てる |
 | `internal/runner/base/executor/command_lifecycle.go` | 変更 | 出力ファイルの有無による上限の分岐を削除する |
 | `internal/runner/base/executor/executor.go` | 変更 | 保持の上限の定数をまとめる |
-| `docs/user/toml_config/04_global_level.ja.md` | 変更 | 「4.8 output_size_limit」に 0 が無制限であること・負の値は読み込みで拒否されること（AC-26）、メモリ上に保持する出力の上限と、出力の全体が必要なら出力ファイルを指定すること（AC-31）を追記。「4.1 timeout」の「動作の詳細」に、タイムアウト後も後続の group が実行されること、既知の制限としてプロセス（孫プロセスを含む）が残りうることを追記（AC-30） |
+| `docs/user/toml_config/04_global_level.ja.md` | 変更 | 「4.8 output_size_limit」に 0 が無制限であること・負の値は読み込みで拒否されること（AC-26）、メモリ上に保持する出力の上限と、出力の全体が必要なら出力ファイルを指定すること、出力ファイルに全体が残るのはコマンドが成功し出力が上限に収まったとき（または上限が 0 のとき）であること（AC-31）を追記。「4.1 timeout」の「動作の詳細」に、タイムアウト後も後続の group が実行されること、既知の制限としてプロセス（孫プロセスを含む）が残りうることを追記（AC-30） |
 | `docs/user/toml_config/04_global_level.md` | 変更 | 上記を `/mktrans` で反映 |
 
 変更する挙動を検証している既存のテスト（更新が必要）:
@@ -415,7 +435,9 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `internal/runner/runner_test.go:2831-2842` `TestRunner_CancellationSkipsStageNotification` | モックが `context.Canceled`・`DeadlineExceeded` を原因に持つ段階のエラーを返すと、実行前段の通知をしないこと | モックのエラーを返すときに実行全体の context を取り消すように変える。取り消さない場合は通知されることを別の行で検証する |
 | `internal/runner/base/executor/output_pump_test.go:343-345` | stderr の上限が出力ファイルの有無で 0（上限なし）と 32 KiB に分かれること | 出力ファイルの有無によらず stdout・stderr の上限が同じであることの検証に更新する |
 | `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の変更に合わせて更新する（コンパイラが検出する） |
-| `internal/runner/base/executor/executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` など、出力ファイルが無いときの stderr の上限のテスト | stderr が 32 KiB ずつに限られること | 変更不要（上限の値は変わらない）。32 KiB を超える stdout の全体を検証している既存のテストがあれば、実装時に `make test` で検出して更新する |
+| `internal/runner/base/executor/executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` | 改行を含まない 70 KiB の `x` の stderr が、ちょうど 32 KiB の先頭・省略の印・32 KiB の末尾になること | 省略の境目の途中の行を捨てる規則（§3.7）に合わせて更新する。改行を含まない出力では先頭も末尾も残らないので、期待値は省略の印だけ（省略したバイト数は全体）になる。先頭と末尾が残ることは、改行を含む出力の行を加えて確かめる |
+| `internal/runner/base/executor/output_pump_test.go` の `TestBoundedBuffer_KeepsPrefixAndSuffix`（`:49`）・`TestBoundedBuffer_WriteNeverFails`（`:120`） | 改行を含まない入力で、先頭・省略の印・末尾がバイト単位で保持されること | 同上。期待値を途中の行を捨てた形に更新し、改行が先頭・末尾の中にある行と無い行を表に加える |
+| 32 KiB を超える stdout の全体を検証している既存のテスト | （あれば）stdout の全体 | 実装時に `make test` で検出して更新する |
 
 `internal/runner/runner_test.go:660-735` の `TestRunner_CommandTimeoutBehavior` は `t.Skip` で常に飛ばされる（`:661`）ため、変更の検証には使わない。
 
@@ -431,13 +453,14 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 
 | 状況 | `Details:` の文言 |
 |---|---|
-| 失敗 1 件（`*CommandExecutionError`、`CaptureError` を含まない） | `error running commands (group: g, command: c): failed to execute group g: command c in group g failed: ...`（変更前と同じ、AC-11） |
+| 失敗 1 件（`*CommandExecutionError`、`CaptureError` を含まない、原因が 1 行、タイムアウトでない） | `error running commands (group: g, command: c): failed to execute group g: command c in group g failed: ...`（変更前と同じ、AC-11） |
 | 失敗 1 件（`*GroupStageError`、group レベル） | `error running commands (group: g): failed to execute group g: ...`（外側の context が新たに付く、AC-15） |
 | 失敗 1 件（`*GroupStageError`、command レベル） | `error running commands (group: g, command: c): failed to execute group g: ...`（同上） |
 | 失敗 2 件以上 | `error running commands: failed to execute group g1: ...` の後に、各 group の文言が `failed to execute group gN: ...` で続く（AC-01、AC-02、AC-05） |
 | 出力サイズ超過を含む原因 | 末尾が `output capture error during execution phase: output size limit exceeded for '<path>' (limit: <N> bytes)`（AC-16） |
 | 書き込み失敗（`ErrorTypeFileSystem`）を含む原因 | 末尾が `output capture error during execution phase: filesystem error for '<path>': <OS のエラー>`（変更前は `UserMessage` で OS のエラーが落ちていた、AC-03） |
-| コマンドのタイムアウト | 失敗の 1 件として扱われる（上の行と同じ形）。1 件だけなら外側の context は変更前と同じ（AC-22） |
+| コマンドのタイムアウト | 失敗の 1 件として扱われ、他の失敗と同じく `failed to execute group g: ` で始まる。変更前はこれが付かなかった（AC-09・AC-11 の例外）。原因は複数行になり、続きの行は下の行のとおり字下げされる。1 件だけなら外側の context は変更前と同じ（AC-22） |
+| 原因が複数行の group | 先頭の行は `failed to execute group g: ...`、続きの行は `Details:` の字下げに加えて空白 2 文字深く字下げされる（§3.1、§2.3 の例、AC-33） |
 | 実行全体の中断 | 先頭の行が `context canceled`、続く行が中断時の `ExecuteGroup` のエラー（§3.2 の 2）。外側の context は §3.3 の 2 で決まる |
 | 負の `output_size_limit` | 設定の読み込みエラー。`ErrNegativeOutputSizeLimit` の文言に、値と設定箇所が続く（AC-27） |
 
@@ -453,12 +476,15 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | サイズ超過の `Error()`（`Command failed` などの slog の `error` 属性にも出る） | `... size limit exceeded for '<path>': output size limit exceeded` | `... output size limit exceeded for '<path>' (limit: <N> bytes)` |
 | 失敗 1 件が `*GroupStageError` のときの `Details:` | `error running commands: ...` | `error running commands (group: g[, command: c]): ...` |
 | コマンドのタイムアウト後 | 残りの group を実行せず、先の失敗を報告しない | 残りの group を実行し、すべての失敗を報告する |
+| コマンドのタイムアウトの報告の文言（`Details:`・`error_message`・`Error()`） | `error running commands (group: g, command: c): command c in group g failed: command execution failed: context deadline exceeded` の後に続きの行 | `error running commands (group: g, command: c): failed to execute group g: command c in group g failed: ...`。続きの行は字下げされる。外側の context は変わらない |
+| コマンドのタイムアウト後の Slack 通知 | 後続の group は実行されないので、その通知は無い | 後続の各 group が、ほかの失敗の後と同じく、実行前段の失敗の通知と `command_group_summary` を送る（`internal/runner/group_executor.go:175-180`、AC-32）。通知の件数が増える |
+| 原因が複数行の group の `Error()`・`Details:` | 続きの行は字下げされず、`Details:` では他の group の行と同じ字下げで並ぶ | 続きの行は group の行より 2 文字深く字下げされる（AC-33）。原因が 1 行の group の文言は変わらない |
 | 1 回の実行にかかる時間 | タイムアウトが起きた時点で実行が終わる | タイムアウト後も残りの group を実行するので、最長で全コマンドの `timeout` の合計まで延びうる。cron・systemd でタイムアウトを実行時間の上限として使っている運用は、実行の重なりや `TimeoutStartSec` を見直す必要がありうる |
 | 実行全体の中断時の報告 | 中断の検出の仕方によって `context canceled` の場合と、コマンドの失敗（終了コード 130 など）だけの場合がある | 常に `context canceled` を含む |
 | group ファイル検証中の中断 | 検証の失敗を通知し、次の group の前の判定で `context canceled` だけを返す。最後の group だった場合は nil を返し、中断された実行が成功として報告されていた | 検証の失敗を通知し、`context canceled` と検証の失敗を合わせて返す。検証の失敗は通知と報告の両方に出る |
 | `output_size_limit = 0` のコマンド | 出力を 1 バイトでも書くと、その時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 出力の大きさによらず成功する |
 | 負の `output_size_limit` を含む設定 | 読み込みは成功する。該当するコマンドは、出力を 1 バイトでも書くとその時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 読み込みで拒否され、どの group も実行されない（dry-run を含む） |
-| コマンドのメモリ上の出力 | stdout は全体を保持（出力ファイルありは最大 `output_size_limit`、なしは上限なし）。stderr は出力ファイルありなら全体、なしなら 32 KiB ずつ。`command_group_summary` の構造化ログの `output`、`Command failed` の `stderr`、監査ログに、保持した全体が出る | すべて先頭と末尾の 32 KiB ずつを保持（§3.7）。出力ファイルが無いコマンドの stdout で上限を超えた部分は、どこにも残らない |
+| コマンドのメモリ上の出力 | stdout は全体を保持（出力ファイルありは最大 `output_size_limit`、なしは上限なし）。stderr は出力ファイルありなら全体、なしなら 32 KiB ずつで、省略の境目では行の途中で切れる。`command_group_summary` の構造化ログの `output`、`Command failed` の `stderr`、監査ログに、保持した全体が出る | すべて先頭と末尾の 32 KiB ずつを保持し、省略があれば、境目にかかる途中の行を捨てる（§3.7）。改行を含まない出力では、省略の印だけが残る。出力ファイルが無いコマンドの stdout で上限を超えた部分は、どこにも残らない |
 
 `output size limit exceeded for '<path>'` という部分文字列は、変更前の stderr・`error_message` にも変更後にも現れる。
 
@@ -466,7 +492,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 
 - **実行全体の中断では、集めた失敗が報告に出ない。** §3.2 のとおり、実行全体の context が取り消されると、`executeGroups` は集めた失敗を捨てて返す。これは要件の対象外（「実行全体の中断時に集めた失敗を報告すること」）である。
 - **タイムアウトしたコマンドのプロセスが残りうる。** executor はタイムアウトのとき直接の子プロセスだけを kill し、プロセスグループへの kill は行わない（`internal/runner/base/executor` に `Setpgid`・`Kill(-pgid)` は無い）。子を kill・回収できなかった場合は `ErrKillAfterCancel`・`ErrChildNotReaped` がエラーに加わる（`command_lifecycle.go:741-742`、`:912`、`:948`）。いずれの場合も、残ったプロセスと後続の group が並行して動きうる。要件の決定事項「タイムアウト後に残るプロセスは受け入れる」により、これを受け入れ、利用者向け文書に記載する（AC-30）。
-- **1 つの group の原因が複数行のとき、続きの行は `failed to execute group` で始まらない。** executor はコマンドのエラーに kill の失敗などを `errors.Join` で加えることがある（`command_lifecycle.go:788`）。そのとき `GroupError.Error()` は複数行になり、続きの行は `handleErrorCommon` によって他の group の行と同じ字下げで出る。帰属は、各 group の文言の先頭の行で判別する。続きの行を `GroupError.Error()` で字下げすると `Error()` の文言が変わり、AC-09 に反するので行わない。
+- **複数行の値が省略の境目をまたぐと、redaction されないことがある。** §3.7 の規則は、境目にかかる行を捨てることで 1 行に収まる値を守る。PEM の秘密鍵のブロックのように複数行にわたる値は、`BEGIN` の行と `END` の行の片方だけが残ると値の形の検出（`internal/redaction/value_detector.go:34`）に一致せず、残った行が出力されうる。これは出力ファイルが無いときの stderr（現状の 32 KiB の上限）でも同じである。行をまたぐ値の扱いは本タスクでは変えない。
 - **dry-run の出力の分析は、上限を常に 0 と表示する。** `AnalyzeOutput` は `MaxSizeLimit` を設定しない（`internal/runner/base/output/manager.go:232` 以降）ため、dry-run の `max_size_limit` は常に 0 である（`internal/runner/resource/dryrun_manager.go:746`）。0 が無制限を意味すると利用者向け文書に明記した後は、dry-run が常に表示するこの 0 も無制限を意味すると読めてしまう。本タスクでは変えず、[#1184](https://github.com/isseis/go-safe-cmd-runner/issues/1184) で扱う。
 
 ### 4.5 失敗時の扱い
@@ -483,8 +509,8 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 |---|---|
 | stderr の `Details:` | `handleErrorCommon` が直接書く（`internal/logging/pre_execution_error.go:148-174`）。redaction は通らず、これは変更前と同じである。`CaptureError` を含む失敗では、変更前は `UserMessage` に隠れていた次の情報が新たに出る。書き込み失敗の OS のエラー、サイズ超過の上限値、原因のチェーン全体（`ErrKillAfterCancel`・`ErrChildNotReaped` など、別の uid でプロセスが残っている可能性を示すエラーを含む: `internal/runner/base/executor/command_lifecycle.go:788`）。最後のものは、利用者が気付くべき事象が隠れなくなるという改善である。同じエラーは変更前から `Command failed` の構造化ログ（`internal/runner/group_executor.go:639-643` の `error` 属性）に出ている |
 | 構造化ログの `error_message` | `RedactingHandler` を通る点は変わらない（§5.2） |
-| 構造化ログ・監査ログの `stdout`・`stderr`・`output` | すべてのコマンドで、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きるので、先頭と末尾の境目にかかった機密の値は途中で切れ、値の形の検出に一致しなくなることがある。また `key=` とその値の間に省略の印が入ると、値が key と結び付かなくなる。出力ファイルが無いときの stderr（32 KiB の上限）は現状でも同じ扱いであり、新しい種類の問題ではない。出力ファイルには省略の無い全体が書かれ、redaction の対象ではない点は変わらない |
-| Slack | 実行エラーのレコードは `slack_notify=false` のまま（`internal/logging/pre_execution_error.go:270`）で、Slack へは送らない（AC-12）。実行前エラーの Slack 通知の本文（`Detail()`）は、§3.4 のとおり `CaptureError` による変化を受けない。group ファイル検証の失敗の通知は、実行全体の中断と重なっても行う（§3.2 の 1） |
+| 構造化ログ・監査ログの `stdout`・`stderr`・`output` | すべてのコマンドで、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きる。省略の境目で行が途中で切れると、境目にかかった機密の値の断片が値の形の検出に一致しなくなり、また `key=` を失った値の断片が key と結び付かなくなって、redaction されずに出力されうる。これを防ぐため、省略があったときは境目にかかる途中の行を捨て、完全な行だけを残す（§3.7）。この規則は現状の出力ファイルが無いときの stderr にも適用されるので、その点は改善になる。複数行にわたる値（PEM のブロック）は §4.4 の制限が残る。出力ファイルに書かれる内容は変わらず、redaction の対象ではない点も変わらない |
+| Slack | 実行エラーのレコードは `slack_notify=false` のまま（`internal/logging/pre_execution_error.go:270`）で、Slack へは送らない（AC-12）。コマンドのタイムアウトの後は、後続の group の通知（実行前段の失敗の通知と `command_group_summary`）が加わる（AC-32）。これらは既存の通知と同じ経路・同じ redaction を通り、新しい種類の本文は送らない。実行前エラーの Slack 通知の本文（`Detail()`）は、§3.4 のとおり `CaptureError` による変化を受けない。group ファイル検証の失敗の通知は、実行全体の中断と重なっても行う（§3.2 の 1） |
 
 ### 5.2 redaction による帰属の喪失
 
@@ -619,7 +645,9 @@ flowchart LR
 ### 7.1 単体テスト
 
 - **`GroupError`・`GroupErrors`（`internal/runner`）**
-  - `Error()` が、同じ原因から `fmt.Errorf("failed to execute group %s: %w", ...)`・`errors.Join(...)` で作った値の `Error()` と一致すること（1 件・2 件、AC-09）。期待値をリテラルで書かず、変更前の組み立て方で作った値と比べる。
+  - 原因が 1 行のとき、`Error()` が、同じ原因から `fmt.Errorf("failed to execute group %s: %w", ...)`・`errors.Join(...)` で作った値の `Error()` と一致すること（1 件・2 件、AC-09）。期待値をリテラルで書かず、変更前の組み立て方で作った値と比べる。この一致は原因が 1 行のときだけ確かめる。
+  - 原因が複数行のとき（`errors.Join` で 2 行にした原因）、`GroupError.Error()` の 1 行目は `failed to execute group <g>: ` で始まり、2 行目以降はすべて空白 2 文字で始まること。2 件の `GroupErrors.Error()` で、字下げの無い行がちょうど各 group の先頭の行であること（AC-33）。
+  - タイムアウトの形の原因（`context.DeadlineExceeded` と `Wait()` のエラーを `errors.Join` でつないだものを `*CommandExecutionError` がラップしたもの）で、`Error()` が `failed to execute group <g>: ` で始まり、続きの行が字下げされること（AC-09・AC-11 の例外、AC-33）。
   - `errors.Is`・`errors.AsType[*CommandExecutionError]`・`errors.AsType[*output.CaptureError]` が 1 件・2 件の各原因に届くこと（AC-10）。
   - command 名が `*CommandExecutionError`・`*GroupStageError`（command レベル）から読まれ、どちらも無ければ空になること。
   - 構築関数が空の group 名・nil の原因・空の一覧・nil の要素で panic すること。`newGroupErrors` に渡したスライスや `Errors()` の戻り値を書き換えても、保持している一覧が変わらないこと。
@@ -628,6 +656,7 @@ flowchart LR
   - 実行全体の context を取り消さずに、group-1 が `context.DeadlineExceeded` を含む `*CommandExecutionError` を返すと、group-2 が実行され、戻り値が group-1 の要素を含む `*GroupErrors` で、`errors.Is(err, context.DeadlineExceeded)` が成り立つこと（AC-19）。group-1 が 0 以外の終了コードの失敗、group-2 がタイムアウトのとき、両方が要素になること（AC-20 の前提）。
   - group-1 のモックが実行全体の context を取り消してから `context.Canceled` を含まないエラーを返すと、group-2 が実行されず、戻り値が `*GroupErrors` でなく、`errors.Is(err, context.Canceled)` が成り立ち、モックのエラーにも届くこと（AC-21。エラーの中身ではなく context の状態で判定していることを確かめる）。
   - group-1 のモックが実行全体の context を取り消してから `*verification.Error` を返すと、group ファイル検証の失敗の通知が記録されること（§3.2 の 1）。
+- **タイムアウト後の group の通知（`internal/runner`）**: `WithGroupNotificationFunc`（`internal/runner/group_executor_options.go:35`）で通知を記録する実際の `GroupExecutor` を使い、group-1 のコマンドを自身の `timeout` でタイムアウトさせ、group-2 を正常に実行させる。group-1 と group-2 の両方の `command_group_summary` の通知が記録されることを確かめる（AC-32）。変更前の中断の判定（エラーの中身による判定）に戻すと、group-2 の通知が記録されずに失敗する。
 - **`executionErrorContext`（`cmd/runner`）**: 次の行を持つ表にする（AC-05、AC-08、AC-11、AC-15、AC-22）。
   - `*GroupErrors` 1 件（`*CommandExecutionError`）
   - `*GroupErrors` 1 件（group レベルの `*GroupStageError`、command 名は空）
@@ -642,6 +671,10 @@ flowchart LR
   - `MaxSize` が 0 の `Capture.WriteOutput` が、大きなデータでもエラーを返さないこと（AC-23）。
   - `newSizeLimitError` が 0 と負の上限値で panic すること（AC-25）。
 - **`ValidateOutputSizeLimits`（`internal/runner/config`）**: グローバル・テンプレート・コマンドの負の値がそれぞれ `ErrNegativeOutputSizeLimit` で拒否され、エラーに値と設定箇所が含まれること。0 と正の値と未指定は受け入れること。`Loader.LoadConfig` が、主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値の両方を拒否すること（AC-27）。
+- **`boundedBuffer`（`internal/runner/base/executor`）**: 省略の境目の途中の行を捨てること（§3.7）を表で確かめる。
+  - 先頭と末尾の中に改行がある場合、残る先頭は改行で終わり、残る末尾は行の始まりから始まり、省略の印のバイト数が捨てた分を含むこと。
+  - 先頭または末尾に改行が無い場合、その側は何も残らないこと。省略が無い場合は切り詰めないこと。
+  - 機密の値が境目をまたぐ場合: `password=<値>` の行と、値の形で検出されるトークン（例: GitHub のトークンの形）の行を、それぞれ先頭と省略の境目、省略と末尾の境目にかかるように書き、保持した出力に値のどの断片も含まれないことを確かめる。まず、同じ断片を単独で redaction に渡しても隠されないこと（断片が検出に一致しないこと）を確かめ、テストが途中の行を捨てる規則だけを検証していることを示す（CLAUDE.md「A layered path needs inputs only one layer can handle」）。
 - **出力ポンプ・executor（`internal/runner/base/executor`）**: 出力ファイルがある場合と無い場合のそれぞれで、上限を超える stdout・stderr を書くと、保持される出力は上限付きで先頭と末尾と省略の印を含むこと（AC-28、AC-29）。出力ファイルがある場合は、`OutputWriter` にすべてのバイトが渡ること。出力ファイルが無い場合は、実際のコマンドに 32 KiB を超える stdout を書かせて `Result.Stdout` を確かめること（正常終了、つまり終了コード 0 の場合を必ず含める）。stderr は正常終了で報告されない（`TestExecute_NilOutputWriter_LargeStderrStillSucceeds`）のに対し stdout は正常終了でも報告されるので、上限付きで空でも全体でもないことも確かめること。
 - **`logging`**
   - `HandleExecutionError` と `Detail()` が、`friendlyTestError` について `UserMessage()` ではなく `Error()` の文言を出すこと（AC-06）。
@@ -702,8 +735,8 @@ flowchart LR
 | AC-06 | §3.4、§3.5 | §7.1（`logging`）、§7.4 |
 | AC-07 | §3.1、§3.2 | §7.1（`executeGroups`） |
 | AC-08 | §3.3、§6.1 | §7.1、§7.4 |
-| AC-09, AC-10 | §3.1 | §7.1（`GroupError`・`GroupErrors`） |
-| AC-11 | §3.3、§4.2 | §7.1、§7.2 |
+| AC-09, AC-10 | §3.1、§4.2 | §7.1（`GroupError`・`GroupErrors`） |
+| AC-11 | §3.1、§3.3、§4.2 | §7.1、§7.2 |
 | AC-12 | §5.1、§7.3 | §7.3 |
 | AC-13 | §8 | 各コミットの `make test`・`make lint` |
 | AC-14 | §3.8 | コミットメッセージ |
@@ -717,9 +750,11 @@ flowchart LR
 | AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`） |
 | AC-26 | §3.8 | §7.4 |
 | AC-27 | §3.6 | §7.1（`ValidateOutputSizeLimits`）、§7.2 |
-| AC-28, AC-29 | §3.7 | §7.1（出力ポンプ） |
+| AC-28, AC-29 | §3.7、§5.1 | §7.1（`boundedBuffer`、出力ポンプ）、§7.2 |
 | AC-30 | §3.8、§4.4 | §7.4 |
 | AC-31 | §3.7、§3.8 | §7.4 |
+| AC-32 | §3.2、§4.3、§5.1 | §7.1（タイムアウト後の group の通知） |
+| AC-33 | §2.3、§3.1、§4.2、§4.3 | §7.1（`GroupError`・`GroupErrors`） |
 
 ## 付録 A. 他の設計文書との関係
 
