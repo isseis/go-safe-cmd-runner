@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-26 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-09-26 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
@@ -145,16 +145,16 @@
 
 **作業内容**:
 
-- [ ] `group_errors.go` に [02_architecture.md](02_architecture.md) §3.1 の `GroupError`・`GroupErrors` を追加する。フィールドは非公開、アクセサは `GroupName()`・`CommandName()`、`GroupError.Error()` は原因の 2 行目以降を字下げし、`GroupErrors.Error()` は各要素を `"\n"` でつなぐ。`Unwrap()` は各 `GroupError`／原因を返す。
-- [ ] `newGroupError` は原因のチェーンから command 名を型で読み（`*CommandExecutionError` を優先、無ければ `*GroupStageError`）、空の group 名と nil の原因で panic する。`newGroupErrors` は空の一覧と nil の要素で panic し、受け取ったスライスをコピーして持つ。`Errors()` はコピーを返す。
-- [ ] `executeGroups`（`internal/runner/runner.go:406-464`）を、失敗を `newGroupError(group.Name, err)` で集め、1 件以上なら `newGroupErrors` で返し、0 件なら `nil` を返す形に変える。単一失敗の分岐（`:457-459`）と `errors.Join`（`:463`）を削除する。Phase 1 では中断の判定（`:422-424`）は変えない。
-- [ ] `executionErrorContext`（`cmd/runner/main.go:729-737`）を §3.3 の順に変える。1. `*runner.GroupErrors` を含めば件数で決める。2. `*runner.CommandExecutionError` を含めばその名前。3. それ以外は空。`Unwrap() []error` の判定（`:730-732`）を削除する。
-- [ ] `internal/runner/test_helpers.go` に `NewGroupErrorForTest(group, command string, err error) *GroupError` と `NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors` を追加する。
-- [ ] `internal/runner/group_errors_test.go` に次を追加する。`TestGroupError_ErrorMatchesLegacyAssembly`（原因が 1 行のとき、同じ原因に変更前の組み立て方を適用した文言と一致すること。1 件・2 件）、`TestGroupError_IndentsContinuationLines`、`TestGroupErrors_UnwrapReachesEachCause`、`TestGroupError_ReadsCommandNameFromCause`、`TestGroupErrors_ConstructorsRejectInvalidInput`、`TestGroupErrors_ErrorsReturnsCopy`。
-- [ ] `internal/runner/runner_test.go` の `TestRunner_ExecuteAll_ComplexErrorScenarios` を、単一失敗が `*GroupErrors`（1 件）で group 名が `GroupSpec.Name` であることの検証に置き換える。`*CommandExecutionError` への到達は残す。`TestRunner_ExecuteGroupsBuildsGroupErrors` を追加し、0 件で `err == nil`、1 件・2 件で `*GroupErrors` を返すことを確かめる。
-- [ ] `internal/runner/group_errors_guard_test.go` に `TestProductionGroupErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を構築関数の外で拒否し、`.errs`・`.group`・`.command`・`.err` への代入・インクリメントは `internal/runner` 直下の本番ファイルだけを走査して拒否する。検出器自身は `TestGroupErrorConstructionCheckRecognizesForms` で各形を固定する）を追加する。`Unwrap() []error` の形の判定を禁じるガードは、`formatCause`（`internal/logging/execution_error.go:46`）が同じ判定を持つため Phase 2 で追加する。
-- [ ] `cmd/runner/main_test.go` の `TestExecutionErrorContext` を、[02_architecture.md](02_architecture.md) §7.1 の行（`*GroupErrors` 1 件の 4 種、2 件、実行全体の中断、対象外のエラー）に置き換える。
-- [ ] `cmd/runner/integration_attribution_test.go`（`//go:build test`）に `TestIntegration_SingleGroupStageFailureGetsOuterContext` を追加する。group の展開が失敗する設定を `runMainWithSlackMock` で実行し、stderr の `Details:` の行と構造化ログの `error_message` が §3.3 の外側の context を含む文言であることを確かめる。
+- [x] `group_errors.go` に [02_architecture.md](02_architecture.md) §3.1 の `GroupError`・`GroupErrors` を追加する。フィールドは非公開、アクセサは `GroupName()`・`CommandName()`、`GroupError.Error()` は原因の 2 行目以降を字下げし、`GroupErrors.Error()` は各要素を `"\n"` でつなぐ。`Unwrap()` は各 `GroupError`／原因を返す。
+- [x] `newGroupError` は原因のチェーンから command 名を型で読み（`*CommandExecutionError` を優先、無ければ `*GroupStageError`）、空の group 名と nil の原因で panic する。`newGroupErrors` は空の一覧と nil の要素で panic し、受け取ったスライスをコピーして持つ。`Errors()` はコピーを返す。
+- [x] `executeGroups`（`internal/runner/runner.go:406-464`）を、失敗を `newGroupError(group.Name, err)` で集め、1 件以上なら `newGroupErrors` で返し、0 件なら `nil` を返す形に変える。単一失敗の分岐（`:457-459`）と `errors.Join`（`:463`）を削除する。Phase 1 では中断の判定（`:422-424`）は変えない。
+- [x] `executionErrorContext`（`cmd/runner/main.go:729-737`）を §3.3 の順に変える。1. `*runner.GroupErrors` を含めば件数で決める。2. `*runner.CommandExecutionError` を含めばその名前。3. それ以外は空。`Unwrap() []error` の判定（`:730-732`）を削除する。
+- [x] `internal/runner/test_helpers.go` に `NewGroupErrorForTest(group, command string, err error) *GroupError` と `NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors` を追加する。
+- [x] `internal/runner/group_errors_test.go` に次を追加する。`TestGroupError_ErrorMatchesLegacyAssembly`（原因が 1 行のとき、同じ原因に変更前の組み立て方を適用した文言と一致すること。1 件・2 件）、`TestGroupError_IndentsContinuationLines`、`TestGroupErrors_UnwrapReachesEachCause`、`TestGroupError_ReadsCommandNameFromCause`、`TestGroupErrors_ConstructorsRejectInvalidInput`、`TestGroupErrors_ErrorsReturnsCopy`。
+- [x] `internal/runner/runner_test.go` の `TestRunner_ExecuteAll_ComplexErrorScenarios` を、単一失敗が `*GroupErrors`（1 件）で group 名が `GroupSpec.Name` であることの検証に置き換える。`*CommandExecutionError` への到達は残す。`TestRunner_ExecuteGroupsBuildsGroupErrors` を追加し、0 件で `err == nil`、1 件・2 件で `*GroupErrors` を返すことを確かめる。
+- [x] `internal/runner/group_errors_guard_test.go` に `TestProductionGroupErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を構築関数の外で拒否し、`.errs`・`.group`・`.command`・`.err` への代入・インクリメントは `internal/runner` 直下の本番ファイルだけを走査して拒否する。検出器自身は `TestGroupErrorConstructionCheckRecognizesForms` で各形を固定する）を追加する。`Unwrap() []error` の形の判定を禁じるガードは、`formatCause`（`internal/logging/execution_error.go:46`）が同じ判定を持つため Phase 2 で追加する。
+- [x] `cmd/runner/main_test.go` の `TestExecutionErrorContext` を、[02_architecture.md](02_architecture.md) §7.1 の行（`*GroupErrors` 1 件の 4 種、2 件、実行全体の中断、対象外のエラー）に置き換える。
+- [x] `cmd/runner/integration_attribution_test.go`（`//go:build test`）に `TestIntegration_SingleGroupStageFailureGetsOuterContext` を追加する。group の展開が失敗する設定を `runMainWithSlackMock` で実行し、stderr の `Details:` の行と構造化ログの `error_message` が §3.3 の外側の context を含む文言であることを確かめる。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestGroupError_IndentsContinuationLines` が字下げを外すと失敗すること、`TestExecutionErrorContext` が判定 1・2 の順序を逆にすると失敗すること、`TestProductionGroupErrorLiteralsUseConstructors` が `runner.go` に各形の直接リテラルを置く／`.group` に代入すると失敗し、`internal/runner/base/executor` の既存の `.stage`・`.err` への代入には反応しないことを確認する。
 
@@ -170,8 +170,8 @@
 
 **判定理由**: 新しいエラー型とその不変条件、返り値の型の変更、複数箇所をまたぐ呼び出し側の切替、構築の AST ガードを含む。段階的な raise/lower は無く panel-mode トリガーには該当しない。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
