@@ -8,7 +8,7 @@
 | Created | 2026-09-25 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 方針を変更した。各行に context を付ける表示側の変更をやめ、`UserFriendlyError` を削除して原因の文言を常にそのまま出すことで帰属を保つ。専用のエラー型は、`Unwrap() []error` の形による判定を置き換える役割に絞った。同日、対象外としていた `CaptureError.Error()` の文言の整理と `GetType`・`GetPath` の削除を対象に含めた（AC-16〜AC-18）。 |
+| Comments | 2026-09-26: 方針を変更した。各行に context を付ける表示側の変更をやめ、`UserFriendlyError` を削除して原因の文言を常にそのまま出すことで帰属を保つ。専用のエラー型は、`Unwrap() []error` の形による判定を置き換える役割に絞った。同日、対象外としていた `CaptureError.Error()` の文言の整理と `GetType`・`GetPath` の削除を対象に含めた（AC-16〜AC-18）。新たに対象外とした 2 件は #1180・#1181 として起票した。 |
 
 ## 関連 Issue
 
@@ -80,8 +80,8 @@ group の失敗は次の順に扱われる。
 
 ### 対象外
 
-- **出力サイズ超過以外の `CaptureError` の文言。** 例えば権限の失敗は `permission denied for '<path>': permission denied` と繰り返しを含みうるが、繰り返すかどうかは `Cause`（OS のエラーなど、外から来る値）の文言しだいである。文言を比べて省く処理はエラー文字列から挙動を選ぶことになる（CLAUDE.md「Declare, don't infer」）ので行わない。出力サイズ超過は `Cause` が常にパッケージ自身のセンチネルであり、繰り返しが型から確定するので対象にする。
-- **`output.ErrOutputSizeLimitExceeded`（`manager.go`）と `ErrOutputSizeExceeded` の重複。** 同じ文言の 2 つのセンチネルがあるが、使われる経路が異なり、本 issue とは独立しているので扱わない。
+- **出力サイズ超過以外の `CaptureError`。** 本番コードが生成するのは出力サイズ超過のほかに `ErrorTypeFileSystem`（`Cause` は OS のエラー）だけで、その文言に繰り返しはない。本番で生成されない `ErrorType`・`ExecutionPhase` の整理は [#1180](https://github.com/isseis/go-safe-cmd-runner/issues/1180) で扱う。
+- **`output.ErrOutputSizeLimitExceeded`（`manager.go`）と `ErrOutputSizeExceeded` の重複。** 同じ文言の 2 つのセンチネルがある。前者を返す `DefaultOutputCaptureManager.WriteOutput` は本番コードから呼ばれていない。本 issue とは独立しているので [#1181](https://github.com/isseis/go-safe-cmd-runner/issues/1181) で扱う。
 - **各行に `(group: ..., command: ...)` を付ける表示。** 原因の文言が `failed to execute group <name>` を含むので不要である。
 - **`ExecutionError.GroupName`・`CommandName` に複数の group を持たせること。** 決定事項「複数失敗時の `GroupName` は空のまま」を参照。
 - **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、通知の内容・件数は変えない。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
