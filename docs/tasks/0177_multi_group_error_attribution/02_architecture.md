@@ -8,11 +8,11 @@
 | Created | 2026-09-26 |
 | Review date | 2026-09-26 |
 | Reviewer | isseis |
-| Comments | 2026-09-26: 実装計画の作成中に、§7.2 の AC-29 の検証手順と §10 の AC-05 のテスト対応を修正した。前者は 1 つの監査記録からは `user_group_command_failure` と `command_group_summary` の 2 種類の Slack メッセージを作れないため記録ごとの観測経路を明記し、後者は外側の context の有無を `internal/runner` の統合テストでは検証できないため `cmd/runner` の判定テストに限った。設計判断の変更はない（編集上の修正）。 |
+| Comments | 2026-09-26: 実装計画の作成中とそのレビューで、検証の対応を 3 点修正した。§7.2 の AC-29 は 1 つの監査記録からは `user_group_command_failure` と `command_group_summary` の 2 種類の Slack メッセージを作れないため記録ごとの観測経路を明記した。§10 の AC-05 は外側の context の有無を `internal/runner` の統合テストでは検証できないため `cmd/runner` の判定テストに限った。§7.1・§10 の AC-03 は `internal/logging` のテストから `internal/runner/base/output` を import できない（依存が循環する）ため `internal/runner` の統合テストに移した。あわせて §0 の要件の状態の記述を現状（`approved`）に合わせた。設計判断の変更はない（編集上の修正）。 |
 
 ## 0. 前提
 
-- 要件: [`01_requirements.md`](01_requirements.md)（2026-09-26 に PR #1185 のレビューで改訂し、`draft` に戻った）
+- 要件: [`01_requirements.md`](01_requirements.md)（2026-09-26 に PR #1185 のレビューを経て改訂され、再承認された）
 - 本書の現状の記述と `file:line` は、コミット `8f7f7681` のコードを読んで確認したものである（それ以降、Go のコードは変更されていない）。
 - 用語（要件と同じ）:
   - 「外側の context」は、`ExecutionError.GroupName`・`CommandName` から作る `(group: ..., command: ...)` の表示を指す。
@@ -748,7 +748,8 @@ flowchart LR
 - **出力ポンプ・executor（`internal/runner/base/executor`）**: 出力ファイルがある場合と無い場合のそれぞれで、上限を超える stdout・stderr を書くと、保持される出力は上限付きで、先頭の完全な行と省略の印だけを含み、末尾を含まないこと（AC-28、AC-29）。出力ファイルがある場合は、`OutputWriter` にすべてのバイトが渡ること。出力ファイルが無い場合は、実際のコマンドに 64 KiB を超える stdout を書かせて `Result.Stdout` を確かめること（正常終了、つまり終了コード 0 の場合を必ず含める）。stderr は正常終了で報告されない（`TestExecute_NilOutputWriter_LargeStderrStillSucceeds`）のに対し stdout は正常終了でも報告されるので、上限付きで空でも全体でもないことも確かめること。
 - **`logging`**
   - `HandleExecutionError` と `Detail()` が、`friendlyTestError` について `UserMessage()` ではなく `Error()` の文言を出すこと（AC-06）。
-  - `HandleExecutionError` に `ErrorTypeFileSystem` の `*CaptureError`（`Cause` あり）を含む原因を渡すと、`Details:` に `Cause` の文言が出ること（AC-03）。
+- **`HandleExecutionError` の `CaptureError` を含む原因（`internal/runner` の統合テスト）**
+  - `ErrorTypeFileSystem` の `*CaptureError`（`Cause` あり）を含む原因を `HandleExecutionError` に渡すと、`Details:` に `Cause` の文言が出ること（AC-03）。`internal/logging` のテストは `internal/runner/base/output` を import できない（`logging` から `output` への依存が `output → executor → audit → logging` で循環する）ため、この検証は `internal/runner` の統合テストに置く。
 
 ### 7.2 統合テスト
 
@@ -804,7 +805,7 @@ flowchart LR
 | AC | 設計の該当箇所 | テスト |
 |---|---|---|
 | AC-01, AC-02 | §3.2、§3.4、§4.2 | §7.2 |
-| AC-03 | §3.4、§4.2 | §7.1（`logging`） |
+| AC-03 | §3.4、§4.2 | §7.1（`internal/runner` の統合テスト。`internal/logging` のテストから `internal/runner/base/output` を import すると依存が循環するため） |
 | AC-04 | §4.2、§5.2 | §7.2 |
 | AC-05 | §3.3、§6.1 | §7.1（`executionErrorContext`。外側の context の有無を決めるのは `cmd/runner` のこの判定であり、`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため検証できない） |
 | AC-06 | §3.4、§3.5 | §7.1（`logging`）、§7.4 |
