@@ -4,15 +4,15 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-26 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 同日、コードレビューを受けて §3.3・§4.2・§4.3 の AC-22 の記述と、§3.7 の表のデバッグログ・Slack の行（先頭 32 KiB に改行が無い出力は先頭が残らない）を改訂した。 2026-09-26: PR #1185 の再レビューと要件の改訂（決定事項「意図した挙動の変化」、AC-29 の改訂、AC-34 の追加）に合わせて次を改訂した。§3.7 の表の `user_group_command_failure` の Slack の行を `command_group_summary` の行と同じ変化に改め、Slack 用に生の先頭を別に持たない理由を記した。一部だけ残った秘密鍵のブロックを隠す `internal/redaction` の変更を §3.7 に加え、§3.8、§4.3、§4.4、§5.1、§7.1、§7.2、§8、§10 に反映した。§4.4 から、PEM のブロックが境目をまたぐと redaction されないという制限を削除した。§7.1 の `boundedBuffer` のテストに、省略の印だけが残る場合と改行がある場合を明記した。 2026-09-26: PR #1185 の 3 回目のレビューと要件の改訂に合わせて次を改訂した（決定の変更を含む）。(1) 上限を超えた出力の保持を、先頭と末尾の 32 KiB ずつから、64 KiB の先頭の窓の中の完全な行と省略の印だけに改めた（§3.7、§3.8、§4.3、§4.4、§5.1、§5.3、§7、§8、§9、§10）。先頭だけにする理由（残った値の目印が必ず残ること）を §3.7 に記し、`internal/redaction` の変更を `BEGIN` の側だけの規則にし、`END` の側だけの規則とそのテストを削除した。末尾が残らないことを §4.4 の制限に加え、[#1186](https://github.com/isseis/go-safe-cmd-runner/issues/1186) で扱うことにした。行の境目での切断の性質のテストを §7.1 に加えた。(2) 実行全体の中断の戻り値を、group ファイル検証の経路では `ctx.Err()` だけ、それ以外では `errors.Join(ctx.Err(), err)` とし（§3.2、§3.3、§4.2、§4.3、§6.3）、AC-35・AC-36 のテストを §7.1、§10 に加えた。(3) `CaptureError` のフィールドを非公開にし、構築関数 `newSizeLimitError`・`newFileSystemError` だけで作る設計に改め、フィールドを公開のままとする項目を削除した（§3.5、§3.8、§8）。(4) §3.7 の表のデバッグログと Slack の行に、欄が変わらない条件（redaction の後の残った完全な行が切り詰めの位置以上の長さであること）を明記し、`slack_handler.go` の定数の行番号を `:22`・`:23` に直した。 2026-09-26: PR #1185 の 4 回目のレビューを受けて、次の記述を明確にした（設計は変えず、仕組みも加えない）。(1) §3.7 と §5.1 で、目印が値と一緒に残るという主張を、値の手前に目印を持つ検出に限った。値の後ろの区切り `@` を必要とする `urlCred`（`internal/redaction/value_detector.go:36`）について、1 行の URL は全体が残るか全体が残らないことを記し、複数行にわたる不正な形の URL がパスワードと `@` の間で切れると隠されないことを既知の制限として §4.4 に加え、対策の仕組みを加えない理由を記した。§7.1 の行の境目での切断の性質のテストのコーパスでは、`urlCred` を 1 行の形に限った。(2) §0 の用語と §3.2 に「実行全体の中断」の定義（`ExecuteGroup` がエラーを返した時点で実行全体の context が取り消されている、または取り消し済みのため group を開始しなかった: `internal/runner/runner.go:411-417`）を加え、最後の group が nil を返した後の取り消しは成功のままであること、group のループの後に取り消しを判定しない理由（`internal/runner/group_executor.go:253-293`）を記した。§4.5 もこれに合わせた。 |
+| Review date | 2026-09-26 |
+| Reviewer | isseis |
+| Comments | 2026-09-26: 実装計画の作成中とそのレビューで、検証の対応を 3 点修正した。§7.2 の AC-29 は 1 つの監査記録からは `user_group_command_failure` と `command_group_summary` の 2 種類の Slack メッセージを作れないため記録ごとの観測経路を明記した。§10 の AC-05 は外側の context の有無を `internal/runner` の統合テストでは検証できないため `cmd/runner` の判定テストに限った。§7.1・§10 の AC-03 は `internal/logging` のテストから `internal/runner/base/output` を import できない（依存が循環する）ため `internal/runner` の統合テストに移した。あわせて §0 の要件の状態の記述を現状（`approved`）に合わせた。設計判断の変更はない（編集上の修正）。 |
 
 ## 0. 前提
 
-- 要件: [`01_requirements.md`](01_requirements.md)（2026-09-26 に PR #1185 のレビューで改訂し、`draft` に戻った）
+- 要件: [`01_requirements.md`](01_requirements.md)（2026-09-26 に PR #1185 のレビューを経て改訂され、再承認された）
 - 本書の現状の記述と `file:line` は、コミット `8f7f7681` のコードを読んで確認したものである（それ以降、Go のコードは変更されていない）。
 - 用語（要件と同じ）:
   - 「外側の context」は、`ExecutionError.GroupName`・`CommandName` から作る `(group: ..., command: ...)` の表示を指す。
@@ -748,7 +748,8 @@ flowchart LR
 - **出力ポンプ・executor（`internal/runner/base/executor`）**: 出力ファイルがある場合と無い場合のそれぞれで、上限を超える stdout・stderr を書くと、保持される出力は上限付きで、先頭の完全な行と省略の印だけを含み、末尾を含まないこと（AC-28、AC-29）。出力ファイルがある場合は、`OutputWriter` にすべてのバイトが渡ること。出力ファイルが無い場合は、実際のコマンドに 64 KiB を超える stdout を書かせて `Result.Stdout` を確かめること（正常終了、つまり終了コード 0 の場合を必ず含める）。stderr は正常終了で報告されない（`TestExecute_NilOutputWriter_LargeStderrStillSucceeds`）のに対し stdout は正常終了でも報告されるので、上限付きで空でも全体でもないことも確かめること。
 - **`logging`**
   - `HandleExecutionError` と `Detail()` が、`friendlyTestError` について `UserMessage()` ではなく `Error()` の文言を出すこと（AC-06）。
-  - `HandleExecutionError` に `ErrorTypeFileSystem` の `*CaptureError`（`Cause` あり）を含む原因を渡すと、`Details:` に `Cause` の文言が出ること（AC-03）。
+- **`HandleExecutionError` の `CaptureError` を含む原因（`internal/runner` の統合テスト）**
+  - `ErrorTypeFileSystem` の `*CaptureError`（`Cause` あり）を含む原因を `HandleExecutionError` に渡すと、`Details:` に `Cause` の文言が出ること（AC-03）。`internal/logging` のテストは `internal/runner/base/output` を import できない（`logging` から `output` への依存が `output → executor → audit → logging` で循環する）ため、この検証は `internal/runner` の統合テストに置く。
 
 ### 7.2 統合テスト
 
@@ -756,7 +757,7 @@ flowchart LR
 - 1 件の失敗（`*CommandExecutionError`）で、stderr と `error_message` が変更前と同じであること（AC-11）。
 - **AC-20**: 実際のタイムアウトのエラーの形は、実際の executor でタイムアウトさせる既存のテスト `internal/runner/group_executor_timeout_test.go` の `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで作る。これに、エラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことの確認を加える。そのうえで、group-1 は 0 以外の終了コード、group-2 はその形のタイムアウトのエラーとなる `executeGroups` の結果を `HandleExecutionError` に渡し、`Details:` に両方の group の行が出ることを確かめる。
 - **AC-24、AC-28**: `output_size_limit = 0` と出力ファイルを指定したコマンドを実際に実行し、64 KiB を超える出力を書かせる。出力サイズ超過で失敗せずに完了し、出力ファイルに全出力が書かれ、結果の stdout（`ExecutionResult.Stdout`）が上限付きで省略の印を含むことを確かめる（既存の出力キャプチャの統合テストの形）。
-- **Slack の欄とデバッグログ（AC-29）**: 実際の executor で、次の 2 つの出力をコマンドに書かせる。得られた `Result` を監査ログ（`audit.Logger.LogUserGroupExecution`）に渡し、その記録から `SlackHandler` が組み立てる `user_group_command_failure` の `Output` の欄と、同じ出力の `command_group_summary` の出力の欄、デバッグログの `stdout` を確かめる。
+- **Slack の欄とデバッグログ（AC-29）**: 実際の executor で、次の 2 つの出力をコマンドに書かせる。得られた `Result` を監査ログ（`audit.Logger.LogUserGroupExecution`）に渡した記録から `SlackHandler` が組み立てる `user_group_command_failure` の `Output` の欄を確かめる。`command_group_summary` の出力の欄は、同じ出力を runner の group の通知（`Runner.logGroupExecutionSummary`。group executor には `WithGroupNotificationFunc` で渡す）が出す記録から確かめる。デバッグログの `stdout` は、同じ実行の `Command execution result` の記録から確かめる。`SlackHandler` は同期送信とモックサーバーで観測する（`user_group_command_failure` と `command_group_summary` は別の記録であり、1 つの記録から両方は作れない）。
   - 先頭の 64 KiB に改行を含まない、64 KiB を超える出力: 欄が、コードブロックの開始の直後に省略の印から始まること。
   - 短い先頭の行（切り詰めの位置より短い行）の後に 64 KiB より長い行が続く出力: 欄が先頭の行の直後に省略の印を含むこと（残った完全な行が切り詰めの位置より短いと、欄の中に省略の印が現れること）。
   - 残った完全な行が切り詰めの位置より長い出力では、欄が変更前と同じであること。
@@ -804,9 +805,9 @@ flowchart LR
 | AC | 設計の該当箇所 | テスト |
 |---|---|---|
 | AC-01, AC-02 | §3.2、§3.4、§4.2 | §7.2 |
-| AC-03 | §3.4、§4.2 | §7.1（`logging`） |
+| AC-03 | §3.4、§4.2 | §7.1（`internal/runner` の統合テスト。`internal/logging` のテストから `internal/runner/base/output` を import すると依存が循環するため） |
 | AC-04 | §4.2、§5.2 | §7.2 |
-| AC-05 | §3.3、§6.1 | §7.1、§7.2 |
+| AC-05 | §3.3、§6.1 | §7.1（`executionErrorContext`。外側の context の有無を決めるのは `cmd/runner` のこの判定であり、`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため検証できない） |
 | AC-06 | §3.4、§3.5 | §7.1（`logging`）、§7.4 |
 | AC-07 | §3.1、§3.2 | §7.1（`executeGroups`） |
 | AC-08 | §3.3、§6.1 | §7.1、§7.4 |
