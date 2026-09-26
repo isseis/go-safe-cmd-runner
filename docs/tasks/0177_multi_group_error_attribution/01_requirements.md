@@ -8,7 +8,7 @@
 | Created | 2026-09-25 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 方針を変更した。各行に context を付ける表示側の変更をやめ、`UserFriendlyError` を削除して原因の文言を常にそのまま出すことで帰属を保つ。専用のエラー型は、`Unwrap() []error` の形による判定を置き換える役割に絞った。 |
+| Comments | 2026-09-26: 方針を変更した。各行に context を付ける表示側の変更をやめ、`UserFriendlyError` を削除して原因の文言を常にそのまま出すことで帰属を保つ。専用のエラー型は、`Unwrap() []error` の形による判定を置き換える役割に絞った。同日、対象外としていた `CaptureError.Error()` の文言の整理と `GetType`・`GetPath` の削除を対象に含めた（AC-16〜AC-18）。 |
 
 ## 関連 Issue
 
@@ -75,11 +75,13 @@ group の失敗は次の順に扱われる。
 2. 実行エラー（`HandleExecutionError`）と実行前エラー（`PreExecutionError.Detail`）の報告で、原因は常に `Error()` の文言をそのまま出す。`formatCause` は不要になるので削除する。
 3. `executeGroups` が、1 件以上の group の失敗を、件数によらず、失敗 group ごとに group 名・command 名（分かるとき）・原因を持つ専用のエラー型で返す。
 4. `executionErrorContext` の multi-error 判定を、この型が持つ失敗の件数による判定に置き換える。
+5. 出力サイズ超過の `CaptureError.Error()` の文言から、同じ事実の繰り返しをなくし、超過した上限値を載せる。
+6. 本番コードで使われていない `CaptureError.GetType`・`GetPath` を削除する。
 
 ### 対象外
 
-- **`CaptureError.Error()` の文言の整理。** `UserMessage` を削除すると、出力サイズ超過は `output capture error during execution phase: size limit exceeded for '<path>': output size limit exceeded` と出る。冗長だが情報は欠けていないので、本タスクでは変えない。
-- **`CaptureError.GetType`・`GetPath` の削除。** `UserFriendlyError` の前身（`CaptureErrorInterface`）のために追加されたもので、本番コードからは使われていない。本タスクの変更とは独立しているので、別途扱う。
+- **出力サイズ超過以外の `CaptureError` の文言。** 例えば権限の失敗は `permission denied for '<path>': permission denied` と繰り返しを含みうるが、繰り返すかどうかは `Cause`（OS のエラーなど、外から来る値）の文言しだいである。文言を比べて省く処理はエラー文字列から挙動を選ぶことになる（CLAUDE.md「Declare, don't infer」）ので行わない。出力サイズ超過は `Cause` が常にパッケージ自身のセンチネルであり、繰り返しが型から確定するので対象にする。
+- **`output.ErrOutputSizeLimitExceeded`（`manager.go`）と `ErrOutputSizeExceeded` の重複。** 同じ文言の 2 つのセンチネルがあるが、使われる経路が異なり、本 issue とは独立しているので扱わない。
 - **各行に `(group: ..., command: ...)` を付ける表示。** 原因の文言が `failed to execute group <name>` を含むので不要である。
 - **`ExecutionError.GroupName`・`CommandName` に複数の group を持たせること。** 決定事項「複数失敗時の `GroupName` は空のまま」を参照。
 - **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、通知の内容・件数は変えない。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
@@ -93,6 +95,22 @@ group の失敗は次の順に扱われる。
 報告に出す原因は、常にエラーの `Error()` の文言とする。原因の一部を別の文言に差し替える仕組みは持たない。理由は背景「`UserFriendlyError` はもう必要ない」のとおりである。差し替えをやめることで、ラップの文言（group 名・command 名）と原因の詳細（`Cause`）の両方が報告に残る。
 
 この変更は `PreExecutionError.Detail` にも及ぶ。実行前エラーの原因のチェーンに `CaptureError` が入る経路は現状ないので、実行前エラーの報告の文言は変わらない。
+
+### 出力サイズ超過の文言を整える
+
+`UserMessage` を削除すると、出力サイズ超過は `Error()` の文言で報告される。現状の文言は次のとおりで、同じ事実を 2 回述べ、超過した上限値を含まない。
+
+```
+output capture error during execution phase: size limit exceeded for '<path>': output size limit exceeded
+```
+
+`Type`（`size limit exceeded`）と `Cause`（センチネル `ErrOutputSizeExceeded` の `output size limit exceeded`）が同じ事実を表しているためである。出力サイズ超過の `Error()` は、段階・パス・上限値を含み、超過の事実を 1 回だけ述べる文言にする。上限値は、`UserMessage` が出していた情報（超過とパス）に加えて、利用者が設定を直すために必要な情報である。文言の具体的な形と、上限値の持たせ方は設計段階で決める。
+
+`errors.Is(err, output.ErrOutputSizeExceeded)` は引き続き成り立つようにする。テスト（`test/performance`、`executor_privilege_gap_integration_test.go`）がこれで出力サイズ超過を判定している。
+
+### 使われていない `GetType`・`GetPath` を削除する
+
+`CaptureError.GetType`・`GetPath` は、`UserFriendlyError` の前身である `CaptureErrorInterface`（出力サイズ超過を package への依存なしに検出するためのインタフェース）のために追加された。`CaptureErrorInterface` は `6f88d77e` で削除され、以後この 2 つを呼ぶ本番コードはない。`UserFriendlyError` と同じ仕組みの名残なので、あわせて削除する。
 
 ### group の失敗は件数によらず専用の型で表す
 
@@ -158,7 +176,14 @@ group の失敗は次の順に扱われる。
 - **AC-12**: 実行エラーの構造化ログレコードは `slack_notify=false` のままで、Slack 通知の件数・内容は変わらない。プロセスの終了コードと `RUN_SUMMARY` 行も変わらない。
 - **AC-15**: 失敗が 1 group だけで、原因が `*CommandExecutionError` ではないとき（例: group の展開の失敗）、外側の context に `group: <group>` が付く。command レベルの段階の `*GroupStageError` では `command: <command>` も付く。Details の原因の文言は変更前と同じである。
 
-#### F-004: 全体の健全性
+#### F-004: `CaptureError` の整理
+
+**Acceptance Criteria**:
+- **AC-16**: 出力サイズ超過の `CaptureError.Error()` の文言は、段階・出力先のパス・上限値を含み、「size limit exceeded」に当たる語句を 1 回だけ含む。
+- **AC-17**: 出力サイズ超過の失敗で、`errors.Is(err, output.ErrOutputSizeExceeded)` が成り立つ。
+- **AC-18**: `CaptureError.GetType`・`GetPath` は存在しない。出力サイズ超過以外の種類の `CaptureError.Error()` の文言は変更前と同じである。
+
+#### F-005: 全体の健全性
 
 **Acceptance Criteria**:
 - **AC-13**: 各コミットの時点で `make fmt`（Go を変更した場合）・`make test`・`make lint` が通る。
@@ -168,5 +193,6 @@ group の失敗は次の順に扱われる。
 
 - 複数 group が失敗したとき、stderr と構造化ログの各行から、その行の group（と command）を他のレコードと突き合わせずに判別できる。
 - 報告に出る原因から、ラップの文言と原因の詳細が失われない。
+- 出力サイズ超過の報告は、上限値を含み、同じ事実を繰り返さない。
 - group の失敗が件数によらず同じ型で宣言され、`errors.Join` の形からの推測がなくなる。
 - `Error()` の文言、Slack 通知、終了コードは変わらない。
