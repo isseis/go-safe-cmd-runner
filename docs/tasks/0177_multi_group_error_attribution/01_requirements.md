@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-25 |
-| Review date | - |
+| Review date | 2026-09-26 |
 | Reviewer | - |
-| Comments | 2026-09-26: 決定の変更のため `draft` に戻した。アーキテクチャ設計のレビューで見つかった 2 つの既存の不具合を対象に加えた。(1) コマンドのタイムアウトで、それまでに集めた group の失敗が捨てられ、後続の group が実行されない（F-006）。(2) `output_size_limit = 0`（無制限）で出力ファイルへの最初の書き込みが失敗する（F-007）。 |
+| Comments | - |
 
 ## 関連 Issue
 
