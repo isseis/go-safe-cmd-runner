@@ -89,12 +89,12 @@ func (e *PreExecutionError) Error() string {
 // Detail returns the user-facing description of the failure: Message followed by
 // the cause carried in Err. Reporting paths that render a single string (stderr,
 // the structured log, the Slack alert) must use this rather than Message alone,
-// or the cause — a TOML syntax error, a hash mismatch — never reaches the user.
+// or the cause - a TOML syntax error, a hash mismatch - never reaches the user.
 func (e *PreExecutionError) Detail() string {
 	if e.Err == nil {
 		return e.Message
 	}
-	return fmt.Sprintf("%s: %s", e.Message, formatCause(e.Err))
+	return fmt.Sprintf("%s: %s", e.Message, e.Err.Error())
 }
 
 // Is implements error wrapping for errors.Is
@@ -241,10 +241,10 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError) {
 // HandleExecutionError handles execution errors (errors that occur during command execution)
 // by logging and outputting appropriate summary information
 func HandleExecutionError(execErr *ExecutionError) {
-	// The cause is rendered by formatCause, the same helper PreExecutionError.Detail
-	// uses, so both report paths agree on friendly-versus-raw text and on how a
-	// joined multi-error is split. Only the surrounding "Message: cause" assembly
-	// is repeated, because the two paths report different error types; see
+	// The cause is reported as its own Error() text, with no substitution of a
+	// friendlier string, so a wrapped group failure keeps its group and command
+	// names. Only the surrounding "Message: cause" assembly is repeated,
+	// because the two report paths report different error types; see
 	// issue #1156.
 	message := execErr.Message
 
@@ -256,7 +256,7 @@ func HandleExecutionError(execErr *ExecutionError) {
 	}
 
 	if execErr.Err != nil {
-		message = fmt.Sprintf("%s: %s", message, formatCause(execErr.Err))
+		message = fmt.Sprintf("%s: %s", message, execErr.Err.Error())
 	}
 
 	handleErrorCommon(errorHandlingParams{

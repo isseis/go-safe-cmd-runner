@@ -323,3 +323,125 @@ func TestGroupErrorConstructionCheckRecognizesForms(t *testing.T) {
 		})
 	}
 }
+
+// TestProductionCodeDoesNotProbeMultiErrorShape pins that no production file
+// decides "several groups failed" from the Unwrap() []error shape. A probe is
+// an interface type that requires Unwrap() []error; GroupErrors declares that
+// method so errors.Is and errors.As reach each cause, which is allowed, but
+// nothing may test for the shape.
+func TestProductionCodeDoesNotProbeMultiErrorShape(t *testing.T) {
+	files := identitymutationguard.ProductionGoFilesInRepo(t)
+	require.NotEmpty(t, files, "the repository scan returned no production files")
+
+	var violations []string
+	for _, file := range files {
+		src := identitymutationguard.ReadProductionSource(t, file)
+		violations = append(violations, findMultiErrorShapeProbes(t, file, src)...)
+	}
+
+	assert.Empty(t, violations,
+		"a production failure-count decision must read GroupErrors.Errors(), not probe the Unwrap() []error shape:\n%s",
+		strings.Join(violations, "\n"))
+}
+
+// findMultiErrorShapeProbes returns the positions of interface types in src
+// that require Unwrap() []error.
+func findMultiErrorShapeProbes(t *testing.T, filename, src string) []string {
+	t.Helper()
+
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
+	var found []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		iface, ok := n.(*ast.InterfaceType)
+		if !ok || !ifaceDeclaresUnwrapSliceError(iface) {
+			return true
+		}
+		found = append(found, fset.Position(iface.Pos()).String())
+		return true
+	})
+	return found
+}
+
+// ifaceDeclaresUnwrapSliceError reports whether iface requires a method named
+// Unwrap with no parameters and a single []error result.
+func ifaceDeclaresUnwrapSliceError(iface *ast.InterfaceType) bool {
+	if iface.Methods == nil {
+		return false
+	}
+	for _, field := range iface.Methods.List {
+		funcType, ok := field.Type.(*ast.FuncType)
+		if !ok {
+			continue
+		}
+		for _, name := range field.Names {
+			if name.Name == "Unwrap" && returnsErrorSlice(funcType) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// returnsErrorSlice reports whether funcType has no parameters and exactly one
+// result of type []error.
+func returnsErrorSlice(funcType *ast.FuncType) bool {
+	if funcType.Params != nil && len(funcType.Params.List) > 0 {
+		return false
+	}
+	if funcType.Results == nil || len(funcType.Results.List) != 1 {
+		return false
+	}
+	arr, ok := funcType.Results.List[0].Type.(*ast.ArrayType)
+	if !ok || arr.Len != nil {
+		return false
+	}
+	elt, ok := arr.Elt.(*ast.Ident)
+	return ok && elt.Name == "error"
+}
+
+// TestMultiErrorShapeProbeCheckRecognizesForms pins the forms the probe guard
+// must recognize, so it cannot become a no-op that passes the repository scan.
+func TestMultiErrorShapeProbeCheckRecognizesForms(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want int
+	}{
+		{
+			name: "type assertion on the anonymous interface is reported",
+			src:  "package x\n\nfunc f(err error) bool { _, ok := err.(interface{ Unwrap() []error }); return ok }\n",
+			want: 1,
+		},
+		{
+			name: "type switch case on the anonymous interface is reported",
+			src:  "package x\n\nfunc f(err error) { switch err.(type) { case interface{ Unwrap() []error }: } }\n",
+			want: 1,
+		},
+		{
+			name: "multiline interface is reported",
+			src:  "package x\n\nvar _ = func(err error) bool { _, ok := err.(interface {\n\tUnwrap() []error\n}); return ok }\n",
+			want: 1,
+		},
+		{
+			name: "the Unwrap method declaration is not reported",
+			src:  "package x\n\nfunc (e *T) Unwrap() []error { return nil }\n",
+			want: 0,
+		},
+		{
+			name: "an interface with a single error result is not reported",
+			src:  "package x\n\nvar _ = func(err error) bool { _, ok := err.(interface{ Unwrap() error }); return ok }\n",
+			want: 0,
+		},
+		{
+			name: "an interface returning []string is not reported",
+			src:  "package x\n\nvar _ = func(err error) bool { _, ok := err.(interface{ Unwrap() []string }); return ok }\n",
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Len(t, findMultiErrorShapeProbes(t, "internal/x/x.go", tt.src), tt.want)
+		})
+	}
+}
