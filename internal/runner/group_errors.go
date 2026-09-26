@@ -29,15 +29,8 @@ func (e *GroupError) CommandName() string {
 // indented so they stay visually under the group's line when several groups
 // are reported one after another.
 func (e *GroupError) Error() string {
-	cause := e.err.Error()
-	lines := strings.Split(cause, "\n")
-	var b strings.Builder
-	fmt.Fprintf(&b, "failed to execute group %s: %s", e.group, lines[0])
-	for _, line := range lines[1:] {
-		b.WriteString("\n  ")
-		b.WriteString(line)
-	}
-	return b.String()
+	cause := strings.TrimRight(e.err.Error(), "\r\n")
+	return fmt.Sprintf("failed to execute group %s: %s", e.group, strings.ReplaceAll(cause, "\n", "\n  "))
 }
 
 // Unwrap returns the cause so errors.Is and errors.As reach the underlying
