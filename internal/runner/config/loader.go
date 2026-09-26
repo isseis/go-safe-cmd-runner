@@ -90,6 +90,13 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte) (*run
 		cfg.CommandTemplates = mergedTemplates
 	}
 
+	// The merged map is validated here because loadConfigInternal only sees the
+	// main file's templates; included template names would otherwise reach
+	// ValidateOutputSizeLimits without passing ValidateTemplateName.
+	if err := ValidateTemplates(cfg); err != nil {
+		return nil, err
+	}
+
 	// Checked after the merge so limits declared in included templates are
 	// validated too; loadConfigInternal only sees the main file's templates.
 	if err := ValidateOutputSizeLimits(cfg); err != nil {

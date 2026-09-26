@@ -563,3 +563,46 @@ output_size_limit = 4096
 	// template to be walked at all.
 	require.Contains(t, cfg.CommandTemplates, "good")
 }
+
+// TestLoadConfig_InvalidIncludedTemplateNameRejected verifies that a template
+// name containing a control character brought in through includes is rejected
+// by ValidateTemplates before ValidateOutputSizeLimits can interpolate the raw
+// name into its error message. The included template also declares a negative
+// limit, which is what would otherwise produce an ErrNegativeOutputSizeLimit
+// error containing the unvalidated name with a raw ESC byte.
+func TestLoadConfig_InvalidIncludedTemplateNameRejected(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	configPath := filepath.Join(tmpDir, "config.toml")
+	configContent := []byte(`version = "1.0"
+includes = ["templates.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = "echo"
+`)
+	require.NoError(t, os.WriteFile(configPath, configContent, 0o644))
+
+	// The backtick raw string keeps the TOML escape sequence `\u001b` intact,
+	// so go-toml decodes it into a raw ESC byte in the template name. The ESC is
+	// placed first so the name validation reports an invalid start without
+	// echoing the control character: a rejected name must never reach the error
+	// as a raw byte.
+	templateContent := []byte(`version = "1.0"
+
+[command_templates."\u001bbadname"]
+cmd = "echo"
+output_size_limit = -1
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "templates.toml"), templateContent, 0o644))
+
+	_, err := NewLoaderForTest().LoadConfig(configPath, configContent)
+	require.Error(t, err)
+
+	var invalidName *ErrInvalidTemplateName
+	require.ErrorAs(t, err, &invalidName)
+	assert.NotContains(t, err.Error(), "\x1b",
+		"the error must not contain a raw ESC byte from an unvalidated included template name")
+}
