@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-25 |
-| Review date | 2026-09-26 |
+| Review date | - |
 | Reviewer | - |
-| Comments | - |
+| Comments | 2026-09-26: 決定の変更のため `draft` に戻した。アーキテクチャ設計のレビューを受けて次を加えた。(1) 負の `output_size_limit` を設定の読み込みで拒否する（AC-27）。(2) 出力ファイルを指定したコマンドの stdout を、メモリ上では上限付きで保持する（AC-28、AC-29）。(3) コマンドのタイムアウト後にプロセスが残りうることを受け入れ、利用者向け文書に記載する（AC-30）。 |
 
 ## 関連 Issue
 
@@ -72,6 +72,20 @@ group の失敗は次の順に扱われる。
 
 利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」）は、有効な値を「正の整数」とだけ書いており、0 が無制限であることを記載していない。
 
+### 負の `output_size_limit` が検証されない
+
+`output_size_limit` の負の値は、設定の読み込みで検証されない。読み込み時の検証は `timeout` の負の値だけを拒否する（`internal/runner/config/validation.go:188-215`）。上限は検証の無い `common.NewOutputSizeLimitFromPtr` で作られる（`internal/runner/group_executor.go:311`、`internal/runner/base/runnertypes/runtime.go:295`）。負の上限のコマンドは、出力ファイルへの最初の書き込みでサイズ超過として失敗する。dry-run では検出されない。
+
+### 出力ファイルを指定したコマンドの stdout がメモリ上で上限なく保持される
+
+executor は、コマンドの stdout を出力ファイルへ書くのと並行して、メモリ上にも全体を保持する（`internal/runner/base/executor/output_pump.go:46-48`、stdout の保持は常に上限なし）。stderr は上限付き（先頭と末尾を保持し、間を省略する）で保持される。現状、出力ファイルを指定したコマンドでは、`output_size_limit`（既定 10 MB）を超えた時点で書き込みが失敗するため、メモリ上の stdout も実質的にその大きさで止まる。`output_size_limit = 0` を無制限として扱うと、メモリ上の stdout も上限が無くなり、大きな出力で runner のメモリを使い切るおそれがある。
+
+メモリ上の stdout を使うのは、デバッグログ（切り詰める）、Slack 通知（1000 文字に切り詰める）、`run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログ（全体を記録する）である。いずれも出力の全体を必要としない。出力の全体は出力ファイルにある。
+
+### タイムアウトしたコマンドのプロセスが残りうる
+
+コマンドがタイムアウトすると、executor は直接の子プロセスだけを kill する。プロセスグループへの kill は行わない。子を kill・回収できなかった場合は `ErrKillAfterCancel`・`ErrChildNotReaped` を返す（`internal/runner/base/executor/command_lifecycle.go:741-742`、`:912`、`:948`）。子が起動した孫プロセス（例: `sh -c 'a | b'` の `a`・`b`）は、子を kill しても残りうる。現状はタイムアウトで実行全体が止まるが、F-006 で後続の group を実行すると、残ったプロセスと後続の group が並行して動きうる。
+
 ### `GroupName` の利用箇所
 
 `ExecutionError.GroupName`・`CommandName` の利用箇所は `ContextString` だけである。`ContextString` は stderr の `Details:` と構造化ログの `error_message` に使われる。`HandleExecutionError` の構造化ログレコードは `slack_notify=false` 固定であり、Slack 通知には使われない（Slack の `group=` 表示は別の `NotificationContext` による）。
@@ -96,7 +110,9 @@ group の失敗は次の順に扱われる。
 6. 本番コードで使われていない `CaptureError.GetType`・`GetPath` を削除する。
 7. `executeGroups` は、実行全体の中断を実行全体の context の状態で判定する。コマンド自身のタイムアウトは group の失敗として集め、後続の group を実行する。
 8. `Capture.WriteOutput` は、上限 0 を無制限として扱う。サイズ超過のエラーは、正の上限値を持つときだけ作られる。
-9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
+9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であることを追記する。同じ文書の timeout の節に、コマンドのタイムアウト後も後続の group が実行されること、タイムアウトしたコマンドのプロセスが残りうることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
+10. 負の `output_size_limit`（グローバル・テンプレート・コマンド）を、`timeout` と同じく設定の読み込みで拒否する。
+11. 出力ファイルを指定したコマンドでは、メモリ上に保持する stdout を、`output_size_limit` によらず上限付き（先頭と末尾を保持し、間を省略する）にする。出力ファイルには全体を書く。
 
 ### 対象外
 
@@ -108,6 +124,8 @@ group の失敗は次の順に扱われる。
 - **dry-run の実行エラー記録（`SetDryRunExecutionError`）。** `Error()` の文言を使っており、その文言は変えない（AC-09）ので影響しない。
 - **group ファイル検証の失敗（`*verification.Error`）。** 現状どおり、集める対象に入らない。
 - **実行全体の中断時に集めた失敗を報告すること。** SIGINT・SIGTERM で実行全体が中断されたときは、現状どおり中断のエラーをすぐに返し、それまでに集めた失敗は報告しない。中断は利用者の操作であり、残りの結果が無いことを利用者が知っているためである。
+- **タイムアウトしたコマンドのプロセスを確実に止めること。** プロセスグループへの kill など、孫プロセスまで止める仕組みは本タスクでは加えない。子を kill・回収できなかった場合（`ErrKillAfterCancel`・`ErrChildNotReaped`）も、後続の group を実行する（決定事項「タイムアウト後に残るプロセスは受け入れる」）。
+- **出力ファイルを指定しないコマンドの stdout の保持。** 現状どおり上限なしで保持する。これを上限付きにするかは別 issue で扱う。
 - **`output_size_limit` の利用者向け文書のその他の食い違い。** 同じ節は「設定可能な階層: グローバルのみ」「オーバーライド: 不可」と書いているが、コマンドレベルの `output_size_limit` も存在する（`internal/runner/base/runnertypes/spec.go:263`）。また「制限超過時の動作」の記述も実装と照合していない。本タスクでは 0 の意味だけを追記し、ほかは別 issue で扱う。
 
 ## 決定事項
@@ -148,6 +166,18 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 ### `output_size_limit = 0` を無制限として扱う
 
 `Capture.WriteOutput` は上限が 0 のとき、サイズを比べずに書き込む。0 を無制限とする定義（`common.OutputSizeLimit`）と、上限 0 を渡す `NormalResourceManager` に合わせる。これにより、サイズ超過のエラーの上限値は常に正になる。上限値が 0 以下のサイズ超過のエラーは作られないことを、構築の境界で保証する（CLAUDE.md「Reject, don't normalize」）。
+
+### タイムアウト後に残るプロセスは受け入れる
+
+コマンドのタイムアウト後は、子を kill・回収できなかった場合も含め、後続の group を実行する。残ったプロセスと後続の group が並行して動きうることは、設計書と利用者向け文書に記載する。孫プロセスは runner から検出できず、どの判定でも残りうるため、子の kill・回収の成否だけで扱いを分けても、並行の可能性はなくならない。
+
+### 負の `output_size_limit` は設定の読み込みで拒否する
+
+負の `output_size_limit` は、`timeout` の負の値（`ValidateTimeouts`）と同じく、設定の読み込みで拒否する。どの group も実行されず、dry-run でも検出される。エラーには値と設定箇所（グローバル・テンプレート名・group とコマンド）を含める。これにより、サイズ超過のエラーを作る時点では上限値は常に正になる。
+
+### 出力ファイルを指定したコマンドの stdout はメモリ上で上限付きにする
+
+出力ファイルを指定したコマンドでは、メモリ上の stdout の保持を、stderr と同じ上限付きの形（先頭と末尾を保持し、省略した量を示す）にする。上限は `output_size_limit` と独立した一定の値とする（具体値は設計段階で決める）。出力の全体は出力ファイルに書かれるので、情報は失われない。これにより、`output_size_limit = 0` でも runner のメモリ使用量は出力の大きさに比例しない。
 
 ### group の失敗は件数によらず専用の型で表す
 
@@ -236,6 +266,14 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-25**: 上限値が 0 以下のサイズ超過のエラーは作られない。本番の構築経路は、上限値が 0 以下の入力を拒否する。
 - **AC-26**: `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限を表すことが記載され、英語版 `docs/user/toml_config/04_global_level.md` に `/mktrans` で反映されている。
 
+#### F-008: 設定と出力の保持の上限
+
+**Acceptance Criteria**:
+- **AC-27**: 負の `output_size_limit` をグローバル・テンプレート・コマンドのいずれかに含む設定は、読み込み時に拒否され、どの group も実行されない。エラーには値と設定箇所が含まれる。dry-run でも同じく拒否される。
+- **AC-28**: 出力ファイルを指定したコマンドでは、出力ファイルに stdout の全体が書かれ、メモリ上に保持される stdout の大きさは `output_size_limit`（0 を含む）によらず一定の上限を超えない。
+- **AC-29**: AC-28 の上限を超えたとき、保持される stdout は先頭と末尾を含み、省略があったことを示す印を含む。
+- **AC-30**: 利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の timeout の節）に、コマンドのタイムアウト後も後続の group が実行されること、タイムアウトしたコマンドのプロセス（孫プロセスを含む）が残りうることが記載され、英語版に `/mktrans` で反映されている。
+
 #### F-005: 全体の健全性
 
 **Acceptance Criteria**:
@@ -250,4 +288,5 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - group の失敗が件数によらず同じ型で宣言され、`errors.Join` の形からの推測がなくなる。
 - `Error()` の文言、Slack 通知、終了コードは変わらない。
 - コマンドのタイムアウトで、先に失敗した group の報告が失われず、後続の group が実行される。実行全体の中断では、現状どおり残りの group を実行しない。
-- `output_size_limit = 0` のコマンドが、出力サイズ超過で失敗しない。
+- `output_size_limit = 0` のコマンドが、出力サイズ超過で失敗せず、runner のメモリ使用量が出力の大きさに比例しない。
+- 負の `output_size_limit` は、実行前に設定の誤りとして報告される。
