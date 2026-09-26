@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-25 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-26: 決定の変更のため `draft` に戻した。アーキテクチャ設計のレビューを受けて次を加えた。(1) 負の `output_size_limit` を設定の読み込みで拒否する（AC-27）。(2) 出力ファイルを指定したコマンドの stdout を、メモリ上では上限付きで保持する（AC-28、AC-29）。(3) コマンドのタイムアウト後にプロセスが残りうることを受け入れ、利用者向け文書に記載する（AC-30）。 |
+| Review date | 2026-09-26 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
