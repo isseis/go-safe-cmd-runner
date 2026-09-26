@@ -206,8 +206,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 3: 秘密鍵のブロックの検出と、メモリ上の出力の保持の上限
 
@@ -215,17 +215,17 @@
 
 **作業内容**:
 
-- [ ] `internal/redaction/value_detector.go` に、対応する `END` の行が無い `BEGIN ... PRIVATE KEY` の行からテキストの末尾までを隠すパターン `pemPrivateUnterminated` を加える。`Mask` では `pemPrivate` を適用した後に適用し、placeholder は既定のものを使う。パターンの doc コメントに、先頭の窓で `END` が失われたブロックを隠す目的と、隠しすぎる側に倒すことを書く。
-- [ ] `internal/redaction/value_detector_test.go` の `TestValueDetector_Mask_PositiveCases` に `BEGIN` の側だけの行（先行する行・本文の行・省略の印の並びを含む）を加え、`TestValueDetector_Mask_NegativeCases` の `PUBLIC KEY` と完全なブロックの否定・肯定はそのまま通ることを確かめる。追加する行は、まず同じ入力を変更前の `pemPrivate` だけに通して一致しないことを確かめてから、検査に加える（CLAUDE.md「A layered path needs inputs only one layer can handle」）。
-- [ ] `internal/redaction/redactor_test.go:4086` の `TestDefaultPatternSets_AreUnchanged` の期待値に、追加するパターン 1 件を加える。`pemPrivate` の文字列は変えない。`TestRedactText_ValueBasedDetection` はそのまま通ることを確かめる。
-- [ ] `internal/runner/base/executor/executor.go` の定数を `nilWriterStderrLimit`（32 KiB）から `retainedOutputLimit`（64 KiB）に改名し、コメントを先頭の窓の説明に書き換える（改名台帳）。
-- [ ] `newOutputPump` を、上限を引数に取らず両ストリームに `retainedOutputLimit` を使う形に変える。`boundedBuffer` を先頭だけの保持に変え、`Bytes()` は、省略が無ければ保持したバイトをそのまま返す。省略があれば、先頭の窓を最後の改行まで（改行を含む）に切り詰め、その後ろに省略の印を置く（切り詰めと印の規則は §3.7 のとおり）。先頭の窓に改行が無ければ省略の印だけを返す。
-- [ ] `output_pump.go` の印の文字列は現状と同じ `\n... omitting N bytes ...\n` とし、`N` は出力全体のバイト数から、残った完全な行のバイト数を引いたものとする（`omissionMarkerCapacity` をそのまま使える形に保つ）。旧い `os/exec` の prefix/suffix 規則を説明するコメントを削除・書き換える。上限 0 を無制限とする `boundedBuffer` の分岐と `TestBoundedBuffer_UnlimitedBehavesLikeBytesBuffer` は残す（本番の呼び出し元は `retainedOutputLimit` だけであり、本番に無制限の経路は無い）。
-- [ ] `command_lifecycle.go`（`:435-441`）の `outputWriter == nil` による上限の分岐を削除する。
-- [ ] `output_pump_test.go` の `TestBoundedBuffer_KeepsPrefixAndSuffix` を `TestBoundedBuffer_KeepsCompletePrefixLines` に改名し、先頭の窓に改行がある行・無い行、短い先頭行の後に長い行が続く行を持つ表に書き直す。`TestBoundedBuffer_WriteNeverFails`・`TestNewBoundedBuffer_RejectsNegativeLimit`（許容する上限の一覧）と `newOutputPump` の呼び出しを新しい形に合わせる。
-- [ ] `executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` を `TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly` に改名し、改行を含まない巨大 stderr の期待値を省略の印だけにする。`TestExecute_NilOutputWriter_StdoutBoundedOnSuccess`（正常終了でも `Result.Stdout` が上限付きで省略の印を含むこと）と `TestExecute_OutputWriterReceivesAllBytes`（出力ファイルがあるとき、全バイトが `OutputWriter` に渡ること）を追加する。
-- [ ] `output_pump_test.go` に `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` を追加する。値の形の検出の各パターン（`pemPrivate`・`githubToken`・`bearerToken`・`gcpSAKey` と、1 行の `urlCred`）に一致する秘密の行を並べたコーパスを作る。コーパスを `boundedBuffer` 自身に書いて `Bytes()` で取り出し（行の途中では切らない）、`RedactText` に通して、秘密の本体が redaction されずに残らないことを確かめる。コーパス全体を切らずに `RedactText` に通すと各秘密が隠れることも確かめ、コーパスが検出に一致する入力であることを示す。切る規則を完全な行への切り詰めから外す（行の途中で切る）と失敗することも確認する（§4.4）。
-- [ ] `internal/runner/output_retention_integration_test.go`（`package runner`）に `TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput` を追加する。実際の group executor での実行を 2 つに分ける。(a) 64 KiB を超える stdout を書くコマンドを終了コード 0 で実行する（デバッグログと `command_group_summary` の記録は正常終了でも出る）。`tu.NewCallbackHandler` で記録した `Command execution result` の記録から、デバッグログの `stdout` を確かめる。`command_group_summary` の記録は `Runner.logGroupExecutionSummary`（`NewRunner` が `WithGroupNotificationFunc` で配線する。`runner.go:373`）が出すので、group executor を `WithGroupNotificationFunc(r.logGroupExecutionSummary)` で組み立て、その記録から出力の欄を確かめる。(b) 0 以外の終了コードで終わり 64 KiB を超える stdout を書くコマンドを別に実行し、executor の `Result`（stdout は失敗時も保持され、監査の記録は失敗の経路 `internal/runner/base/executor/executor.go:290` で書かれる）を `audit.NewAuditLoggerWithCustom(logger).LogUserGroupExecution`（`internal/runner/base/audit/test_helpers.go`。`NewAuditLogger` は `slog.Default()` に書くため記録を受け取れない）に渡して得た記録からは、`user_group_command_failure` の `Output` の欄を確かめる（`LogUserGroupExecution` は終了コードが 0 以外のときだけ stdout・stderr と通知属性を記録するため、0 以外の終了コードの実行を使う）。Slack の欄は、`logging.NewSlackHandler` を `Synchronous: true`・`httptest.NewTLSServer` の `HTTPClient` で組み立て、`Handle` に記録を渡してペイロードを観測する（AC-29。`user_group_command_failure` と `command_group_summary` は別の記録なので、それぞれの記録を渡す）。ハンドラは生成時に `t.Cleanup` で閉じる。先頭の窓に改行が無い出力・切り詰め位置より短い完全な行がある出力・残った行が切り詰め位置より長い出力の 3 種を表に持つ。
+- [x] `internal/redaction/value_detector.go` に、対応する `END` の行が無い `BEGIN ... PRIVATE KEY` の行からテキストの末尾までを隠すパターン `pemPrivateUnterminated` を加える。`Mask` では `pemPrivate` を適用した後に適用し、placeholder は既定のものを使う。`RedactText` では、キー名による redaction より前にも、この 2 つの規則を適用する（キー名による redaction が `KEY=-----BEGIN ...` の `-----BEGIN` を隠すと、本文の行が目印を失うため。`TestRedactText_PrivateKeyBlockAfterKeyName` で確かめる）。パターンの doc コメントに、先頭の窓で `END` が失われたブロックを隠す目的と、隠しすぎる側に倒すことを書く。
+- [x] `internal/redaction/value_detector_test.go` の `TestValueDetector_Mask_PositiveCases` に `BEGIN` の側だけの行（先行する行・本文の行・省略の印の並びを含む）を加え、`TestValueDetector_Mask_NegativeCases` の `PUBLIC KEY` と完全なブロックの否定・肯定はそのまま通ることを確かめる。追加する行は、まず同じ入力を変更前の `pemPrivate` だけに通して一致しないことを確かめてから、検査に加える（CLAUDE.md「A layered path needs inputs only one layer can handle」）。
+- [x] `internal/redaction/redactor_test.go:4086` の `TestDefaultPatternSets_AreUnchanged` の期待値に、追加するパターン 1 件を加える。`pemPrivate` の文字列は変えない。`TestRedactText_ValueBasedDetection` はそのまま通ることを確かめる。
+- [x] `internal/runner/base/executor/executor.go` の定数を `nilWriterStderrLimit`（32 KiB）から `retainedOutputLimit`（64 KiB）に改名し、コメントを先頭の窓の説明に書き換える（改名台帳）。
+- [x] `newOutputPump` を、上限を引数に取らず両ストリームに `retainedOutputLimit` を使う形に変える。`boundedBuffer` は先頭の窓を最初の書き込みで上限の大きさに確保し、書き込みで容量が上限を超えて伸びないようにする（`TestBoundedBuffer_MemoryStaysWithinLimit`）。`boundedBuffer` を先頭だけの保持に変え、`Bytes()` は、省略が無ければ保持したバイトをそのまま返す。省略があれば、先頭の窓を最後の改行まで（改行を含む）に切り詰め、その後ろに省略の印を置く（切り詰めと印の規則は §3.7 のとおり）。先頭の窓に改行が無ければ省略の印だけを返す。
+- [x] `output_pump.go` の印の文字列は現状と同じ `\n... omitting N bytes ...\n` とし、`N` は出力全体のバイト数から、残った完全な行のバイト数を引いたものとする（`omissionMarkerCapacity` をそのまま使える形に保つ）。旧い `os/exec` の prefix/suffix 規則を説明するコメントを削除・書き換える。上限 0 を無制限とする `boundedBuffer` の分岐と `TestBoundedBuffer_UnlimitedBehavesLikeBytesBuffer` は残す（本番の呼び出し元は `retainedOutputLimit` だけであり、本番に無制限の経路は無い）。
+- [x] `command_lifecycle.go`（`:435-441`）の `outputWriter == nil` による上限の分岐を削除する。
+- [x] `output_pump_test.go` の `TestBoundedBuffer_KeepsPrefixAndSuffix` を `TestBoundedBuffer_KeepsCompletePrefixLines` に改名し、先頭の窓に改行がある行・無い行、短い先頭行の後に長い行が続く行を持つ表に書き直す。`TestBoundedBuffer_WriteNeverFails`・`TestNewBoundedBuffer_RejectsNegativeLimit`（許容する上限の一覧）と `newOutputPump` の呼び出しを新しい形に合わせる。
+- [x] `executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` を `TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly` に改名し、改行を含まない巨大 stderr の期待値を省略の印だけにする。`TestExecute_NilOutputWriter_StdoutBoundedOnSuccess`（正常終了でも `Result.Stdout` が上限付きで省略の印を含むこと）と `TestExecute_OutputWriterReceivesAllBytes`（出力ファイルがあるとき、全バイトが `OutputWriter` に渡ること）を追加する。
+- [x] `output_pump_test.go` に `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` を追加する。値の形の検出の各パターン（`pemPrivate`・`githubToken`・`bearerToken`・`gcpSAKey` と、1 行の `urlCred`）に一致する秘密の行を並べたコーパスを作る。コーパスを `boundedBuffer` 自身に書いて `Bytes()` で取り出し（行の途中では切らない）、`RedactText` に通して、秘密の本体が redaction されずに残らないことを確かめる。コーパス全体を切らずに `RedactText` に通すと各秘密が隠れることも確かめ、コーパスが検出に一致する入力であることを示す。切る規則を完全な行への切り詰めから外す（行の途中で切る）と失敗することも確認する（§4.4）。
+- [x] `internal/runner/output_retention_integration_test.go`（`package runner`）に `TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput` を追加する。実際の group executor での実行を 2 つに分ける。(a) 64 KiB を超える stdout を書くコマンドを終了コード 0 で実行する（デバッグログと `command_group_summary` の記録は正常終了でも出る）。`tu.NewCallbackHandler` で記録した `Command execution result` の記録から、デバッグログの `stdout` を確かめる。`command_group_summary` の記録は `Runner.logGroupExecutionSummary`（`NewRunner` が `WithGroupNotificationFunc` で配線する。`runner.go:373`）が出すので、group executor を `WithGroupNotificationFunc(r.logGroupExecutionSummary)` で組み立て、その記録から出力の欄を確かめる。(b) 0 以外の終了コードで終わり 64 KiB を超える stdout を書くコマンドを別に実行し、executor の `Result`（stdout は失敗時も保持され、監査の記録は失敗の経路 `internal/runner/base/executor/executor.go:290` で書かれる）を `audit.NewAuditLoggerWithCustom(logger).LogUserGroupExecution`（`internal/runner/base/audit/test_helpers.go`。`NewAuditLogger` は `slog.Default()` に書くため記録を受け取れない）に渡して得た記録からは、`user_group_command_failure` の `Output` の欄を確かめる（`LogUserGroupExecution` は終了コードが 0 以外のときだけ stdout・stderr と通知属性を記録するため、0 以外の終了コードの実行を使う）。Slack の欄は、`logging.NewSlackHandler` を `Synchronous: true`・`httptest.NewTLSServer` の `HTTPClient` で組み立て、`Handle` に記録を渡してペイロードを観測する（AC-29。`user_group_command_failure` と `command_group_summary` は別の記録なので、それぞれの記録を渡す）。ハンドラは生成時に `t.Cleanup` で閉じる。先頭の窓に改行が無い出力・切り詰め位置より短い完全な行がある出力・残った行が切り詰め位置より長い出力の 3 種を表に持つ。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`pemPrivateUnterminated` の適用を外すと `TestValueDetector_Mask_PositiveCases`（`BEGIN` の側だけの行）と `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` が失敗すること、完全な行への切り詰めを外すと `TestBoundedBuffer_KeepsCompletePrefixLines` と `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` が失敗すること、省略の印のバイト数から切り詰め分を除くと `TestBoundedBuffer_KeepsCompletePrefixLines` が失敗することを確認する。
 
@@ -241,8 +241,8 @@
 
 **判定理由**: セキュリティに直結する redaction の規則追加と、メモリ保持の仕組みの置き換えを同時に行い、境目をまたぐ値の漏れを性質テストで抑える必要がある。Conditional checks に挙げた「行の途中で切れた断片」の扱いと、redaction を適用する順序が正しさを左右する。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -582,7 +582,7 @@
 
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] `nilWriterStderrLimit` の旧名が、本番コード・テスト・コメントのどこにも残っていないこと（改名台帳。`make test` は識別子の参照だけを検出し、コメント中の旧名は検出しない）。
+- [x] `nilWriterStderrLimit` の旧名が、本番コード・テスト・コメントのどこにも残っていないこと（改名台帳。`make test` は識別子の参照だけを検出し、コメント中の旧名は検出しない）。
 - [ ] `docs/dev/architecture_design/security-architecture.md` と `security-architecture.ja.md` の §16（出力サイズ制限）が、0 を無制限とする記述と矛盾しないこと。同節は既に「Unlimited: Can disable limit by setting value to 0」としており、変更は不要と見込む（確認して、必要なら別タスクとして記録する）。
 - [ ] 本番コードの `errors.Is(..., context.Canceled)`・`errors.Is(..., context.DeadlineExceeded)` の使用箇所を列挙し、残る箇所が中断の判定に使われていないことを記録する（[02_architecture.md](02_architecture.md) §7.4。現状はタイムアウトのセキュリティログ `internal/runner/group_executor.go:629` と Slack 送信の再試行 `internal/logging/slack_sender.go:530` の 2 箇所）。`TestExecuteGroupsDoesNotBranchOnCancellationCause` は `executeGroups` の本体だけを固定するため、この列挙は手作業で行う。
 - [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使った用語（先頭の窓、省略の印など）の対訳が `/mktrans` により登録されていること。

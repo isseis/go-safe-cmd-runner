@@ -12,16 +12,17 @@ import (
 // valueDetectorPatterns holds the value-based secret patterns, compiled once at
 // package initialization.
 var valueDetectorPatterns = struct {
-	awsKeyID         *regexp.Regexp // AWS access key IDs: AKIA, ASIA, etc.
-	githubToken      *regexp.Regexp // GitHub tokens: ghp_, gho_, ghs_, etc.
-	slackToken       *regexp.Regexp // Slack tokens: xoxb-, xoxp-, xoxa-, xoxr-, etc.
-	gcpSAKey         *regexp.Regexp // GCP service account key ID field; groups 1 and 2 are the surrounding "private_key_id":" and closing quote
-	pemPrivate       *regexp.Regexp // PEM private key blocks: -----BEGIN ... PRIVATE KEY-----
-	bearerToken      *regexp.Regexp // Bearer tokens: standard OAuth pattern; group 1 is the "Bearer " prefix
-	urlCred          *regexp.Regexp // URL-embedded credentials: scheme://user:pass@host; group 1 is "scheme://"
-	githubPAT        *regexp.Regexp // GitHub fine-grained PATs: github_pat_ + 30+ base62 chars
-	slackPrefixToken *regexp.Regexp // Slack tokens with the xapp- / xoxe- / xoxs- prefixes
-	jwt              *regexp.Regexp // JSON Web Tokens: eyJ + three dot-separated base64url segments; group 1 is the character that ends the token
+	awsKeyID               *regexp.Regexp // AWS access key IDs: AKIA, ASIA, etc.
+	githubToken            *regexp.Regexp // GitHub tokens: ghp_, gho_, ghs_, etc.
+	slackToken             *regexp.Regexp // Slack tokens: xoxb-, xoxp-, xoxa-, xoxr-, etc.
+	gcpSAKey               *regexp.Regexp // GCP service account key ID field; groups 1 and 2 are the surrounding "private_key_id":" and closing quote
+	pemPrivate             *regexp.Regexp // PEM private key blocks: -----BEGIN ... PRIVATE KEY-----
+	pemPrivateUnterminated *regexp.Regexp // A PEM private key BEGIN line with no END line after it, through the end of the text
+	bearerToken            *regexp.Regexp // Bearer tokens: standard OAuth pattern; group 1 is the "Bearer " prefix
+	urlCred                *regexp.Regexp // URL-embedded credentials: scheme://user:pass@host; group 1 is "scheme://"
+	githubPAT              *regexp.Regexp // GitHub fine-grained PATs: github_pat_ + 30+ base62 chars
+	slackPrefixToken       *regexp.Regexp // Slack tokens with the xapp- / xoxe- / xoxs- prefixes
+	jwt                    *regexp.Regexp // JSON Web Tokens: eyJ + three dot-separated base64url segments; group 1 is the character that ends the token
 }{
 	awsKeyID:    regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b|\bASIA[0-9A-Z]{16}\b`),
 	githubToken: regexp.MustCompile(`\bgh[pors]_\s*[A-Za-z0-9_]{36,}\b`),
@@ -30,10 +31,16 @@ var valueDetectorPatterns = struct {
 	// ID is an opaque hex fingerprint, so it anchors on the field name. The real
 	// credential is the "private_key" PEM block, which pemPrivate catches
 	// key-independently; see docs/user/security-risk-assessment.md Limitations.
-	gcpSAKey:    regexp.MustCompile(`("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`),
-	pemPrivate:  regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
-	bearerToken: regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
-	urlCred:     regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`),
+	gcpSAKey:   regexp.MustCompile(`("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`),
+	pemPrivate: regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`),
+	// Covers a private key block whose END line was cut off, as when captured
+	// output is bounded to its leading lines. Mask applies it after pemPrivate,
+	// so every BEGIN line still present has no END line after it and the match
+	// runs to the end of the text. It errs on the side of masking too much:
+	// whatever follows the BEGIN line is hidden even when it is not key material.
+	pemPrivateUnterminated: regexp.MustCompile(`(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*`),
+	bearerToken:            regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`),
+	urlCred:                regexp.MustCompile(`(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`),
 	// Fine-grained PATs, whose github_pat_ prefix githubToken does not cover. Real
 	// tokens run to 80+ characters; the 30 lower bound keeps prose like
 	// "github_pattern" from matching.
@@ -153,7 +160,7 @@ func (d *ValueDetector) Mask(text string) string {
 	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, escapedPlaceholder)
-	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, escapedPlaceholder)
+	result = maskPrivateKeyBlocks(result, escapedPlaceholder)
 	// From here on, patterns with a capture group re-emit it (via "${1}" etc.) so
 	// masked output keeps its surrounding structure - "Bearer [REDACTED]" rather
 	// than a bare placeholder.
@@ -171,4 +178,25 @@ func (d *ValueDetector) Mask(text string) string {
 	}
 
 	return result
+}
+
+// maskPrivateKeyBlocks masks PEM private key blocks: complete ones first, then
+// a BEGIN line left without an END line, from that line to the end of the
+// text. escapedPlaceholder must already have "$" escaped for ReplaceAllString.
+//
+// RedactText also runs it before the key-name patterns. A key-name pattern
+// masks the first token after "KEY=" or "key: ", and when the value is a PEM
+// block that token is "-----BEGIN"; with the marker gone, neither pattern
+// here could match and the body lines would pass through unmasked.
+func maskPrivateKeyBlocks(text, escapedPlaceholder string) string {
+	text = valueDetectorPatterns.pemPrivate.ReplaceAllString(text, escapedPlaceholder)
+	// Only after pemPrivate: a complete block must stay masked over the same
+	// span as before, not swallow the text that follows it.
+	return valueDetectorPatterns.pemPrivateUnterminated.ReplaceAllString(text, escapedPlaceholder)
+}
+
+// maskPrivateKeyBlocks applies the package-level maskPrivateKeyBlocks with
+// the detector's placeholder.
+func (d *ValueDetector) maskPrivateKeyBlocks(text string) string {
+	return maskPrivateKeyBlocks(text, strings.ReplaceAll(d.placeholder, "$", "$$"))
 }

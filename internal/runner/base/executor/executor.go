@@ -30,10 +30,12 @@ import (
 // staging parent directory (e.g. /tmp).
 const stagedExecMode = 0o550
 
-// nilWriterStderrLimit bounds how many bytes of stderr are retained for runs
-// without an OutputWriter, matching the 32 KiB prefix/suffix limit os/exec
-// applies to Cmd.Output's stderr.
-const nilWriterStderrLimit = 32 << 10
+// retainedOutputLimit bounds how many leading bytes of each stream (stdout
+// and stderr) are retained in memory, with or without an OutputWriter. The
+// OutputWriter still receives every byte; only the copy kept for Result,
+// logs and notifications is bounded. See boundedBuffer for how the retained
+// window is cut back to complete lines.
+const retainedOutputLimit = 64 << 10
 
 // defaultKillGraceDelay is the production default for DefaultExecutor.killGraceDelay.
 const defaultKillGraceDelay = 5 * time.Second

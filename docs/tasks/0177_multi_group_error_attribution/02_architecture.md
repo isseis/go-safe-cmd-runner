@@ -442,9 +442,10 @@ Slack の欄の値は、監査ログの `stdout`・`stderr`（`internal/runner/b
 
 **`internal/redaction` の変更（AC-34）。** 秘密鍵の PEM ブロックの `END` の行が先頭の窓の外に出ると、`BEGIN` の行と本文の前半だけが保持される。これを redaction の値の形の検出で扱う。executor は秘密の形を知らないままとする。
 
-- **現状。** 値の形の検出 `ValueDetector.Mask`（`internal/redaction/value_detector.go:143`）は、`BEGIN ... PRIVATE KEY` の行から次の `END ... PRIVATE KEY` の行までを最短一致で隠すパターン `pemPrivate`（`value_detector.go:34`、適用は `:156`）を持つ。このパターンは `BEGIN` と `END` の両方を必要とするので、`BEGIN` の側だけのテキストには一致しない。`Mask` は `RedactText`（`internal/redaction/redactor.go:272`、`Mask` の呼び出しは `:291-295`）から呼ばれ、`SanitizeOutputForLogging` は `RedactSensitiveInfo` が有効なとき `RedactText` を使う（`internal/runner/base/security/logging_security.go:30-37`、`:49-51`）。
+- **現状。** 値の形の検出 `ValueDetector.Mask`（`internal/redaction/value_detector.go:143`）は、`BEGIN ... PRIVATE KEY` の行から次の `END ... PRIVATE KEY` の行までを最短一致で隠すパターン `pemPrivate`（`value_detector.go:34`、適用は `:156`）を持つ。このパターンは `BEGIN` と `END` の両方を必要とするので、`BEGIN` の側だけのテキストには一致しない。`Mask` は `RedactText`（`internal/redaction/redactor.go:272`、`Mask` の呼び出しは `:303`）から呼ばれ、`SanitizeOutputForLogging` は `RedactSensitiveInfo` が有効なとき `RedactText` を使う（`internal/runner/base/security/logging_security.go:30-37`、`:49-51`）。
 - **追加する規則。** `pemPrivate` を適用した後に、対応する `END` の行が無い `BEGIN ... PRIVATE KEY` の行（`pemPrivate` の適用後に残る `BEGIN` の行）から、テキストの末尾までを隠す。置き換えの文字列は検出の既定の placeholder とする。
   - `pemPrivate` を先に適用するのは、完全なブロックを変更前と同じ範囲で隠し、完全なブロックを持つテキストで後ろの内容まで隠さないためである。
+  - `RedactText` は、この 2 つの規則を、キー名による redaction より前にも適用する（`Mask` の中の適用はそのまま残す）。キー名による redaction は `PRIVATE_KEY=` や `private_key: ` の後の最初の語だけを隠す。値が PEM ブロックのとき、その語は `-----BEGIN` なので、先にキー名で隠すと 2 つの規則が目印を失い、本文の行が隠されずに残る。これは `END` の行がそろった完全なブロックでも同じである。
   - `END` の側だけが残ったブロックの規則は加えない。先頭だけを保持するので、保持した出力には `END` の側だけのブロックは生じない。
 - **安全な側に倒す。** 対応する `END` の行が無い `BEGIN` の行より後ろは、秘密鍵でなくても隠れる。保持した出力では、省略の印もこの範囲に入る。秘密鍵を出すより、隠しすぎる側を選ぶ（要件の決定事項「一部だけ残った秘密鍵のブロックも隠す」）。`PUBLIC KEY` のブロックは対象にしない。
 - **及ぶ範囲。** 規則は `RedactText` を通るすべての値に及ぶ。構造化ログの属性とメッセージ（`RedactingHandler`: `redactor.go:348`、`:752`）、監査ログ（`audit/logger.go:83-85`、`:120-121`、`:194`、`:232-238`）、`SanitizeOutputForLogging` を通る `command_group_summary` の出力（`internal/runner/group_executor.go:270-271`）、環境変数の検証（`internal/runner/base/security/environment_validation.go:60`）である。

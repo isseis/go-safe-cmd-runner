@@ -432,13 +432,7 @@ func (e *DefaultExecutor) prepareCommand(ctx context.Context, plan *risktypes.Ve
 		pc.execCmd.Env = append(pc.execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Without an OutputWriter, stderr is bounded to the same prefix/suffix
-	// limit os/exec applies to Cmd.Output's stderr.
-	stderrLimit := 0
-	if outputWriter == nil {
-		stderrLimit = nilWriterStderrLimit
-	}
-	pump, err := newOutputPump(outputWriter, stderrLimit)
+	pump, err := newOutputPump(outputWriter)
 	if err != nil {
 		return fail(err)
 	}

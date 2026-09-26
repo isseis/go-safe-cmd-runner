@@ -359,7 +359,7 @@ func TestExecute_CancelledContextReleasesAndRecordsWarnings(t *testing.T) {
 // this failure reaches a log. It is the one release branch no end-to-end test
 // reaches, since closing an already-closed descriptor is not an error.
 func TestPreparedCommand_ReleaseRecordsPumpFailure(t *testing.T) {
-	pump, err := newOutputPump(nil, 0)
+	pump, err := newOutputPump(nil)
 	require.NoError(t, err)
 
 	// Close the read ends behind the pump's back so its own close of them

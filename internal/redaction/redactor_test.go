@@ -4136,6 +4136,7 @@ func TestDefaultPatternSets_AreUnchanged(t *testing.T) {
 			{"slackToken", valueDetectorPatterns.slackToken, `\bxox[bpar]-[0-9]{10,}-[0-9]{10,}-[a-zA-Z0-9]+\b`},
 			{"gcpSAKey", valueDetectorPatterns.gcpSAKey, `("private_key_id"\s*:\s*")[a-fA-F0-9]{32,}(")`},
 			{"pemPrivate", valueDetectorPatterns.pemPrivate, `(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*?-----END\s[A-Z\s]*PRIVATE\sKEY-----`},
+			{"pemPrivateUnterminated", valueDetectorPatterns.pemPrivateUnterminated, `(?s)-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----.*`},
 			{"bearerToken", valueDetectorPatterns.bearerToken, `(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*`},
 			{"urlCred", valueDetectorPatterns.urlCred, `(?i)(\b[a-z][a-z0-9+\-.]*://)[^/?:]+:[^/@?]+@`},
 			{"githubPAT", valueDetectorPatterns.githubPAT, `\bgithub_pat_[A-Za-z0-9_]{30,}\b`},

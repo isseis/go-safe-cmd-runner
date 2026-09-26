@@ -241,13 +241,16 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	assert.NotNil(t, result, "Result should still be returned even on failure")
 }
 
-// TestExecute_NilOutputWriter_StderrPrefixSuffixBound checks that the
-// outputWriter == nil path bounds stderr to the same 32 KiB prefix/suffix
-// os/exec applies to Cmd.Output's stderr: on an abnormal exit the retained
-// head and tail reach Result.Stderr with the omission marker between them.
-func TestExecute_NilOutputWriter_StderrPrefixSuffixBound(t *testing.T) {
-	const stderrTotal = 70 * 1024 // beyond the 2 * 32 KiB retention
-	const retained = 32 * 1024    // the prefix and the suffix size
+// retainedOutputLimit mirrors the executor's unexported leading-window size
+// (64 KiB) for the tests below.
+const retainedOutputLimit = 64 * 1024
+
+// TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly checks that stderr
+// retained without an OutputWriter keeps only the leading window, cut back to
+// complete lines: stderr with no newline at all leaves the omission marker
+// alone, counting every byte written.
+func TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly(t *testing.T) {
+	const stderrTotal = 70 * 1024 // beyond the leading window
 
 	e := executor.NewDefaultExecutor(
 		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
@@ -260,10 +263,84 @@ func TestExecute_NilOutputWriter_StderrPrefixSuffixBound(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.ExitCode)
 
-	want := strings.Repeat("x", retained) +
-		"\n... omitting " + strconv.Itoa(stderrTotal-2*retained) + " bytes ...\n" +
-		strings.Repeat("x", retained)
-	assert.Equal(t, want, result.Stderr)
+	assert.Equal(t, "\n... omitting "+strconv.Itoa(stderrTotal)+" bytes ...\n", result.Stderr)
+}
+
+// TestExecute_NilOutputWriter_StdoutBoundedOnSuccess checks that stdout is
+// bounded too, on a successful run: the complete lines of the leading window
+// are kept and the rest is counted in the omission marker.
+func TestExecute_NilOutputWriter_StdoutBoundedOnSuccess(t *testing.T) {
+	const (
+		lineLen = 100 // 99 characters and a newline
+		lines   = 1000
+		total   = lineLen * lines // beyond the leading window
+	)
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+	)
+	script := fmt.Sprintf("i=0; while [ $i -lt %d ]; do printf '%%099d\\n' $i; i=$((i+1)); done", lines)
+	cmd := executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", script}, executortestutil.WithWorkDir(""))
+
+	result, err := e.Execute(context.Background(), nil, cmd, map[string]string{}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode)
+
+	kept := retainedOutputLimit / lineLen * lineLen
+	var want strings.Builder
+	for i := range kept / lineLen {
+		fmt.Fprintf(&want, "%099d\n", i)
+	}
+	want.WriteString("\n... omitting " + strconv.Itoa(total-kept) + " bytes ...\n")
+	assert.Equal(t, want.String(), result.Stdout)
+}
+
+// streamBytesWriter counts the bytes an OutputWriter receives per stream. It
+// is mutex-guarded because the pump reaches an OutputWriter from one reader
+// goroutine per stream.
+type streamBytesWriter struct {
+	mu    sync.Mutex
+	bytes map[executor.OutputStream]int
+}
+
+func (w *streamBytesWriter) Write(stream executor.OutputStream, data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.bytes == nil {
+		w.bytes = make(map[executor.OutputStream]int)
+	}
+	w.bytes[stream] += len(data)
+	return nil
+}
+
+func (w *streamBytesWriter) Close() error { return nil }
+
+// TestExecute_OutputWriterReceivesAllBytes checks that the leading-window
+// bound applies only to the retained copy: the OutputWriter still receives
+// every byte of both streams, while Result holds the bounded form.
+func TestExecute_OutputWriterReceivesAllBytes(t *testing.T) {
+	const streamTotal = 3 * retainedOutputLimit
+
+	e := executor.NewDefaultExecutor(
+		executor.WithFileSystem(&executortestutil.MockFileSystem{}),
+	)
+	writer := &streamBytesWriter{}
+	script := fmt.Sprintf("head -c %d /dev/zero | tr '\\0' 'o'; head -c %d /dev/zero | tr '\\0' 'e' >&2; exit 1", streamTotal, streamTotal)
+	cmd := executortestutil.CreateRuntimeCommand(shCmd, []string{"-c", script}, executortestutil.WithWorkDir(""))
+
+	result, err := e.Execute(context.Background(), nil, cmd, map[string]string{}, writer)
+	require.Error(t, err)
+	require.NotNil(t, result)
+
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	assert.Equal(t, streamTotal, writer.bytes[executor.StdoutStream])
+	assert.Equal(t, streamTotal, writer.bytes[executor.StderrStream])
+
+	marker := "\n... omitting " + strconv.Itoa(streamTotal) + " bytes ...\n"
+	assert.Equal(t, marker, result.Stdout)
+	assert.Equal(t, marker, result.Stderr)
 }
 
 // TestExecute_NilOutputWriter_LargeStderrStillSucceeds checks that the

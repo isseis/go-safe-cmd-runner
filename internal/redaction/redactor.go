@@ -283,6 +283,13 @@ func (c *Config) RedactText(text string) string {
 
 	result := text
 
+	// PEM private key blocks go first: the key-name patterns below would mask
+	// the "-----BEGIN" token of "KEY=-----BEGIN ..." and leave the body lines
+	// unrecognizable to the value-format detection.
+	if c.valueDetector != nil {
+		result = c.valueDetector.maskPrivateKeyBlocks(result)
+	}
+
 	// Apply key-name-based redaction
 	for i := range c.compiled {
 		result = c.compiled[i].apply(result)
