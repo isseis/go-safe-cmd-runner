@@ -152,11 +152,11 @@
 - [ ] `internal/runner/test_helpers.go` に `NewGroupErrorForTest(group, command string, err error) *GroupError` と `NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors` を追加する。
 - [ ] `internal/runner/group_errors_test.go` に次を追加する。`TestGroupError_ErrorMatchesLegacyAssembly`（原因が 1 行のとき、同じ原因に変更前の組み立て方を適用した文言と一致すること。1 件・2 件）、`TestGroupError_IndentsContinuationLines`、`TestGroupErrors_UnwrapReachesEachCause`、`TestGroupError_ReadsCommandNameFromCause`、`TestGroupErrors_ConstructorsRejectInvalidInput`、`TestGroupErrors_ErrorsReturnsCopy`。
 - [ ] `internal/runner/runner_test.go` の `TestRunner_ExecuteAll_ComplexErrorScenarios` を、単一失敗が `*GroupErrors`（1 件）で group 名が `GroupSpec.Name` であることの検証に置き換える。`*CommandExecutionError` への到達は残す。`TestRunner_ExecuteGroupsBuildsGroupErrors` を追加し、0 件で `err == nil`、1 件・2 件で `*GroupErrors` を返すことを確かめる。
-- [ ] `internal/runner/group_errors_guard_test.go` に `TestProductionGroupErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を構築関数の外で拒否し、`.errs`・`.group`・`.command`・`.err` への代入・インクリメントは `internal/runner` 直下の本番ファイルだけを走査して拒否する。検出器自身は `TestGroupErrorConstructionCheckRecognizesForms` で各形を固定する）と `TestProductionCodeDoesNotProbeMultiErrorShape`（本番ファイルに `Unwrap() []error` を型アサーションで調べる分岐が無いこと）を追加する。
+- [ ] `internal/runner/group_errors_guard_test.go` に `TestProductionGroupErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を構築関数の外で拒否し、`.errs`・`.group`・`.command`・`.err` への代入・インクリメントは `internal/runner` 直下の本番ファイルだけを走査して拒否する。検出器自身は `TestGroupErrorConstructionCheckRecognizesForms` で各形を固定する）を追加する。`Unwrap() []error` の形の判定を禁じるガードは、`formatCause`（`internal/logging/execution_error.go:46`）が同じ判定を持つため Phase 2 で追加する。
 - [ ] `cmd/runner/main_test.go` の `TestExecutionErrorContext` を、[02_architecture.md](02_architecture.md) §7.1 の行（`*GroupErrors` 1 件の 4 種、2 件、実行全体の中断、対象外のエラー）に置き換える。
 - [ ] `cmd/runner/integration_attribution_test.go`（`//go:build test`）に `TestIntegration_SingleGroupStageFailureGetsOuterContext` を追加する。group の展開が失敗する設定を `runMainWithSlackMock` で実行し、stderr の `Details:` の行と構造化ログの `error_message` が §3.3 の外側の context を含む文言であることを確かめる。
 
-**完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestGroupError_IndentsContinuationLines` が字下げを外すと失敗すること、`TestExecutionErrorContext` が判定 1・2 の順序を逆にすると失敗すること、`TestProductionGroupErrorLiteralsUseConstructors` が `runner.go` に各形の直接リテラルを置く／`.group` に代入すると失敗し、`internal/runner/base/executor` の既存の `.stage`・`.err` への代入には反応しないこと、`TestProductionCodeDoesNotProbeMultiErrorShape` が旧判定を戻すと失敗することを確認する。
+**完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestGroupError_IndentsContinuationLines` が字下げを外すと失敗すること、`TestExecutionErrorContext` が判定 1・2 の順序を逆にすると失敗すること、`TestProductionGroupErrorLiteralsUseConstructors` が `runner.go` に各形の直接リテラルを置く／`.group` に代入すると失敗し、`internal/runner/base/executor` の既存の `.stage`・`.err` への代入には反応しないことを確認する。
 
 ### PR-1 作成ポイント: the typed group-failure error and count-based outer context
 
@@ -168,7 +168,7 @@
 
 **実装モデル要件**: frontier-recommended
 
-**判定理由**: 新しいエラー型とその不変条件、返り値の型の変更、複数箇所をまたぐ呼び出し側の切替、2 つの AST ガードを含む。段階的な raise/lower は無く panel-mode トリガーには該当しない。
+**判定理由**: 新しいエラー型とその不変条件、返り値の型の変更、複数箇所をまたぐ呼び出し側の切替、構築の AST ガードを含む。段階的な raise/lower は無く panel-mode トリガーには該当しない。
 
 - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [ ] PR を作成した
@@ -177,7 +177,7 @@
 
 ### Phase 2: `UserFriendlyError` の削除（原因の差し替えの廃止）
 
-**対象ファイル**: `internal/logging/execution_error.go`、`internal/logging/pre_execution_error.go`、`internal/logging/pre_execution_error_test.go`、`internal/logging/execution_error_guard_test.go`（新規）、`internal/runner/base/output/errors.go`、`internal/runner/multi_group_error_integration_test.go`（新規）、`cmd/runner/integration_attribution_test.go`（Phase 1 で新規作成）
+**対象ファイル**: `internal/logging/execution_error.go`、`internal/logging/pre_execution_error.go`、`internal/logging/pre_execution_error_test.go`、`internal/logging/execution_error_guard_test.go`（新規）、`internal/runner/group_errors_guard_test.go`（Phase 1 で新規作成）、`internal/runner/base/output/errors.go`、`internal/runner/multi_group_error_integration_test.go`（新規）、`cmd/runner/integration_attribution_test.go`（Phase 1 で新規作成）
 
 **作業内容**:
 
@@ -185,11 +185,12 @@
 - [ ] `PreExecutionError.Detail()`（`:93-98`）と `HandleExecutionError`（`:243-276`）の原因の描画を `e.Err.Error()` に変える。`handleErrorCommon` の複数行の字下げ（`:156-159`）と、外側の context を `Message` の直後・原因の前に置くという順序は変えない。
 - [ ] `CaptureError.UserMessage`（`internal/runner/base/output/errors.go:113-130`）を削除する（`GetType`・`GetPath` は Phase 6）。
 - [ ] `internal/logging/execution_error_guard_test.go` に `TestProductionCodeHasNoUserFriendlyError` を追加し、本番ファイルに `UserFriendlyError`・`GetUserFriendlyMessage`・`UserMessage`・`formatCause` が現れないことを固定する。
+- [ ] `internal/runner/group_errors_guard_test.go` に `TestProductionCodeDoesNotProbeMultiErrorShape`（本番ファイルに `Unwrap() []error` を型アサーションで調べる分岐が無いこと）を追加する。Phase 1 の `executionErrorContext` の置き換えと、本 Phase の `formatCause` の削除で、本番の該当箇所が無くなった後に置く。
 - [ ] `internal/logging/pre_execution_error_test.go` の `friendlyTestError` は残し、`UserMessage` を持っていても `Error()` が使われることを示すコメントに変える。`TestPreExecutionError_Detail` と `TestHandleExecutionError_CauseFormatting` の期待値を `Error()` の文言に反転する。
-- [ ] `internal/runner/multi_group_error_integration_test.go` を追加する。`TestRunner_MultiGroupFailureAttribution` は、group-1 が 0 以外の終了コード、group-2 が小さな `output_size_limit` と出力ファイルによるサイズ超過になる設定を実際の executor と resource manager で実行し（`group_executor_timeout_test.go` の構成を流用）、得たエラーを `logging.HandleExecutionError` に渡す。stderr はテストファイル内のローカルヘルパで `os.Pipe` により捕捉し、`error_message` は `tu.NewCallbackHandler` で記録して観測する（AC-01・AC-02・AC-04）。`TestHandleExecutionError_FilesystemCaptureErrorKeepsCause` は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で実物の `ErrorTypeFileSystem` の `*CaptureError` を作り、`Cause` の文言が `Details:` に出ることを確かめる（AC-03）。`TestRunner_SingleCommandFailureReportUnchanged` は、1 group・1 コマンドの失敗で `Details:`・`error_message` が変更前の文言のままであることを確かめる（AC-11）。
+- [ ] `internal/runner/multi_group_error_integration_test.go` を追加する。`TestRunner_MultiGroupFailureAttribution` は、group-1 が 0 以外の終了コード、group-2 が小さな `output_size_limit` と出力ファイルによるサイズ超過になる設定を実際の executor と resource manager で実行し（`group_executor_timeout_test.go` の構成を流用）、得たエラーを `logging.HandleExecutionError` に渡す。stderr はテストファイル内のローカルヘルパで `os.Pipe` により捕捉し、`error_message` は `tu.NewCallbackHandler` で記録して観測する（AC-01・AC-02・AC-04）。`TestHandleExecutionError_FilesystemCaptureErrorKeepsCause` は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で実物の `ErrorTypeFileSystem` の `*CaptureError` を作り（`MaxSize` は書き込むデータより大きい正の値にする。Phase 5 より前は `MaxSize` が 0 だとサイズの比較が先に働き、`ErrorTypeSizeLimit` になる）、`Cause` の文言が `Details:` に出ることを確かめる（AC-03）。`TestRunner_SingleCommandFailureReportUnchanged` は、1 group・1 コマンドの失敗で `Details:`・`error_message` が変更前の文言のままであることを確かめる（AC-11）。
 - [ ] `cmd/runner/integration_attribution_test.go` に `TestIntegration_SingleCommandFailureKeepsOuterContext` を追加し、実際のコマンド失敗で `GroupName`・`CommandName` を含む外側の context が `Details:` と `error_message` に出ること、終了コードが 1 で `RUN_SUMMARY` 行が 1 行（失敗の status）であることを確かめる（AC-11。終了コードの対応付けは AC-12・AC-35・AC-36 の共通の証拠にも使う）。
 
-**完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestPreExecutionError_Detail` が `Detail()` を `UserMessage` 優先に戻すと失敗すること、`TestHandleExecutionError_CauseFormatting` が同様に失敗すること、`TestProductionCodeHasNoUserFriendlyError` が本番のコメントに旧名を戻すと失敗することを確認する。
+**完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestPreExecutionError_Detail` が `Detail()` を `UserMessage` 優先に戻すと失敗すること、`TestHandleExecutionError_CauseFormatting` が同様に失敗すること、`TestProductionCodeHasNoUserFriendlyError` が本番のコメントに旧名を戻すと失敗すること、`TestProductionCodeDoesNotProbeMultiErrorShape` が `executionErrorContext` または `formatCause` の旧判定を戻すと失敗することを確認する。
 
 ### PR-2 作成ポイント: remove the cause-substitution interface
 
@@ -224,7 +225,7 @@
 - [ ] `output_pump_test.go` の `TestBoundedBuffer_KeepsPrefixAndSuffix` を `TestBoundedBuffer_KeepsCompletePrefixLines` に改名し、先頭の窓に改行がある行・無い行、短い先頭行の後に長い行が続く行を持つ表に書き直す。`TestBoundedBuffer_WriteNeverFails`・`TestNewBoundedBuffer_RejectsNegativeLimit`（許容する上限の一覧）と `newOutputPump` の呼び出しを新しい形に合わせる。
 - [ ] `executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` を `TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly` に改名し、改行を含まない巨大 stderr の期待値を省略の印だけにする。`TestExecute_NilOutputWriter_StdoutBoundedOnSuccess`（正常終了でも `Result.Stdout` が上限付きで省略の印を含むこと）と `TestExecute_OutputWriterReceivesAllBytes`（出力ファイルがあるとき、全バイトが `OutputWriter` に渡ること）を追加する。
 - [ ] `output_pump_test.go` に `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` を追加する。値の形の検出の各パターン（`pemPrivate`・`githubToken`・`bearerToken`・`gcpSAKey` と、1 行の `urlCred`）に一致する秘密の行を並べたコーパスを作る。コーパスを `boundedBuffer` 自身に書いて `Bytes()` で取り出し（行の途中では切らない）、`RedactText` に通して、秘密の本体が redaction されずに残らないことを確かめる。コーパス全体を切らずに `RedactText` に通すと各秘密が隠れることも確かめ、コーパスが検出に一致する入力であることを示す。切る規則を完全な行への切り詰めから外す（行の途中で切る）と失敗することも確認する（§4.4）。
-- [ ] `internal/runner/output_retention_integration_test.go`（`package runner`）に `TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput` を追加する。実際の group executor で 64 KiB を超える stdout を書き、0 以外の終了コードで終わるコマンドを実行する（`LogUserGroupExecution` は終了コードが 0 以外のときだけ stdout・stderr と通知属性を記録するため。デバッグログと `command_group_summary` の記録は正常終了でも出る）。`tu.NewCallbackHandler` で記録した `Command execution result` の記録から、デバッグログの `stdout` を確かめる。group executor の通知（`logGroupExecutionSummary`）が出す `command_group_summary` の記録からは、その出力の欄を確かめる。`Result` を `audit.NewAuditLogger(nil).LogUserGroupExecution` に渡して得た記録からは、`user_group_command_failure` の `Output` の欄を確かめる。Slack の欄は、`logging.NewSlackHandler` を `Synchronous: true`・`httptest.NewTLSServer` の `HTTPClient` で組み立て、`Handle` に記録を渡してペイロードを観測する（AC-29。`user_group_command_failure` と `command_group_summary` は別の記録なので、それぞれの記録を渡す）。ハンドラは生成時に `t.Cleanup` で閉じる。先頭の窓に改行が無い出力・切り詰め位置より短い完全な行がある出力・残った行が切り詰め位置より長い出力の 3 種を表に持つ。
+- [ ] `internal/runner/output_retention_integration_test.go`（`package runner`）に `TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput` を追加する。実際の group executor で 64 KiB を超える stdout を書き、0 以外の終了コードで終わるコマンドを実行する（`LogUserGroupExecution` は終了コードが 0 以外のときだけ stdout・stderr と通知属性を記録するため。デバッグログと `command_group_summary` の記録は正常終了でも出る）。`tu.NewCallbackHandler` で記録した `Command execution result` の記録から、デバッグログの `stdout` を確かめる。`command_group_summary` の記録は `Runner.logGroupExecutionSummary`（`NewRunner` が `WithGroupNotificationFunc` で配線する。`runner.go:373`）が出すので、group executor を `WithGroupNotificationFunc(r.logGroupExecutionSummary)` で組み立て、その記録から出力の欄を確かめる。`Result` を `audit.NewAuditLoggerWithCustom(logger).LogUserGroupExecution`（`internal/runner/base/audit/test_helpers.go`。`NewAuditLogger` は `slog.Default()` に書くため記録を受け取れない）に渡して得た記録からは、`user_group_command_failure` の `Output` の欄を確かめる。Slack の欄は、`logging.NewSlackHandler` を `Synchronous: true`・`httptest.NewTLSServer` の `HTTPClient` で組み立て、`Handle` に記録を渡してペイロードを観測する（AC-29。`user_group_command_failure` と `command_group_summary` は別の記録なので、それぞれの記録を渡す）。ハンドラは生成時に `t.Cleanup` で閉じる。先頭の窓に改行が無い出力・切り詰め位置より短い完全な行がある出力・残った行が切り詰め位置より長い出力の 3 種を表に持つ。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`pemPrivateUnterminated` の適用を外すと `TestValueDetector_Mask_PositiveCases`（`BEGIN` の側だけの行）と `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` が失敗すること、完全な行への切り詰めを外すと `TestBoundedBuffer_KeepsCompletePrefixLines` と `TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` が失敗すること、省略の印のバイト数から切り詰め分を除くと `TestBoundedBuffer_KeepsCompletePrefixLines` が失敗することを確認する。
 
@@ -424,8 +425,8 @@
 
 | PR | 対象ステップ | 主な変更内容 | 実装モデル要件 |
 |---|---|---|---|
-| PR-1 | Phase 1 | `GroupError`・`GroupErrors`、`executeGroups` の返り値、`executionErrorContext`、テスト用構築関数、2 つの AST ガード | frontier-recommended |
-| PR-2 | Phase 2 | `UserFriendlyError` の削除、`Detail()` と `HandleExecutionError` の原因、複数 group の統合テスト | frontier-recommended |
+| PR-1 | Phase 1 | `GroupError`・`GroupErrors`、`executeGroups` の返り値、`executionErrorContext`、テスト用構築関数、構築の AST ガード | frontier-recommended |
+| PR-2 | Phase 2 | `UserFriendlyError` の削除、`Detail()` と `HandleExecutionError` の原因、`Unwrap() []error` の判定を禁じるガード、複数 group の統合テスト | frontier-recommended |
 | PR-3 | Phase 3 | `pemPrivateUnterminated`、`boundedBuffer` の先頭だけの保持、定数の改名、性質テスト、Slack・デバッグログの統合テスト | frontier-required |
 | PR-4 | Phase 4 | `ValidateOutputSizeLimits` と `ErrNegativeOutputSizeLimit`、合流後の呼び出し、dry-run の統合テスト | standard |
 | PR-5 | Phase 5 | `WriteOutput` の上限 0、0 の統合テスト | standard |
@@ -480,10 +481,10 @@
 | 1 | `executionErrorContext` の判定 1・2 を逆にする | `TestExecutionErrorContext`（2 件の行） |
 | 1 | `GroupError`・`GroupErrors` の複合リテラルを本番に置く（値形・ポインタ形・elided 形・位置指定形の各形で 1 回ずつ） | `TestProductionGroupErrorLiteralsUseConstructors` |
 | 1 | `.errs`・`.group`・`.command`・`.err` の各フィールドへ代入する | `TestProductionGroupErrorLiteralsUseConstructors` |
-| 1 | `Unwrap() []error` の型アサーションを本番に戻す | `TestProductionCodeDoesNotProbeMultiErrorShape` |
 | 2 | `Detail()` を `UserMessage` 優先に戻す | `TestPreExecutionError_Detail` |
 | 2 | `HandleExecutionError` を `UserMessage` 優先に戻す | `TestHandleExecutionError_CauseFormatting` |
 | 2 | 本番のコメントに旧いシンボル名を戻す | `TestProductionCodeHasNoUserFriendlyError` |
+| 2 | `Unwrap() []error` の型アサーションを本番に戻す | `TestProductionCodeDoesNotProbeMultiErrorShape` |
 | 3 | `pemPrivateUnterminated` の適用を外す | `TestValueDetector_Mask_PositiveCases`（`BEGIN` の側だけの行）・`TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` |
 | 3 | `boundedBuffer.Bytes()` の完全な行への切り詰めを外す（行の途中で切る） | `TestBoundedBuffer_KeepsCompletePrefixLines`・`TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret` |
 | 3 | 省略の印のバイト数から切り詰め分を除く | `TestBoundedBuffer_KeepsCompletePrefixLines` |
@@ -519,7 +520,7 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1。2 つの AST ガード green）
+- [ ] PR-1 マージ済み（対象ステップ: Phase 1。構築の AST ガード green）
 - [ ] PR-2 マージ済み（対象ステップ: Phase 2。複数 group の帰属の統合テスト green）
 - [ ] PR-3 マージ済み（対象ステップ: Phase 3。redaction の性質テストと保持の上限のテスト green）
 - [ ] PR-4 マージ済み（対象ステップ: Phase 4。dry-run の統合テスト green）
@@ -545,7 +546,7 @@
 | AC-05 | Phase 1 | `test`: `cmd/runner/main_test.go::TestExecutionErrorContext`（2 件の行が空を返すこと） |
 | AC-06 | Phase 2 | `test`: `internal/logging/pre_execution_error_test.go::TestPreExecutionError_Detail`・`TestHandleExecutionError_CauseFormatting`。`static`: `internal/logging/execution_error_guard_test.go::TestProductionCodeHasNoUserFriendlyError` |
 | AC-07 | Phase 1 | `test`: `internal/runner/group_errors_test.go::TestGroupError_ReadsCommandNameFromCause`、`internal/runner/runner_test.go::TestRunner_ExecuteGroupsBuildsGroupErrors`（0 件で nil、1 件以上で `GroupSpec.Name` を持つ `*GroupErrors`） |
-| AC-08 | Phase 1 | `test`: `TestExecutionErrorContext`。`static`: `internal/runner/group_errors_guard_test.go::TestProductionCodeDoesNotProbeMultiErrorShape` |
+| AC-08 | Phase 1、Phase 2 | `test`: `TestExecutionErrorContext`。`static`: `internal/runner/group_errors_guard_test.go::TestProductionCodeDoesNotProbeMultiErrorShape` |
 | AC-09 | Phase 1 | `test`: `group_errors_test.go::TestGroupError_ErrorMatchesLegacyAssembly` |
 | AC-10 | Phase 1 | `test`: `group_errors_test.go::TestGroupErrors_UnwrapReachesEachCause` |
 | AC-11 | Phase 1、Phase 2 | `test`: `TestExecutionErrorContext`（1 件の行）、`TestRunner_SingleCommandFailureReportUnchanged`、`cmd/runner/integration_attribution_test.go::TestIntegration_SingleCommandFailureKeepsOuterContext` |
