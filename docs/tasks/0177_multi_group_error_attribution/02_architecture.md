@@ -8,7 +8,7 @@
 | Created | 2026-09-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。 |
+| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。 |
 
 ## 0. 前提
 
@@ -350,28 +350,37 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 
 - `ValidateTimeouts`（`internal/runner/config/validation.go:188-222`）と同じ形で、グローバル（`GlobalSpec.OutputSizeLimit`）・テンプレート（`CommandTemplate.OutputSizeLimit`）・コマンド（`CommandSpec.OutputSizeLimit`）の負の値をすべて集め、`ErrNegativeOutputSizeLimit` をラップした 1 つのエラーで返す。各項目は値と設定箇所（テンプレート名、group 名・コマンド名と添字）を含む（AC-27）。
 - **取り込んだテンプレートを含めて検証する。** `ValidateTimeouts` は、主の設定ファイルだけを読む `loadConfigInternal` の中で呼ばれる（`internal/runner/config/loader.go:231-233`）。`includes` で取り込んだテンプレートのファイルは `ParseTemplateContent`（`internal/runner/config/template_loader.go:22-44`）で読まれた後、値の検証を受けないまま `mergeTemplates` で `cfg.CommandTemplates` に合流する（`loader.go:62-93`）。そのため `ValidateOutputSizeLimits` は、`ValidateTimeouts` の隣ではなく、`loadConfigWithIncludes` でテンプレートを合流した後の設定全体に対して呼ぶ。テンプレート名は合流時に重複が拒否されるので、設定箇所はテンプレート名で一意に示せる。
-  - 取り込んだテンプレートの負の `timeout` も同じ理由で `ValidateTimeouts` を通らず、`createCommandContext` の panic（`internal/runner/group_executor.go:575-578`）に届く。これは本タスクの要件の対象外の既存の不具合なので、別 issue で扱う。
+  - 取り込んだテンプレートの負の `timeout` も同じ理由で `ValidateTimeouts` を通らず、`createCommandContext` の panic（`internal/runner/group_executor.go:575-578`）に届く。これは本タスクの要件の対象外の既存の不具合なので、[#1182](https://github.com/isseis/go-safe-cmd-runner/issues/1182) で扱う。
 - 設定の読み込みは dry-run の分岐より前（`cmd/runner/main.go:350`）なので、dry-run でも拒否される。読み込みのエラーは、既存の設定の読み込みエラーと同じく実行前エラーとして報告され、どの group も実行されない。
 - 同じ値を、検証を行わない `common.NewOutputSizeLimitFromPtr`（`internal/common/output_size_limit_type.go:33`）が上限に変換する点は変えない。検証済みの設定だけがこの変換に届くためである。
 
 ### 3.7 `internal/runner/base/executor`: 出力の保持の上限（変更）
 
-- 出力ファイルがあるとき（`OutputWriter` が nil でないとき）、stdout と stderr の両方を、メモリ上では上限付き（先頭と末尾を保持し、省略した量を示す）で保持する（AC-28、AC-29）。上限には、出力ファイルが無いときの stderr の上限 `nilWriterStderrLimit`（32 KiB、`internal/runner/base/executor/executor.go:33-36`）と同じ値を使い、定数は 1 つにまとめて用途に合う名前にする。
-- 出力ファイルが無いときは現状のまま（stdout は上限なし、stderr は 32 KiB）とする（要件の対象外）。
-- 保持の仕組みは既存の `boundedBuffer`（`internal/runner/base/executor/output_pump.go:245-310`）をそのまま使う。先頭と末尾を保持し、間に `... omitting N bytes ...` を入れる。`newOutputPump`（`:49`）が stdout の上限も引数で受け取るようにし、`command_lifecycle.go:437-441` が出力ファイルの有無で両方の上限を決める。
-- **stderr も上限付きにする理由。** 出力ファイルがあるとき、executor は stdout と stderr の両方を同じ `OutputWriter`（出力ファイル）へ書き（`output_pump.go:64-70`）、現状は stderr もメモリ上で上限なしに保持する（`command_lifecycle.go:437-441`）。stdout だけに上限を設けても、`output_size_limit = 0` のコマンドが stderr に大量に書けば、runner のメモリ使用量は出力の大きさに比例する。要件の Success Criteria（「runner のメモリ使用量が出力の大きさに比例しない」）を満たすには両方に上限が要る。出力の全体は出力ファイルにある。
+現状の保持の上限は次のとおりである（`internal/runner/base/executor/output_pump.go:46-48`、`internal/runner/base/executor/command_lifecycle.go:437-441`）。
+
+| | stdout | stderr |
+|---|---|---|
+| 出力ファイルあり | 上限なし | 上限なし |
+| 出力ファイルなし | 上限なし | 32 KiB（`nilWriterStderrLimit`: `internal/runner/base/executor/executor.go:33-36`） |
+
+- **すべての場合に同じ上限を使う（AC-28、AC-29）。** 出力ファイルの有無によらず、stdout・stderr の両方を、メモリ上では先頭と末尾の 32 KiB ずつに限って保持する。上限は現状の `nilWriterStderrLimit` と同じ値とし、定数は 1 つにまとめて用途に合う名前にする。上限が場合によって変わらなくなるので、`command_lifecycle.go:437-441` の出力ファイルの有無による分岐は無くなり、`newOutputPump`（`output_pump.go:49`）は stdout・stderr の両方に同じ上限を使う。
+- **保持の仕組み。** 既存の `boundedBuffer`（`output_pump.go:245-310`）をそのまま使う。先頭と末尾を保持し、間に `... omitting N bytes ...` を入れる。
 - **出力ファイルへの書き込みは変えない。** 上限はメモリ上の保持だけにかかり、`OutputWriter` にはすべてのバイトを渡す（`executor.go:678-693`）。
+- **出力ファイルが無いときの stderr の報告の条件は変えない。** 出力ファイルが無いとき、`Result.Stderr` はコマンドが異常終了したときだけ設定され、正常終了では空になる（`command_lifecycle.go:774-780`、`Cmd.Output` に合わせたもの）。stdout にはこの条件が無い。本タスクは保持の上限だけをそろえ、この非対称は変えない。
+- **出力ファイルが無いコマンドの stdout。** 上限を超えた部分は、どこにも残らなくなる。runner はコマンドの出力を自身の標準出力へ表示しない。この stdout を全体として保存していたのは、下の表の構造化ログだけである。出力の全体が必要なコマンドには出力ファイルを指定する（利用者向け文書に記載する、AC-31）。
+- **`Cmd.Output` との違い。** 出力ファイルが無いときの stderr の上限は、`os/exec` の `Cmd.Output` が stderr に適用する上限に合わせたものである（`executor.go:33-35` のコメント）。`Cmd.Output` は stdout を全体で返すが、本タスクの後は stdout にも上限がかかる。executor の `Execute` を呼ぶのは runner の `NormalResourceManager.executeCommandInternal` だけ（`internal/runner/resource/normal_manager.go:299`）であり、stdout の全体を必要とする呼び出し元は無い。
 
 保持した出力を使う箇所と、変わる点は次のとおりである。いずれも全体を必要としない。
 
 | 使う箇所 | 変更前 | 変更後 |
 |---|---|---|
 | デバッグログ `Command execution result` の `stdout`（`internal/runner/group_executor.go:602-603`） | 切り詰めて記録 | 変わらない |
-| デバッグログ `Command execution result` の `stderr`（`group_executor.go:605-606`） | 全体（最大 `output_size_limit`） | 先頭と末尾の 32 KiB ずつ |
+| デバッグログ `Command execution result` の `stderr`（`group_executor.go:605-606`） | 出力ファイルありは全体（最大 `output_size_limit`）、なしは 32 KiB ずつ | 先頭と末尾の 32 KiB ずつ |
+| `command_group_summary` の構造化ログレコードの `output`（`internal/common/logschema.go:122-128` で全体を記録） | 全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし） | 先頭と末尾の 32 KiB ずつ |
 | Slack の `command_group_summary` の出力（`internal/logging/slack_handler.go:21` の stdout 1000 文字、`:22` の stderr 500 文字で切り詰め） | 切り詰めて表示 | 変わらない（先頭側で切り詰められる） |
-| `Command failed`・`Command failed with non-zero exit code` の構造化ログの `stderr`（`group_executor.go:639-643`、`:659-665`） | 全体（最大 `output_size_limit`） | 先頭と末尾の 32 KiB ずつ |
-| executor の `Command execution failed` のログの `stderr`（`internal/runner/base/executor/command_lifecycle.go:789-793`） | 全体（最大 `output_size_limit`） | 先頭と末尾の 32 KiB ずつ |
-| `run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121`）と、その Slack 通知（`user_group_command_failure`、`slack_handler.go:1033-1063`） | 監査ログは全体（最大 `output_size_limit`）、Slack は切り詰めて表示 | 監査ログは先頭と末尾の 32 KiB ずつ、Slack は変わらない |
+| `Command failed`・`Command failed with non-zero exit code` の構造化ログの `stderr`（`group_executor.go:639-643`、`:659-665`） | 出力ファイルありは全体（最大 `output_size_limit`）、なしは 32 KiB ずつ | 先頭と末尾の 32 KiB ずつ |
+| executor の `Command execution failed` のログの `stderr`（`internal/runner/base/executor/command_lifecycle.go:789-793`） | 同上 | 先頭と末尾の 32 KiB ずつ |
+| `run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121`）と、その Slack 通知（`user_group_command_failure`、`slack_handler.go:1033-1063`） | 監査ログの stdout は全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし）、stderr は上の行と同じ。Slack は切り詰めて表示 | 監査ログは先頭と末尾の 32 KiB ずつ、Slack は変わらない |
 
 ### 3.8 コンポーネントの責務と変更ファイル
 
@@ -388,10 +397,10 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `internal/runner/config/errors.go` | 変更 | `ErrNegativeOutputSizeLimit` の追加 |
 | `internal/runner/config/validation.go` | 変更 | `ValidateOutputSizeLimits` の追加 |
 | `internal/runner/config/loader.go` | 変更 | テンプレートを合流した後に `ValidateOutputSizeLimits` を呼ぶ |
-| `internal/runner/base/executor/output_pump.go` | 変更 | `newOutputPump` が stdout の上限も受け取る |
-| `internal/runner/base/executor/command_lifecycle.go` | 変更 | 出力ファイルの有無で stdout・stderr の上限を決める |
+| `internal/runner/base/executor/output_pump.go` | 変更 | `newOutputPump` が stdout・stderr に同じ上限を使う |
+| `internal/runner/base/executor/command_lifecycle.go` | 変更 | 出力ファイルの有無による上限の分岐を削除する |
 | `internal/runner/base/executor/executor.go` | 変更 | 保持の上限の定数をまとめる |
-| `docs/user/toml_config/04_global_level.ja.md` | 変更 | 「4.8 output_size_limit」に 0 が無制限であること・負の値は読み込みで拒否されること・メモリ上の保持の上限を追記（AC-26）。「4.1 timeout」の「動作の詳細」に、タイムアウト後も後続の group が実行されること・プロセスが残りうることを追記（AC-30） |
+| `docs/user/toml_config/04_global_level.ja.md` | 変更 | 「4.8 output_size_limit」に 0 が無制限であること・負の値は読み込みで拒否されること（AC-26）、メモリ上に保持する出力の上限と、出力の全体が必要なら出力ファイルを指定すること（AC-31）を追記。「4.1 timeout」の「動作の詳細」に、タイムアウト後も後続の group が実行されること、既知の制限としてプロセス（孫プロセスを含む）が残りうることを追記（AC-30） |
 | `docs/user/toml_config/04_global_level.md` | 変更 | 上記を `/mktrans` で反映 |
 
 変更する挙動を検証している既存のテスト（更新が必要）:
@@ -404,8 +413,9 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `internal/logging/pre_execution_error_test.go:609-640` `TestHandleExecutionError_CauseFormatting` | `HandleExecutionError` が `UserMessage` を使うこと | 同上。期待値を `Error()` の文言に反転する |
 | `internal/runner/base/output/errors_test.go:74-86` | サイズ超過の旧文言 | 新しい文言と `Limit` に更新し、値は `newSizeLimitError` で作る |
 | `internal/runner/runner_test.go:2831-2842` `TestRunner_CancellationSkipsStageNotification` | モックが `context.Canceled`・`DeadlineExceeded` を原因に持つ段階のエラーを返すと、実行前段の通知をしないこと | モックのエラーを返すときに実行全体の context を取り消すように変える。取り消さない場合は通知されることを別の行で検証する |
-| `internal/runner/base/executor/output_pump_test.go:343-345` | 出力ファイルがあるとき stderr の上限が 0（上限なし）であること | 出力ファイルがあるときの stdout・stderr の上限の検証に更新する |
-| `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の追加に合わせて更新する（コンパイラが検出する） |
+| `internal/runner/base/executor/output_pump_test.go:343-345` | stderr の上限が出力ファイルの有無で 0（上限なし）と 32 KiB に分かれること | 出力ファイルの有無によらず stdout・stderr の上限が同じであることの検証に更新する |
+| `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の変更に合わせて更新する（コンパイラが検出する） |
+| `internal/runner/base/executor/executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` など、出力ファイルが無いときの stderr の上限のテスト | stderr が 32 KiB ずつに限られること | 変更不要（上限の値は変わらない）。32 KiB を超える stdout の全体を検証している既存のテストがあれば、実装時に `make test` で検出して更新する |
 
 `internal/runner/runner_test.go:660-735` の `TestRunner_CommandTimeoutBehavior` は `t.Skip` で常に飛ばされる（`:661`）ため、変更の検証には使わない。
 
@@ -448,7 +458,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | group ファイル検証中の中断 | 検証の失敗を通知し、次の group の前の判定で `context canceled` だけを返す。最後の group だった場合は nil を返し、中断された実行が成功として報告されていた | 検証の失敗を通知し、`context canceled` と検証の失敗を合わせて返す。検証の失敗は通知と報告の両方に出る |
 | `output_size_limit = 0` のコマンド | 出力を 1 バイトでも書くと、その時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 出力の大きさによらず成功する |
 | 負の `output_size_limit` を含む設定 | 読み込みは成功する。該当するコマンドは、出力を 1 バイトでも書くとその時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 読み込みで拒否され、どの group も実行されない（dry-run を含む） |
-| 出力ファイルを指定したコマンドのメモリ上の出力 | 全体を保持（最大 `output_size_limit`）。`Command failed` の `stderr` と監査ログに全体が出る | 先頭と末尾の 32 KiB ずつを保持（§3.7） |
+| コマンドのメモリ上の出力 | stdout は全体を保持（出力ファイルありは最大 `output_size_limit`、なしは上限なし）。stderr は出力ファイルありなら全体、なしなら 32 KiB ずつ。`command_group_summary` の構造化ログの `output`、`Command failed` の `stderr`、監査ログに、保持した全体が出る | すべて先頭と末尾の 32 KiB ずつを保持（§3.7）。出力ファイルが無いコマンドの stdout で上限を超えた部分は、どこにも残らない |
 
 `output size limit exceeded for '<path>'` という部分文字列は、変更前の stderr・`error_message` にも変更後にも現れる。
 
@@ -457,8 +467,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 - **実行全体の中断では、集めた失敗が報告に出ない。** §3.2 のとおり、実行全体の context が取り消されると、`executeGroups` は集めた失敗を捨てて返す。これは要件の対象外（「実行全体の中断時に集めた失敗を報告すること」）である。
 - **タイムアウトしたコマンドのプロセスが残りうる。** executor はタイムアウトのとき直接の子プロセスだけを kill し、プロセスグループへの kill は行わない（`internal/runner/base/executor` に `Setpgid`・`Kill(-pgid)` は無い）。子を kill・回収できなかった場合は `ErrKillAfterCancel`・`ErrChildNotReaped` がエラーに加わる（`command_lifecycle.go:741-742`、`:912`、`:948`）。いずれの場合も、残ったプロセスと後続の group が並行して動きうる。要件の決定事項「タイムアウト後に残るプロセスは受け入れる」により、これを受け入れ、利用者向け文書に記載する（AC-30）。
 - **1 つの group の原因が複数行のとき、続きの行は `failed to execute group` で始まらない。** executor はコマンドのエラーに kill の失敗などを `errors.Join` で加えることがある（`command_lifecycle.go:788`）。そのとき `GroupError.Error()` は複数行になり、続きの行は `handleErrorCommon` によって他の group の行と同じ字下げで出る。帰属は、各 group の文言の先頭の行で判別する。続きの行を `GroupError.Error()` で字下げすると `Error()` の文言が変わり、AC-09 に反するので行わない。
-- **出力ファイルを指定しないコマンドの stdout は、メモリ上で上限なく保持される。** 要件の対象外であり、現状のままとする。
-- **dry-run の出力の分析は、上限を常に 0 と表示する。** `AnalyzeOutput` は `MaxSizeLimit` を設定しない（`internal/runner/base/output/manager.go:232` 以降）ため、dry-run の `max_size_limit` は常に 0 である（`internal/runner/resource/dryrun_manager.go:746`）。0 が無制限を意味すると利用者向け文書に明記した後は、dry-run が常に表示するこの 0 も無制限を意味すると読めてしまう。本タスクでは変えず、別 issue で扱う。
+- **dry-run の出力の分析は、上限を常に 0 と表示する。** `AnalyzeOutput` は `MaxSizeLimit` を設定しない（`internal/runner/base/output/manager.go:232` 以降）ため、dry-run の `max_size_limit` は常に 0 である（`internal/runner/resource/dryrun_manager.go:746`）。0 が無制限を意味すると利用者向け文書に明記した後は、dry-run が常に表示するこの 0 も無制限を意味すると読めてしまう。本タスクでは変えず、[#1184](https://github.com/isseis/go-safe-cmd-runner/issues/1184) で扱う。
 
 ### 4.5 失敗時の扱い
 
@@ -474,7 +483,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 |---|---|
 | stderr の `Details:` | `handleErrorCommon` が直接書く（`internal/logging/pre_execution_error.go:148-174`）。redaction は通らず、これは変更前と同じである。`CaptureError` を含む失敗では、変更前は `UserMessage` に隠れていた次の情報が新たに出る。書き込み失敗の OS のエラー、サイズ超過の上限値、原因のチェーン全体（`ErrKillAfterCancel`・`ErrChildNotReaped` など、別の uid でプロセスが残っている可能性を示すエラーを含む: `internal/runner/base/executor/command_lifecycle.go:788`）。最後のものは、利用者が気付くべき事象が隠れなくなるという改善である。同じエラーは変更前から `Command failed` の構造化ログ（`internal/runner/group_executor.go:639-643` の `error` 属性）に出ている |
 | 構造化ログの `error_message` | `RedactingHandler` を通る点は変わらない（§5.2） |
-| 構造化ログ・監査ログの `stdout`・`stderr` | 出力ファイルを指定したコマンドでは、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きるので、先頭と末尾の境目にかかった機密の値は途中で切れ、値の形の検出に一致しなくなることがある。また `key=` とその値の間に省略の印が入ると、値が key と結び付かなくなる。出力ファイルが無いときの stderr（32 KiB の上限）は現状でも同じ扱いであり、新しい種類の問題ではない。出力ファイルには省略の無い全体が書かれ、redaction の対象ではない点は変わらない |
+| 構造化ログ・監査ログの `stdout`・`stderr`・`output` | すべてのコマンドで、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きるので、先頭と末尾の境目にかかった機密の値は途中で切れ、値の形の検出に一致しなくなることがある。また `key=` とその値の間に省略の印が入ると、値が key と結び付かなくなる。出力ファイルが無いときの stderr（32 KiB の上限）は現状でも同じ扱いであり、新しい種類の問題ではない。出力ファイルには省略の無い全体が書かれ、redaction の対象ではない点は変わらない |
 | Slack | 実行エラーのレコードは `slack_notify=false` のまま（`internal/logging/pre_execution_error.go:270`）で、Slack へは送らない（AC-12）。実行前エラーの Slack 通知の本文（`Detail()`）は、§3.4 のとおり `CaptureError` による変化を受けない。group ファイル検証の失敗の通知は、実行全体の中断と重なっても行う（§3.2 の 1） |
 
 ### 5.2 redaction による帰属の喪失
@@ -495,7 +504,8 @@ stderr には redaction 前の文言が出るので、帰属は stderr で判別
   - 後続の group が先の group の結果に依存する設定では、先の group がタイムアウトしても後続の group が動く。0 以外の終了コードでも同じであり（`internal/runner/runner.go:449-450`）、この点は新しくない。
   - 0 以外の終了コードでは直接の子は回収済みだが、タイムアウトでは子や孫のプロセスが残りうる（§4.4）。残ったプロセス（`run_as_user` で別の uid のことがある）と後続の group が並行して動きうる。これは新しい種類の重なりであり、要件の決定事項により受け入れ、利用者向け文書に記載する（AC-30）。
   - なお、各 group の実行前の検証（ファイル検証・権限監査）は、タイムアウトの有無によらず group ごとに行われる。
-- **`output_size_limit = 0` のコマンドは、出力ファイルに無制限に書く（F-007）。** 利用者が明示的に指定した値の定義どおりの挙動であり、出力先のディスクの消費は利用者の設定の責任範囲になる。runner のメモリ使用量は、§3.7 の上限により出力の大きさに比例しない。
+- **`output_size_limit = 0` のコマンドは、出力ファイルに無制限に書く（F-007）。** 利用者が明示的に指定した値の定義どおりの挙動であり、出力先のディスクの消費は利用者の設定の責任範囲になる。
+- **runner のメモリ使用量は、出力ファイルの有無によらず、コマンドの出力の大きさに比例しなくなる（§3.7）。** 変更前は、出力ファイルを指定しないコマンドが大量に stdout へ書くと、runner のメモリを使い切るおそれがあった。これは可用性の改善である。
 - **負の `output_size_limit` は設定の読み込みで拒否される（§3.6）。**
 
 脅威モデル図は N/A とする。
@@ -632,7 +642,7 @@ flowchart LR
   - `MaxSize` が 0 の `Capture.WriteOutput` が、大きなデータでもエラーを返さないこと（AC-23）。
   - `newSizeLimitError` が 0 と負の上限値で panic すること（AC-25）。
 - **`ValidateOutputSizeLimits`（`internal/runner/config`）**: グローバル・テンプレート・コマンドの負の値がそれぞれ `ErrNegativeOutputSizeLimit` で拒否され、エラーに値と設定箇所が含まれること。0 と正の値と未指定は受け入れること。`Loader.LoadConfig` が、主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値の両方を拒否すること（AC-27）。
-- **出力ポンプ（`internal/runner/base/executor`）**: 出力ファイルがあるとき、上限を超える stdout・stderr を書くと、`OutputWriter` にはすべてのバイトが渡り、保持される出力は上限付きで先頭と末尾と省略の印を含むこと（AC-28、AC-29）。出力ファイルが無いときの上限は変わらないこと。
+- **出力ポンプ・executor（`internal/runner/base/executor`）**: 出力ファイルがある場合と無い場合のそれぞれで、上限を超える stdout・stderr を書くと、保持される出力は上限付きで先頭と末尾と省略の印を含むこと（AC-28、AC-29）。出力ファイルがある場合は、`OutputWriter` にすべてのバイトが渡ること。出力ファイルが無い場合は、実際のコマンドに 32 KiB を超える stdout を書かせて `Result.Stdout` を確かめること（正常終了、つまり終了コード 0 の場合を必ず含める）。stderr は正常終了で報告されない（`TestExecute_NilOutputWriter_LargeStderrStillSucceeds`）のに対し stdout は正常終了でも報告されるので、上限付きで空でも全体でもないことも確かめること。
 - **`logging`**
   - `HandleExecutionError` と `Detail()` が、`friendlyTestError` について `UserMessage()` ではなく `Error()` の文言を出すこと（AC-06）。
   - `HandleExecutionError` に `ErrorTypeFileSystem` の `*CaptureError`（`Cause` あり）を含む原因を渡すと、`Details:` に `Cause` の文言が出ること（AC-03）。
@@ -657,7 +667,7 @@ flowchart LR
 - `UserFriendlyError`・`GetUserFriendlyMessage`・`UserMessage`・`GetType`・`GetPath`・`formatCause` が本番コードに無いこと（AC-06、AC-18）。
 - `Unwrap() []error` を型アサーションで判定する箇所が本番コードに無いこと（AC-08）。
 - 本番コード全体で `errors.Is(..., context.Canceled)`・`errors.Is(..., context.DeadlineExceeded)` の使用箇所を列挙し、中断を決める分岐が無いこと（AC-21）。残る使用箇所は中断を決めないものに限られる。現状では、タイムアウトのセキュリティログ（`internal/runner/group_executor.go:629`）と Slack 送信の再試行（`internal/logging/slack_sender.go:530`）である。
-- 利用者向け文書の記載（AC-26、AC-30）。
+- 利用者向け文書の記載（AC-26、AC-30、AC-31）。
 
 ## 8. 実装の優先順位
 
@@ -665,12 +675,12 @@ flowchart LR
 
 1. **`GroupErrors` の導入**: `group_errors.go`、`executeGroups`、`executionErrorContext`、テスト用の構築関数、関連テスト。この段階で、失敗 1 件の `*GroupStageError` に外側の context が付く（AC-15）。原因の文言（`UserMessage` の差し替えを含む）はまだ変わらない。
 2. **`UserFriendlyError` の削除**: `logging` の 3 つの関数、`CaptureError.UserMessage`、関連テスト。ここで AC-01〜AC-04 が成り立つ。
-3. **出力の保持の上限（AC-28、AC-29）**: 出力ポンプと `command_lifecycle.go`、関連テスト。5 より前に行い、上限 0 を無制限にした時点でメモリ使用量が出力に比例する状態を作らない。
+3. **出力の保持の上限（AC-28、AC-29）**: 出力ポンプと `command_lifecycle.go`、関連テスト。出力ファイルの有無によらず同じ上限にする。5 より前に行い、上限 0 を無制限にした時点でメモリ使用量が出力に比例する状態を作らない。
 4. **負の `output_size_limit` の拒否（AC-27）**: `ValidateOutputSizeLimits`、関連テスト。
 5. **`output_size_limit = 0` の修正（AC-23、AC-24）**: `Capture.WriteOutput` の上限 0、関連テスト。3 の後に行う。
 6. **`CaptureError` の整理（AC-16〜AC-18、AC-25）**: `Limit`・`newSizeLimitError` の追加、サイズ超過の文言、`GetType`・`GetPath` の削除、関連テスト。`newSizeLimitError` が 0 以下を拒否するので、4 と 5 の後に行う。
 7. **タイムアウトと中断の扱いの変更（AC-19〜AC-22）**: `executeGroups` の処理の順序と中断の判定、関連テスト。1 の後であればよい。
-8. **利用者向け文書（AC-26、AC-30）**: 日本語版を更新してコミットし、英語版を `/mktrans` で反映する。
+8. **利用者向け文書（AC-26、AC-30、AC-31）**: 日本語版を更新してコミットし、英語版を `/mktrans` で反映する。
 
 2 と 3〜6 の順は入れ替えてよい。2 を 6 より先にすると、その間はサイズ超過の文言に同じ事実が 2 回出るが、情報は欠けない。
 
@@ -678,7 +688,7 @@ flowchart LR
 
 - `GroupErrors` は失敗した group ごとに group 名・command 名を型で持つ。Slack で group ごとの失敗理由を知らせる改善（`01_requirements.md`「検討して採らなかった案」）を行う場合も、エラー文字列を解析せずにこの型から情報を得られる。
 - 実行全体の中断で集めた失敗が捨てられる点（§4.4）を直すときも、捨てずに `GroupErrors` と中断のエラーを合わせて返す形で扱える。
-- 出力の保持の上限は定数 1 つにまとめるので、出力ファイルを指定しないコマンドの stdout に上限を設ける改善（§4.4）でも同じ定数を使える。
+- 出力の保持の上限は定数 1 つにまとめるので、上限の値を設定で変えられるようにする場合も、変更箇所は 1 つで済む。
 - `CaptureError` の使われていない種類と段階の整理は [#1180](https://github.com/isseis/go-safe-cmd-runner/issues/1180)、サイズ超過のセンチネルと判定の重複は [#1181](https://github.com/isseis/go-safe-cmd-runner/issues/1181) で扱う。
 
 ## 10. 受け入れ基準との対応
@@ -709,6 +719,7 @@ flowchart LR
 | AC-27 | §3.6 | §7.1（`ValidateOutputSizeLimits`）、§7.2 |
 | AC-28, AC-29 | §3.7 | §7.1（出力ポンプ） |
 | AC-30 | §3.8、§4.4 | §7.4 |
+| AC-31 | §3.7、§3.8 | §7.4 |
 
 ## 付録 A. 他の設計文書との関係
 
