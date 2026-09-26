@@ -51,20 +51,21 @@ group の失敗は次の順に扱われる。
 
 - 複数 group が失敗したとき、報告の各行から、その行がどの group（と、分かるときは command）の失敗かを判別できるようにする。
 - 「複数 group の失敗」を専用のエラー型で宣言し、`Unwrap() []error` の形による判定をやめる。
-- 失敗が 1 group だけのときの報告は変えない。
+- 失敗が 1 件か複数件かを同じ型で表し、1 件を複数件の特殊な場合として扱う。
+- 失敗が 1 group だけのときの報告は、帰属が分からなかった場合（AC-15）を除いて変えない。
 
 ## スコープ
 
 ### 対象
 
-1. `executeGroups` が、2 件以上の group の失敗を、失敗 group ごとに group 名・command 名（分かるとき）・原因を持つ専用のエラー型で返す。
+1. `executeGroups` が、1 件以上の group の失敗を、件数によらず、失敗 group ごとに group 名・command 名（分かるとき）・原因を持つ専用のエラー型で返す。
 2. `executionErrorContext` の multi-error 判定を、この型の判定に置き換える。
 3. `HandleExecutionError` の報告（stderr の `Details:`・構造化ログの `error_message`）で、この型の各失敗を 1 行ずつ、group 名・command 名を付けて出す。原因の文言は従来どおり `UserMessage` があればそれ、なければ生の文言とする。
 4. `logging` は runner の型に依存せず、`logging` 側で宣言した型またはインタフェースで group 名・command 名を受け取る（`runner` は `logging` を import しているため、逆向きの依存は作れない）。
 
 ### 対象外
 
-- **失敗が 1 group だけのときの報告。** 外側の context で帰属が分かるので変えない。`*GroupStageError` など `*CommandExecutionError` 以外の単一失敗で外側の context が空になる点も、本タスクでは変えない。その行は生の文言に `failed to execute group <name>` を含むため、帰属は分かる。
+- **失敗が 1 group だけのときの報告の文言。** 外側の context で帰属が分かるので、Details の文言は変えない（外側の context が付くようになる場合は AC-15）。
 - **`ExecutionError.GroupName`・`CommandName` に複数の group を持たせること。** 決定事項「複数失敗時の `GroupName` は空のまま」を参照。
 - **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、通知の内容・件数は変えない。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
 - **dry-run の実行エラー記録（`SetDryRunExecutionError`）。** `Error()` の文言を使っており、その文言は変えない（AC-09）ので影響しない。
@@ -75,7 +76,7 @@ group の失敗は次の順に扱われる。
 
 ### 複数 group の失敗は専用の型で宣言する
 
-`executeGroups` は、失敗が 2 件以上のとき専用の型（以下、仮に `GroupErrors`）を返す。型は失敗 group ごとに次を持つ。
+`executeGroups` は、group の失敗が 1 件以上あるとき、件数によらず専用の型（以下、仮に `GroupErrors`）を返す。型は失敗 group ごとに次を持つ。
 
 | 項目 | 由来 |
 |---|---|
@@ -83,13 +84,21 @@ group の失敗は次の順に扱われる。
 | command 名 | 原因のチェーンにある型（`*CommandExecutionError`、command レベルの段階の `*GroupStageError`）が宣言している command 名。無ければ空 |
 | 原因 | `ExecuteGroup` が返したエラー |
 
-型名・フィールドの形・失敗 1 件のときもこの型を返すかは設計段階で決める。ただし、呼び出し側から見た失敗 1 件のときの挙動（`executionErrorContext` が group・command を付けること、報告の文言）は変えない。
+型名・フィールドの形は設計段階で決める。
+
+### 1 件は複数件の特殊な場合として同じ型で表す
+
+失敗 1 件のときに別の形（ラップしたエラーをそのまま返す）を使わない。1 件と複数件で形を分けると、呼び出し側は再び「どちらの形か」で分岐することになり、`Unwrap() []error` の形による判定と同じ問題が残る。1 件と複数件の違いは、型が持つ失敗の件数で表す。
+
+- `executionErrorContext` は、失敗が 1 件ならその失敗の group 名・command 名を外側の context に設定し、2 件以上なら空にする。
+- 報告の各行に context を付けるのは 2 件以上のときだけとする。1 件のときは外側の context がすでに帰属を示すので、行には付けない（同じ情報を 2 回出さないため）。
+- 失敗 1 件のとき、group 名は `GroupSpec.Name` から必ず得られる。このため、現状は外側の context が空になる `*CommandExecutionError` 以外の単一失敗（例: group の展開の失敗）にも、外側の context が付くようになる（AC-15）。これは帰属を型から得ることの自然な結果であり、情報が増えるだけなので受け入れる。
 
 ### 検討して採らなかった案
 
 | 案 | 採らなかった理由 |
 |---|---|
-| group のラップ用エラーに `UserFriendlyError` を実装させ、`UserMessage` に group 名・command 名を含める | `UserMessage` の意味（特別な文言がなければ空を返す）を変えてしまう。失敗 1 件のときは外側の context と重複するので特別扱いが要る。`Unwrap() []error` の形による判定も残る |
+| group のラップ用エラーに `UserFriendlyError` を実装させ、`UserMessage` に group 名・command 名を含める | `UserMessage` の意味（特別な文言がなければ空を返す）を変えてしまう。外側の context と重複しないよう特別扱いが要る。`Unwrap() []error` の形による判定も残る |
 | 失敗した時点で group ごとに stderr へ報告する | stderr の `Error:` ブロックと stdout の `RUN_SUMMARY` 行が増える。Task 0176 の「新しい経路は `RUN_SUMMARY` 行と stderr 報告を増やさない」という決定に反する |
 | group ごとにエラー本文を Slack へ通知する（`command_group_summary` に失敗理由を載せる、または新しい通知種別を作る） | 本 issue の対象である stderr と構造化ログの帰属は解決しない。Slack には group ごとの通知がすでにあり、欠けているのは帰属ではなく失敗の理由（`groupExecutionResult.errorMsg` は設定されているが送られていない）である。これは通知のフィールド集合と、Slack へ出す本文の redaction に関わる別の問題なので、別 issue で扱う |
 
@@ -108,7 +117,7 @@ group の失敗は次の順に扱われる。
 
 ### `Error()` の文言と `errors.Is`・`errors.AsType` の到達性は変えない
 
-新しい型の `Error()` は、現在の `errors.Join` の戻り値と同じ文言（`failed to execute group <name>: ...` を改行で並べたもの）を返す。dry-run の実行エラー記録など、`Error()` の文言を使う箇所の出力を変えないためである。また、`errors.Is`・`errors.AsType` が各 group の原因に届くことを保つ。
+新しい型の `Error()` は、変更前の戻り値と同じ文言を返す。失敗 1 件なら `failed to execute group <name>: ...` の 1 行、2 件以上ならそれを改行で並べたもの（`errors.Join` の文言）である。dry-run の実行エラー記録など、`Error()` の文言を使う箇所の出力を変えないためである。また、`errors.Is`・`errors.AsType` が各 group の原因に届くことを保つ。
 
 ## 受け入れ基準（Acceptance Criteria）
 
@@ -121,19 +130,21 @@ group の失敗は次の順に扱われる。
 - **AC-04**: 構造化ログの `error_message` にも、AC-01〜AC-03 と同じ各行の文言が出る。
 - **AC-05**: 複数 group の失敗では、外側の context（`error running commands (group: ..., command: ...)`）は付かない（`ExecutionError.GroupName`・`CommandName` は空）。
 
+- **AC-15**: 失敗が 1 group だけで、原因が `*CommandExecutionError` ではないとき（例: group の展開の失敗）、外側の context に `group: <group>` が付く。command レベルの段階の `*GroupStageError` では `command: <command>` も付く。Details の原因の文言は変更前と同じである。
+
 #### F-002: 型による宣言
 
 **Acceptance Criteria**:
-- **AC-06**: `executeGroups` は、2 件以上の group が失敗したとき、失敗 group ごとに group 名・command 名・原因を持つ専用の型を返し、group 名は `GroupSpec.Name` から設定される。
+- **AC-06**: `executeGroups` は、1 件以上の group が失敗したとき、件数によらず、失敗 group ごとに group 名・command 名・原因を持つ専用の型を返し、group 名は `GroupSpec.Name` から設定される。
 - **AC-07**: `executionErrorContext` と `formatCause` は、複数 group の失敗を専用の型（または `logging` 側で宣言したインタフェース）で判定する。本番コードに、`Unwrap() []error` の有無で複数 group の失敗を判定する分岐、およびエラー文字列から group 名・command 名を取り出す処理がない。
 - **AC-08**: 専用の型ではない `errors.Join` の値を `formatCause` に渡したときは、現状どおり子ごとに 1 行ずつ、context を付けずに出る。
 
 #### F-003: 既存挙動の維持
 
 **Acceptance Criteria**:
-- **AC-09**: 複数 group の失敗で、戻り値の `Error()` の文言は変更前の `errors.Join` の文言と同じである。
-- **AC-10**: 複数 group の失敗で、`errors.Is`・`errors.AsType` が各 group の原因（`*CommandExecutionError`、`output.CaptureError` など）に届く。
-- **AC-11**: 失敗が 1 group だけのとき、stderr の `Details:`・構造化ログの `error_message`・`ExecutionError.GroupName`・`CommandName` は変更前と同じである。
+- **AC-09**: 失敗が 1 件のときも 2 件以上のときも、戻り値の `Error()` の文言は変更前と同じである。
+- **AC-10**: 失敗が 1 件のときも 2 件以上のときも、`errors.Is`・`errors.AsType` が各 group の原因（`*CommandExecutionError`、`output.CaptureError` など）に届く。
+- **AC-11**: 失敗が 1 group だけで、原因が `*CommandExecutionError` のとき、stderr の `Details:`・構造化ログの `error_message`・`ExecutionError.GroupName`・`CommandName` は変更前と同じである。
 - **AC-12**: 実行エラーの構造化ログレコードは `slack_notify=false` のままで、Slack 通知の件数・内容は変わらない。プロセスの終了コードと `RUN_SUMMARY` 行も変わらない。
 
 #### F-004: 全体の健全性
@@ -146,4 +157,5 @@ group の失敗は次の順に扱われる。
 
 - 複数 group が失敗したとき、stderr と構造化ログの各行から、その行の group（と command）を他のレコードと突き合わせずに判別できる。
 - 「複数 group の失敗」が型で宣言され、`errors.Join` の形からの推測がなくなる。
-- 失敗が 1 group だけのときの報告、`Error()` の文言、Slack 通知、終了コードは変わらない。
+- 失敗が 1 件でも複数件でも同じ型で表され、1 件は複数件の特殊な場合として扱われる。
+- 失敗が 1 group だけのときの報告（外側の context が増える場合を除く）、`Error()` の文言、Slack 通知、終了コードは変わらない。
