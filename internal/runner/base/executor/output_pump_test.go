@@ -116,6 +116,19 @@ func TestBoundedBuffer_KeepsCompletePrefixLines(t *testing.T) {
 	}
 }
 
+// TestBoundedBuffer_MemoryStaysWithinLimit checks that the retained window's
+// allocation, not only the returned length, stays within the limit however
+// much is written. The writes use io.Copy's 32 KiB chunk size: appending
+// them to a growing slice would round its capacity past the limit.
+func TestBoundedBuffer_MemoryStaysWithinLimit(t *testing.T) {
+	buf := newBoundedBuffer(retainedOutputLimit)
+	chunk := bytes.Repeat([]byte("x"), 32<<10)
+	for range 5 {
+		_, _ = buf.Write(chunk)
+	}
+	assert.LessOrEqual(t, cap(buf.prefix), retainedOutputLimit)
+}
+
 // TestBoundedBuffer_WriteNeverFails checks that Write keeps returning
 // (len(p), nil) once the bound is exceeded: the reader must keep draining
 // the stream, and a command that writes past the bound and then exits
@@ -136,10 +149,13 @@ func TestBoundedBuffer_WriteNeverFails(t *testing.T) {
 
 // TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret checks that cutting
 // the leading window back to complete lines never hands redaction a secret it
-// cannot recognize. The corpus holds one line per value-format detector whose
-// match depends on the whole value (PEM private key, GitHub token, Bearer
-// token, GCP key ID, single-line URL credential). For every window size, the
-// bounded output is redacted and no fragment of any secret may survive.
+// cannot recognize. The corpus holds secrets RedactText recognizes only when
+// the text around them is intact: PEM private key blocks (bare and as a
+// key=value value), a GitHub token, a Bearer token, a GCP key ID and a
+// single-line URL credential. For every window size, the bounded output is
+// redacted and no fragment of any secret may survive, which fails for a cut
+// in the middle of a token. None of these detectors needs text after a space
+// on the same line, so a cut at a space would pass as well.
 func TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret(t *testing.T) {
 	// Fragments shorter than this are not treated as leaks: a short run of
 	// base64 or hex characters is indistinguishable from ordinary output.
@@ -152,6 +168,7 @@ func TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret(t *testing.T) {
 		"Zm9vYmFyYmF6cXV4cXV1eGNvcmdlZ3JhdWx0",
 		"abcd1234ef5678abcd1234ef5678abcd1234ef56",
 		"Hunter2Hunter2",
+		"MIIEvQIBADANBgkqhkiG9w0BAQEFAASC",
 	}
 	corpus := "starting deploy\n" +
 		"-----BEGIN RSA PRIVATE KEY-----\n" +
@@ -162,6 +179,9 @@ func TestBoundedBuffer_LineBoundaryCutLeavesNoPartialSecret(t *testing.T) {
 		"curl -H 'Bearer " + secrets[3] + "'\n" +
 		`{"type": "service_account", "private_key_id": "` + secrets[4] + `"}` + "\n" +
 		"fetch https://admin:" + secrets[5] + "@api.internal.example.com/v1\n" +
+		"PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n" +
+		secrets[6] + "\n" +
+		"-----END PRIVATE KEY-----\n" +
 		"done\n"
 
 	cfg := redaction.DefaultConfig()

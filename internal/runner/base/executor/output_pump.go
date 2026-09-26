@@ -260,6 +260,10 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		_, _ = b.unbounded.Write(p) // bytes.Buffer.Write never fails
 		return len(p), nil
 	}
+	if b.prefix == nil {
+		// Sized once, so append never grows the window past the limit.
+		b.prefix = make([]byte, 0, b.limit)
+	}
 	add := min(len(p), b.limit-len(b.prefix))
 	b.prefix = append(b.prefix, p[:add]...)
 	b.skipped += int64(len(p) - add)

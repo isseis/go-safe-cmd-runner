@@ -160,10 +160,7 @@ func (d *ValueDetector) Mask(text string) string {
 	result = valueDetectorPatterns.awsKeyID.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.githubToken.ReplaceAllString(result, escapedPlaceholder)
 	result = valueDetectorPatterns.slackToken.ReplaceAllString(result, escapedPlaceholder)
-	result = valueDetectorPatterns.pemPrivate.ReplaceAllString(result, escapedPlaceholder)
-	// Only after pemPrivate: a complete block must stay masked over the same
-	// span as before, not swallow the text that follows it.
-	result = valueDetectorPatterns.pemPrivateUnterminated.ReplaceAllString(result, escapedPlaceholder)
+	result = maskPrivateKeyBlocks(result, escapedPlaceholder)
 	// From here on, patterns with a capture group re-emit it (via "${1}" etc.) so
 	// masked output keeps its surrounding structure - "Bearer [REDACTED]" rather
 	// than a bare placeholder.
@@ -181,4 +178,25 @@ func (d *ValueDetector) Mask(text string) string {
 	}
 
 	return result
+}
+
+// maskPrivateKeyBlocks masks PEM private key blocks: complete ones first, then
+// a BEGIN line left without an END line, from that line to the end of the
+// text. escapedPlaceholder must already have "$" escaped for ReplaceAllString.
+//
+// RedactText also runs it before the key-name patterns. A key-name pattern
+// masks the first token after "KEY=" or "key: ", and when the value is a PEM
+// block that token is "-----BEGIN"; with the marker gone, neither pattern
+// here could match and the body lines would pass through unmasked.
+func maskPrivateKeyBlocks(text, escapedPlaceholder string) string {
+	text = valueDetectorPatterns.pemPrivate.ReplaceAllString(text, escapedPlaceholder)
+	// Only after pemPrivate: a complete block must stay masked over the same
+	// span as before, not swallow the text that follows it.
+	return valueDetectorPatterns.pemPrivateUnterminated.ReplaceAllString(text, escapedPlaceholder)
+}
+
+// maskPrivateKeyBlocks applies the package-level maskPrivateKeyBlocks with
+// the detector's placeholder.
+func (d *ValueDetector) maskPrivateKeyBlocks(text string) string {
+	return maskPrivateKeyBlocks(text, strings.ReplaceAll(d.placeholder, "$", "$$"))
 }

@@ -16,7 +16,7 @@ func TestValueDetector_Mask_PositiveCases(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		// secret, when set, is key material that pemPrivate alone leaves in
+		// secret, when set, is a key body line that pemPrivate alone leaves in
 		// input (checked first, so the row can only pass through
 		// pemPrivateUnterminated) and that Mask must remove.
 		secret string
@@ -72,9 +72,8 @@ MHQCAQEEI...
 -----END EC PRIVATE KEY-----`,
 		},
 		{
-			name:   "PEM BEGIN line alone",
-			input:  "-----BEGIN RSA PRIVATE KEY-----\n",
-			secret: "-----BEGIN RSA PRIVATE KEY-----",
+			name:  "PEM BEGIN line alone",
+			input: "-----BEGIN RSA PRIVATE KEY-----\n",
 		},
 		{
 			name:   "PEM BEGIN line with a preceding line and body lines",
@@ -111,6 +110,8 @@ MHQCAQEEI...
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.secret != "" {
+				require.Equal(t, tt.secret, d.Mask(tt.secret),
+					"no detector may mask the secret on its own, or the row does not exercise the PEM rules")
 				require.Contains(t, valueDetectorPatterns.pemPrivate.ReplaceAllString(tt.input, placeholder), tt.secret,
 					"pemPrivate alone must leave the secret, or the row does not exercise the unterminated rule")
 			}
@@ -162,6 +163,10 @@ func TestValueDetector_Mask_NegativeCases(t *testing.T) {
 			input: `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhki...
 -----END PUBLIC KEY-----`,
+		},
+		{
+			name:  "public key BEGIN line without END",
+			input: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhki...\n",
 		},
 		{
 			name:  "URL without credentials",
@@ -749,6 +754,42 @@ func TestCompileWebhookHostPattern_RejectsMalformedHost(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			_, err := compileWebhookHostPattern(host)
 			require.ErrorIs(t, err, ErrInvalidWebhookHost)
+		})
+	}
+}
+
+// TestRedactText_PrivateKeyBlockAfterKeyName checks that a PEM private key
+// block given as the value of a key-name pattern is masked whole. The
+// key-name patterns mask only the first token after "KEY=" or "key: ", which
+// is "-----BEGIN"; unless the PEM rules run before them, the body lines are
+// left without the marker the PEM rules anchor on and pass through.
+func TestRedactText_PrivateKeyBlockAfterKeyName(t *testing.T) {
+	const body = "MIIEpAIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo"
+	cfg := DefaultConfig()
+
+	tests := []struct {
+		name  string
+		input string
+		keep  string // text after the block that must survive
+	}{
+		{name: "env assignment, BEGIN line alone", input: "PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----\n" + body + "\n"},
+		{name: "YAML value, BEGIN line alone", input: "private_key: \"-----BEGIN PRIVATE KEY-----\n" + body + "\n"},
+		{
+			name:  "env assignment, complete block",
+			input: "TLS_KEY=-----BEGIN EC PRIVATE KEY-----\n" + body + "\n-----END EC PRIVATE KEY-----\nnext step\n",
+			keep:  "\nnext step\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, body, cfg.RedactText(body), "the body line alone must not be masked by any rule")
+
+			got := cfg.RedactText(tt.input)
+			assert.NotContains(t, got, body)
+			if tt.keep != "" {
+				assert.Contains(t, got, tt.keep)
+			}
 		})
 	}
 }

@@ -215,7 +215,7 @@
 
 **作業内容**:
 
-- [x] `internal/redaction/value_detector.go` に、対応する `END` の行が無い `BEGIN ... PRIVATE KEY` の行からテキストの末尾までを隠すパターン `pemPrivateUnterminated` を加える。`Mask` では `pemPrivate` を適用した後に適用し、placeholder は既定のものを使う。パターンの doc コメントに、先頭の窓で `END` が失われたブロックを隠す目的と、隠しすぎる側に倒すことを書く。
+- [x] `internal/redaction/value_detector.go` に、対応する `END` の行が無い `BEGIN ... PRIVATE KEY` の行からテキストの末尾までを隠すパターン `pemPrivateUnterminated` を加える。`Mask` では `pemPrivate` を適用した後に適用し、placeholder は既定のものを使う。`RedactText` では、キー名による redaction より前にも、この 2 つの規則を適用する（キー名による redaction が `KEY=-----BEGIN ...` の `-----BEGIN` を隠すと、本文の行が目印を失うため。`TestRedactText_PrivateKeyBlockAfterKeyName` で確かめる）。パターンの doc コメントに、先頭の窓で `END` が失われたブロックを隠す目的と、隠しすぎる側に倒すことを書く。
 - [x] `internal/redaction/value_detector_test.go` の `TestValueDetector_Mask_PositiveCases` に `BEGIN` の側だけの行（先行する行・本文の行・省略の印の並びを含む）を加え、`TestValueDetector_Mask_NegativeCases` の `PUBLIC KEY` と完全なブロックの否定・肯定はそのまま通ることを確かめる。追加する行は、まず同じ入力を変更前の `pemPrivate` だけに通して一致しないことを確かめてから、検査に加える（CLAUDE.md「A layered path needs inputs only one layer can handle」）。
 - [x] `internal/redaction/redactor_test.go:4086` の `TestDefaultPatternSets_AreUnchanged` の期待値に、追加するパターン 1 件を加える。`pemPrivate` の文字列は変えない。`TestRedactText_ValueBasedDetection` はそのまま通ることを確かめる。
 - [x] `internal/runner/base/executor/executor.go` の定数を `nilWriterStderrLimit`（32 KiB）から `retainedOutputLimit`（64 KiB）に改名し、コメントを先頭の窓の説明に書き換える（改名台帳）。
