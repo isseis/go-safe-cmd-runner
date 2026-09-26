@@ -8,7 +8,7 @@
 | Created | 2026-09-26 |
 | Review date | 2026-09-26 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-09-26: 実装計画の作成中に、§7.2 の AC-29 の検証手順と §10 の AC-05 のテスト対応を修正した。前者は 1 つの監査記録からは `user_group_command_failure` と `command_group_summary` の 2 種類の Slack メッセージを作れないため記録ごとの観測経路を明記し、後者は外側の context の有無を `internal/runner` の統合テストでは検証できないため `cmd/runner` の判定テストに限った。設計判断の変更はない（編集上の修正）。 |
 
 ## 0. 前提
 
@@ -756,7 +756,7 @@ flowchart LR
 - 1 件の失敗（`*CommandExecutionError`）で、stderr と `error_message` が変更前と同じであること（AC-11）。
 - **AC-20**: 実際のタイムアウトのエラーの形は、実際の executor でタイムアウトさせる既存のテスト `internal/runner/group_executor_timeout_test.go` の `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで作る。これに、エラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことの確認を加える。そのうえで、group-1 は 0 以外の終了コード、group-2 はその形のタイムアウトのエラーとなる `executeGroups` の結果を `HandleExecutionError` に渡し、`Details:` に両方の group の行が出ることを確かめる。
 - **AC-24、AC-28**: `output_size_limit = 0` と出力ファイルを指定したコマンドを実際に実行し、64 KiB を超える出力を書かせる。出力サイズ超過で失敗せずに完了し、出力ファイルに全出力が書かれ、結果の stdout（`ExecutionResult.Stdout`）が上限付きで省略の印を含むことを確かめる（既存の出力キャプチャの統合テストの形）。
-- **Slack の欄とデバッグログ（AC-29）**: 実際の executor で、次の 2 つの出力をコマンドに書かせる。得られた `Result` を監査ログ（`audit.Logger.LogUserGroupExecution`）に渡し、その記録から `SlackHandler` が組み立てる `user_group_command_failure` の `Output` の欄と、同じ出力の `command_group_summary` の出力の欄、デバッグログの `stdout` を確かめる。
+- **Slack の欄とデバッグログ（AC-29）**: 実際の executor で、次の 2 つの出力をコマンドに書かせる。得られた `Result` を監査ログ（`audit.Logger.LogUserGroupExecution`）に渡した記録から `SlackHandler` が組み立てる `user_group_command_failure` の `Output` の欄を確かめる。`command_group_summary` の出力の欄は、同じ出力を group executor の通知（`logGroupExecutionSummary`）が出す記録から確かめる。デバッグログの `stdout` は、同じ実行の `Command execution result` の記録から確かめる。`SlackHandler` は同期送信とモックサーバーで観測する（`user_group_command_failure` と `command_group_summary` は別の記録であり、1 つの記録から両方は作れない）。
   - 先頭の 64 KiB に改行を含まない、64 KiB を超える出力: 欄が、コードブロックの開始の直後に省略の印から始まること。
   - 短い先頭の行（切り詰めの位置より短い行）の後に 64 KiB より長い行が続く出力: 欄が先頭の行の直後に省略の印を含むこと（残った完全な行が切り詰めの位置より短いと、欄の中に省略の印が現れること）。
   - 残った完全な行が切り詰めの位置より長い出力では、欄が変更前と同じであること。
@@ -806,7 +806,7 @@ flowchart LR
 | AC-01, AC-02 | §3.2、§3.4、§4.2 | §7.2 |
 | AC-03 | §3.4、§4.2 | §7.1（`logging`） |
 | AC-04 | §4.2、§5.2 | §7.2 |
-| AC-05 | §3.3、§6.1 | §7.1、§7.2 |
+| AC-05 | §3.3、§6.1 | §7.1（`executionErrorContext`。外側の context の有無を決めるのは `cmd/runner` のこの判定であり、`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため検証できない） |
 | AC-06 | §3.4、§3.5 | §7.1（`logging`）、§7.4 |
 | AC-07 | §3.1、§3.2 | §7.1（`executeGroups`） |
 | AC-08 | §3.3、§6.1 | §7.1、§7.4 |
