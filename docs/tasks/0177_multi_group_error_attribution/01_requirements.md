@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-25 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-26: 方針を変更した。各行に context を付ける表示側の変更をやめ、`UserFriendlyError` を削除して原因の文言を常にそのまま出すことで帰属を保つ。専用のエラー型は、`Unwrap() []error` の形による判定を置き換える役割に絞った。同日、対象外としていた `CaptureError.Error()` の文言の整理と `GetType`・`GetPath` の削除を対象に含めた（AC-16〜AC-18）。新たに対象外とした 2 件は #1180・#1181 として起票した。 |
+| Review date | 2026-09-26 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
