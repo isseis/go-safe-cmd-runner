@@ -97,6 +97,9 @@ func captureStdStreams(t *testing.T, fn func()) (stdout, stderr string) {
 
 	origStdout, origStderr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = outWriter, errWriter
+	// Restore even if fn panics or t.Fatal unwinds, so a failed assertion
+	// cannot leak the redirected streams into later tests.
+	defer func() { os.Stdout, os.Stderr = origStdout, origStderr }()
 
 	var wg sync.WaitGroup
 	var outBuf, errBuf strings.Builder
