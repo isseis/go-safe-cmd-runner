@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `approved` |
+| Status | `draft` |
 | Created | 2026-09-25 |
-| Review date | 2026-09-26 |
-| Reviewer | isseis |
-| Comments | - |
+| Review date | - |
+| Reviewer | - |
+| Comments | 2026-09-26: 決定の変更のため `draft` に戻した。アーキテクチャ設計のレビューで見つかった 2 つの既存の不具合を対象に加えた。(1) コマンドのタイムアウトで、それまでに集めた group の失敗が捨てられ、後続の group が実行されない（F-006）。(2) `output_size_limit = 0`（無制限）で出力ファイルへの最初の書き込みが失敗する（F-007）。 |
 
 ## 関連 Issue
 
@@ -57,6 +57,21 @@ group の失敗は次の順に扱われる。
 
 `UserFriendlyError` を削除すると、`formatCause` が子ごとに分ける必要はなくなる。`errors.Join` の `Error()` は子の文言を改行で並べたもので、分けた結果と同じになるためである。残る判定は `executionErrorContext` のものだけで、これは runner が型で宣言すれば置き換えられる。
 
+### コマンドのタイムアウトで、集めた失敗が捨てられる
+
+`executeGroups` は、`ExecuteGroup` のエラーが `context.Canceled` または `context.DeadlineExceeded` を含むと、それまでに集めた失敗を捨ててそのエラーをすぐに返し、残りの group を実行しない（`internal/runner/runner.go:422-424`）。この判定はエラーの中身だけを見ており、次の 2 つを区別しない。
+
+- **実行全体の中断。** 実行全体の context は SIGINT・SIGTERM で取り消される（`cmd/runner/main.go:271` の `signal.NotifyContext`）。このときは残りの group を実行しないのが正しい。
+- **コマンド自身の `timeout`。** 各コマンドは自分の `timeout` を期限とする context で実行される（`internal/runner/group_executor.go:574-589`）。期限が切れると、executor はコマンドのエラーに `context.DeadlineExceeded` を加える（`internal/runner/base/executor/command_lifecycle.go:890-891`）。実行全体は中断されていない。
+
+このため、あるコマンドがタイムアウトすると、先に失敗した group の失敗は報告に出ず、後続の group も実行されない。コマンドが 0 以外の終了コードで失敗したときは、失敗を集めて次の group へ進む。タイムアウトだけが扱いが異なる理由はなく、本タスクの目的（失敗した group をすべて報告する）とも衝突する。
+
+### `output_size_limit = 0`（無制限）で最初の書き込みが失敗する
+
+`output_size_limit` の 0 は「無制限」と定義されている（`internal/common/output_size_limit_type.go:21-25`、`internal/runner/base/runnertypes/spec.go:137`、`:263`）。無制限のとき、`NormalResourceManager` は出力キャプチャに上限 0 を渡す（`internal/runner/resource/normal_manager.go:244-245`、コメント「0 means unlimited in output manager」）。しかし `Capture.WriteOutput` は上限が 0 かどうかを見ずに比較する（`internal/runner/base/output/capture.go:42`）。このため、無制限を指定したコマンドは、出力ファイルへの最初の書き込みで出力サイズ超過として失敗する。本タスクで `UserMessage` を削除し上限値を載せると、この失敗は `(limit: 0 bytes)` と報告され、設定と矛盾した表示になる。
+
+利用者向け文書（`docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」）は、有効な値を「正の整数」とだけ書いており、0 が無制限であることを記載していない。
+
 ### `GroupName` の利用箇所
 
 `ExecutionError.GroupName`・`CommandName` の利用箇所は `ContextString` だけである。`ContextString` は stderr の `Details:` と構造化ログの `error_message` に使われる。`HandleExecutionError` の構造化ログレコードは `slack_notify=false` 固定であり、Slack 通知には使われない（Slack の `group=` 表示は別の `NotificationContext` による）。
@@ -66,6 +81,8 @@ group の失敗は次の順に扱われる。
 - 複数 group が失敗したとき、報告の各行から、その行がどの group（と command）の失敗かを判別できるようにする。
 - 原因の文言を差し替えず、報告に原因の情報をすべて残す。
 - 「group の失敗」を専用のエラー型で宣言し、`Unwrap() []error` の形による判定をやめる。失敗 1 件は複数件の特殊な場合として同じ型で表す。
+- コマンドのタイムアウトを、ほかのコマンドの失敗と同じく group の失敗として扱い、後続の group を実行する。実行全体の中断とは区別する。
+- `output_size_limit = 0` を無制限として扱う。
 
 ## スコープ
 
@@ -77,6 +94,9 @@ group の失敗は次の順に扱われる。
 4. `executionErrorContext` の multi-error 判定を、この型が持つ失敗の件数による判定に置き換える。
 5. 出力サイズ超過の `CaptureError.Error()` の文言から、同じ事実の繰り返しをなくし、超過した上限値を載せる。
 6. 本番コードで使われていない `CaptureError.GetType`・`GetPath` を削除する。
+7. `executeGroups` は、実行全体の中断を実行全体の context の状態で判定する。コマンド自身のタイムアウトは group の失敗として集め、後続の group を実行する。
+8. `Capture.WriteOutput` は、上限 0 を無制限として扱う。サイズ超過のエラーは、正の上限値を持つときだけ作られる。
+9. 利用者向け文書 `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限であることを追記する。日本語版を先に更新し、英語版は `/mktrans` で反映する。
 
 ### 対象外
 
@@ -86,7 +106,9 @@ group の失敗は次の順に扱われる。
 - **`ExecutionError.GroupName`・`CommandName` に複数の group を持たせること。** 決定事項「複数失敗時の `GroupName` は空のまま」を参照。
 - **Slack 通知。** 実行エラーの構造化ログレコードは `slack_notify=false` のままとし、通知の内容・件数は変えない。`command_group_summary` に失敗理由を載せる改善は別 issue で扱う（決定事項「検討して採らなかった案」を参照）。
 - **dry-run の実行エラー記録（`SetDryRunExecutionError`）。** `Error()` の文言を使っており、その文言は変えない（AC-09）ので影響しない。
-- **group ファイル検証の失敗（`*verification.Error`）とコンテキストのキャンセル。** 現状どおり、集める対象に入らない（検証失敗）・即座に返す（キャンセル）。
+- **group ファイル検証の失敗（`*verification.Error`）。** 現状どおり、集める対象に入らない。
+- **実行全体の中断時に集めた失敗を報告すること。** SIGINT・SIGTERM で実行全体が中断されたときは、現状どおり中断のエラーをすぐに返し、それまでに集めた失敗は報告しない。中断は利用者の操作であり、残りの結果が無いことを利用者が知っているためである。
+- **`output_size_limit` の利用者向け文書のその他の食い違い。** 同じ節は「設定可能な階層: グローバルのみ」「オーバーライド: 不可」と書いているが、コマンドレベルの `output_size_limit` も存在する（`internal/runner/base/runnertypes/spec.go:263`）。また「制限超過時の動作」の記述も実装と照合していない。本タスクでは 0 の意味だけを追記し、ほかは別 issue で扱う。
 
 ## 決定事項
 
@@ -111,6 +133,21 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 ### 使われていない `GetType`・`GetPath` を削除する
 
 `CaptureError.GetType`・`GetPath` は、`UserFriendlyError` の前身である `CaptureErrorInterface`（出力サイズ超過を package への依存なしに検出するためのインタフェース）のために追加された。`CaptureErrorInterface` は `6f88d77e` で削除され、以後この 2 つを呼ぶ本番コードはない。`UserFriendlyError` と同じ仕組みの名残なので、あわせて削除する。
+
+### 実行全体の中断は context の状態で判定する
+
+`executeGroups` は、`ExecuteGroup` がエラーを返したとき、そのエラーの中身ではなく、実行全体の context（`executeGroups` が受け取った `ctx`）が取り消されているかどうかで中断を判定する。
+
+- 実行全体の context が取り消されていれば、現状どおりそのエラーをすぐに返し、残りの group を実行しない。
+- 取り消されていなければ、エラーが `context.DeadlineExceeded` を含んでいても（コマンド自身のタイムアウト）、group の失敗として集め、次の group へ進む。
+
+エラーが `context.DeadlineExceeded` を含むかどうかは、どの context が期限切れになったかを表さない。実行全体の context の状態は、中断されたかどうかを直接表す（CLAUDE.md「Declare, don't infer」）。
+
+この変更で、コマンドがタイムアウトしても後続の group が実行されるようになる。コマンドが 0 以外の終了コードで失敗したときと同じ挙動である。タイムアウトしたコマンドの group では、現状どおりそのコマンドで group の実行が止まり、`command_group_summary` が通知される。
+
+### `output_size_limit = 0` を無制限として扱う
+
+`Capture.WriteOutput` は上限が 0 のとき、サイズを比べずに書き込む。0 を無制限とする定義（`common.OutputSizeLimit`）と、上限 0 を渡す `NormalResourceManager` に合わせる。これにより、サイズ超過のエラーの上限値は常に正になる。上限値が 0 以下のサイズ超過のエラーは作られないことを、構築の境界で保証する（CLAUDE.md「Reject, don't normalize」）。
 
 ### group の失敗は件数によらず専用の型で表す
 
@@ -183,6 +220,22 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - **AC-17**: 出力サイズ超過の失敗で、`errors.Is(err, output.ErrOutputSizeExceeded)` が成り立つ。
 - **AC-18**: `CaptureError.GetType`・`GetPath` は存在しない。出力サイズ超過以外の種類の `CaptureError.Error()` の文言は変更前と同じである。
 
+#### F-006: コマンドのタイムアウトを group の失敗として扱う
+
+**Acceptance Criteria**:
+- **AC-19**: group-1 のコマンドが自身の `timeout` でタイムアウトし、実行全体は中断されていないとき、group-2 が実行される。戻り値は group-1 の失敗を含む専用の型であり、`errors.Is(err, context.DeadlineExceeded)` が成り立つ。
+- **AC-20**: group-1 がコマンドの失敗（0 以外の終了コード）で失敗し、group-2 のコマンドがタイムアウトしたとき、stderr の `Details:` に group-1 と group-2 の両方の失敗が、それぞれ `failed to execute group <group>: ` で始まる行として出る。
+- **AC-21**: 実行全体の context が取り消されたとき（例: コマンドの実行中に SIGINT・SIGTERM を受けた）、`executeGroups` は残りの group を実行せずに返す（現状どおり）。この判定は実行全体の context の状態で行い、本番コードに、エラーが `context.Canceled`・`context.DeadlineExceeded` を含むかどうかで中断を判定する分岐がない。
+- **AC-22**: コマンドのタイムアウトが 1 件だけのとき、外側の context は変更前と同じ（そのコマンドの group 名・command 名）である。
+
+#### F-007: `output_size_limit = 0` を無制限として扱う
+
+**Acceptance Criteria**:
+- **AC-23**: 上限 0 の出力キャプチャは、書き込むデータの大きさによらずサイズ超過のエラーを返さない。
+- **AC-24**: `output_size_limit = 0` を設定し出力ファイルを指定したコマンドが、出力サイズ超過で失敗せずに完了する。
+- **AC-25**: 上限値が 0 以下のサイズ超過のエラーは作られない。本番の構築経路は、上限値が 0 以下の入力を拒否する。
+- **AC-26**: `docs/user/toml_config/04_global_level.ja.md` の「4.8 output_size_limit」に、0 が無制限を表すことが記載され、英語版 `docs/user/toml_config/04_global_level.md` に `/mktrans` で反映されている。
+
 #### F-005: 全体の健全性
 
 **Acceptance Criteria**:
@@ -196,3 +249,5 @@ output capture error during execution phase: size limit exceeded for '<path>': o
 - 出力サイズ超過の報告は、上限値を含み、同じ事実を繰り返さない。
 - group の失敗が件数によらず同じ型で宣言され、`errors.Join` の形からの推測がなくなる。
 - `Error()` の文言、Slack 通知、終了コードは変わらない。
+- コマンドのタイムアウトで、先に失敗した group の報告が失われず、後続の group が実行される。実行全体の中断では、現状どおり残りの group を実行しない。
+- `output_size_limit = 0` のコマンドが、出力サイズ超過で失敗しない。
