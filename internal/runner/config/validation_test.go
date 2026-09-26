@@ -864,5 +864,162 @@ func TestValidateTimeouts(t *testing.T) {
 	}
 }
 
+func TestValidateOutputSizeLimits(t *testing.T) {
+	limit := func(v int64) *int64 { return &v }
+	commandWithLimit := func(name string, v int64) runnertypes.CommandSpec {
+		cmd := makeCommand(name, nil)
+		cmd.OutputSizeLimit = limit(v)
+		return cmd
+	}
+
+	tests := []struct {
+		name             string
+		config           *runnertypes.ConfigSpec
+		expectError      bool
+		errorMustContain []string // All strings that must appear in error message
+	}{
+		{
+			name:        "valid - no limit specified",
+			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", nil))),
+			expectError: false,
+		},
+		{
+			name: "valid - zero global limit",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{OutputSizeLimit: limit(0)},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid - positive global limit",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{OutputSizeLimit: limit(1024)},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid - negative global limit",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{OutputSizeLimit: limit(-1)},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError:      true,
+			errorMustContain: []string{"global output_size_limit got -1"},
+		},
+		{
+			name:        "valid - positive command limit",
+			config:      makeConfig(nil, makeGroup("test_group", commandWithLimit("test_cmd", 2048))),
+			expectError: false,
+		},
+		{
+			name:        "valid - zero command limit",
+			config:      makeConfig(nil, makeGroup("test_group", commandWithLimit("test_cmd", 0))),
+			expectError: false,
+		},
+		{
+			name:             "invalid - negative command limit",
+			config:           makeConfig(nil, makeGroup("test_group", commandWithLimit("test_cmd", -5))),
+			expectError:      true,
+			errorMustContain: []string{"command 'test_cmd' in group 'test_group' (groups[0].commands[0]) got -5"},
+		},
+		{
+			name: "invalid - multiple negative command limits",
+			config: makeConfig(nil, makeGroup("test_group",
+				commandWithLimit("cmd1", -1),
+				commandWithLimit("cmd2", -2),
+			)),
+			expectError:      true,
+			errorMustContain: []string{"cmd1", "-1", "cmd2", "-2"},
+		},
+		{
+			name: "invalid - negative limit in second group",
+			config: makeConfig(nil,
+				makeGroup("group1", commandWithLimit("cmd1", 30)),
+				makeGroup("group2", commandWithLimit("cmd2", -15)),
+			),
+			expectError:      true,
+			errorMustContain: []string{"command 'cmd2' in group 'group2' (groups[1].commands[0]) got -15"},
+		},
+		{
+			name: "invalid - negative limit in template",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"test_template": {
+						Cmd:             "echo",
+						OutputSizeLimit: limit(-1),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError:      true,
+			errorMustContain: []string{"template 'test_template' output_size_limit got -1"},
+		},
+		{
+			name: "valid - positive limit in template",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"test_template": {
+						Cmd:             "echo",
+						OutputSizeLimit: limit(4096),
+					},
+				},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid - multiple negative template limits",
+			config: &runnertypes.ConfigSpec{
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"template1": {Cmd: "echo", OutputSizeLimit: limit(-10)},
+					"template2": {Cmd: "cat", OutputSizeLimit: limit(-20)},
+				},
+				Groups: []runnertypes.GroupSpec{makeGroup("test_group", makeCommand("test_cmd", nil))},
+			},
+			expectError:      true,
+			errorMustContain: []string{"-10", "-20"},
+		},
+		{
+			name: "invalid - negative limits in global, template, and command",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{OutputSizeLimit: limit(-5)},
+				CommandTemplates: map[string]runnertypes.CommandTemplate{
+					"bad_template": {Cmd: "echo", OutputSizeLimit: limit(-15)},
+				},
+				Groups: []runnertypes.GroupSpec{
+					makeGroup("test_group", commandWithLimit("bad_cmd", -25)),
+				},
+			},
+			expectError: true,
+			errorMustContain: []string{
+				"-5",
+				"-15",
+				"-25",
+				"bad_template",
+				"bad_cmd",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateOutputSizeLimits(tt.config)
+
+			if tt.expectError {
+				require.Error(t, err, "expected error but got none")
+				assert.ErrorIs(t, err, ErrNegativeOutputSizeLimit)
+				for _, mustContain := range tt.errorMustContain {
+					assert.ErrorContains(t, err, mustContain,
+						"error message should name %q", mustContain)
+				}
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
+}
+
 // Note: WorkDir validation (absolute path check) is performed at expansion time
 // in group_executor.go (resolveGroupWorkDir and resolveCommandWorkDir).

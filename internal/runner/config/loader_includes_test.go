@@ -459,3 +459,108 @@ args = ["backup", "${path}"]
 	assert.Contains(t, cfg.CommandTemplates, "backup")
 	assert.Equal(t, "restic", cfg.CommandTemplates["backup"].Cmd)
 }
+
+// TestLoadConfig_NegativeOutputSizeLimitValidation verifies that LoadConfig
+// rejects a negative output_size_limit in the main configuration file and in a
+// template brought in through includes. The included template is validated only
+// after mergeTemplates, so this covers the call site in loadConfigWithIncludes
+// that loadConfigInternal cannot reach.
+func TestLoadConfig_NegativeOutputSizeLimitValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		configBody  string
+		templateSet bool
+	}{
+		{
+			name: "negative global limit in the main config file",
+			configBody: `version = "1.0"
+
+[global]
+output_size_limit = -1
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = "echo"
+`,
+		},
+		{
+			name: "negative limit in an included template",
+			configBody: `version = "1.0"
+includes = ["templates.toml"]
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = "echo"
+`,
+			templateSet: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := tu.SafeTempDir(t)
+			configPath := filepath.Join(tmpDir, "config.toml")
+			configContent := []byte(tt.configBody)
+			require.NoError(t, os.WriteFile(configPath, configContent, 0o644))
+
+			if tt.templateSet {
+				templateContent := []byte(`version = "1.0"
+
+[command_templates.bad]
+cmd = "echo"
+output_size_limit = -2048
+`)
+				require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "templates.toml"), templateContent, 0o644))
+			}
+
+			_, err := NewLoaderForTest().LoadConfig(configPath, configContent)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrNegativeOutputSizeLimit)
+		})
+	}
+}
+
+// TestLoadConfig_NonNegativeOutputSizeLimitAccepted verifies that zero and
+// positive output_size_limit values, including one from an included template,
+// are accepted. It guards against a validator that rejects every value rather
+// than only negative ones.
+func TestLoadConfig_NonNegativeOutputSizeLimitAccepted(t *testing.T) {
+	tmpDir := tu.SafeTempDir(t)
+	configPath := filepath.Join(tmpDir, "config.toml")
+	configContent := []byte(`version = "1.0"
+includes = ["templates.toml"]
+
+[global]
+output_size_limit = 0
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = "echo"
+`)
+	require.NoError(t, os.WriteFile(configPath, configContent, 0o644))
+
+	templateContent := []byte(`version = "1.0"
+
+[command_templates.good]
+cmd = "echo"
+output_size_limit = 4096
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "templates.toml"), templateContent, 0o644))
+
+	cfg, err := NewLoaderForTest().LoadConfig(configPath, configContent)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Global.OutputSizeLimit)
+	assert.Equal(t, int64(0), *cfg.Global.OutputSizeLimit)
+	require.Contains(t, cfg.CommandTemplates, "good")
+	require.NotNil(t, cfg.CommandTemplates["good"].OutputSizeLimit)
+	assert.Equal(t, int64(4096), *cfg.CommandTemplates["good"].OutputSizeLimit)
+}

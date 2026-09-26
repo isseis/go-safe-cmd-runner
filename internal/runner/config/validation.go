@@ -185,37 +185,70 @@ func validateVariableName(varName, level, field string) error {
 	return nil
 }
 
-// ValidateTimeouts validates that all timeout values in the configuration are non-negative.
-// It checks global timeout, template timeouts, and command-level timeouts.
-// Returns an aggregated error containing all negative timeout violations found.
-func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
+// negativeSettingMessages collects one message per negative value of a numeric
+// setting found in the configuration, naming the setting and the location. The
+// global and template scopes name the setting; the command scope names the
+// command, its group and its position. setting is the configuration key
+// ("timeout", "output_size_limit"), and the accessors return each scope's raw
+// pointer so one walk serves settings of different integer widths.
+func negativeSettingMessages[T ~int32 | ~int64](
+	cfg *runnertypes.ConfigSpec,
+	setting string,
+	global *T,
+	templateValue func(runnertypes.CommandTemplate) *T,
+	commandValue func(runnertypes.CommandSpec) *T,
+) []string {
 	var msgs []string
 
-	// Check global timeout
-	if cfg.Global.Timeout != nil && *cfg.Global.Timeout < 0 {
-		msgs = append(msgs, fmt.Sprintf("global timeout got %d", *cfg.Global.Timeout))
+	if global != nil && *global < 0 {
+		msgs = append(msgs, fmt.Sprintf("global %s got %d", setting, *global))
 	}
 
-	// Check template timeouts
 	for templateName, template := range cfg.CommandTemplates {
-		if template.Timeout != nil && *template.Timeout < 0 {
-			msgs = append(msgs, fmt.Sprintf("template '%s' timeout got %d",
-				templateName, *template.Timeout))
+		if v := templateValue(template); v != nil && *v < 0 {
+			msgs = append(msgs, fmt.Sprintf("template '%s' %s got %d", templateName, setting, *v))
 		}
 	}
 
-	// Check command-level timeouts
 	for groupIdx, group := range cfg.Groups {
 		for cmdIdx, cmd := range group.Commands {
-			if cmd.Timeout != nil && *cmd.Timeout < 0 {
+			if v := commandValue(cmd); v != nil && *v < 0 {
 				msgs = append(msgs, fmt.Sprintf("command '%s' in group '%s' (groups[%d].commands[%d]) got %d",
-					cmd.Name, group.Name, groupIdx, cmdIdx, *cmd.Timeout))
+					cmd.Name, group.Name, groupIdx, cmdIdx, *v))
 			}
 		}
 	}
 
+	return msgs
+}
+
+// ValidateTimeouts validates that all timeout values in the configuration are non-negative.
+// It checks global timeout, template timeouts, and command-level timeouts.
+// Returns an aggregated error containing all negative timeout violations found.
+func ValidateTimeouts(cfg *runnertypes.ConfigSpec) error {
+	msgs := negativeSettingMessages(cfg, "timeout", cfg.Global.Timeout,
+		func(template runnertypes.CommandTemplate) *int32 { return template.Timeout },
+		func(cmd runnertypes.CommandSpec) *int32 { return cmd.Timeout })
+
 	if len(msgs) > 0 {
 		return fmt.Errorf("%w: %s", ErrNegativeTimeout, strings.Join(msgs, "; "))
+	}
+
+	return nil
+}
+
+// ValidateOutputSizeLimits validates that all output_size_limit values in the
+// configuration are non-negative. It checks the global limit, template limits,
+// and command-level limits. Zero and positive values are accepted; zero means
+// unlimited. Returns an aggregated error containing all negative violations
+// found, each naming its value and location.
+func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error {
+	msgs := negativeSettingMessages(cfg, "output_size_limit", cfg.Global.OutputSizeLimit,
+		func(template runnertypes.CommandTemplate) *int64 { return template.OutputSizeLimit },
+		func(cmd runnertypes.CommandSpec) *int64 { return cmd.OutputSizeLimit })
+
+	if len(msgs) > 0 {
+		return fmt.Errorf("%w: %s", ErrNegativeOutputSizeLimit, strings.Join(msgs, "; "))
 	}
 
 	return nil

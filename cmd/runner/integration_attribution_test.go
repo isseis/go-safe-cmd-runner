@@ -157,3 +157,51 @@ cmd = %q
 	assert.True(t, strings.HasPrefix(lines[1], "failed to execute group group_two: "),
 		"line 1: %q", lines[1])
 }
+
+// TestIntegration_NegativeOutputSizeLimitRejectedInDryRun drives a
+// configuration that carries negative output_size_limit values through the
+// production reporting boundary in dry-run mode. A negative limit is rejected
+// while loading the configuration, before any group is previewed, and both the
+// stderr Details line and the structured error_message must name each value and
+// its location. The run asserts the rejection on its own; dry-run never
+// executes a group, so "no group ran" is not evidence here.
+func TestIntegration_NegativeOutputSizeLimitRejectedInDryRun(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		dryRun: true,
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+output_size_limit = -1
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+output_size_limit = -2048
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-negative-output-size-dryrun-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a negative output_size_limit must fail the run")
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.Contains(t, details, "output_size_limit must not be negative",
+		"the Details line must carry the load-time rejection: %q", details)
+	assert.Contains(t, details, "global output_size_limit got -1",
+		"the Details line must name the global value: %q", details)
+	assert.Contains(t, details, "command 'noop' in group 'backup' (groups[0].commands[0]) got -2048",
+		"the Details line must name the command and its position: %q", details)
+
+	reports := jsonLogRecords(t, run, "Pre-execution error occurred")
+	require.Len(t, reports, 1)
+	errorMessage, ok := reports[0][common.PreExecErrorAttrs.ErrorMessage].(string)
+	require.True(t, ok, "the pre-execution error record must carry an error_message string: %v", reports[0])
+	assert.Contains(t, errorMessage, "output_size_limit must not be negative")
+	assert.Contains(t, errorMessage, "global output_size_limit got -1")
+	assert.Contains(t, errorMessage, "command 'noop' in group 'backup' (groups[0].commands[0]) got -2048")
+}

@@ -90,6 +90,12 @@ func (l *Loader) loadConfigWithIncludes(configPath string, content []byte) (*run
 		cfg.CommandTemplates = mergedTemplates
 	}
 
+	// Checked after the merge so limits declared in included templates are
+	// validated too; loadConfigInternal only sees the main file's templates.
+	if err := ValidateOutputSizeLimits(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 

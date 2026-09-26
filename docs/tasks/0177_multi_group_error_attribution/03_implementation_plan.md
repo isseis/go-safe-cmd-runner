@@ -252,12 +252,12 @@
 
 **作業内容**:
 
-- [ ] `config/errors.go` に `ErrNegativeOutputSizeLimit` を追加する。
-- [ ] `config/validation.go` に `ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error` を追加する。`ValidateTimeouts`（`:191-222`）と同じ形で、グローバル・テンプレート・コマンドの負の値をすべて集め、値と設定箇所（テンプレート名、group 名・コマンド名と添字）を含む 1 つのエラーで返す。0・正の値・未指定は受け入れる。
-- [ ] `config/loader.go` の `loadConfigWithIncludes` で、`mergeTemplates` によるテンプレートの合流（`:85-91`）の後に `ValidateOutputSizeLimits(cfg)` を呼ぶ。include で取り込んだテンプレートの負の値もここで拒否される。`loadConfigInternal` には追加しない（取り込んだテンプレートがまだ合流していないため）。
-- [ ] `validation_test.go` に `TestValidateOutputSizeLimits` を追加し、グローバル・テンプレート・コマンドの負の値、0、正の値、未指定を表で確認する。
-- [ ] `loader_includes_test.go` に `TestLoadConfig_NegativeOutputSizeLimitValidation` を追加し、`LoadConfig` を通して主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値を拒否することを確かめる。`LoadConfigForTest` は include を処理しないため使わない。
-- [ ] `cmd/runner/integration_test_helpers.go` の `slackRunSpec` に `dryRun` フィールドを加え、`runMainWithSlackMock` の `dryRun = false` 固定（`:280`）をこの値に変える（既定は false とし、既存の呼び出し元の挙動を変えない）。`cmd/runner/integration_attribution_test.go` に `TestIntegration_NegativeOutputSizeLimitRejectedInDryRun` を追加し、負の `output_size_limit` を含む設定の dry-run が終了コード 1 で、stderr と `error_message` に値と設定箇所を含む読み込みエラー（`output_size_limit` の拒否）を出すことを確かめる（AC-27。dry-run ではもともと group が実行されないため、「どの group も実行されない」は判定に使わない）。
+- [x] `config/errors.go` に `ErrNegativeOutputSizeLimit` を追加する。
+- [x] `config/validation.go` に `ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error` を追加する。`ValidateTimeouts`（`:191-222`）と同じ形で、グローバル・テンプレート・コマンドの負の値をすべて集め、値と設定箇所（テンプレート名、group 名・コマンド名と添字）を含む 1 つのエラーで返す。0・正の値・未指定は受け入れる。
+- [x] `config/loader.go` の `loadConfigWithIncludes` で、`mergeTemplates` によるテンプレートの合流（`:85-91`）の後に `ValidateOutputSizeLimits(cfg)` を呼ぶ。include で取り込んだテンプレートの負の値もここで拒否される。`loadConfigInternal` には追加しない（取り込んだテンプレートがまだ合流していないため）。
+- [x] `validation_test.go` に `TestValidateOutputSizeLimits` を追加し、グローバル・テンプレート・コマンドの負の値、0、正の値、未指定を表で確認する。
+- [x] `loader_includes_test.go` に `TestLoadConfig_NegativeOutputSizeLimitValidation` を追加し、`LoadConfig` を通して主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値を拒否することを確かめる。`LoadConfigForTest` は include を処理しないため使わない。
+- [x] `cmd/runner/integration_test_helpers.go` の `slackRunSpec` に `dryRun` フィールドを加え、`runMainWithSlackMock` の `dryRun = false` 固定（`:280`）をこの値に変える（既定は false とし、既存の呼び出し元の挙動を変えない）。`cmd/runner/integration_attribution_test.go` に `TestIntegration_NegativeOutputSizeLimitRejectedInDryRun` を追加し、負の `output_size_limit` を含む設定の dry-run が終了コード 1 で、stderr と `error_message` に値と設定箇所を含む読み込みエラー（`output_size_limit` の拒否）を出すことを確かめる（AC-27。dry-run ではもともと group が実行されないため、「どの group も実行されない」は判定に使わない）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`ValidateOutputSizeLimits` の呼び出しを外すと `TestLoadConfig_NegativeOutputSizeLimitValidation` の主設定ファイルの行が失敗すること、テンプレートの検査を外すと include の行が失敗することを確認する。
 
