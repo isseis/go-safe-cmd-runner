@@ -205,8 +205,9 @@ func newGroupFailureForTest(t *testing.T, groupName, commandName, script string,
 // TestRunner_MultiGroupFailureAttribution drives two real command failures
 // through executeGroups and the production report. group-1 exits non-zero;
 // group-2 exceeds a small output size limit with an output file. Each Details
-// line must name its own group and carry the cause's raw Error() text, and
-// several failures must leave the outer context empty.
+// line must name its own group and carry the cause's raw Error() text. Whether
+// several failures suppress the single outer context is decided by
+// executionErrorContext in cmd/runner, so that part is verified there.
 func TestRunner_MultiGroupFailureAttribution(t *testing.T) {
 	outputFile := fmt.Sprintf("%s/group2.out", t.TempDir())
 
@@ -247,17 +248,15 @@ func TestRunner_MultiGroupFailureAttribution(t *testing.T) {
 	assert.Contains(t, lines[1], capErr.Error(),
 		"the group-2 line must carry the raw CaptureError text")
 
-	// Several failures leave the outer context empty.
-	assert.NotContains(t, errorMessage, "(group:")
-	assert.NotContains(t, errorMessage, "(command:")
-
 	// The structured error_message agrees with the Details block.
 	assert.Equal(t, details, errorMessage)
 }
 
 // TestHandleExecutionError_FilesystemCaptureErrorKeepsCause pins that a
 // filesystem CaptureError's Cause reaches the report. The old UserMessage
-// dropped it, so this fails if the substitution returns.
+// dropped it, so this fails if the substitution returns. The error is handed
+// straight to the report rather than through the executor chain, isolating the
+// cause-rendering property; the size-limit case exercises the full chain.
 func TestHandleExecutionError_FilesystemCaptureErrorKeepsCause(t *testing.T) {
 	closed, err := os.CreateTemp(t.TempDir(), "closed")
 	require.NoError(t, err)

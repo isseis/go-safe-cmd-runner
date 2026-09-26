@@ -753,7 +753,7 @@ flowchart LR
 
 ### 7.2 統合テスト
 
-- `internal/runner` の既存の出力キャプチャのテスト（`output_capture_integration_test.go`、`runner_test.go` の `TestRunner_OutputCaptureErrorScenarios`）の形で、group-1 はコマンド失敗、group-2 は出力サイズ超過となる設定を実行する。得られたエラーを `HandleExecutionError` に渡し、stderr と `error_message` で AC-01、AC-02、AC-04、AC-05 を確かめる。group 名・command 名には redaction に一致しない名前を使い、`error_message` が `[REDACTED]` にならずに帰属を含むことも確かめる。
+- `internal/runner` の既存の出力キャプチャのテスト（`output_capture_integration_test.go`、`runner_test.go` の `TestRunner_OutputCaptureErrorScenarios`）の形で、group-1 はコマンド失敗、group-2 は出力サイズ超過となる設定を実行する。得られたエラーを `HandleExecutionError` に渡し、stderr と `error_message` で AC-01、AC-02、AC-04 を確かめる。外側の context の有無を決めるのは `cmd/runner` の `executionErrorContext` なので、AC-05 は同パッケージの統合テスト（`TestIntegration_MultiGroupFailureHasNoOuterContext`）で確かめる。group 名・command 名には redaction に一致しない名前を使い、`error_message` が `[REDACTED]` にならずに帰属を含むことも確かめる。
 - 1 件の失敗（`*CommandExecutionError`）で、stderr と `error_message` が変更前と同じであること（AC-11）。
 - **AC-20**: 実際のタイムアウトのエラーの形は、実際の executor でタイムアウトさせる既存のテスト `internal/runner/group_executor_timeout_test.go` の `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで作る。これに、エラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことの確認を加える。そのうえで、group-1 は 0 以外の終了コード、group-2 はその形のタイムアウトのエラーとなる `executeGroups` の結果を `HandleExecutionError` に渡し、`Details:` に両方の group の行が出ることを確かめる。
 - **AC-24、AC-28**: `output_size_limit = 0` と出力ファイルを指定したコマンドを実際に実行し、64 KiB を超える出力を書かせる。出力サイズ超過で失敗せずに完了し、出力ファイルに全出力が書かれ、結果の stdout（`ExecutionResult.Stdout`）が上限付きで省略の印を含むことを確かめる（既存の出力キャプチャの統合テストの形）。

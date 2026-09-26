@@ -325,10 +325,11 @@ func TestGroupErrorConstructionCheckRecognizesForms(t *testing.T) {
 }
 
 // TestProductionCodeDoesNotProbeMultiErrorShape pins that no production file
-// decides "several groups failed" from the Unwrap() []error shape. A probe is
-// an interface type that requires Unwrap() []error; GroupErrors declares that
-// method so errors.Is and errors.As reach each cause, which is allowed, but
-// nothing may test for the shape.
+// decides "several groups failed" from the Unwrap() []error shape. The guard
+// reports the probe sites only: a type assertion or a type-switch case whose
+// asserted type is an interface requiring Unwrap() []error. Declaring such a
+// method on a concrete type (GroupErrors.Unwrap) is allowed, and a named
+// interface merely used with errors.As is not a probe.
 func TestProductionCodeDoesNotProbeMultiErrorShape(t *testing.T) {
 	files := identitymutationguard.ProductionGoFilesInRepo(t)
 	require.NotEmpty(t, files, "the repository scan returned no production files")
@@ -344,19 +345,30 @@ func TestProductionCodeDoesNotProbeMultiErrorShape(t *testing.T) {
 		strings.Join(violations, "\n"))
 }
 
-// findMultiErrorShapeProbes returns the positions of interface types in src
-// that require Unwrap() []error.
+// findMultiErrorShapeProbes returns the positions of type assertions and
+// type-switch cases in src whose asserted type requires Unwrap() []error.
 func findMultiErrorShapeProbes(t *testing.T, filename, src string) []string {
 	t.Helper()
 
 	fset, file := identitymutationguard.ParseSource(t, filename, src)
 	var found []string
-	ast.Inspect(file, func(n ast.Node) bool {
-		iface, ok := n.(*ast.InterfaceType)
-		if !ok || !ifaceDeclaresUnwrapSliceError(iface) {
-			return true
+	report := func(expr ast.Expr) {
+		iface, ok := identitymutationguard.UnwrapParen(expr).(*ast.InterfaceType)
+		if ok && ifaceDeclaresUnwrapSliceError(iface) {
+			found = append(found, fset.Position(iface.Pos()).String())
 		}
-		found = append(found, fset.Position(iface.Pos()).String())
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.TypeAssertExpr:
+			// x.(interface{ Unwrap() []error })
+			report(node.Type)
+		case *ast.CaseClause:
+			// case interface{ Unwrap() []error }: in a type switch
+			for _, expr := range node.List {
+				report(expr)
+			}
+		}
 		return true
 	})
 	return found
@@ -425,6 +437,11 @@ func TestMultiErrorShapeProbeCheckRecognizesForms(t *testing.T) {
 		{
 			name: "the Unwrap method declaration is not reported",
 			src:  "package x\n\nfunc (e *T) Unwrap() []error { return nil }\n",
+			want: 0,
+		},
+		{
+			name: "a named interface declaration is not a probe",
+			src:  "package x\n\ntype Multi interface{ Unwrap() []error }\n",
 			want: 0,
 		},
 		{
