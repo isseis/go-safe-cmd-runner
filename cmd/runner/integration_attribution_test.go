@@ -189,6 +189,14 @@ output_size_limit = -2048
 	})
 	require.Equal(t, 1, run.exitCode, "a negative output_size_limit must fail the run")
 
+	// Dry-run must really be active: its verification manager is created before
+	// the configuration is loaded, so the record exists only on the dry-run
+	// path. Without this the test would pass unchanged if the harness ran the
+	// configuration in normal mode, because the limit is rejected at load in
+	// both modes.
+	assert.Len(t, jsonLogRecords(t, run, "Dry-run verification manager created"), 1,
+		"the run must have entered dry-run before rejecting the configuration")
+
 	details := stderrDetailsLine(t, run.stderr)
 	assert.Contains(t, details, "output_size_limit must not be negative",
 		"the Details line must carry the load-time rejection: %q", details)
@@ -204,4 +212,41 @@ output_size_limit = -2048
 	assert.Contains(t, errorMessage, "output_size_limit must not be negative")
 	assert.Contains(t, errorMessage, "global output_size_limit got -1")
 	assert.Contains(t, errorMessage, "command 'noop' in group 'backup' (groups[0].commands[0]) got -2048")
+}
+
+// TestIntegration_NegativeOutputSizeLimitPreventsExecution drives a
+// configuration that carries a negative output_size_limit through a normal
+// (non-dry-run) run whose command's hash is recorded, so execution could
+// proceed. The limit is rejected while loading the configuration: the process
+// exits 1 with the load error and never reaches a group, whereas without the
+// load-time rejection the failure names the group it tried to execute.
+func TestIntegration_NegativeOutputSizeLimitPreventsExecution(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+output_size_limit = -1
+
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		hashedFiles: []string{resolvedTruePath(t)},
+		runID:       "test-negative-output-size-normal-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a negative output_size_limit must fail the run")
+
+	details := stderrDetailsLine(t, run.stderr)
+	assert.Contains(t, details, "Failed to load the configuration:",
+		"the failure must be the load-time rejection: %q", details)
+	assert.Contains(t, details, "global output_size_limit got -1")
+	assert.NotContains(t, details, "failed to execute group",
+		"no group may be executed when the limit is rejected while loading: %q", details)
 }

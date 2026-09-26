@@ -693,6 +693,9 @@ func TestValidateTimeouts(t *testing.T) {
 			config:      makeConfig(new(int32(-10)), makeGroup("test_group", makeCommand("test_cmd", nil))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"global timeout got -10",
+			},
 		},
 		{
 			name:        "valid - positive command timeout",
@@ -709,6 +712,9 @@ func TestValidateTimeouts(t *testing.T) {
 			config:      makeConfig(nil, makeGroup("test_group", makeCommand("test_cmd", new(int32(-5))))),
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
+			errorMustContain: []string{
+				"command 'test_cmd' in group 'test_group' (groups[0].commands[0]) got -5",
+			},
 		},
 		{
 			name: "invalid - multiple negative command timeouts",
@@ -760,8 +766,7 @@ func TestValidateTimeouts(t *testing.T) {
 			expectError: true,
 			expectedErr: ErrNegativeTimeout,
 			errorMustContain: []string{
-				"test_template",
-				"-1",
+				"template 'test_template' timeout got -1",
 			},
 		},
 		{

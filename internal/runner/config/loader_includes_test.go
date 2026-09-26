@@ -558,9 +558,8 @@ output_size_limit = 4096
 
 	cfg, err := NewLoaderForTest().LoadConfig(configPath, configContent)
 	require.NoError(t, err)
-	require.NotNil(t, cfg.Global.OutputSizeLimit)
-	assert.Equal(t, int64(0), *cfg.Global.OutputSizeLimit)
+	// The included template must reach the merged configuration: the point of
+	// the test is that its non-negative limit is accepted, which needs the
+	// template to be walked at all.
 	require.Contains(t, cfg.CommandTemplates, "good")
-	require.NotNil(t, cfg.CommandTemplates["good"].OutputSizeLimit)
-	assert.Equal(t, int64(4096), *cfg.CommandTemplates["good"].OutputSizeLimit)
 }

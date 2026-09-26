@@ -188,9 +188,11 @@ func validateVariableName(varName, level, field string) error {
 // negativeSettingMessages collects one message per negative value of a numeric
 // setting found in the configuration, naming the setting and the location. The
 // global and template scopes name the setting; the command scope names the
-// command, its group and its position. setting is the configuration key
-// ("timeout", "output_size_limit"), and the accessors return each scope's raw
-// pointer so one walk serves settings of different integer widths.
+// command, its group and its position, and relies on the wrapping sentinel
+// ("<setting> must not be negative") to say which setting it refers to — as it
+// always has for timeouts. setting is the configuration key ("timeout",
+// "output_size_limit"), and the accessors return each scope's raw pointer so
+// one walk serves settings of different integer widths.
 func negativeSettingMessages[T ~int32 | ~int64](
 	cfg *runnertypes.ConfigSpec,
 	setting string,
