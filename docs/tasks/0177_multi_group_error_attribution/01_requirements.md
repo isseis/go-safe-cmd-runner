@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-25 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-26: 決定の変更のため `draft` に戻した。メモリ上の出力の保持の上限を、出力ファイルの有無によらずすべてのコマンドの stdout・stderr に広げた（対象 11、決定事項、AC-28、AC-29）。タイムアウトしたコマンドのプロセスが残りうることを、利用者向け文書に既知の制限として記載することを明確にした（AC-30）。対象外の項目に #1182・#1183・#1184 を対応付けた。 |
+| Review date | 2026-09-26 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 関連 Issue
 
