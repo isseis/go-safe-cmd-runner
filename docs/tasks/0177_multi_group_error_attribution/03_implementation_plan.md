@@ -460,11 +460,11 @@
 - `internal/runner/multi_group_error_integration_test.go`: 複数 group の帰属（AC-01・AC-02・AC-04）、ファイルシステム起因の `CaptureError` の `Cause`（AC-03）、単一 `*CommandExecutionError` 失敗の文言の維持（AC-11）、タイムアウトの帰属（AC-20）。
 - `internal/runner/output_capture_integration_test.go::TestRunner_ZeroOutputSizeLimitIntegration`（AC-24）。
 - `internal/runner/output_retention_integration_test.go::TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput`（AC-29）。
-- `cmd/runner/integration_attribution_test.go`: 単一の段階失敗の外側の context（AC-15）、単一のコマンド失敗の外側の context（AC-11）、負の `output_size_limit` の dry-run（AC-27）。
+- `cmd/runner/integration_attribution_test.go`: 単一の段階失敗の外側の context（AC-15）、単一のコマンドレベルの失敗の外側の context（AC-11）、2 group の失敗で外側の context が付かないこと（AC-05）、負の `output_size_limit` の dry-run（AC-27）。
 
 ### 4.3 層の切り分け
 
-- AC-01・AC-02 は `executeGroups` のテスト（`TestRunner_MultiGroupFailureAttribution`）で 2 group の実行から観測する。外側の context の有無を決めるのは `cmd/runner` の `executionErrorContext` であり、AC-05 は `cmd/runner` の `TestExecutionErrorContext` だけで確認する（`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため、この判定を検証できない）。
+- AC-01・AC-02 は `executeGroups` のテスト（`TestRunner_MultiGroupFailureAttribution`）で 2 group の実行から観測する。外側の context の有無を決めるのは `cmd/runner` の `executionErrorContext` であり、AC-05 は `cmd/runner` の `TestExecutionErrorContext` と `TestIntegration_MultiGroupFailureHasNoOuterContext` で確認する（`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため、この判定を検証できない）。
 - AC-03 は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で作った実物の `*CaptureError` を原因に含むチェーンを `HandleExecutionError` に渡して確かめる。`internal/logging` のテストは `internal/runner/base/output` を import できない（`logging` から `output` への依存は循環する）ため、`internal/runner` の統合テストに置く。
 - AC-06 は本番コードのガードテストと、`friendlyTestError` を使う `logging` の単体テストの 2 層で確認する。`UserMessage` を持つ型が無くなると「`Error()` をそのまま使う」ことを他の表示と区別できる入力が無くなるため、テスト型は残す。
 - AC-28・AC-29 は `boundedBuffer` の単体テスト（保持量と印）と、executor・Slack・デバッグログの統合テスト（利用者に見える欄）の 2 層で確認する。
