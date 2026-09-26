@@ -40,8 +40,11 @@ func TestPreExecutionError_ErrorMessage(t *testing.T) {
 	assert.Equal(t, expected, err.Error())
 }
 
-// friendlyTestError is a UserFriendlyError whose UserMessage differs from its
-// Error text, so a test can tell which of the two Detail picked.
+// friendlyTestError has a UserMessage distinct from its Error text, so a test
+// can prove the reporting paths render Error() and never substitute a friendlier
+// string. The type stays after the substitution interface was removed: without a
+// distinct UserMessage, "Error() is used" could not be told apart from a
+// substitution.
 type friendlyTestError struct{}
 
 func (friendlyTestError) Error() string       { return "raw text" }
@@ -67,17 +70,18 @@ func TestPreExecutionError_Detail(t *testing.T) {
 			want: "Failed to load the configuration: toml: line 3: expected key separator: standard error",
 		},
 		{
-			name: "user-friendly message preferred",
+			// A UserMessage must not replace the raw text: the cause chain keeps
+			// whatever wrapping and detail it carries.
+			name: "user message is ignored in favor of raw text",
 			err:  friendlyTestError{},
-			want: "Failed to load the configuration: friendly text",
+			want: "Failed to load the configuration: raw text",
 		},
 		{
-			// A friendly child of a join must not hide its plain sibling:
-			// errors.AsType walks every branch, so substituting the friendly
-			// message for the whole join would drop "standard error".
-			name: "joined errors each rendered on their own line",
+			// The join's own Error() text is used as-is: every child, including
+			// each child's wrapping, stays in the report.
+			name: "joined errors rendered from the raw chain",
 			err:  errors.Join(errStandardError, fmt.Errorf("wrap: %w", friendlyTestError{})),
-			want: "Failed to load the configuration: standard error\nfriendly text",
+			want: "Failed to load the configuration: standard error\nwrap: raw text",
 		},
 	}
 
@@ -607,9 +611,11 @@ func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
 }
 
 // TestHandleExecutionError_CauseFormatting pins the Details text of an
-// execution error whose cause is user-friendly, alone or joined with a plain
-// error. The joined case is what executeGroups returns when several groups
-// fail: one group's friendly error must not replace the other groups' errors.
+// execution error whose cause carries a UserMessage, alone or joined with a
+// plain error. The UserMessage must be ignored and the cause's own Error() text
+// used, so a wrapped group failure keeps the group and command names the wrap
+// carries. The joined case is what executeGroups returns when several groups
+// fail.
 func TestHandleExecutionError_CauseFormatting(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -617,14 +623,14 @@ func TestHandleExecutionError_CauseFormatting(t *testing.T) {
 		wantMsg string
 	}{
 		{
-			name:    "single friendly error uses its user message",
+			name:    "single error uses its raw text, not its user message",
 			err:     fmt.Errorf("wrap: %w", friendlyTestError{}),
-			wantMsg: "error running commands: friendly text",
+			wantMsg: "error running commands: wrap: raw text",
 		},
 		{
-			name:    "joined errors keep every child, one per line",
+			name:    "joined errors use the join's raw text",
 			err:     errors.Join(errStandardError, fmt.Errorf("wrap: %w", friendlyTestError{})),
-			wantMsg: "error running commands: standard error\nfriendly text",
+			wantMsg: "error running commands: standard error\nwrap: raw text",
 		},
 	}
 

@@ -172,8 +172,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 2: `UserFriendlyError` の削除（原因の差し替えの廃止）
 
@@ -181,14 +181,14 @@
 
 **作業内容**:
 
-- [ ] `internal/logging/execution_error.go` から `UserFriendlyError`・`GetUserFriendlyMessage`・`formatCause` を、その doc コメントごと削除する。
-- [ ] `PreExecutionError.Detail()`（`:93-98`）と `HandleExecutionError`（`:243-276`）の原因の描画を `e.Err.Error()` に変える。`handleErrorCommon` の複数行の字下げ（`:156-159`）と、外側の context を `Message` の直後・原因の前に置くという順序は変えない。
-- [ ] `CaptureError.UserMessage`（`internal/runner/base/output/errors.go:113-130`）を削除する（`GetType`・`GetPath` は Phase 6）。
-- [ ] `internal/logging/execution_error_guard_test.go` に `TestProductionCodeHasNoUserFriendlyError` を追加し、本番ファイルに `UserFriendlyError`・`GetUserFriendlyMessage`・`UserMessage`・`formatCause` が現れないことを固定する。
-- [ ] `internal/runner/group_errors_guard_test.go` に `TestProductionCodeDoesNotProbeMultiErrorShape`（本番ファイルに `Unwrap() []error` を型アサーションで調べる分岐が無いこと）を追加する。Phase 1 の `executionErrorContext` の置き換えと、本 Phase の `formatCause` の削除で、本番の該当箇所が無くなった後に置く。
-- [ ] `internal/logging/pre_execution_error_test.go` の `friendlyTestError` は残し、`UserMessage` を持っていても `Error()` が使われることを示すコメントに変える。`TestPreExecutionError_Detail` と `TestHandleExecutionError_CauseFormatting` の期待値を `Error()` の文言に反転する。
-- [ ] `internal/runner/multi_group_error_integration_test.go` を追加する。`TestRunner_MultiGroupFailureAttribution` は、group-1 が 0 以外の終了コード、group-2 が小さな `output_size_limit` と出力ファイルによるサイズ超過になる設定を実際の executor と resource manager で実行し（`group_executor_timeout_test.go` の構成を流用）、得たエラーを `logging.HandleExecutionError` に渡す。stderr はテストファイル内のローカルヘルパで `os.Pipe` により捕捉し、`error_message` は `tu.NewCallbackHandler` で記録して観測する（AC-01・AC-02・AC-04）。`TestHandleExecutionError_FilesystemCaptureErrorKeepsCause` は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で実物の `ErrorTypeFileSystem` の `*CaptureError` を作り（`MaxSize` は書き込むデータより大きい正の値にする。Phase 5 より前は `MaxSize` が 0 だとサイズの比較が先に働き、`ErrorTypeSizeLimit` になる）、`Cause` の文言が `Details:` に出ることを確かめる（AC-03）。`TestRunner_SingleCommandFailureReportUnchanged` は、1 group・1 コマンドの失敗で `Details:`・`error_message` が変更前の文言のままであることを確かめる（AC-11）。
-- [ ] `cmd/runner/integration_attribution_test.go` に `TestIntegration_SingleCommandFailureKeepsOuterContext` を追加し、実際のコマンド失敗で `GroupName`・`CommandName` を含む外側の context が `Details:` と `error_message` に出ること、終了コードが 1 で `RUN_SUMMARY` 行が 1 行（失敗の status）であることを確かめる（AC-11。終了コードの対応付けは AC-12・AC-35・AC-36 の共通の証拠にも使う）。
+- [x] `internal/logging/execution_error.go` から `UserFriendlyError`・`GetUserFriendlyMessage`・`formatCause` を、その doc コメントごと削除する。
+- [x] `PreExecutionError.Detail()`（`:93-98`）と `HandleExecutionError`（`:243-276`）の原因の描画を `e.Err.Error()` に変える。`handleErrorCommon` の複数行の字下げ（`:156-159`）と、外側の context を `Message` の直後・原因の前に置くという順序は変えない。
+- [x] `CaptureError.UserMessage`（`internal/runner/base/output/errors.go:113-130`）を削除する（`GetType`・`GetPath` は Phase 6）。
+- [x] `internal/logging/execution_error_guard_test.go` に `TestProductionCodeHasNoUserFriendlyError` を追加し、本番ファイルに `UserFriendlyError`・`GetUserFriendlyMessage`・`UserMessage`・`formatCause` が現れないことを固定する。
+- [x] `internal/runner/group_errors_guard_test.go` に `TestProductionCodeDoesNotProbeMultiErrorShape`（本番ファイルに `Unwrap() []error` を型アサーションで調べる分岐が無いこと）を追加する。Phase 1 の `executionErrorContext` の置き換えと、本 Phase の `formatCause` の削除で、本番の該当箇所が無くなった後に置く。
+- [x] `internal/logging/pre_execution_error_test.go` の `friendlyTestError` は残し、`UserMessage` を持っていても `Error()` が使われることを示すコメントに変える。`TestPreExecutionError_Detail` と `TestHandleExecutionError_CauseFormatting` の期待値を `Error()` の文言に反転する。
+- [x] `internal/runner/multi_group_error_integration_test.go` を追加する。`TestRunner_MultiGroupFailureAttribution` は、group-1 が 0 以外の終了コード、group-2 が小さな `output_size_limit` と出力ファイルによるサイズ超過になる設定を実際の executor と resource manager を使い（`group_executor_timeout_test.go` の構成で `executeSingleCommand` により各エラーを作り、`executeGroups` には `MockGroupExecutor` で両方を返させて集約させる）、得たエラーを `logging.HandleExecutionError` に渡す。stderr はテストファイル内のローカルヘルパで `os.Pipe` により捕捉し、`error_message` は `tu.NewCallbackHandler` で記録して観測する（AC-01・AC-02・AC-04）。`TestHandleExecutionError_FilesystemCaptureErrorKeepsCause` は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で実物の `ErrorTypeFileSystem` の `*CaptureError` を作り（`MaxSize` は書き込むデータより大きい正の値にする。Phase 5 より前は `MaxSize` が 0 だとサイズの比較が先に働き、`ErrorTypeSizeLimit` になる）、`Cause` の文言が `Details:` に出ることを確かめる（AC-03）。`TestRunner_SingleCommandFailureReportUnchanged` は、1 group・1 コマンドの失敗で `Details:`・`error_message` が変更前の文言のままであることを確かめる（AC-11）。
+- [x] `cmd/runner/integration_attribution_test.go` に `TestIntegration_SingleCommandFailureKeepsOuterContext` を追加し、コマンドレベルの失敗（コマンドの `env_vars` の未定義変数。ハッシュ検証が有効なため記録の無い実行ファイルは実行できず、ここではコマンド実行前の失敗を使う。実コマンドの `*CommandExecutionError` の文言は `TestRunner_SingleCommandFailureReportUnchanged` が固定する）で `GroupName`・`CommandName` を含む外側の context が `Details:` と `error_message` に出ること、終了コードが 1 で `RUN_SUMMARY` 行が 1 行（失敗の status）であることを確かめる。あわせて `TestIntegration_MultiGroupFailureHasNoOuterContext` を追加し、2 group の失敗では外側の context が付かず、各行が `failed to execute group <group>: ` で始まることを確かめる（AC-05。終了コードの対応付けは AC-11・AC-12・AC-35・AC-36 の共通の証拠にも使う）。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`TestPreExecutionError_Detail` が `Detail()` を `UserMessage` 優先に戻すと失敗すること、`TestHandleExecutionError_CauseFormatting` が同様に失敗すること、`TestProductionCodeHasNoUserFriendlyError` が本番のコメントに旧名を戻すと失敗すること、`TestProductionCodeDoesNotProbeMultiErrorShape` が `executionErrorContext` または `formatCause` の旧判定を戻すと失敗することを確認する。
 
@@ -204,8 +204,8 @@
 
 **判定理由**: 報告文言の中核を変え、実コマンドを動かす統合テストとガードテストを伴う。`UserMessage` が消えることでテストの失敗可能性を保つ工夫（`friendlyTestError` の維持）が必要であり、実装モデルの能力が結果に影響しうる。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -460,11 +460,11 @@
 - `internal/runner/multi_group_error_integration_test.go`: 複数 group の帰属（AC-01・AC-02・AC-04）、ファイルシステム起因の `CaptureError` の `Cause`（AC-03）、単一 `*CommandExecutionError` 失敗の文言の維持（AC-11）、タイムアウトの帰属（AC-20）。
 - `internal/runner/output_capture_integration_test.go::TestRunner_ZeroOutputSizeLimitIntegration`（AC-24）。
 - `internal/runner/output_retention_integration_test.go::TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput`（AC-29）。
-- `cmd/runner/integration_attribution_test.go`: 単一の段階失敗の外側の context（AC-15）、単一のコマンド失敗の外側の context（AC-11）、負の `output_size_limit` の dry-run（AC-27）。
+- `cmd/runner/integration_attribution_test.go`: 単一の段階失敗の外側の context（AC-15）、単一のコマンドレベルの失敗の外側の context（AC-11）、2 group の失敗で外側の context が付かないこと（AC-05）、負の `output_size_limit` の dry-run（AC-27）。
 
 ### 4.3 層の切り分け
 
-- AC-01・AC-02 は `executeGroups` のテスト（`TestRunner_MultiGroupFailureAttribution`）で 2 group の実行から観測する。外側の context の有無を決めるのは `cmd/runner` の `executionErrorContext` であり、AC-05 は `cmd/runner` の `TestExecutionErrorContext` だけで確認する（`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため、この判定を検証できない）。
+- AC-01・AC-02 は `executeGroups` のテスト（`TestRunner_MultiGroupFailureAttribution`）で 2 group の実行から観測する。外側の context の有無を決めるのは `cmd/runner` の `executionErrorContext` であり、AC-05 は `cmd/runner` の `TestExecutionErrorContext` と `TestIntegration_MultiGroupFailureHasNoOuterContext` で確認する（`internal/runner` の統合テストは `ExecutionError` を自ら組み立てるため、この判定を検証できない）。
 - AC-03 は、閉じたファイルハンドルを持つ `output.Capture` の `WriteOutput` で作った実物の `*CaptureError` を原因に含むチェーンを `HandleExecutionError` に渡して確かめる。`internal/logging` のテストは `internal/runner/base/output` を import できない（`logging` から `output` への依存は循環する）ため、`internal/runner` の統合テストに置く。
 - AC-06 は本番コードのガードテストと、`friendlyTestError` を使う `logging` の単体テストの 2 層で確認する。`UserMessage` を持つ型が無くなると「`Error()` をそのまま使う」ことを他の表示と区別できる入力が無くなるため、テスト型は残す。
 - AC-28・AC-29 は `boundedBuffer` の単体テスト（保持量と印）と、executor・Slack・デバッグログの統合テスト（利用者に見える欄）の 2 層で確認する。
@@ -543,7 +543,7 @@
 | AC-02 | Phase 1、Phase 2 | `test`: `TestRunner_MultiGroupFailureAttribution`（`Details:` の各行が `failed to execute group ` で始まること） |
 | AC-03 | Phase 2 | `test`: `internal/runner/multi_group_error_integration_test.go::TestHandleExecutionError_FilesystemCaptureErrorKeepsCause` |
 | AC-04 | Phase 2 | `test`: `TestRunner_MultiGroupFailureAttribution`（`error_message` が `Details:` と同じ文言であること） |
-| AC-05 | Phase 1 | `test`: `cmd/runner/main_test.go::TestExecutionErrorContext`（2 件の行が空を返すこと） |
+| AC-05 | Phase 1、Phase 2 | `test`: `cmd/runner/main_test.go::TestExecutionErrorContext`（2 件の行が空を返すこと）、`cmd/runner/integration_attribution_test.go::TestIntegration_MultiGroupFailureHasNoOuterContext`（2 group の失敗の end-to-end） |
 | AC-06 | Phase 2 | `test`: `internal/logging/pre_execution_error_test.go::TestPreExecutionError_Detail`・`TestHandleExecutionError_CauseFormatting`。`static`: `internal/logging/execution_error_guard_test.go::TestProductionCodeHasNoUserFriendlyError` |
 | AC-07 | Phase 1 | `test`: `internal/runner/group_errors_test.go::TestGroupError_ReadsCommandNameFromCause`、`internal/runner/runner_test.go::TestRunner_ExecuteGroupsBuildsGroupErrors`（0 件で nil、1 件以上で `GroupSpec.Name` を持つ `*GroupErrors`） |
 | AC-08 | Phase 1、Phase 2 | `test`: `TestExecutionErrorContext`。`static`: `internal/runner/group_errors_guard_test.go::TestProductionCodeDoesNotProbeMultiErrorShape` |
