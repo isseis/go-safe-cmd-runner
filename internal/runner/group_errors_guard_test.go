@@ -326,10 +326,12 @@ func TestGroupErrorConstructionCheckRecognizesForms(t *testing.T) {
 
 // TestProductionCodeDoesNotProbeMultiErrorShape pins that no production file
 // decides "several groups failed" from the Unwrap() []error shape. The guard
-// reports the probe sites only: a type assertion or a type-switch case whose
-// asserted type is an interface requiring Unwrap() []error. Declaring such a
-// method on a concrete type (GroupErrors.Unwrap) is allowed, and a named
-// interface merely used with errors.As is not a probe.
+// reports the probe sites it can resolve: a type assertion or a type-switch
+// case whose asserted type is an anonymous interface requiring
+// Unwrap() []error. Declaring such a method on a concrete type
+// (GroupErrors.Unwrap) is allowed. A named interface alias used in an assertion
+// is not detected; the historical probe was anonymous, and resolving an alias
+// declared in another file is out of scope for this per-file scan.
 func TestProductionCodeDoesNotProbeMultiErrorShape(t *testing.T) {
 	files := identitymutationguard.ProductionGoFilesInRepo(t)
 	require.NotEmpty(t, files, "the repository scan returned no production files")
@@ -346,7 +348,8 @@ func TestProductionCodeDoesNotProbeMultiErrorShape(t *testing.T) {
 }
 
 // findMultiErrorShapeProbes returns the positions of type assertions and
-// type-switch cases in src whose asserted type requires Unwrap() []error.
+// type-switch cases in src whose asserted type is an anonymous interface
+// requiring Unwrap() []error.
 func findMultiErrorShapeProbes(t *testing.T, filename, src string) []string {
 	t.Helper()
 
