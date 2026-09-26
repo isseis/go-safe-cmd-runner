@@ -52,7 +52,8 @@ var groupErrorsFields = []string{"errs", "group", "command", "err"}
 //   - The field-name match carries no type information, so a future struct
 //     added directly under internal/runner with a field of the same name would
 //     be a false positive. That is the known maintenance obligation of this
-//     incomplete (by design) scan.
+//     incomplete (by design) scan, as is a mutation through a type alias or an
+//     indirect left-hand side such as x.errs[i] = ... or *x.err = ... .
 //   - Test files are not scanned: they legitimately build values through the
 //     test constructors.
 //   - A scan that finds no literal fails rather than passing vacuously.
@@ -198,6 +199,20 @@ func TestGroupErrorConstructionCheckRecognizesForms(t *testing.T) {
 			name:              "qualified GroupErrors literal outside the package is reported",
 			path:              "internal/x/x.go",
 			src:               header + "var e = &r.GroupErrors{}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "positional value literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var e = r.GroupError{\"g\", \"c\", nil}\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "elided GroupErrors literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var es = []*r.GroupErrors{{}}\n",
 			wantLiterals:      1,
 			wantLiteralMisses: 1,
 		},

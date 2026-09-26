@@ -82,12 +82,11 @@ func TestGroupErrors_UnwrapReachesEachCause(t *testing.T) {
 	sentinelB := errors.New("cause b")
 	cmdA := &CommandExecutionError{GroupName: "group-a", CommandName: "cmd-a", Err: sentinelA}
 	cmdB := &CommandExecutionError{GroupName: "group-b", CommandName: "cmd-b", Err: sentinelB}
-	capErr := &output.CaptureError{
-		Type:  output.ErrorTypeSizeLimit,
-		Path:  "/tmp/out",
-		Phase: output.PhaseExecution,
-		Cause: output.ErrOutputSizeExceeded,
-	}
+	// Build the capture error through the production path, so this test does
+	// not depend on CaptureError's fields staying exported.
+	capErr := (&output.Capture{OutputPath: "/tmp/out", MaxSize: 1}).WriteOutput([]byte("too much"))
+	require.Error(t, capErr, "the bounded capture must reject an oversized write")
+	require.Contains(t, capErr.Error(), "/tmp/out", "the capture error must name its path")
 
 	singleA := newGroupErrors([]*GroupError{newGroupError("group-a", cmdA)})
 	assert.ErrorIs(t, singleA, sentinelA)
@@ -100,9 +99,8 @@ func TestGroupErrors_UnwrapReachesEachCause(t *testing.T) {
 	})
 	assert.ErrorIs(t, singleB, sentinelB)
 	assert.ErrorIs(t, singleB, output.ErrOutputSizeExceeded)
-	gotCap, ok := errors.AsType[*output.CaptureError](singleB)
+	_, ok = errors.AsType[*output.CaptureError](singleB)
 	require.True(t, ok, "the capture error must be reachable")
-	assert.Equal(t, "/tmp/out", gotCap.Path)
 
 	multi := newGroupErrors([]*GroupError{
 		newGroupError("group-a", cmdA),

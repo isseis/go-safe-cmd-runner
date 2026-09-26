@@ -52,8 +52,8 @@ cmd = %q
 	require.True(t, ok, "the execution error record must carry an error_message string: %v", reports[0])
 	assert.Contains(t, errorMessage, "(group: backup)",
 		"the structured error_message must carry the same outer context: %q", errorMessage)
-	// The Details block spans several stderr lines (handleErrorCommon indents
-	// the continuation), so only its first line is compared.
+	// stderrDetailsLine returns only the Details block's first line, so only
+	// that prefix can be compared with the structured field.
 	assert.True(t, strings.HasPrefix(errorMessage, strings.TrimPrefix(details, "  Details: ")),
 		"the structured error_message must start with the Details line: details=%q message=%q", details, errorMessage)
 }
