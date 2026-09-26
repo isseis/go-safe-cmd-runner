@@ -8,7 +8,7 @@
 | Created | 2026-09-26 |
 | Review date | - |
 | Reviewer | - |
-| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 同日、コードレビューを受けて §3.3・§4.2・§4.3 の AC-22 の記述と、§3.7 の表のデバッグログ・Slack の行（先頭 32 KiB に改行が無い出力は先頭が残らない）を改訂した。 |
+| Comments | 2026-09-26: 要件の改訂（F-006 コマンドのタイムアウト、F-007 `output_size_limit = 0`、F-008 設定の検証と出力の保持の上限）に合わせて改訂した。同日、出力の保持の上限をすべてのコマンドに広げる要件の改訂（AC-28、AC-29、AC-31）に合わせて §3.7 ほかを改訂した。同日、PR #1185 のレビューを受けて次のとおり改訂した。AC-28・AC-31 の修正に合わせ、出力ファイルに全体が残る条件を §3.7 に明記した。コマンドのタイムアウトの文言に `failed to execute group <g>: ` が付くこと（AC-09・AC-11 の例外）と、タイムアウト後の group の通知（AC-32）を §3.1、§4.2、§4.3、§5.1、§7、§10 に反映した。メモリ上に保持する出力で、省略の境目にかかる途中の行を捨てる設計に変え（§3.7、§5.1）、複数行の原因の続きの行を字下げする設計（AC-33）を §3.1、§4.2〜§4.4 に反映した。 同日、コードレビューを受けて §3.3・§4.2・§4.3 の AC-22 の記述と、§3.7 の表のデバッグログ・Slack の行（先頭 32 KiB に改行が無い出力は先頭が残らない）を改訂した。 2026-09-26: PR #1185 の再レビューと要件の改訂（決定事項「意図した挙動の変化」、AC-29 の改訂、AC-34 の追加）に合わせて次を改訂した。§3.7 の表の `user_group_command_failure` の Slack の行を `command_group_summary` の行と同じ変化に改め、Slack 用に生の先頭を別に持たない理由を記した。一部だけ残った秘密鍵のブロックを隠す `internal/redaction` の変更を §3.7 に加え、§3.8、§4.3、§4.4、§5.1、§7.1、§7.2、§8、§10 に反映した。§4.4 から、PEM のブロックが境目をまたぐと redaction されないという制限を削除した。§7.1 の `boundedBuffer` のテストに、省略の印だけが残る場合と改行がある場合を明記した。 |
 
 ## 0. 前提
 
@@ -381,7 +381,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
   - 先頭は、保持した先頭の中の最後の改行までを残す（改行を含む）。先頭に改行が無ければ、先頭は何も残さない。
   - 末尾は、保持した末尾の中の最初の改行の後ろからを残す。末尾に改行が無ければ、末尾は何も残さない。
   - `N` は、書き込み時に保持しなかったバイト数に、ここで捨てたバイト数を加えたものとする。
-  - 目的は、redaction に途中で切れた値を渡さないことである。redaction（`SanitizeOutputForLogging`: `internal/runner/base/security/logging_security.go:30`、`RedactText`: `internal/redaction/redactor.go:272`）は、`key=value` の並びと値の形（トークンなど）を検出する。PEM の秘密鍵のブロックを除き、これらは 1 行の中に収まる。省略の境目で行が途中で切れると、境目にかかったトークンの断片や、`key=` を失った値の断片が残り、検出に一致せずに出力されうる。境目にかかる行を丸ごと捨てれば、残る行はすべて元の出力の完全な行になり、redaction は変更前と同じ単位で働く。
+  - 目的は、redaction に途中で切れた値を渡さないことである。redaction（`SanitizeOutputForLogging`: `internal/runner/base/security/logging_security.go:30`、`RedactText`: `internal/redaction/redactor.go:272`）は、`key=value` の並びと値の形（トークンなど）を検出する。PEM の秘密鍵のブロックを除き、これらは 1 行の中に収まる。省略の境目で行が途中で切れると、境目にかかったトークンの断片や、`key=` を失った値の断片が残り、検出に一致せずに出力されうる。境目にかかる行を丸ごと捨てれば、残る行はすべて元の出力の完全な行になり、redaction は変更前と同じ単位で働く。複数行にわたる PEM のブロックは、下の「`internal/redaction` の変更」で扱う。
   - この規則は、出力ファイルが無いときの stderr の保持（現状の 32 KiB の上限）にも適用されるので、その表示も変わる（§4.3）。
 - **出力ファイルへの書き込みは変えない。** 上限はメモリ上の保持だけにかかり、`OutputWriter` には、変更前と同じくすべてのバイトを渡す（`executor.go:678-693`）。出力ファイルに書かれる内容は、変更前と同じである（AC-28）。ただし、出力ファイルに出力の全体が残るのは、コマンドが成功し、出力が `output_size_limit` に収まったとき（または上限が 0 のとき）に限られる。これは変更前と同じである。
   - 正の上限を超える書き込みは、`Capture.WriteOutput` が書き込まずに拒否する（`internal/runner/base/output/capture.go:42-58`）。
@@ -400,7 +400,20 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | Slack の `command_group_summary` の出力（`internal/logging/slack_handler.go:21` の stdout 1000 文字、`:22` の stderr 500 文字で切り詰め） | 切り詰めて表示 | 省略が無い出力と、先頭の 32 KiB に改行がある出力では変わらない（先頭側で切り詰められる）。省略があり先頭の 32 KiB に改行が無い出力では、省略の印から始まる |
 | `Command failed`・`Command failed with non-zero exit code` の構造化ログの `stderr`（`group_executor.go:639-643`、`:659-665`） | 出力ファイルありは全体（最大 `output_size_limit`）、なしは 32 KiB ずつ | 先頭と末尾の 32 KiB ずつ |
 | executor の `Command execution failed` のログの `stderr`（`internal/runner/base/executor/command_lifecycle.go:789-793`） | 同上 | 先頭と末尾の 32 KiB ずつ |
-| `run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121`）と、その Slack 通知（`user_group_command_failure`、`slack_handler.go:1033-1063`） | 監査ログの stdout は全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし）、stderr は上の行と同じ。Slack は切り詰めて表示 | 監査ログは先頭と末尾の 32 KiB ずつ、Slack は変わらない |
+| `run_as_user`/`run_as_group` 付きコマンドの失敗の監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121`）と、その Slack 通知（`user_group_command_failure`、`slack_handler.go:1033-1063`） | 監査ログの stdout は全体（出力ファイルありは最大 `output_size_limit`、なしは上限なし）、stderr は上の行と同じ。Slack は切り詰めて表示 | 監査ログは先頭と末尾の 32 KiB ずつ。Slack は `command_group_summary` の行と同じく、省略が無い出力と、先頭の 32 KiB に改行がある出力では変わらず、省略があり先頭の 32 KiB に改行が無い出力では省略の印から始まる |
+
+Slack の欄の値は、監査ログの `stdout`・`stderr`（`internal/runner/base/audit/logger.go:120-121` で `RedactText` を通したもの）を `truncateOutput`（`internal/logging/slack_handler.go:568-577`、呼び出しは `:1056`、`:1063`）で切り詰めたものであり、`command_group_summary` と同じく保持した出力から作られる。Slack のために、省略の前の生の先頭を別に持つことはしない。生の先頭は redaction より前に行の途中で切れるので、省略の境目で途中の行を捨てる規則で防いだ断片の漏れ（境目にかかったトークンや `key=` を失った値）を、再び持ち込むためである。
+
+**`internal/redaction` の変更（AC-34）。** 省略の境目が秘密鍵の PEM ブロックをまたぐと、`BEGIN` の行と `END` の行の片方だけが保持されうる。これを redaction の値の形の検出で扱う。executor は秘密の形を知らないままとする。
+
+- **現状。** 値の形の検出 `ValueDetector.Mask`（`internal/redaction/value_detector.go:143`）は、`BEGIN ... PRIVATE KEY` の行から次の `END ... PRIVATE KEY` の行までを最短一致で隠すパターン `pemPrivate`（`value_detector.go:34`、適用は `:156`）を持つ。このパターンは `BEGIN` と `END` の両方を必要とするので、片方だけのテキストには一致しない。`Mask` は `RedactText`（`internal/redaction/redactor.go:272`、`Mask` の呼び出しは `:291-295`）から呼ばれ、`SanitizeOutputForLogging` は `RedactSensitiveInfo` が有効なとき `RedactText` を使う（`internal/runner/base/security/logging_security.go:30-37`、`:49-51`）。
+- **先頭に `BEGIN`、末尾に `END` が残る場合。** 既存の `pemPrivate` は改行をまたいで最短一致するので、先頭の `BEGIN` の行から、省略の印を挟んで末尾の `END` の行までが 1 つの一致になり、隠される。この場合は変更を要しない。
+- **追加する規則。** `pemPrivate` を適用した後に、次の 2 つを適用する。いずれも同じ置き換えの文字列（検出の既定の placeholder）で隠す。
+  - 相手の無い `BEGIN ... PRIVATE KEY` の行（`pemPrivate` の適用後に残る `BEGIN` の行）は、その行からテキストの末尾までを隠す。
+  - 相手の無い `END ... PRIVATE KEY` の行は、テキストの先頭からその行までを隠す。
+  - `pemPrivate` を先に適用するのは、完全なブロックを変更前と同じ範囲で隠し、完全なブロックを持つテキストで後ろの内容まで隠さないためである。
+- **安全な側に倒す。** 相手の無い行の前後の内容は、秘密鍵でなくても隠れる。秘密鍵を出すより、隠しすぎる側を選ぶ（要件の決定事項「一部だけ残った秘密鍵のブロックも隠す」）。`PUBLIC KEY` のブロックは対象にしない。
+- **及ぶ範囲。** 規則は `RedactText` を通るすべての値に及ぶ。構造化ログの属性とメッセージ（`RedactingHandler`: `redactor.go:348`、`:752`）、監査ログ（`audit/logger.go:83-85`、`:120-121`、`:194`、`:232-238`）、`SanitizeOutputForLogging` を通る `command_group_summary` の出力（`internal/runner/group_executor.go:270-271`）、環境変数の検証（`internal/runner/base/security/environment_validation.go:60`）である。出力ファイルが無いときの stderr の既存の 32 KiB の上限でブロックの片側だけが残る、現状の抜けもこれで塞がる。
 
 ### 3.8 コンポーネントの責務と変更ファイル
 
@@ -420,6 +433,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `internal/runner/base/executor/output_pump.go` | 変更 | `newOutputPump` が stdout・stderr に同じ上限を使う。`boundedBuffer.Bytes` が省略の境目にかかる途中の行を捨てる |
 | `internal/runner/base/executor/command_lifecycle.go` | 変更 | 出力ファイルの有無による上限の分岐を削除する |
 | `internal/runner/base/executor/executor.go` | 変更 | 保持の上限の定数をまとめる |
+| `internal/redaction/value_detector.go` | 変更 | 相手の無い `BEGIN ... PRIVATE KEY` の行と `END ... PRIVATE KEY` の行を隠すパターンを加え、`Mask` で `pemPrivate` の後に適用する（AC-34） |
 | `docs/user/toml_config/04_global_level.ja.md` | 変更 | 「4.8 output_size_limit」に 0 が無制限であること・負の値は読み込みで拒否されること（AC-26）、メモリ上に保持する出力の上限と、出力の全体が必要なら出力ファイルを指定すること、出力ファイルに全体が残るのはコマンドが成功し出力が上限に収まったとき（または上限が 0 のとき）であること（AC-31）を追記。「4.1 timeout」の「動作の詳細」に、タイムアウト後も後続の group が実行されること、既知の制限としてプロセス（孫プロセスを含む）が残りうることを追記（AC-30） |
 | `docs/user/toml_config/04_global_level.md` | 変更 | 上記を `/mktrans` で反映 |
 
@@ -437,6 +451,9 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の変更に合わせて更新する（コンパイラが検出する） |
 | `internal/runner/base/executor/executor_test.go` の `TestExecute_NilOutputWriter_StderrPrefixSuffixBound` | 改行を含まない 70 KiB の `x` の stderr が、ちょうど 32 KiB の先頭・省略の印・32 KiB の末尾になること | 省略の境目の途中の行を捨てる規則（§3.7）に合わせて更新する。改行を含まない出力では先頭も末尾も残らないので、期待値は省略の印だけ（省略したバイト数は全体）になる。先頭と末尾が残ることは、改行を含む出力の行を加えて確かめる |
 | `internal/runner/base/executor/output_pump_test.go` の `TestBoundedBuffer_KeepsPrefixAndSuffix`（`:49`）・`TestBoundedBuffer_WriteNeverFails`（`:120`） | 改行を含まない入力で、先頭・省略の印・末尾がバイト単位で保持されること | 同上。期待値を途中の行を捨てた形に更新し、改行が先頭・末尾の中にある行と無い行を表に加える |
+| `internal/redaction/redactor_test.go:4086` `TestDefaultPatternSets_AreUnchanged` | 値の形の検出のパターンの集合と各パターンの文字列（`pemPrivate` は `:4138`）が変わらないこと | 追加する 2 つのパターンを期待値に加える。`pemPrivate` の文字列は変えない |
+| `internal/redaction/value_detector_test.go` の `TestValueDetector_Mask_PositiveCases`（`:12`）・`TestValueDetector_Mask_NegativeCases`（`:93`） | 完全な PEM の秘密鍵のブロックが隠れること、`PUBLIC KEY` のブロック（`:123-125`）が隠れないこと | そのまま通ることを確かめ、§7.1 の片側だけのブロックの行を加える |
+| `internal/redaction/redactor_test.go:3274` `TestRedactText_ValueBasedDetection` | `RedactText` で完全な PEM のブロックが隠れること（`:3298-3299`） | そのまま通ることを確かめる |
 | 32 KiB を超える stdout の全体を検証している既存のテスト | （あれば）stdout の全体 | 実装時に `make test` で検出して更新する |
 
 `internal/runner/runner_test.go:660-735` の `TestRunner_CommandTimeoutBehavior` は `t.Skip` で常に飛ばされる（`:661`）ため、変更の検証には使わない。
@@ -486,6 +503,8 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 | `output_size_limit = 0` のコマンド | 出力を 1 バイトでも書くと、その時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 出力の大きさによらず成功する |
 | 負の `output_size_limit` を含む設定 | 読み込みは成功する。該当するコマンドは、出力を 1 バイトでも書くとその時点でサイズ超過として失敗する（出力しないコマンドは成功する） | 読み込みで拒否され、どの group も実行されない（dry-run を含む） |
 | コマンドのメモリ上の出力 | stdout は全体を保持（出力ファイルありは最大 `output_size_limit`、なしは上限なし）。stderr は出力ファイルありなら全体、なしなら 32 KiB ずつで、省略の境目では行の途中で切れる。`command_group_summary` の構造化ログの `output`、`Command failed` の `stderr`、監査ログに、保持した全体が出る | すべて先頭と末尾の 32 KiB ずつを保持し、省略があれば、境目にかかる途中の行を捨てる（§3.7）。改行を含まない出力では、省略の印だけが残る。出力ファイルが無いコマンドの stdout で上限を超えた部分は、どこにも残らない |
+| 上限を超えた出力の Slack の欄（`command_group_summary` の出力・エラー出力、`user_group_command_failure` の `Output`・`Error Output`） | 保持した出力（stdout は全体、stderr は上の行のとおり）の先頭を切り詰めて表示 | 保持した先頭の 32 KiB に改行がある出力では変わらない。改行が無い出力では、欄は省略の印から始まる（§3.7） |
+| 秘密鍵の PEM ブロックの片側だけを含むテキストの redaction | 隠されず、残った本文の行がログ・監査ログ・Slack に出る | 相手の無い `BEGIN` の行から末尾まで、または先頭から相手の無い `END` の行までが隠される（§3.7、AC-34）。秘密鍵以外の内容も一緒に隠れることがある |
 
 `output size limit exceeded for '<path>'` という部分文字列は、変更前の stderr・`error_message` にも変更後にも現れる。
 
@@ -493,7 +512,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 
 - **実行全体の中断では、集めた失敗が報告に出ない。** §3.2 のとおり、実行全体の context が取り消されると、`executeGroups` は集めた失敗を捨てて返す。これは要件の対象外（「実行全体の中断時に集めた失敗を報告すること」）である。
 - **タイムアウトしたコマンドのプロセスが残りうる。** executor はタイムアウトのとき直接の子プロセスだけを kill し、プロセスグループへの kill は行わない（`internal/runner/base/executor` に `Setpgid`・`Kill(-pgid)` は無い）。子を kill・回収できなかった場合は `ErrKillAfterCancel`・`ErrChildNotReaped` がエラーに加わる（`command_lifecycle.go:741-742`、`:912`、`:948`）。いずれの場合も、残ったプロセスと後続の group が並行して動きうる。要件の決定事項「タイムアウト後に残るプロセスは受け入れる」により、これを受け入れ、利用者向け文書に記載する（AC-30）。
-- **複数行の値が省略の境目をまたぐと、redaction されないことがある。** §3.7 の規則は、境目にかかる行を捨てることで 1 行に収まる値を守る。PEM の秘密鍵のブロックのように複数行にわたる値は、`BEGIN` の行と `END` の行の片方だけが残ると値の形の検出（`internal/redaction/value_detector.go:34`）に一致せず、残った行が出力されうる。これは出力ファイルが無いときの stderr（現状の 32 KiB の上限）でも同じである。行をまたぐ値の扱いは本タスクでは変えない。
+- **省略の境目にかかる秘密鍵のブロックは、隠しすぎることがある。** 省略による保持は、stdout と出力ファイルがあるときの stderr には本タスクで新しくかかり、出力ファイルが無いときの stderr には現状からかかっている。境目が PEM の秘密鍵のブロックをまたいで片側だけが残る場合は、§3.7 の `internal/redaction` の変更で隠す（AC-34）。このとき、相手の無い行からテキストの末尾まで、またはテキストの先頭から相手の無い行までが隠れるので、秘密鍵以外の出力も読めなくなる。秘密鍵を出さないことを優先して、これを受け入れる。値の形の検出が知らない複数行の秘密の形は、本タスクの前後で扱いが変わらない。
 - **dry-run の出力の分析は、上限を常に 0 と表示する。** `AnalyzeOutput` は `MaxSizeLimit` を設定しない（`internal/runner/base/output/manager.go:232` 以降）ため、dry-run の `max_size_limit` は常に 0 である（`internal/runner/resource/dryrun_manager.go:746`）。0 が無制限を意味すると利用者向け文書に明記した後は、dry-run が常に表示するこの 0 も無制限を意味すると読めてしまう。本タスクでは変えず、[#1184](https://github.com/isseis/go-safe-cmd-runner/issues/1184) で扱う。
 
 ### 4.5 失敗時の扱い
@@ -510,7 +529,7 @@ func ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error
 |---|---|
 | stderr の `Details:` | `handleErrorCommon` が直接書く（`internal/logging/pre_execution_error.go:148-174`）。redaction は通らず、これは変更前と同じである。`CaptureError` を含む失敗では、変更前は `UserMessage` に隠れていた次の情報が新たに出る。書き込み失敗の OS のエラー、サイズ超過の上限値、原因のチェーン全体（`ErrKillAfterCancel`・`ErrChildNotReaped` など、別の uid でプロセスが残っている可能性を示すエラーを含む: `internal/runner/base/executor/command_lifecycle.go:788`）。最後のものは、利用者が気付くべき事象が隠れなくなるという改善である。同じエラーは変更前から `Command failed` の構造化ログ（`internal/runner/group_executor.go:639-643` の `error` 属性）に出ている |
 | 構造化ログの `error_message` | `RedactingHandler` を通る点は変わらない（§5.2） |
-| 構造化ログ・監査ログの `stdout`・`stderr`・`output` | すべてのコマンドで、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きる。省略の境目で行が途中で切れると、境目にかかった機密の値の断片が値の形の検出に一致しなくなり、また `key=` を失った値の断片が key と結び付かなくなって、redaction されずに出力されうる。これを防ぐため、省略があったときは境目にかかる途中の行を捨て、完全な行だけを残す（§3.7）。この規則は現状の出力ファイルが無いときの stderr にも適用されるので、その点は改善になる。複数行にわたる値（PEM のブロック）は §4.4 の制限が残る。出力ファイルに書かれる内容は変わらず、redaction の対象ではない点も変わらない |
+| 構造化ログ・監査ログの `stdout`・`stderr`・`output` | すべてのコマンドで、先頭と末尾の 32 KiB ずつになる（§3.7）。省略は redaction（`SanitizeOutputForLogging`・`RedactText`）より前に起きる。省略の境目で行が途中で切れると、境目にかかった機密の値の断片が値の形の検出に一致しなくなり、また `key=` を失った値の断片が key と結び付かなくなって、redaction されずに出力されうる。これを防ぐため、省略があったときは境目にかかる途中の行を捨て、完全な行だけを残す（§3.7）。複数行にわたる PEM の秘密鍵のブロックの片側だけが残る場合は、redaction がその行から末尾まで、または先頭からその行までを隠す（§3.7 の `internal/redaction` の変更、AC-34）。これらの規則は現状の出力ファイルが無いときの stderr にも適用されるので、その点は改善になる。Slack の欄も同じ保持した出力と redaction から作られ、生の出力を別に持たない（§3.7）。出力ファイルに書かれる内容は変わらず、redaction の対象ではない点も変わらない |
 | Slack | 実行エラーのレコードは `slack_notify=false` のまま（`internal/logging/pre_execution_error.go:270`）で、Slack へは送らない（AC-12）。コマンドのタイムアウトの後は、後続の group の通知（実行前段の失敗の通知と `command_group_summary`）が加わる（AC-32）。これらは既存の通知と同じ経路・同じ redaction を通り、新しい種類の本文は送らない。実行前エラーの Slack 通知の本文（`Detail()`）は、§3.4 のとおり `CaptureError` による変化を受けない。group ファイル検証の失敗の通知は、実行全体の中断と重なっても行う（§3.2 の 1） |
 
 ### 5.2 redaction による帰属の喪失
@@ -673,9 +692,15 @@ flowchart LR
   - `newSizeLimitError` が 0 と負の上限値で panic すること（AC-25）。
 - **`ValidateOutputSizeLimits`（`internal/runner/config`）**: グローバル・テンプレート・コマンドの負の値がそれぞれ `ErrNegativeOutputSizeLimit` で拒否され、エラーに値と設定箇所が含まれること。0 と正の値と未指定は受け入れること。`Loader.LoadConfig` が、主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値の両方を拒否すること（AC-27）。
 - **`boundedBuffer`（`internal/runner/base/executor`）**: 省略の境目の途中の行を捨てること（§3.7）を表で確かめる。
-  - 先頭と末尾の中に改行がある場合、残る先頭は改行で終わり、残る末尾は行の始まりから始まり、省略の印のバイト数が捨てた分を含むこと。
-  - 先頭または末尾に改行が無い場合、その側は何も残らないこと。省略が無い場合は切り詰めないこと。
+  - 先頭と末尾の中に改行がある場合、残る先頭は改行で終わり、残る末尾は行の始まりから始まり、省略の印のバイト数が捨てた分を含むこと（AC-29）。
+  - 先頭または末尾に改行が無い場合、その側は何も残らないこと。改行を含まない上限超えの出力では、保持した出力が省略の印だけになり、印のバイト数が出力全体の大きさに等しいこと（AC-29）。省略が無い場合は切り詰めないこと。
   - 機密の値が境目をまたぐ場合: `password=<値>` の行と、値の形で検出されるトークン（例: GitHub のトークンの形）の行を、それぞれ先頭と省略の境目、省略と末尾の境目にかかるように書き、保持した出力に値のどの断片も含まれないことを確かめる。まず、同じ断片を単独で redaction に渡しても隠されないこと（断片が検出に一致しないこと）を確かめ、テストが途中の行を捨てる規則だけを検証していることを示す（CLAUDE.md「A layered path needs inputs only one layer can handle」）。
+- **一部だけ残った秘密鍵のブロック（`internal/redaction`）**: `ValueDetector.Mask` と `RedactText` で次を確かめる（AC-34）。各行で、まず同じ入力を変更前の `pemPrivate` だけに通しても一致しないこと（`BEGIN` だけ、`END` だけのテキストは既存のパターンで隠れないこと）を確かめ、テストが追加する規則だけを検証していることを示す（CLAUDE.md「A layered path needs inputs only one layer can handle」）。本文の行には、他の値の形の検出に一致しない文字列を使い、それ単独では隠されないことも確かめる。
+  - `BEGIN` が省略された場合: 先頭からの任意の行、本文の行、`END ... PRIVATE KEY` の行、後続の行の並びで、`END` の行までの本文が残らないこと。
+  - `END` が省略された場合: 先行する行、`BEGIN ... PRIVATE KEY` の行、本文の行の並びで、`BEGIN` の行以降が残らず、先行する行は残ること。
+  - 先頭に `BEGIN`、末尾に `END` が残り、間に省略の印がある場合: 既存の `pemPrivate` が印をまたいで一致し、ブロックが隠れること。追加する規則を外しても隠れること（この場合は既存のパターンが担うこと）を確かめる。
+  - 完全なブロックの後ろの行が隠れないこと、`PUBLIC KEY` のブロックが隠れないこと。
+  - `boundedBuffer` と組み合わせ、PEM のブロックが省略の境目をまたぐ出力を書き、保持した出力を `RedactText` に通すと本文の行が残らないこと。追加する規則を外すと本文の行が残って失敗することを確かめる。
 - **出力ポンプ・executor（`internal/runner/base/executor`）**: 出力ファイルがある場合と無い場合のそれぞれで、上限を超える stdout・stderr を書くと、保持される出力は上限付きで先頭と末尾と省略の印を含むこと（AC-28、AC-29）。出力ファイルがある場合は、`OutputWriter` にすべてのバイトが渡ること。出力ファイルが無い場合は、実際のコマンドに 32 KiB を超える stdout を書かせて `Result.Stdout` を確かめること（正常終了、つまり終了コード 0 の場合を必ず含める）。stderr は正常終了で報告されない（`TestExecute_NilOutputWriter_LargeStderrStillSucceeds`）のに対し stdout は正常終了でも報告されるので、上限付きで空でも全体でもないことも確かめること。
 - **`logging`**
   - `HandleExecutionError` と `Detail()` が、`friendlyTestError` について `UserMessage()` ではなく `Error()` の文言を出すこと（AC-06）。
@@ -687,6 +712,7 @@ flowchart LR
 - 1 件の失敗（`*CommandExecutionError`）で、stderr と `error_message` が変更前と同じであること（AC-11）。
 - **AC-20**: 実際のタイムアウトのエラーの形は、実際の executor でタイムアウトさせる既存のテスト `internal/runner/group_executor_timeout_test.go` の `TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで作る。これに、エラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことの確認を加える。そのうえで、group-1 は 0 以外の終了コード、group-2 はその形のタイムアウトのエラーとなる `executeGroups` の結果を `HandleExecutionError` に渡し、`Details:` に両方の group の行が出ることを確かめる。
 - **AC-24、AC-28**: `output_size_limit = 0` と出力ファイルを指定したコマンドを実際に実行し、32 KiB を超える出力を書かせる。出力サイズ超過で失敗せずに完了し、出力ファイルに全出力が書かれ、結果の stdout（`ExecutionResult.Stdout`）が上限付きで省略の印を含むことを確かめる（既存の出力キャプチャの統合テストの形）。
+- **Slack の欄（AC-29）**: 実際の executor で、先頭の 32 KiB に改行を含まない 64 KiB を超える出力をコマンドに書かせる。得られた `Result` を監査ログ（`audit.Logger.LogUserGroupExecution`）に渡し、その記録から `SlackHandler` が組み立てる `user_group_command_failure` の `Output` の欄が、コードブロックの開始の直後に省略の印から始まることを確かめる。同じ出力の `command_group_summary` の出力の欄でも同じことを確かめる。
 - **AC-27（dry-run）**: 負の `output_size_limit` を含む設定で dry-run を行うと、設定の読み込みで拒否されることを確かめる。
 
 ### 7.3 既存挙動の維持
@@ -709,7 +735,7 @@ flowchart LR
 
 1. **`GroupErrors` の導入**: `group_errors.go`、`executeGroups`、`executionErrorContext`、テスト用の構築関数、関連テスト。この段階で、失敗 1 件の `*GroupStageError` に外側の context が付く（AC-15）。原因の文言（`UserMessage` の差し替えを含む）はまだ変わらない。
 2. **`UserFriendlyError` の削除**: `logging` の 3 つの関数、`CaptureError.UserMessage`、関連テスト。ここで AC-01〜AC-04 が成り立つ。
-3. **出力の保持の上限（AC-28、AC-29）**: 出力ポンプと `command_lifecycle.go`、関連テスト。出力ファイルの有無によらず同じ上限にする。5 より前に行い、上限 0 を無制限にした時点でメモリ使用量が出力に比例する状態を作らない。
+3. **秘密鍵のブロックの検出（AC-34）と出力の保持の上限（AC-28、AC-29）**: まず `internal/redaction` の変更と関連テストを入れる。その後、または同じコミットで、出力ポンプと `command_lifecycle.go`、関連テストを入れ、出力ファイルの有無によらず同じ上限にする。保持の上限を先に入れると、その間は stdout と出力ファイルがあるときの stderr で PEM のブロックの片側だけが残りうるので、検出を後にしてはならない。5 より前に行い、上限 0 を無制限にした時点でメモリ使用量が出力に比例する状態を作らない。
 4. **負の `output_size_limit` の拒否（AC-27）**: `ValidateOutputSizeLimits`、関連テスト。
 5. **`output_size_limit = 0` の修正（AC-23、AC-24）**: `Capture.WriteOutput` の上限 0、関連テスト。3 の後に行う。
 6. **`CaptureError` の整理（AC-16〜AC-18、AC-25）**: `Limit`・`newSizeLimitError` の追加、サイズ超過の文言、`GetType`・`GetPath` の削除、関連テスト。`newSizeLimitError` が 0 以下を拒否するので、4 と 5 の後に行う。
@@ -751,11 +777,12 @@ flowchart LR
 | AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`） |
 | AC-26 | §3.8 | §7.4 |
 | AC-27 | §3.6 | §7.1（`ValidateOutputSizeLimits`）、§7.2 |
-| AC-28, AC-29 | §3.7、§5.1 | §7.1（`boundedBuffer`、出力ポンプ）、§7.2 |
+| AC-28, AC-29 | §3.7、§4.3、§5.1 | §7.1（`boundedBuffer`、出力ポンプ）、§7.2（Slack の欄を含む） |
 | AC-30 | §3.8、§4.4 | §7.4 |
 | AC-31 | §3.7、§3.8 | §7.4 |
 | AC-32 | §3.2、§4.3、§5.1 | §7.1（タイムアウト後の group の通知） |
 | AC-33 | §2.3、§3.1、§4.2、§4.3 | §7.1（`GroupError`・`GroupErrors`） |
+| AC-34 | §3.7（`internal/redaction` の変更）、§4.3、§4.4、§5.1 | §7.1（一部だけ残った秘密鍵のブロック） |
 
 ## 付録 A. 他の設計文書との関係
 
