@@ -404,7 +404,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 // executeGroups executes the specified groups
 // This is a helper method used by ExecuteFiltered
 func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSpec) error {
-	var groupErrs []error
+	var groupErrs []*GroupError
 
 	// Execute all groups sequentially, collecting errors
 	for _, group := range groups {
@@ -433,7 +433,7 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 				// Record-only: the process-level report is made once at the end
 				// of the run from the returned error.
 				logging.NotifyPreExecutionError(groupStagePreExecutionError(stageErr, r.runID))
-				groupErrs = append(groupErrs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
+				groupErrs = append(groupErrs, newGroupError(group.Name, err))
 				continue
 			}
 
@@ -447,20 +447,16 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 				continue // Skip this group but continue with the next one
 			}
 			// Collect error but continue with next group
-			groupErrs = append(groupErrs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
+			groupErrs = append(groupErrs, newGroupError(group.Name, err))
 		}
 	}
 
-	// A single failure stays a plain error so callers can attach its
-	// group/command context; a multi-error (Unwrap() []error) then means
-	// several groups failed. errors.Join of one element would still be one.
-	if len(groupErrs) == 1 {
-		return groupErrs[0]
+	// A group failure is declared by the dedicated type whether one group or
+	// several failed; the caller decides the outer context from the count.
+	if len(groupErrs) == 0 {
+		return nil
 	}
-
-	// Return every group error so failures after the first still reach the
-	// caller; errors.Join returns nil when groupErrs is empty.
-	return errors.Join(groupErrs...)
+	return newGroupErrors(groupErrs)
 }
 
 // isGroupFileVerificationFailure reports whether a stage error belongs on the

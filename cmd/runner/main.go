@@ -721,13 +721,16 @@ func (e dryRunPreviewExit) Error() string {
 }
 
 // executionErrorContext returns the group and command names to attach to an
-// execution error, or empty strings when err joins several failures. One
-// group/command pair cannot describe several failed groups, and each joined
+// execution error, or empty strings when several groups failed. One
+// group/command pair cannot describe several failed groups, and each group's
 // line already names its own group, so attaching the first failure's names
-// would misattribute the others. Issue #1179 tracks replacing this
-// multi-error check with a dedicated error type.
+// would misattribute the others.
 func executionErrorContext(err error) (groupName, commandName string) {
-	if _, ok := err.(interface{ Unwrap() []error }); ok {
+	if groupErrs, ok := errors.AsType[*runner.GroupErrors](err); ok {
+		errs := groupErrs.Errors()
+		if len(errs) == 1 {
+			return errs[0].GroupName(), errs[0].CommandName()
+		}
 		return "", ""
 	}
 	if cmdExecErr, ok := errors.AsType[*runner.CommandExecutionError](err); ok {

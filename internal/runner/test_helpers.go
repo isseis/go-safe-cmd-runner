@@ -76,3 +76,17 @@ func WithExecutor(exec executor.CommandExecutor) Option {
 		opts.executor = exec
 	}
 }
+
+// NewGroupErrorForTest builds a GroupError with the given group and command
+// names directly, so callers outside this package can construct the error
+// without going through the production constructor. The command name is not
+// read from the cause's chain here; that behavior is covered by this package's
+// tests.
+func NewGroupErrorForTest(group, command string, err error) *GroupError {
+	return &GroupError{group: group, command: command, err: err}
+}
+
+// NewGroupErrorsForTest builds a GroupErrors from the given group errors.
+func NewGroupErrorsForTest(errs ...*GroupError) *GroupErrors {
+	return newGroupErrors(errs)
+}

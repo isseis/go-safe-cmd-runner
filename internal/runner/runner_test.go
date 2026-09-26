@@ -444,10 +444,12 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrCommandFailed)
-		// A single group failure must not be a multi-error, so the caller can
-		// attach its group/command context.
-		_, isMulti := err.(interface{ Unwrap() []error })
-		assert.False(t, isMulti, "a single group failure must not be returned as a joined error")
+		// A single group failure is reported through the same dedicated type
+		// as several, so the caller reads the count instead of the shape.
+		groupErrs, ok := errors.AsType[*GroupErrors](err)
+		require.True(t, ok, "the single group failure must be a *GroupErrors")
+		require.Len(t, groupErrs.Errors(), 1)
+		assert.Equal(t, "group-1", groupErrs.Errors()[0].GroupName())
 		cmdExecErr, ok := errors.AsType[*CommandExecutionError](err)
 		require.True(t, ok, "the single group failure must carry a CommandExecutionError")
 		assert.Equal(t, "group-1", cmdExecErr.GroupName)
@@ -656,6 +658,77 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 // TestRunner_createCommandContext has been removed as it tested an internal implementation detail
 // of GroupExecutor. Timeout behavior is already tested by TestRunner_CommandTimeoutBehavior.
+
+// TestRunner_ExecuteGroupsBuildsGroupErrors fixes the count-based result of
+// executeGroups: no failure returns nil, and any number of failures returns a
+// *GroupErrors whose entries carry the failed GroupSpec.Name.
+func TestRunner_ExecuteGroupsBuildsGroupErrors(t *testing.T) {
+	cause := errors.New("boom")
+
+	tests := []struct {
+		name       string
+		groups     []runnertypes.GroupSpec
+		failBy     map[string]error
+		wantGroups []string
+	}{
+		{
+			name:   "no failure returns nil",
+			groups: []runnertypes.GroupSpec{{Name: "group-1"}},
+		},
+		{
+			name:       "one failure returns a one-entry GroupErrors",
+			groups:     []runnertypes.GroupSpec{{Name: "group-1"}},
+			failBy:     map[string]error{"group-1": cause},
+			wantGroups: []string{"group-1"},
+		},
+		{
+			name:       "two failures keep both entries in order",
+			groups:     []runnertypes.GroupSpec{{Name: "group-1"}, {Name: "group-2"}},
+			failBy:     map[string]error{"group-1": cause, "group-2": cause},
+			wantGroups: []string{"group-1", "group-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockGroupExecutor := &MockGroupExecutor{}
+			for _, group := range tt.groups {
+				name := group.Name
+				mockGroupExecutor.On("ExecuteGroup", mock.Anything,
+					mock.MatchedBy(func(spec *runnertypes.GroupSpec) bool { return spec.Name == name }),
+					mock.Anything).Return(tt.failBy[name])
+			}
+
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global:  runnertypes.GlobalSpec{Timeout: new(int32(30))},
+				Groups:  tt.groups,
+			}
+			r, err := NewRunner(config,
+				WithVerificationManager(setupDryRunVerification(t)),
+				WithRunID("test-group-errors"),
+				WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
+			require.NoError(t, err)
+			r.groupExecutor = mockGroupExecutor
+
+			gotErr := r.Execute(context.Background(), nil)
+			mockGroupExecutor.AssertNumberOfCalls(t, "ExecuteGroup", len(tt.groups))
+
+			if len(tt.wantGroups) == 0 {
+				require.NoError(t, gotErr)
+				return
+			}
+
+			groupErrs, ok := errors.AsType[*GroupErrors](gotErr)
+			require.True(t, ok, "executeGroups must return a *GroupErrors, got %T", gotErr)
+			got := make([]string, 0, len(groupErrs.Errors()))
+			for _, groupErr := range groupErrs.Errors() {
+				got = append(got, groupErr.GroupName())
+			}
+			assert.Equal(t, tt.wantGroups, got)
+		})
+	}
+}
 
 func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	t.Skip("Skipped: Requires actual sleep command execution which is not compatible with mock-based testing architecture")

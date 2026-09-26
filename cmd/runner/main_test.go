@@ -742,16 +742,19 @@ func TestNewDryRunFormatter_UnknownFormatReturnsError(t *testing.T) {
 	assert.Nil(t, formatter)
 }
 
-// TestExecutionErrorContext verifies that the group/command context is taken
-// from a single command failure but left empty when several groups failed,
-// because one pair of names cannot describe a joined multi-group error.
+// TestExecutionErrorContext verifies the decision order of the outer context:
+// a single group failure (whatever its cause type) supplies its group and
+// command names, several failures leave both empty, and an interrupted run
+// that never reached the dedicated type still reads the raw command failure.
 func TestExecutionErrorContext(t *testing.T) {
 	t.Parallel()
 
 	errCause := errors.New("exit status 1")
-	cmdErr := func(group, command string) error {
-		return fmt.Errorf("failed to execute group %s: %w", group,
-			&runner.CommandExecutionError{GroupName: group, CommandName: command, Err: errCause})
+	cmdErr := func(group, command string) *runner.CommandExecutionError {
+		return &runner.CommandExecutionError{GroupName: group, CommandName: command, Err: errCause}
+	}
+	groupErrs := func(errs ...*runner.GroupError) error {
+		return runner.NewGroupErrorsForTest(errs...)
 	}
 
 	tests := []struct {
@@ -761,14 +764,46 @@ func TestExecutionErrorContext(t *testing.T) {
 		wantCommand string
 	}{
 		{
-			name:        "single wrapped command failure",
-			err:         cmdErr("group-a", "cmd-a"),
+			name:        "one group failure from a command execution error",
+			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", cmdErr("group-a", "cmd-a"))),
 			wantGroup:   "group-a",
 			wantCommand: "cmd-a",
 		},
 		{
-			name: "joined failures from different groups",
-			err:  errors.Join(cmdErr("group-a", "cmd-a"), cmdErr("group-b", "cmd-b")),
+			// Production reads the empty command name from a group-level
+			// *GroupStageError; this layer only needs the GroupError it builds.
+			name:      "one group failure from a group-level stage error",
+			err:       groupErrs(runner.NewGroupErrorForTest("group-a", "", errors.New("Group preparation failed"))),
+			wantGroup: "group-a",
+		},
+		{
+			name:        "one group failure from a command-level stage error",
+			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", errors.New("Command verification failed"))),
+			wantGroup:   "group-a",
+			wantCommand: "cmd-a",
+		},
+		{
+			// The timeout error's cause is joined; the GroupError carries the
+			// same names a single command failure used to.
+			name:        "one group failure from a command timeout",
+			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", errors.Join(context.DeadlineExceeded, errors.New("signal: killed")))),
+			wantGroup:   "group-a",
+			wantCommand: "cmd-a",
+		},
+		{
+			name: "several group failures leave the context empty",
+			err: groupErrs(
+				runner.NewGroupErrorForTest("group-a", "cmd-a", cmdErr("group-a", "cmd-a")),
+				runner.NewGroupErrorForTest("group-b", "cmd-b", cmdErr("group-b", "cmd-b")),
+			),
+		},
+		{
+			// The run-level cancellation path bypasses the dedicated type, so
+			// the raw command failure still supplies the context.
+			name:        "interrupted run joined with a command failure",
+			err:         errors.Join(context.Canceled, fmt.Errorf("failed to execute group %s: %w", "group-a", cmdErr("group-a", "cmd-a"))),
+			wantGroup:   "group-a",
+			wantCommand: "cmd-a",
 		},
 		{
 			name: "non-command error",
