@@ -48,7 +48,11 @@ var captureErrorFields = []string{"typ", "path", "phase", "cause", "limit"}
 //   - A composite literal naming CaptureError -- the qualified
 //     output.CaptureError{...} form anywhere, and the unqualified form inside
 //     internal/runner/base/output -- must appear only inside newSizeLimitError
-//     or newFileSystemError.
+//     or newFileSystemError. The new(CaptureError) call form is reported the
+//     same way.
+//   - The qualified form is checked repository-wide: another package can write
+//     an empty zero-value literal even though it cannot set the fields, so the
+//     compiler alone does not confine construction to this package.
 //   - Inside internal/runner/base/output, a selector assignment or increment of
 //     .typ, .path, .phase, .cause or .limit is reported outside those two
 //     constructors. The scan is limited to this package because the unqualified
@@ -128,6 +132,15 @@ func checkCaptureErrorConstruction(t *testing.T, filename, src string) (found in
 							"%s: capture error literal built outside %s", fset.Position(literal.Pos()), captureErrorConstructors))
 					}
 				}
+			case *ast.CallExpr:
+				if !isNewCaptureError(node, isType) {
+					return true
+				}
+				found++
+				if !allowed {
+					literalViolations = append(literalViolations, fmt.Sprintf(
+						"%s: capture error built with new outside %s", fset.Position(node.Pos()), captureErrorConstructors))
+				}
 			case *ast.AssignStmt:
 				if !inPackage || allowed {
 					return true
@@ -145,6 +158,16 @@ func checkCaptureErrorConstruction(t *testing.T, filename, src string) (found in
 		})
 	}
 	return found, literalViolations, assignmentViolations
+}
+
+// isNewCaptureError reports whether call is new(T) for a T the type check
+// resolves to CaptureError.
+func isNewCaptureError(call *ast.CallExpr, isType func(ast.Expr) bool) bool {
+	ident, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.Ident)
+	if !ok || ident.Name != "new" || len(call.Args) != 1 {
+		return false
+	}
+	return isType(call.Args[0])
 }
 
 // reportCaptureErrorFieldMutation appends a violation when expr is a selector
@@ -219,6 +242,33 @@ func TestCaptureErrorConstructionCheckRecognizesForms(t *testing.T) {
 			src:               "package output\n\nfunc helper() *CaptureError { return &CaptureError{} }\n",
 			wantLiterals:      1,
 			wantLiteralMisses: 1,
+		},
+		{
+			name:              "new literal inside the package is reported",
+			path:              "internal/runner/base/output/x.go",
+			src:               "package output\n\nvar e = new(CaptureError)\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "qualified new literal outside the package is reported",
+			path:              "internal/x/x.go",
+			src:               header + "var e = new(o.CaptureError)\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 1,
+		},
+		{
+			name:              "new literal in a constructor is accepted",
+			path:              captureErrorFile,
+			src:               "package output\n\nfunc newSizeLimitError() *CaptureError { return new(CaptureError) }\n",
+			wantLiterals:      1,
+			wantLiteralMisses: 0,
+		},
+		{
+			name:         "new of another type inside the package is not reported",
+			path:         "internal/runner/base/output/x.go",
+			src:          "package output\n\nvar e = new(OtherError)\n",
+			wantLiterals: 0,
 		},
 		{
 			name:         "a same-named type in another package is not reported",
@@ -347,6 +397,55 @@ func findCaptureErrorAccessors(t *testing.T, filename, src string) []string {
 		}
 	}
 	return found
+}
+
+// TestCaptureErrorAccessorCheckRecognizesForms pins the forms the accessor
+// finder must recognize, so it cannot become a no-op that still passes the
+// repository scan.
+func TestCaptureErrorAccessorCheckRecognizesForms(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		src  string
+		want int
+	}{
+		{
+			name: "value receiver GetType is reported",
+			path: captureErrorFile,
+			src:  "package output\n\nfunc (e CaptureError) GetType() string { return \"\" }\n",
+			want: 1,
+		},
+		{
+			name: "pointer receiver GetPath is reported",
+			path: captureErrorFile,
+			src:  "package output\n\nfunc (e *CaptureError) GetPath() string { return \"\" }\n",
+			want: 1,
+		},
+		{
+			name: "an accessor on another receiver type is not reported",
+			path: captureErrorFile,
+			src:  "package output\n\nfunc (e Other) GetType() string { return \"\" }\n",
+			want: 0,
+		},
+		{
+			name: "a method that is not a legacy accessor is not reported",
+			path: captureErrorFile,
+			src:  "package output\n\nfunc (e *CaptureError) Error() string { return \"\" }\n",
+			want: 0,
+		},
+		{
+			name: "declarations outside the package are not scanned",
+			path: "internal/x/x.go",
+			src:  "package x\n\nfunc (e CaptureError) GetType() string { return \"\" }\n",
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Len(t, findCaptureErrorAccessors(t, tt.path, tt.src), tt.want)
+		})
+	}
 }
 
 // isLegacyCaptureAccessor reports whether name is one of the removed

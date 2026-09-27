@@ -252,7 +252,9 @@ func TestCapture_WriteOutput(t *testing.T) {
 
 			initialSize := capture.CurrentSize
 			if tt.wantPanic {
-				assert.Panics(t, func() { _ = capture.WriteOutput(tt.data) },
+				assert.PanicsWithValue(t,
+					fmt.Sprintf("newSizeLimitError: limit must be positive, got %d", capture.MaxSize),
+					func() { _ = capture.WriteOutput(tt.data) },
 					"a non-positive max size must be rejected by the constructor")
 				assert.Equal(t, initialSize, capture.CurrentSize, "a panicking write must not change the size")
 				return

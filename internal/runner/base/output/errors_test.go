@@ -2,6 +2,7 @@ package output
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -112,7 +113,9 @@ func TestNewSizeLimitErrorPanicsOnNonPositiveLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Panics(t, func() { _ = newSizeLimitError("/tmp/out", tt.limit) })
+			assert.PanicsWithValue(t,
+				fmt.Sprintf("newSizeLimitError: limit must be positive, got %d", tt.limit),
+				func() { _ = newSizeLimitError("/tmp/out", tt.limit) })
 		})
 	}
 }

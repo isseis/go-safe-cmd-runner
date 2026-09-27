@@ -362,6 +362,7 @@ func newFileSystemError(path string, cause error) *CaptureError
   - `Capture.WriteOutput` のサイズ超過は `newSizeLimitError(c.OutputPath, c.MaxSize)` で作る。構築関数が種類・段階（`PhaseExecution`）・原因（`ErrOutputSizeExceeded`）を決めるので、サイズ超過の原因が常にセンチネルであることを 1 箇所で保証する。`newSizeLimitError` は上限値が 0 以下なら panic する。
   - 書き込み失敗は `newFileSystemError(c.OutputPath, err)` で作る。種類は `ErrorTypeFileSystem`、段階は `PhaseExecution` に固定する。
   - フィールドが非公開なので、パッケージの外からは、上限値が 0 以下のサイズ超過のエラーも、原因がセンチネルでないサイズ超過のエラーも作れない。不変条件は、本番の経路がたまたま構築関数を呼んでいることではなく、コンパイラが保証する（CLAUDE.md「Enforce invariants with the type」）。本番でこの panic に届く入力は無い。
+  - ただし、空の複合リテラル `output.CaptureError{}` はパッケージの外でもコンパイルできる（種類の既定値は `ErrorTypePathValidation` で、サイズ超過のエラーにはならない）。本番ファイルからの構築はコンパイラでは防げないので、`errors_guard_test.go` の `TestProductionCaptureErrorLiteralsUseConstructors` が値・ポインタ・elided・位置指定の複合リテラルと `new(CaptureError)` をリポジトリ全体で拒否する。
   - 上限 0 では、上の項目のとおり比較しないので呼ばれない。
   - 負の上限は、設定の読み込みで拒否される（§3.6）。
   - 本番で `Capture` を作るのは `DefaultOutputCaptureManager.PrepareOutput`（`internal/runner/base/output/manager.go:98-106`、`:122-130`）だけで、その `maxSize` は検証済みの設定から来る（`normal_manager.go:244-251`）。`Capture` はフィールドが公開された構造体なので、テストが負の `MaxSize` で作ることはできる。panic の影響は §4.5 を参照。
@@ -826,7 +827,7 @@ flowchart LR
 | AC-35, AC-36 | §3.2、§4.2、§4.3、§6.3 | §7.1（`executeGroups`） |
 | AC-22 | §3.3 | §7.1（`executionErrorContext`） |
 | AC-23, AC-24 | §3.5 | §7.1（`CaptureError`・`Capture`）、§7.2 |
-| AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`）、コンパイラ（非公開のフィールド） |
+| AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`）。`static`: `errors_guard_test.go::TestProductionCaptureErrorLiteralsUseConstructors`（空の複合リテラルはパッケージ外でもコンパイルできるため、ガードで拒否する） |
 | AC-26 | §3.8 | §7.4 |
 | AC-27 | §3.6 | §7.1（`ValidateOutputSizeLimits`）、§7.2 |
 | AC-28, AC-29 | §3.7、§4.3、§4.4、§5.1 | §7.1（`boundedBuffer`、行の境目での切断の性質、出力ポンプ）、§7.2（Slack の欄とデバッグログを含む） |

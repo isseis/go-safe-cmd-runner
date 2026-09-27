@@ -87,7 +87,7 @@
 
 #### 構築経路の扱い（`CaptureError`・`GroupError`・`GroupErrors`）
 
-- `CaptureError` は `internal/runner/base/output` のまま置く。本番の構築は `capture.go:43`・`:64` の 2 か所だけであり、他のパッケージからフィールドを読む本番コードもテストも無い（`rg` で確認）。フィールドを非公開にして構築関数 2 つに限れば、パッケージ外からの構築はコンパイラが拒否する。同一パッケージの本番ファイルでは複合リテラルでも構築できるため、`internal/runner/base/output/errors_guard_test.go` の `TestProductionCaptureErrorLiteralsUseConstructors` で次を固定する。複合リテラルの値形・ポインタ形・elided 形・位置指定形（キーなし）は `ProductionGoFilesInRepo` でリポジトリ全体から列挙する。`.typ`・`.path`・`.phase`・`.cause`・`.limit` へのセレクタ代入・インクリメントは、宣言パッケージの本番ファイル（`internal/runner/base/output` 直下）に限って列挙する。フィールド名だけの照合は、同じ名前のフィールドを持つ別の型への代入に誤反応するためである。構築形ごとの変異は §4.4 に置く。
+- `CaptureError` は `internal/runner/base/output` のまま置く。本番の構築は `capture.go:43`・`:64` の 2 か所だけであり、他のパッケージからフィールドを読む本番コードもテストも無い（`rg` で確認）。フィールドを非公開にすればパッケージ外からフィールドを設定できないので、不変条件を破る値（上限 0 以下のサイズ超過のエラー、原因がセンチネルでないサイズ超過のエラー）はパッケージ外では作れない。ただし空の複合リテラル `output.CaptureError{}` はパッケージ外でもコンパイルできるため、本番ファイルからの構築はコンパイラでは防げない。`internal/runner/base/output/errors_guard_test.go` の `TestProductionCaptureErrorLiteralsUseConstructors` で次を固定する。複合リテラルの値形・ポインタ形・elided 形・位置指定形（キーなし）と `new(CaptureError)` は `ProductionGoFilesInRepo` でリポジトリ全体から列挙する。`.typ`・`.path`・`.phase`・`.cause`・`.limit` へのセレクタ代入・インクリメントは、宣言パッケージの本番ファイル（`internal/runner/base/output` 直下）に限って列挙する。フィールド名だけの照合は、同じ名前のフィールドを持つ別の型への代入に誤反応するためである。構築形ごとの変異は §4.4 に置く。
 - `GroupError`・`GroupErrors` は `internal/runner` に置く。構築は `executeGroups` が呼ぶ `newGroupError`・`newGroupErrors` と、`test_helpers.go`（`//go:build test`）のテスト用構築関数だけである。`cmd/runner` はアクセサで読むだけなので、パッケージ外からの構築はコンパイラが拒否する。同一パッケージの本番ファイル向けに `internal/runner/group_errors_guard_test.go` の `TestProductionGroupErrorLiteralsUseConstructors` を置く。複合リテラル（値形・ポインタ形・elided 形・位置指定形）は `ProductionGoFilesInRepo` でリポジトリ全体、`.errs`・`.group`・`.command`・`.err` へのセレクタ代入・インクリメントは `internal/runner` 直下の本番ファイルに限って列挙する（0176 の `TestProductionGroupStageErrorLiteralsUseConstructors` と同じ絞り方）。
 - 型を葉パッケージへ移す案は採らない。`GroupError` は構築時に `*CommandExecutionError`・`*GroupStageError`（どちらも `internal/runner`）を読むため、分離すると依存が循環する。`CaptureError` は `Capture` と同じパッケージのエラーであり、分離する利点が無い。
 
@@ -329,7 +329,7 @@
 
 **推奨タイトル**: `refactor(0177): encapsulate CaptureError and add the size-limit value to its message`
 
-**レビュー観点**: サイズ超過の文言が段階・パス・上限値を含み「size limit exceeded」に当たる語句を 1 回だけ含むこと（AC-16）／`errors.Is(err, ErrOutputSizeExceeded)` と `errors.AsType[*output.CaptureError]` が成り立つこと（AC-17）／他の種類の文言が変更前と同じであること（AC-18）／構築関数が上限 0 以下を拒否し、パッケージ外からの構築がコンパイラで拒否されること（AC-25）／`GetType`・`GetPath` が本番にもテストにも残っていないこと
+**レビュー観点**: サイズ超過の文言が段階・パス・上限値を含み「size limit exceeded」に当たる語句を 1 回だけ含むこと（AC-16）／`errors.Is(err, ErrOutputSizeExceeded)` と `errors.AsType[*output.CaptureError]` が成り立つこと（AC-17）／他の種類の文言が変更前と同じであること（AC-18）／構築関数が上限 0 以下を拒否し、パッケージ外からフィールドを設定できないため不変条件を破るサイズ超過のエラーは作れないこと（空の複合リテラルはガードが拒否する）（AC-25）／`GetType`・`GetPath` が本番にもテストにも残っていないこと
 
 **実装モデル要件**: frontier-recommended
 
@@ -563,7 +563,7 @@
 | AC-22 | Phase 1、Phase 7 | `test`: `TestExecutionErrorContext`（タイムアウト 1 件と 2 件の行）、`TestRunner_ExecuteGroupsCollectsFailureThenTimeout` |
 | AC-23 | Phase 5 | `test`: `TestCapture_WriteOutput`（`MaxSize` 0 の行） |
 | AC-24 | Phase 5 | `test`: `internal/runner/output_capture_integration_test.go::TestRunner_ZeroOutputSizeLimitIntegration` |
-| AC-25 | Phase 6 | `test`: `errors_test.go::TestNewSizeLimitErrorPanicsOnNonPositiveLimit`。`static`: `errors_guard_test.go::TestProductionCaptureErrorLiteralsUseConstructors`（同一パッケージの構築経路の網羅。パッケージ外はコンパイラが拒否する） |
+| AC-25 | Phase 6 | `test`: `errors_test.go::TestNewSizeLimitErrorPanicsOnNonPositiveLimit`。`static`: `errors_guard_test.go::TestProductionCaptureErrorLiteralsUseConstructors`（値形・ポインタ形・elided 形・位置指定形と `new` の網羅。パッケージ外からのフィールド設定はコンパイラが拒否し、空の複合リテラルはこのガードが拒否する） |
 | AC-26 | Phase 8 | `static`: `make verify-docs-checks`（`scripts/verification/check_output_limit_timeout_docs.sh` が日英の 0 の無制限と負の値の拒否の記述を検査する）。`manual`: 記載した各文を、Phase 5 の `TestRunner_ZeroOutputSizeLimitIntegration` と Phase 4 の `TestLoadConfig_NegativeOutputSizeLimitValidation` の内容と突き合わせてレビューする |
 | AC-27 | Phase 4 | `test`: `internal/runner/config/validation_test.go::TestValidateOutputSizeLimits`、`internal/runner/config/loader_includes_test.go::TestLoadConfig_NegativeOutputSizeLimitValidation`・`TestLoadConfig_NonNegativeOutputSizeLimitAccepted`、`cmd/runner/integration_attribution_test.go::TestIntegration_NegativeOutputSizeLimitRejectedInDryRun`（dry-run でも読み込みで拒否されること）、`TestIntegration_NegativeOutputSizeLimitPreventsExecution`（dry-run でない実行で読み込みエラーになり、どの group も実行されないこと） |
 | AC-28 | Phase 3 | `test`: `internal/runner/base/executor/output_pump_test.go::TestBoundedBuffer_KeepsCompletePrefixLines`（保持量が上限を超えないこと）、`internal/runner/base/executor/executor_test.go::TestExecute_OutputWriterReceivesAllBytes`・`TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly`・`TestExecute_NilOutputWriter_StdoutBoundedOnSuccess` |

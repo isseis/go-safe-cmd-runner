@@ -72,8 +72,11 @@ func (p ExecutionPhase) String() string {
 }
 
 // CaptureError represents an error that occurred during output capture. Its
-// fields are unexported, so a value is built only through the constructors
-// below; the compiler rejects construction from any other package.
+// fields are unexported, so another package cannot set them: it can neither
+// build a size-limit error nor supply a cause other than the sentinel the
+// constructor fixes. The constructors below are the only way to set the
+// fields. An empty zero-value literal is still legal outside the package, so
+// the repository guard test rejects that form in production.
 type CaptureError struct {
 	typ   ErrorType      // kind of error
 	path  string         // file path related to the error
@@ -123,7 +126,7 @@ func (e *CaptureError) Unwrap() error {
 // value to the message that did not bound the write.
 func newSizeLimitError(path string, limit int64) *CaptureError {
 	if limit <= 0 {
-		panic("newSizeLimitError: limit must be positive")
+		panic(fmt.Sprintf("newSizeLimitError: limit must be positive, got %d", limit))
 	}
 	return &CaptureError{
 		typ:   ErrorTypeSizeLimit,
