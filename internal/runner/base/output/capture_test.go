@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"sync"
@@ -62,6 +63,10 @@ func TestCapture(t *testing.T) {
 
 // TestCapture_WriteOutput tests the WriteOutput method behavior
 func TestCapture_WriteOutput(t *testing.T) {
+	// Non-empty data, so this row fails if the size comparison runs with
+	// MaxSize 0.
+	unlimitedData := bytes.Repeat([]byte("u"), 256*1024)
+
 	tests := []struct {
 		name        string
 		setupFunc   func() (*Capture, func(), error)
@@ -184,6 +189,56 @@ func TestCapture_WriteOutput(t *testing.T) {
 				return capture, cleanup, nil
 			},
 			data:      []byte("123456"), // Exceeds limit by 1 byte
+			wantError: true,
+			errorType: ErrorTypeSizeLimit,
+		},
+		{
+			name: "write beyond any finite limit when max size is zero",
+			setupFunc: func() (*Capture, func(), error) {
+				tmpFile, err := os.CreateTemp("", "capture_test_*.tmp")
+				if err != nil {
+					return nil, nil, err
+				}
+				cleanup := func() {
+					tmpFile.Close()
+					os.Remove(tmpFile.Name())
+				}
+				capture := &Capture{
+					OutputPath:   "/tmp/final-output.txt",
+					TempFilePath: tmpFile.Name(),
+					FileHandle:   tmpFile,
+					MaxSize:      0, // 0 means unlimited
+					CurrentSize:  0,
+					StartTime:    time.Now(),
+				}
+				return capture, cleanup, nil
+			},
+			data:        unlimitedData,
+			wantError:   false,
+			wantWritten: int64(len(unlimitedData)),
+		},
+		{
+			name: "negative max size rejects the write instead of meaning unlimited",
+			setupFunc: func() (*Capture, func(), error) {
+				tmpFile, err := os.CreateTemp("", "capture_test_*.tmp")
+				if err != nil {
+					return nil, nil, err
+				}
+				cleanup := func() {
+					tmpFile.Close()
+					os.Remove(tmpFile.Name())
+				}
+				capture := &Capture{
+					OutputPath:   "/tmp/final-output.txt",
+					TempFilePath: tmpFile.Name(),
+					FileHandle:   tmpFile,
+					MaxSize:      -1,
+					CurrentSize:  0,
+					StartTime:    time.Now(),
+				}
+				return capture, cleanup, nil
+			},
+			data:      []byte("x"),
 			wantError: true,
 			errorType: ErrorTypeSizeLimit,
 		},

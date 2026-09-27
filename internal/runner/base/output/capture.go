@@ -38,8 +38,8 @@ func (c *Capture) WriteOutput(data []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// Check size limit
-	if c.CurrentSize+int64(len(data)) > c.MaxSize {
+	// Only 0 means unlimited (see common.OutputSizeLimit); a negative MaxSize that bypassed PrepareOutput must fail closed, not become unlimited.
+	if c.MaxSize != 0 && c.CurrentSize+int64(len(data)) > c.MaxSize {
 		err := &CaptureError{
 			Type:  ErrorTypeSizeLimit,
 			Path:  c.OutputPath,

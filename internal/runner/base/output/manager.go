@@ -87,6 +87,11 @@ func (m *DefaultOutputCaptureManager) ValidateOutputPath(outputPath string, work
 
 // PrepareOutput validates paths and prepares for output capture using temporary file
 func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir string, maxSize int64) (*Capture, error) {
+	// Reject rather than normalize: callers such as a programmatic ConfigSpec skip config validation, and a negative limit must not read as unlimited.
+	if maxSize < 0 {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidMaxSize, maxSize)
+	}
+
 	// 1. Path validation and resolution (uses shared validation logic)
 	resolvedPath, err := m.validateAndResolvePath(outputPath, workDir)
 	if err != nil {
@@ -139,7 +144,8 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *Capture, data []byte)
 
 	// Check size limits
 	newSize := capture.CurrentSize + int64(len(data))
-	if capture.MaxSize > 0 && newSize > capture.MaxSize {
+	// Only 0 means unlimited; a negative MaxSize fails closed, consistent with Capture.WriteOutput.
+	if capture.MaxSize != 0 && newSize > capture.MaxSize {
 		return fmt.Errorf("%w: %d bytes (limit: %d)", ErrOutputSizeLimitExceeded, newSize, capture.MaxSize)
 	}
 

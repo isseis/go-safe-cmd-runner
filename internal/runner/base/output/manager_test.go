@@ -172,6 +172,14 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 			},
 			wantErr: ErrTestPermissionDenied,
 		},
+		{
+			// No mocks: the negative limit must be rejected before any path work.
+			name:       "negative_max_size_rejected",
+			outputPath: "/tmp/output.txt",
+			workDir:    "/home/user",
+			maxSize:    -1,
+			wantErr:    ErrInvalidMaxSize,
+		},
 	}
 
 	for _, tt := range tests {
@@ -276,6 +284,13 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 			wantErr:        nil,
 			expectedSize:   1000025,
 			expectedBuffer: []byte("large data can be written"),
+		},
+		{
+			name:        "negative_max_size_rejects_write",
+			initialSize: 0,
+			maxSize:     -1,
+			writeData:   []byte("x"),
+			wantErr:     ErrOutputSizeLimitExceeded,
 		},
 	}
 
