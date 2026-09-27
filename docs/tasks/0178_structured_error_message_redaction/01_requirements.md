@@ -36,6 +36,8 @@
 3. `Config.RedactText` を適用する。これは key=value 置換、`Bearer `・`Basic ` の次の語の置換、値形式の検出（AWS キー・GitHub トークン・PEM ブロックなど）から成る。
 4. 3 で値が変わらなければ、`SensitivePatterns.IsSensitiveValue` で値全体を判定する。これは `(?i)(password|token|secret|key|api_key)|bearer|basic|authorization…` の未アンカーな部分一致で、当たれば値全体を `[REDACTED]` に置き換える（以下「値全体置換」）。
 
+本書の `[REDACTED]` は、`redaction.Config` に設定された置換文字列（既定値 `[REDACTED]`）を指す。構造化メッセージの部分ごとの置換・部分の境界をまたぐ置換・属性名による置換も、同じ置換文字列を使う。
+
 4 は、属性名からも値の形式からも分からない秘密を拾う最後の網である。
 
 最終報告の stderr の `Details:` は redaction を通らない（`internal/logging/pre_execution_error.go` の `handleErrorCommon`）。Task 0177 以降、stderr には失敗した全 group の原因が出る。
@@ -48,9 +50,9 @@
 
 | 本文（抜粋） | 結果 | 引き金になった部分 |
 |---|---|---|
-| `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: %{api_key})` | 全体が `[REDACTED]` | 変数名 |
-| `Command preparation failed: … command[upload] (index 0): undefined variable in command[upload].args: 'token_file' (context: --config=%{token_file})` | 全体 | 変数名 |
-| `Group preparation failed: failed to expand group[monkey-test]: undefined variable in group[monkey-test].vars: 'dir' (context: %{dir})` | 全体 | group 名（`monkey`） |
+| `Group preparation failed: failed to expand group[backup]: failed to process group[backup] vars: undefined variable in group[backup].vars.dest: 'api_key' (context: ) (expansion path: api_key)` | 全体が `[REDACTED]` | 変数名 |
+| `Command preparation failed: … command[upload] (index 0): undefined variable in command[upload].args[0]: 'token_file' (context: --config=%{token_file})` | 全体 | 変数名 |
+| `Group preparation failed: failed to expand group[monkey-test]: failed to process group[monkey-test] vars: undefined variable in group[monkey-test].vars.out: 'dir' (context: ) (expansion path: dir)` | 全体 | group 名（`monkey`） |
 | `Group directory permission audit failed: … for group[token-rotate]: 1 directory violation(s) detected; …` | 全体 | group 名 |
 | `Group preparation failed: failed to resolve work directory: group[backup]: working directory must be an absolute path: "keycloak/data" (relative paths are not allowed for security reasons)` | 全体 | 作業ディレクトリのパス |
 | `Group preparation failed: failed to resolve work directory: failed to create temporary directory: mkdir /tmp/scr-token-rotate-…: no space left on device` | 全体 | 一時ディレクトリのパス（group 名を含む） |
@@ -89,12 +91,13 @@
    - `GroupStageError`・`GroupErrors`・`GroupError`・`CommandExecutionError`
    - `group_executor.go` が `fmt.Errorf` で付加するエラー書式（group 名・コマンド名・コマンドパス・index を含むもの）と、コマンドの終了コードのエラー書式（`ErrCommandFailed` をラップするもの）
    - `config.ErrUndefinedVariableDetail`
+   - `ErrUndefinedVariableDetail` を AC-12・AC-34 の経路（`vars` の展開）で運ぶ中間のエラー書式。`config.ExpandGroup` の `failed to process group[%s] vars: %w`、`config.ExpandGlobal` の `failed to process global vars: %w`、`config.ExpandCommand` の `failed to process command[%s] vars: %w`（コマンドの準備の経路）の 3 つである。group 名・コマンド名は `Identifier`、固定の文言は `Constant` とする。
    - 作業ディレクトリの解決の失敗。group・コマンドの両方について、次の 3 種類を対象とする。
      - 変数の展開の失敗（`config.ExpandWorkDir` の `failed to expand workdir: %w`）
      - 相対パスの拒否（`config.ExpandWorkDir` の `ErrInvalidWorkDir`。group・コマンドの名前と展開後のパスを含む）
      - 一時ディレクトリの作成・権限設定の失敗（`executor.DefaultTempDirManager.Create`。OS のエラー `*fs.PathError` がパスを持つ）
    - 実行全体の中断と group の失敗が重なったときの最終エラー。現在は `executeGroups` が `errors.Join(ctxErr, err)` で返している。これを、中断であることを宣言する専用の型に置き換える。
-   - `cmd/runner/main.go` で、原因を `fmt.Sprintf("…: %v", err)` で `Message` に埋め込んでいる次の 4 か所。`Message` を固定の文言にし、原因は `Err` で運ぶ。これにより、構造を持つ原因（`ErrUndefinedVariableDetail` など）の役割の宣言が、この経路でも失われない。
+   - `cmd/runner/main.go` で、原因を `fmt.Sprintf("…: %v", err)` で `Message` に埋め込んでいる次の 4 か所。`Message` を固定の文言にし、原因は `Err` で運ぶ。これにより、構造を持つ原因（`ErrUndefinedVariableDetail` など）の役割の宣言が、この経路でも失われない。付け替えた原因は、`PreExecutionError.Unwrap()` を通じて `errors.Is`・`errors.AsType` で届くようになる。この到達性の追加は意図したものである。`Error()`・`Detail()` の文言は変わらない。
      - global の展開の失敗（`Failed to expand global configuration`）
      - テンプレート検証の失敗（`Template validation failed`）
      - ディレクトリ権限チェッカーの初期化の失敗（`directory permission checker initialisation failed`）
@@ -105,7 +108,7 @@
 ### 対象外
 
 - **その他の `pre_execution_error` の原因の構造化**（設定の読み込み、global の展開、テンプレート検証、`--groups` の指定誤りなど）。`Message` は決定事項「`PreExecutionError.Message` の役割」に従う。原因は、対象 4 で構造化する型（`ErrUndefinedVariableDetail` など）を除き、構造を持たない `Text` として現状と同じ保護を受ける。
-  - 設定の展開・検証のエラー型（`internal/runner/config` の 51 型と 48 か所のエラー書式）と `cli.FilterGroups` のエラーの構造化は、[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197) で扱う。この中には、0178 の対象の本文（group の展開の失敗の原因）に現れる `env_import`・allowlist のエラーも含まれる。
+  - 設定の展開・検証のエラー型（`internal/runner/config` の 51 型と 48 か所のエラー書式）と `cli.FilterGroups` のエラーの構造化は、[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197) で扱う。この中には、0178 の対象の本文（group の展開の失敗の原因）に現れる `env_import`・allowlist のエラーも含まれる。対象 4 で構造化するもの（`ErrUndefinedVariableDetail`、`vars` の中間のエラー書式、`config.ExpandWorkDir` のエラー）を除き、`internal/runner/config` のエラー書式（`env_import`・`env`・`cmd_allowed`・テンプレートなど）は構造化せず、`Text` として扱う。
   - 設定ファイルの検証・読み込みのエラー（主にパス）は、Slack に届かず stderr に全文が残るため、対処しない。
   - go-toml のエラー文言（`toml: key timeout is already defined` など）は、語が外部ライブラリの固定の文言の中にあり、型で宣言できないため、対処しない。
   - Webhook URL の検証エラーは、URL そのものが秘密なので `Text` のまま現状の保護を維持する。
@@ -128,7 +131,7 @@
 |---|---|---|
 | group 名が語を含む group 実行前段の失敗（例: ディレクトリ権限監査の違反） | 全体が `[REDACTED]` | `Group directory permission audit failed: directory permission audit failed for group[token-rotate]: 1 directory violation(s) detected; …` がすべて残る |
 | コマンド名が語を含むコマンドの展開の失敗 | 全体 | 要約文・group 名・コマンド名が残る。内側の原因は後述の「一部だけ救われるケース」のとおり |
-| 変数名が語を含む未定義変数（例: `api_key`） | 全体 | 要約文・group 名・変数名 `'api_key'` が残る。生のテンプレートの部分は、下の表のとおり |
+| 変数名が語を含む未定義変数（例: `api_key`） | 全体 | `vars` の展開では、生のテンプレート（`context`）が空なので、`Group preparation failed: failed to expand group[backup]: failed to process group[backup] vars: undefined variable in group[backup].vars.dest: 'api_key' (context: ) (expansion path: api_key)` がすべて残る。`cmd`・`args`・作業ディレクトリの展開では、要約文・group 名・コマンド名・変数名 `'api_key'` が残り、生のテンプレートの部分は下の表のとおり |
 | コマンドパスが語を含むコマンドのパス解決の失敗（例: `ssh-keygen`） | 全体 | `Command verification failed: command path resolution failed for "ssh-keygen": ` までが残る。内側の原因は `Text` |
 | コマンドが 0 以外の終了コードで失敗し、group 名かコマンド名が語を含む（最終の実行エラー） | 全体 | `error running commands (group: token-rotate, command: renew): failed to execute group token-rotate: command renew in group token-rotate failed: …command renew failed with exit code 1` がすべて残る |
 | 複数 group が失敗し、どれか 1 つの group 名が語を含む（最終の実行エラー） | 全 group の原因がまとめて消える | 各 group の行が残る。消えるのは、各行の中で `Text` の部分が語を含むときのその部分だけ |
@@ -142,7 +145,7 @@
 
 | ケース | 変更後 | 消える部分 |
 |---|---|---|
-| 未定義変数 `api_key` を生のテンプレート `%{api_key}` で参照（作業ディレクトリの展開の失敗、global の展開の失敗も同じ） | `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
+| 未定義変数 `api_key` を `cmd`・`args` の生のテンプレート `--config=%{api_key}` で参照（作業ディレクトリの展開の失敗も同じ。`vars` の展開では生のテンプレートが空なので、この表に当たらない） | `Command preparation failed: failed to pre-expand commands for group[backup]: command[upload] (index 0): undefined variable in command[upload].args[0]: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
 | 依存検証の失敗で、原因に `libkeyutils.so.1` などのパスを含む | `Command verification failed: command dependency verification failed for "/usr/bin/curl": [REDACTED]` | 依存ライブラリのパスを含む内側の原因（dynlib 検証のエラーは構造化しない。[#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196)） |
 | shebang 検証・パス解決の内側のエラーが語を含む | 要約文とコマンドパスは残る | 内側の原因 |
 | group・コマンドの展開の失敗で、原因が `env_import`・allowlist などのエラー（例: `system environment variable 'GITHUB_TOKEN' not in allowlist …`） | 要約文・group 名・コマンド名は残る | 原因。そのエラー型を構造化しないため（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)） |
@@ -168,7 +171,7 @@
 
 ### 役割と適用する redaction
 
-構造化メッセージの各部分は、次のいずれかの役割を持つ。ゼロ値は、最も保守的な `Text` とする。
+構造化メッセージの各部分は、次のいずれかの役割を持つ。ゼロ値は、最も保守的な `Text` とする。4 つの役割のどれにも当たらない値を持つ部分も、`Text` として扱う（fail-closed）。役割による分岐の既定の分岐（`default`）は `Text` の全段を適用する。設計で、どの役割にも当たらない値を作れないようにする（非公開のフィールドと構築関数など）場合は、設計書にその保証を記し、範囲外の値を入力するテスト（AC-38）の代わりに、その保証を固定するテストを置く。
 
 | 役割 | 意味 | 適用する redaction |
 |---|---|---|
@@ -184,7 +187,7 @@
 ### 属性全体と部分の境界に効く保護
 
 - 属性名による判定は、従来どおり部分より先に属性全体へ効かせる。機密を示す属性名の下では、構造化メッセージも値ごと置換する。
-- 部分の境界をまたぐ秘密の形式もマスクする。例えば `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値が連結されて key=value になる場合、値はマスクされる。どの手段で満たすかは設計で決める。
+- 部分の境界をまたぐ秘密の形式もマスクする。例えば `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値が連結されて key=value になる場合、値はマスクされる。この保証は key=value に限らず、`RedactText` が検出するすべての種類に及ぶ。すなわち、key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出（bearer トークン・PEM ブロック・AWS キー・GitHub トークンなど）である。一般には、redaction 前の描画結果（AC-18 の文言）全体に `RedactText` を適用したときにマスクされる範囲は、出力でもマスクされる。ただし、範囲がすべて 1 つの `Identifier` の部分の中にあるものは除く（F-001、変わらないケース「秘密」と同じ）。どの手段で満たすかは設計で決める。
 
 ### 値全体置換は部分ごとに判定する
 
@@ -232,6 +235,7 @@
 | `group_executor.go` のエラー書式 | group 名・コマンド名 | 展開済みのコマンドパス・解決済みのコマンドパス | ラップした原因（構造を持たなければ） |
 | `GroupError`・`CommandExecutionError`・`ExecutionError` の外側の context | group 名・コマンド名 | — | ラップした原因（同上） |
 | 終了コードのエラー書式 | コマンド名 | — | — |
+| `vars` の中間のエラー書式（`failed to process group[%s] vars: %w`・`failed to process global vars: %w`・`failed to process command[%s] vars: %w`） | group 名・コマンド名 | — | ラップした原因（構造を持たなければ） |
 | `config.ErrUndefinedVariableDetail` | 変数名・展開経路（`Chain`）の各変数名・`Level` に含まれる group・コマンドの名前 | — | 生のテンプレート（`Context`） |
 | 作業ディレクトリの相対パスの拒否 | group・コマンドの名前 | 展開後のパス | — |
 | 一時ディレクトリの作成・権限設定の失敗 | — | `*fs.PathError` の `Path` | `*fs.PathError` の `Op`・`Err` |
@@ -275,6 +279,8 @@
 - **AC-07**: 機密を示す属性名の下に置かれた構造化メッセージは、値ごと置換される。
 - **AC-08**: 役割を明示しない部分（ゼロ値）は `Text` として扱われる。
 - **AC-36**: 値全体置換は `Text` の部分ごとに判定される。`Identifier` の部分だけが語を含み、`Text` の部分が語も形式も含まない本文では、`Text` の部分は書き換えられない。
+- **AC-37**: 部分の境界をまたいで `RedactText` のいずれかの検出（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）に当たる秘密は、マスクされる。例: `Constant` の `Bearer ` と `Text` の `opaque-credential`。判定の基準は、redaction 前の描画結果全体に `RedactText` を適用した結果とし、`Identifier` の部分の中の範囲は除く。
+- **AC-38**: 4 つの役割のどれにも当たらない役割を持つ部分は、`Text` として扱われる。値全体置換だけが反応する入力では、その部分が置換文字列に置き換えられる。
 
 #### F-002: 構造を持たないエラーの保護
 
@@ -301,7 +307,7 @@
 #### F-004: 既存の出力の維持
 
 **Acceptance Criteria**:
-- **AC-18**: 対象のエラーの `Error()`・`PreExecutionError.Detail()` の文言は、変更前と同じである。`errors.Is`・`errors.AsType` は、変更前と同じ原因に届く。
+- **AC-18**: 対象のエラーの `Error()`・`PreExecutionError.Detail()` の文言は、変更前と同じである。`errors.Is`・`errors.AsType` は、変更前と同じ原因に届く。ただし、対象 4 で原因を `Err` へ付け替える `cmd/runner/main.go` の 4 か所では、変更前に届いた対象に加えて、付け替えた原因にも届く。この 4 か所のエラーを `mainWithExitCode` が `PreExecutionError` として報告し、変更前と同じ終了コードを返すことは変わらない。
 - **AC-19**: 最終報告の stderr の `Details:` の文言は、変更前と同じである（redaction を通らない）。
 - **AC-32**: 実行全体の中断と group の失敗が重なったとき、`executeGroups` が返すエラーの `Error()` の文言は、変更前の `errors.Join(ctxErr, err)` と同じである。`errors.Is(err, ctx.Err())` が成り立ち、`errors.Is`・`errors.AsType` は失敗した group の原因に届く。中断時に返すエラーが含む group の失敗は、変更前と同じである。
 - **AC-20**: `RedactingHandler` の後段のハンドラが受け取る `error_message` は、文字列である。
@@ -331,6 +337,8 @@
 
 - 層ごとの効果を確かめるテストは、1 つの層だけが反応する入力を使う。値全体置換だけが反応する入力（例: 変数名 `api_key`、group 名 `monkey-test`）と、値形式の検出だけが反応する入力（例: GitHub トークン形式の値）を分けて用意する。そのうえで、他の層だけでは入力が変わらないことを先に確かめる。
 - AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34 は、エラーの発生元（group executor、または `cmd/runner` の global の展開）から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
+- AC-12・AC-34 の端から端までのテストは、`vars` の中の未定義変数を使う（対象 4 の `vars` の中間のエラー書式を通る経路）。
+- AC-06・AC-37 は、`RedactText` の検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに 1 回ずつ確かめる。各入力は、接頭辞または key と値を別の部分に分ける。そのうえで、各部分だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを先に確かめる。
 
 ## Success Criteria（要件レベル）
 
