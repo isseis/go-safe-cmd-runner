@@ -655,8 +655,8 @@
 | 可変長命令 | variable-length instruction | 1〜15バイトのx86_64命令 |
 | 仮想ノード | virtual node | CFG解析で使用する論理的な終端ノード |
 | 値形式検出 | value-format detection | キー名の文脈なしに、値そのものの形式（`AKIA...`、PEM ブロック等）から秘密を判定する層。`ValueDetector.Mask` が担う（Task 0163） |
-| 値まるごと判定 | whole-value detection | 値ベース redaction の最下層。`RedactText` で変化が無かった値を `SensitivePatterns.IsSensitiveValue` で部分一致判定し、値全体を置換する（Task 0173） |
-| 値ベース redaction | value-based redaction | 値そのものの内容・形式から機密情報を検出してマスクする処理の総称。key=value 置換・値形式検出・値まるごと判定の 3 層を指し、宣言された識別子は免除される（Task 0173） |
+| 値全体置換 | whole-value replacement | 値ベース redaction の最下層。`RedactText` で変化が無かった値を `SensitivePatterns.IsSensitiveValue` で部分一致判定し、値全体を置換する（Task 0173 で導入、Task 0178 で改称）。旧称「値まるごと判定」は使わない |
+| 値ベース redaction | value-based redaction | 値そのものの内容・形式から機密情報を検出してマスクする処理の総称。key=value 置換・値形式検出・値全体置換の 3 層を指し、宣言された識別子は免除される（Task 0173） |
 | バリデーション | validation | データ妥当性検証 |
 | 検証不能 | verification unavailable | 解析／ファイル検証が利用不能な状態。dry-run の終了コードで区別 |
 | 可視化 | visualization | ログや統計による情報の見える化 |
