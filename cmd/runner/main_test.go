@@ -753,6 +753,13 @@ func TestExecutionErrorContext(t *testing.T) {
 	cmdErr := func(group, command string) *runner.CommandExecutionError {
 		return &runner.CommandExecutionError{GroupName: group, CommandName: command, Err: errCause}
 	}
+	timeoutErr := func(group, command string) *runner.CommandExecutionError {
+		return &runner.CommandExecutionError{
+			GroupName:   group,
+			CommandName: command,
+			Err:         errors.Join(context.DeadlineExceeded, errors.New("signal: killed")),
+		}
+	}
 	groupErrs := func(errs ...*runner.GroupError) error {
 		return runner.NewGroupErrorsForTest(errs...)
 	}
@@ -783,10 +790,10 @@ func TestExecutionErrorContext(t *testing.T) {
 			wantCommand: "cmd-a",
 		},
 		{
-			// The timeout error's cause is joined; the GroupError carries the
-			// same names a single command failure used to.
+			// The inner error carries different names, so only the
+			// GroupErrors lookup can produce the expected context.
 			name:        "one group failure from a command timeout",
-			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", errors.Join(context.DeadlineExceeded, errors.New("signal: killed")))),
+			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", timeoutErr("inner-group", "inner-cmd"))),
 			wantGroup:   "group-a",
 			wantCommand: "cmd-a",
 		},
@@ -798,10 +805,22 @@ func TestExecutionErrorContext(t *testing.T) {
 			),
 		},
 		{
-			// The run-level cancellation path bypasses the dedicated type, so
-			// the raw command failure still supplies the context.
+			// A timeout after another group's failure no longer discards it,
+			// so there are two failures and no single outer context. The
+			// decision reads only the count, so this row documents the
+			// timeout case rather than adding a separate check.
+			name: "a failure then a command timeout leave the context empty",
+			err: groupErrs(
+				runner.NewGroupErrorForTest("group-a", "cmd-a", cmdErr("group-a", "cmd-a")),
+				runner.NewGroupErrorForTest("group-b", "cmd-b", timeoutErr("group-b", "cmd-b")),
+			),
+		},
+		{
+			// The run-level cancellation path joins the run context's error
+			// with the group's error and bypasses the dedicated type, so the
+			// raw command failure still supplies the context.
 			name:        "interrupted run joined with a command failure",
-			err:         errors.Join(context.Canceled, fmt.Errorf("failed to execute group %s: %w", "group-a", cmdErr("group-a", "cmd-a"))),
+			err:         errors.Join(context.Canceled, cmdErr("group-a", "cmd-a")),
 			wantGroup:   "group-a",
 			wantCommand: "cmd-a",
 		},

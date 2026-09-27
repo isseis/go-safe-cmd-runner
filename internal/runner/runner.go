@@ -418,35 +418,51 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 		}
 
 		if err := r.ExecuteGroup(ctx, &group); err != nil {
-			// Check if this is a context cancellation error - if so, stop execution
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-
 			// A declared pre-execution stage is read before the verification
 			// error, so a command-level failure whose cause chain happens to
 			// carry a *verification.Error is still reported under its own stage
 			// and still counts toward the run's result. Only a file verification
-			// stage wrapping a *verification.Error falls through to the existing
-			// verification path below.
-			if stageErr, ok := errors.AsType[*GroupStageError](err); ok && !isGroupFileVerificationFailure(stageErr, err) {
-				// Record-only: the process-level report is made once at the end
-				// of the run from the returned error.
-				logging.NotifyPreExecutionError(groupStagePreExecutionError(stageErr, r.runID))
-				groupErrs = append(groupErrs, newGroupError(group.Name, err))
-				continue
-			}
+			// stage wrapping a *verification.Error takes the verification path.
+			stageErr, isStage := errors.AsType[*GroupStageError](err)
+			verErr, isVerification := errors.AsType[*verification.Error](err)
+			isVerification = isVerification && (!isStage || isGroupFileVerificationFailure(stageErr, err))
 
-			// Check if this is a verification error - if so, notify via Slack and continue
-			if verErr, ok := errors.AsType[*verification.Error](err); ok {
+			// Contract: a group file verification failure is always notified,
+			// even when the run is being cancelled, so a tampering alert is
+			// never lost to a concurrent SIGINT/SIGTERM.
+			if isVerification {
 				// The shared constructor owns the message template, the
 				// failed-target list and the Component; the group name is
 				// carried only by the notification scope.
 				logging.HandlePreExecutionError(runerrors.NewVerificationPreExecutionError(
 					verErr, logging.ErrorTypeGroupFileVerification, common.GroupScope(verErr.Group), r.runID))
+			}
+
+			// Contract: the run is cancelled exactly when the run's own context
+			// is done; the content of err (which may carry a command's own
+			// timeout) never decides it. A cancelled run always returns an
+			// error that satisfies errors.Is(ctx.Err()) and runs no further
+			// group.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				if isVerification {
+					// The verification failure was notified and is never
+					// collected, so only the cancellation is returned.
+					return ctxErr
+				}
+				return errors.Join(ctxErr, err)
+			}
+
+			if isVerification {
 				continue // Skip this group but continue with the next one
 			}
-			// Collect error but continue with next group
+
+			if isStage {
+				// Record-only: the process-level report is made once at the end
+				// of the run from the returned error.
+				logging.NotifyPreExecutionError(groupStagePreExecutionError(stageErr, r.runID))
+			}
+			// Collect the failure, including a command's own timeout, and
+			// continue with the next group.
 			groupErrs = append(groupErrs, newGroupError(group.Name, err))
 		}
 	}

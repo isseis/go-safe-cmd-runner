@@ -337,8 +337,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 7: コマンドのタイムアウトと実行全体の中断の扱い
 
@@ -346,13 +346,13 @@
 
 **作業内容**:
 
-- [ ] `executeGroups` を [02_architecture.md](02_architecture.md) §3.2 と §6.3 の順に変える。1. group ファイル検証の失敗を先に通知する。対象は §3.2 の 1 が定義するとおり、`*verification.Error` を含み、かつ `*GroupStageError` を含まないか、含んでもその段階がファイル検証であるエラー（現状の分岐で検証の経路 `:441-448` に入るエラーと同じ）である。2. 実行全体の context が取り消されていれば、検証の経路では `ctx.Err()` だけを、それ以外は `errors.Join(ctx.Err(), err)` を返して残りの group を実行しない。3. 1 で通知した検証失敗は集めずに次の group へ進む。4. 実行前段の `*GroupStageError` は通知して `GroupError` として集める。5. それ以外（コマンドのタイムアウトを含む）は `GroupError` として集める。エラーの中身が `context.Canceled`・`context.DeadlineExceeded` を含むかによる分岐（`:422-424`）を削除する。
-- [ ] `group_errors_guard_test.go` に `TestExecuteGroupsDoesNotBranchOnCancellationCause` を追加し、`executeGroups` の関数本体が `context.Canceled`・`context.DeadlineExceeded` を参照しないことを固定する。
-- [ ] `runner_test.go` の `TestRunner_CancellationSkipsStageNotification` を、モックが実行全体の context を取り消してから段階エラーを返す形に変える。同じ構成で、取り消さない場合は通知されることを別の行で確かめる。
-- [ ] `runner_test.go` に `TestRunner_ExecuteGroupsCollectsCommandTimeout`（実行全体の context を取り消さず group-1 が `context.DeadlineExceeded` を含む `*CommandExecutionError` を返すと group-2 が実行され、戻り値が `*GroupErrors` で `errors.Is(err, context.DeadlineExceeded)` が成り立つ。AC-19）、`TestRunner_ExecuteGroupsCollectsFailureThenTimeout`（group-1 の 0 以外の終了コードと group-2 のタイムアウトが両方要素になる。AC-20 と AC-22 の前提）、`TestRunner_ExecuteGroupsStopsOnRunContextCancellation`（AC-21）、`TestRunner_ExecuteGroupsReturnsCancellationOnLastGroupVerificationFailure`（AC-35）、`TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled`（AC-36）を追加する。実行全体の context を取り消すモックはテストファイル内の小さな `GroupExecutor` 実装で用意する。
-- [ ] `runner_test.go` に `TestRunner_CommandTimeoutNotifiesSubsequentGroups` を追加する。`WithGroupNotificationFunc` で通知を記録し、group-1 のコマンドを自身の `timeout` でタイムアウトさせ、group-2 を正常に実行させて、両方の `command_group_summary` の通知が記録されることを確かめる（AC-32）。
-- [ ] `multi_group_error_integration_test.go` に `TestRunner_TimeoutAttributionIntegration` を追加する。`TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで得たタイムアウトのエラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことを確かめたうえで、group-1 の 0 以外の終了コードと group-2 のタイムアウトを並べた `executeGroups` の結果を `logging.HandleExecutionError` に渡し、`Details:` に両 group の行が出ることを確かめる（AC-20）。
-- [ ] `cmd/runner/main_test.go` の `TestExecutionErrorContext` に、タイムアウト 1 件の行と、先の失敗＋タイムアウトの 2 件の行を加える（AC-22）。
+- [x] `executeGroups` を [02_architecture.md](02_architecture.md) §3.2 と §6.3 の順に変える。1. group ファイル検証の失敗を先に通知する。対象は §3.2 の 1 が定義するとおり、`*verification.Error` を含み、かつ `*GroupStageError` を含まないか、含んでもその段階がファイル検証であるエラー（現状の分岐で検証の経路 `:441-448` に入るエラーと同じ）である。2. 実行全体の context が取り消されていれば、検証の経路では `ctx.Err()` だけを、それ以外は `errors.Join(ctx.Err(), err)` を返して残りの group を実行しない。3. 1 で通知した検証失敗は集めずに次の group へ進む。4. 実行前段の `*GroupStageError` は通知して `GroupError` として集める。5. それ以外（コマンドのタイムアウトを含む）は `GroupError` として集める。エラーの中身が `context.Canceled`・`context.DeadlineExceeded` を含むかによる分岐（`:422-424`）を削除する。
+- [x] `group_errors_guard_test.go` に `TestExecuteGroupsDoesNotBranchOnCancellationCause` を追加し、`executeGroups` の関数本体が `context.Canceled`・`context.DeadlineExceeded` を参照しないことを固定する。
+- [x] `runner_test.go` の `TestRunner_CancellationSkipsStageNotification` を、モックが実行全体の context を取り消してから段階エラーを返す形に変える。同じ構成で、取り消さない場合は通知されることを別の行で確かめる。
+- [x] `runner_test.go` に `TestRunner_ExecuteGroupsCollectsCommandTimeout`（実行全体の context を取り消さず group-1 が `context.DeadlineExceeded` を含む `*CommandExecutionError` を返すと group-2 が実行され、戻り値が `*GroupErrors` で `errors.Is(err, context.DeadlineExceeded)` が成り立つ。AC-19）、`TestRunner_ExecuteGroupsCollectsFailureThenTimeout`（group-1 の 0 以外の終了コードと group-2 のタイムアウトが両方要素になる。AC-20 と AC-22 の前提）、`TestRunner_ExecuteGroupsStopsOnRunContextCancellation`（AC-21）、`TestRunner_ExecuteGroupsReturnsCancellationOnLastGroupVerificationFailure`（AC-35）、`TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled`（AC-36）を追加する。実行全体の context を取り消すモックはテストファイル内の小さな `GroupExecutor` 実装で用意する。
+- [x] `runner_test.go` に `TestRunner_CommandTimeoutNotifiesSubsequentGroups` を追加する。`WithGroupNotificationFunc` で通知を記録し、group-1 のコマンドを自身の `timeout` でタイムアウトさせ、group-2 を正常に実行させて、両方の `command_group_summary` の通知が記録されることを確かめる（AC-32）。
+- [x] `multi_group_error_integration_test.go` に `TestRunner_TimeoutAttributionIntegration` を追加する（タイムアウトのエラーを作るため、既存のヘルパー `newGroupFailureForTest` にタイムアウトの秒数の引数を加える）。`TestExecuteSingleCommand_TimeoutLogsTimeoutExceeded` と同じ仕組みで得たタイムアウトのエラーが `*CommandExecutionError` と `context.DeadlineExceeded` の両方を含むことを確かめたうえで、group-1 の 0 以外の終了コードと group-2 のタイムアウトを並べた `executeGroups` の結果を `logging.HandleExecutionError` に渡し、`Details:` に両 group の行が出ることを確かめる（AC-20）。
+- [x] `cmd/runner/main_test.go` の `TestExecutionErrorContext` に、先の失敗＋タイムアウトの 2 件の行を加える（AC-22）。タイムアウト 1 件の行は Phase 1 で追加済みなので、その原因を実際の形（`context.DeadlineExceeded` を含む `*CommandExecutionError`）に変える。あわせて、中断の行を本フェーズの戻り値の形（`errors.Join(context.Canceled, <*CommandExecutionError>)`。`failed to execute group` でラップしない）に合わせる。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。中断の判定をエラーの中身に戻すと `TestRunner_ExecuteGroupsCollectsCommandTimeout` と `TestExecuteGroupsDoesNotBranchOnCancellationCause` が失敗すること、検証失敗の通知を中断判定の後ろへ移すと `TestRunner_ExecuteGroupsReturnsCancellationOnLastGroupVerificationFailure` が失敗すること、`errors.Join(ctx.Err(), err)` を `err` だけにすると `TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled` が失敗することを確認する。
 
@@ -368,8 +368,8 @@
 
 **判定理由**: 実行の制御フローの順序を変え、中断の意味を「エラーの中身」から「実行全体の context」へ変える。既存テストの前提（モックのキャンセル方法）も変わり、実 executor のタイムアウトと通知を組み合わせた検証が必要である。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -584,7 +584,7 @@
 
 - [x] `nilWriterStderrLimit` の旧名が、本番コード・テスト・コメントのどこにも残っていないこと（改名台帳。`make test` は識別子の参照だけを検出し、コメント中の旧名は検出しない）。
 - [ ] `docs/dev/architecture_design/security-architecture.md` と `security-architecture.ja.md` の §16（出力サイズ制限）が、0 を無制限とする記述と矛盾しないこと。同節は既に「Unlimited: Can disable limit by setting value to 0」としており、変更は不要と見込む（確認して、必要なら別タスクとして記録する）。
-- [ ] 本番コードの `errors.Is(..., context.Canceled)`・`errors.Is(..., context.DeadlineExceeded)` の使用箇所を列挙し、残る箇所が中断の判定に使われていないことを記録する（[02_architecture.md](02_architecture.md) §7.4。現状はタイムアウトのセキュリティログ `internal/runner/group_executor.go:629` と Slack 送信の再試行 `internal/logging/slack_sender.go:530` の 2 箇所）。`TestExecuteGroupsDoesNotBranchOnCancellationCause` は `executeGroups` の本体だけを固定するため、この列挙は手作業で行う。
+- [x] 本番コードの `errors.Is(..., context.Canceled)`・`errors.Is(..., context.DeadlineExceeded)` の使用箇所を列挙し、残る箇所が中断の判定に使われていないことを記録する（[02_architecture.md](02_architecture.md) §7.4。現状はタイムアウトのセキュリティログ `internal/runner/group_executor.go:629` と Slack 送信の再試行 `internal/logging/slack_sender.go:530` の 2 箇所）。`TestExecuteGroupsDoesNotBranchOnCancellationCause` は `executeGroups` の本体だけを固定するため、この列挙は手作業で行う。
 - [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使った用語（先頭の窓、省略の印など）の対訳が `/mktrans` により登録されていること。
 - [ ] 日英の `docs/user/toml_config/04_global_level.ja.md` と `04_global_level.md` の見出し構造が一致すること（`/mktrans` の反映後に `make verify-docs` を実行して確認する）。
 - [ ] `docs/dev/developer_guide/package_reference.md` に、`boundedBuffer`・`CaptureError`・`GroupErrors` の旧い説明が無いこと（現状の記述を確認し、直接矛盾する記述があれば同じ Phase で直す。無ければ変更しない）。
