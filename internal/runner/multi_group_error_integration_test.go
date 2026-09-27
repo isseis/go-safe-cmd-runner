@@ -147,9 +147,9 @@ func captureExecutionErrorReport(t *testing.T, execErr error, groupName, command
 }
 
 // newGroupFailureForTest runs one shell script through a real executor and
-// resource manager and returns the error executeSingleCommand produced.
-// outputFile may be nil.
-func newGroupFailureForTest(t *testing.T, groupName, commandName, script string, outputFile *string, limit int64) error {
+// resource manager with the given timeout in seconds and returns the error
+// executeSingleCommand produced. outputFile may be nil.
+func newGroupFailureForTest(t *testing.T, groupName, commandName, script string, outputFile *string, limit int64, timeout int32) error {
 	t.Helper()
 
 	exec := executor.NewDefaultExecutor()
@@ -196,7 +196,7 @@ func newGroupFailureForTest(t *testing.T, groupName, commandName, script string,
 		},
 		ExpandedCmd:              "/bin/sh",
 		ExpandedArgs:             []string{"-c", script},
-		EffectiveTimeout:         30,
+		EffectiveTimeout:         timeout,
 		EffectiveOutputSizeLimit: limitValue,
 	}
 
@@ -214,9 +214,9 @@ func newGroupFailureForTest(t *testing.T, groupName, commandName, script string,
 func TestRunner_MultiGroupFailureAttribution(t *testing.T) {
 	outputFile := fmt.Sprintf("%s/group2.out", t.TempDir())
 
-	group1Err := newGroupFailureForTest(t, "group-1", "fails", "exit 3", nil, 1<<20)
+	group1Err := newGroupFailureForTest(t, "group-1", "fails", "exit 3", nil, 1<<20, 30)
 	require.Error(t, group1Err)
-	group2Err := newGroupFailureForTest(t, "group-2", "output-heavy", "head -c 100 /dev/zero", &outputFile, 16)
+	group2Err := newGroupFailureForTest(t, "group-2", "output-heavy", "head -c 100 /dev/zero", &outputFile, 16, 30)
 	require.Error(t, group2Err)
 
 	_, hasCapErr := errors.AsType[*output.CaptureError](group2Err)
@@ -283,7 +283,7 @@ func TestHandleExecutionError_FilesystemCaptureErrorKeepsCause(t *testing.T) {
 // failure of one group keeps the text the previous wrapping produced, including
 // the outer context.
 func TestRunner_SingleCommandFailureReportUnchanged(t *testing.T) {
-	groupErr := newGroupFailureForTest(t, "solo-group", "fails", "exit 3", nil, 1<<20)
+	groupErr := newGroupFailureForTest(t, "solo-group", "fails", "exit 3", nil, 1<<20, 30)
 	require.Error(t, groupErr)
 
 	_, execErr := executeWithGroupFailures(t, false, groupFailure{group: "solo-group", err: groupErr})
@@ -305,4 +305,40 @@ func TestRunner_SingleCommandFailureReportUnchanged(t *testing.T) {
 	details := detailsBlock(t, stderr)
 	assert.Equal(t, wantMessage, errorMessage)
 	assert.Equal(t, wantMessage, details)
+}
+
+// TestRunner_TimeoutAttributionIntegration drives a real command timeout
+// through executeGroups and the production report. group-1 exits non-zero and
+// group-2's command is killed by its own timeout. The timeout is collected
+// rather than discarding group-1, so Details carries a line for each group, and
+// the timeout's continuation line is indented under group-2's line.
+func TestRunner_TimeoutAttributionIntegration(t *testing.T) {
+	group1Err := newGroupFailureForTest(t, "group-1", "fails", "exit 3", nil, 1<<20, 30)
+	require.Error(t, group1Err)
+	// exec replaces the shell, so the kill on timeout reaches the sleep itself
+	// and leaves no grandchild behind.
+	group2Err := newGroupFailureForTest(t, "group-2", "slow", "exec sleep 10", nil, 1<<20, 1)
+	require.ErrorIs(t, group2Err, context.DeadlineExceeded, "group-2 must fail by its own timeout")
+	_, ok := errors.AsType[*CommandExecutionError](group2Err)
+	require.True(t, ok, "the timeout must be wrapped in a *CommandExecutionError, got %T", group2Err)
+
+	_, execErr := executeWithGroupFailures(t, false,
+		groupFailure{group: "group-1", err: group1Err},
+		groupFailure{group: "group-2", err: group2Err})
+	assert.Equal(t, []string{"group-1", "group-2"}, groupNames(t, execErr))
+
+	stderr, errorMessage := captureExecutionErrorReport(t, execErr, "", "")
+	details := detailsBlock(t, stderr)
+	lines := strings.Split(details, "\n")
+
+	require.GreaterOrEqual(t, len(lines), 3, "a timeout cause has continuation lines: %q", details)
+	assert.True(t, strings.HasPrefix(lines[0], "error running commands: failed to execute group group-1: "),
+		"line 0: %q", lines[0])
+	assert.True(t, strings.HasPrefix(lines[1], "failed to execute group group-2: command slow in group group-2 failed: "),
+		"line 1: %q", lines[1])
+	for i, line := range lines[2:] {
+		assert.True(t, strings.HasPrefix(line, "  "),
+			"continuation line %d of group-2 must be indented under it: %q", i+2, line)
+	}
+	assert.Equal(t, details, errorMessage)
 }

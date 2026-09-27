@@ -465,3 +465,92 @@ func TestMultiErrorShapeProbeCheckRecognizesForms(t *testing.T) {
 		})
 	}
 }
+
+// executeGroupsFile is the file that declares Runner.executeGroups.
+const executeGroupsFile = "internal/runner/runner.go"
+
+// TestExecuteGroupsDoesNotBranchOnCancellationCause pins that executeGroups
+// decides a cancelled run from the run context's state, never from whether the
+// group's error carries context.Canceled or context.DeadlineExceeded: a
+// command's own timeout carries DeadlineExceeded without the run being
+// cancelled. The body of executeGroups must not reference either sentinel.
+// The recognizer rows keep the scan from becoming a no-op.
+func TestExecuteGroupsDoesNotBranchOnCancellationCause(t *testing.T) {
+	t.Run("production executeGroups", func(t *testing.T) {
+		src := identitymutationguard.ReadProductionSource(t, executeGroupsFile)
+		found, refs := findCancellationCauseRefs(t, executeGroupsFile, src)
+		require.True(t, found, "executeGroups was not found in %s; the scan is broken", executeGroupsFile)
+		assert.Empty(t, refs,
+			"executeGroups must decide cancellation from ctx.Err(), not from the error's content:\n%s",
+			strings.Join(refs, "\n"))
+	})
+
+	const header = "package runner\n\nimport %s\"context\"\n\ntype Runner struct{}\n\n"
+	tests := []struct {
+		name     string
+		src      string
+		wantRefs int
+	}{
+		{
+			name:     "context.Canceled in the body is reported",
+			src:      fmt.Sprintf(header, "") + "func (r *Runner) executeGroups(err error) bool { return err == context.Canceled }\n",
+			wantRefs: 1,
+		},
+		{
+			name:     "aliased context.DeadlineExceeded in the body is reported",
+			src:      fmt.Sprintf(header, "stdctx ") + "func (r *Runner) executeGroups(err error) bool { return err == stdctx.DeadlineExceeded }\n",
+			wantRefs: 1,
+		},
+		{
+			name:     "ctx.Err() is accepted",
+			src:      fmt.Sprintf(header, "") + "func (r *Runner) executeGroups(ctx context.Context) error { return ctx.Err() }\n",
+			wantRefs: 0,
+		},
+		{
+			name:     "a reference in another function is not reported",
+			src:      fmt.Sprintf(header, "") + "func (r *Runner) executeGroups() {}\n\nfunc other(err error) bool { return err == context.Canceled }\n",
+			wantRefs: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			found, refs := findCancellationCauseRefs(t, executeGroupsFile, tt.src)
+			require.True(t, found)
+			assert.Len(t, refs, tt.wantRefs, "references: %v", refs)
+		})
+	}
+}
+
+// findCancellationCauseRefs reports whether src declares the method
+// executeGroups and returns the positions of context.Canceled and
+// context.DeadlineExceeded references inside its body.
+func findCancellationCauseRefs(t *testing.T, filename, src string) (found bool, refs []string) {
+	t.Helper()
+
+	fset, file := identitymutationguard.ParseSource(t, filename, src)
+	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
+		return importPath == "context"
+	})
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name.Name != "executeGroups" || fn.Body == nil {
+			continue
+		}
+		found = true
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || qualifiers[pkg.Name] != "context" {
+				return true
+			}
+			if sel.Sel.Name == "Canceled" || sel.Sel.Name == "DeadlineExceeded" {
+				refs = append(refs, fmt.Sprintf("%s: context.%s", fset.Position(sel.Pos()), sel.Sel.Name))
+			}
+			return true
+		})
+	}
+	return found, refs
+}

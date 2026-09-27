@@ -20,12 +20,17 @@ import (
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
+	executortestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
+	securitytestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testutil"
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	verificationtestutil "github.com/isseis/go-safe-cmd-runner/internal/verification/testutil"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -845,6 +850,93 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		assert.Less(t, elapsed, 800*time.Millisecond)
 		assert.Greater(t, elapsed, 400*time.Millisecond)
 	})
+}
+
+// TestRunner_CommandTimeoutNotifiesSubsequentGroups runs a real executor and
+// group executor: group-1's command is killed by its own timeout and group-2
+// succeeds. Both groups must send their group summary notification, because a
+// command timeout no longer stops the run.
+func TestRunner_CommandTimeoutNotifiesSubsequentGroups(t *testing.T) {
+	sleepPath := executortestutil.ResolveCommand("sleep")
+	truePath := executortestutil.ResolveCommand("true")
+
+	exec := executor.NewDefaultExecutor()
+	mockValidator := new(securitytestutil.MockValidator)
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	pathResolver := &mockPathResolver{}
+	pathResolver.On("ResolvePath", mock.Anything).Return(func(path string) string { return path }, nil)
+	rm, err := resourcetestutil.NewDefaultResourceManager(
+		exec,
+		common.NewDefaultFileSystem(),
+		nil, // no privilege manager: the commands carry no run_as
+		pathResolver,
+		slog.Default(),
+		resource.ExecutionModeNormal,
+		nil, // dry-run disabled
+		nil, // no output capture
+		0,
+	)
+	require.NoError(t, err)
+
+	mockVerificationManager := new(verificationtestutil.MockManager)
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("ResolvePath", sleepPath).Return(sleepPath, nil)
+	mockVerificationManager.On("ResolvePath", truePath).Return(truePath, nil)
+	mockVerificationManager.On("VerifyCommandDependencies", mock.Anything, mock.Anything).Return(nil)
+
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global:  runnertypes.GlobalSpec{Timeout: new(int32(30))},
+		Groups: []runnertypes.GroupSpec{
+			{
+				Name: "group-1",
+				Commands: []runnertypes.CommandSpec{{
+					Name:      "sleeps-past-its-timeout",
+					Cmd:       sleepPath,
+					Args:      []string{"10"},
+					Timeout:   new(int32(1)),
+					RiskLevel: runnertypes.RiskLevelLowPtr,
+				}},
+			},
+			{
+				Name: "group-2",
+				Commands: []runnertypes.CommandSpec{{
+					Name:      "succeeds",
+					Cmd:       truePath,
+					RiskLevel: runnertypes.RiskLevelLowPtr,
+				}},
+			},
+		},
+	}
+
+	var notified []string
+	notify := func(group *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {
+		notified = append(notified, group.Name)
+	}
+
+	r, err := NewRunner(config,
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-timeout-notification"),
+		WithRuntimeGlobal(newDefaultRuntimeGlobal()))
+	require.NoError(t, err)
+	r.groupExecutor = NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:              config,
+		Executor:            exec,
+		ResourceManager:     rm,
+		Validator:           mockValidator,
+		VerificationManager: mockVerificationManager,
+		RunID:               "test-timeout-notification",
+	}, WithGroupNotificationFunc(notify))
+
+	err = r.Execute(context.Background(), nil)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded, "group-1's command must fail by its own timeout")
+	assert.Equal(t, []string{"group-1"}, groupNames(t, err))
+	assert.Equal(t, []string{"group-1", "group-2"}, notified,
+		"the group after a command timeout must run and send its notification")
 }
 
 func TestCommandGroup_NewFields(t *testing.T) {
@@ -2677,17 +2769,39 @@ const (
 	preExecutionOccurredMessage = "Pre-execution error occurred"
 )
 
-// groupFailure is the error the mock group executor returns for one group.
+// groupFailure is the error the scripted group executor returns for one
+// group. A nil err means the group succeeds. When cancelRun is true the
+// executor cancels the run context before returning, as a SIGINT or SIGTERM
+// arriving while the group runs would.
 type groupFailure struct {
-	group string
-	err   error
+	group     string
+	err       error
+	cancelRun bool
 }
 
-// executeWithGroupFailures runs Execute over one group per failure, in order,
-// with a mock group executor that returns each group's error. When redact is
-// true the recorder sits behind the production RedactingHandler, so it sees the
-// record the Slack builder receives.
-func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailure) (*tu.LogRecorder, error) {
+// scriptedGroupExecutor is a GroupExecutor that returns each group's scripted
+// error and records the groups it was asked to execute, in order.
+type scriptedGroupExecutor struct {
+	failures  map[string]groupFailure
+	cancelRun context.CancelFunc
+	executed  []string
+}
+
+func (e *scriptedGroupExecutor) ExecuteGroup(_ context.Context, groupSpec *runnertypes.GroupSpec, _ *runnertypes.RuntimeGlobal) error {
+	e.executed = append(e.executed, groupSpec.Name)
+	failure := e.failures[groupSpec.Name]
+	if failure.cancelRun {
+		e.cancelRun()
+	}
+	return failure.err
+}
+
+// runWithGroupFailures runs Execute over one group per failure, in order,
+// with a scripted group executor, and returns the recorded logs, the groups
+// that were executed and the error Execute returned. When redact is true the
+// recorder sits behind the production RedactingHandler, so it sees the record
+// the Slack builder receives.
+func runWithGroupFailures(t *testing.T, redact bool, failures ...groupFailure) (*tu.LogRecorder, []string, error) {
 	t.Helper()
 
 	recorder := tu.NewLogRecorder(nil)
@@ -2695,14 +2809,14 @@ func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailur
 	if redact {
 		handler = redaction.NewRedactingHandler(recorder, nil, nil)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	groups := make([]runnertypes.GroupSpec, 0, len(failures))
-	mockGroupExecutor := &MockGroupExecutor{}
+	groupExecutor := &scriptedGroupExecutor{failures: make(map[string]groupFailure, len(failures)), cancelRun: cancel}
 	for _, failure := range failures {
 		groups = append(groups, runnertypes.GroupSpec{Name: failure.group})
-		name := failure.group
-		mockGroupExecutor.On("ExecuteGroup", mock.Anything,
-			mock.MatchedBy(func(spec *runnertypes.GroupSpec) bool { return spec.Name == name }),
-			mock.Anything).Return(failure.err)
+		groupExecutor.failures[failure.group] = failure
 	}
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
@@ -2716,7 +2830,7 @@ func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailur
 		WithRunID("test-pre-execution-stage"),
 		WithRuntimeGlobal(&runnertypes.RuntimeGlobal{}))
 	require.NoError(t, err)
-	runner.groupExecutor = mockGroupExecutor
+	runner.groupExecutor = groupExecutor
 
 	// The default logger is restored before returning rather than at cleanup,
 	// so a test can call this helper twice: RedactingHandler rejects a failure
@@ -2725,10 +2839,19 @@ func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailur
 		originalLogger := slog.Default()
 		defer slog.SetDefault(originalLogger)
 		slog.SetDefault(slog.New(handler))
-		return runner.Execute(context.Background(), nil)
+		return runner.Execute(ctx, nil)
 	}()
-	mockGroupExecutor.AssertNumberOfCalls(t, "ExecuteGroup", len(failures))
-	return recorder, execErr
+	return recorder, groupExecutor.executed, execErr
+}
+
+// executeWithGroupFailures is runWithGroupFailures for a run that executes
+// every group.
+func executeWithGroupFailures(t *testing.T, redact bool, failures ...groupFailure) (*tu.LogRecorder, error) {
+	t.Helper()
+
+	recorder, executed, err := runWithGroupFailures(t, redact, failures...)
+	require.Len(t, executed, len(failures), "every group must be executed")
+	return recorder, err
 }
 
 // TestRunner_PreExecutionStageNotifications drives each declared stage through
@@ -2901,17 +3024,168 @@ func TestRunner_StageDispatchPrefersStageOverVerificationError(t *testing.T) {
 
 // TestRunner_CancellationSkipsStageNotification fixes that a cancelled run is
 // not notified as a pre-execution failure even when the stage was declared.
+// The stage error carries no context error, so only the state of the run
+// context can tell the two rows apart.
 func TestRunner_CancellationSkipsStageNotification(t *testing.T) {
-	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
-		t.Run(cause.Error(), func(t *testing.T) {
-			recorder, err := executeWithGroupFailures(t, false,
-				groupFailure{group: "backup", err: newGroupStageError(GroupStageGroupPreparation, "backup", cause)})
+	cause := errors.New("interrupted")
+
+	tests := []struct {
+		name         string
+		cancelRun    bool
+		wantNotified bool
+	}{
+		{name: "cancelled run is not notified", cancelRun: true, wantNotified: false},
+		{name: "run that is not cancelled is notified", cancelRun: false, wantNotified: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotErrorIs(t, cause, context.Canceled,
+				"the stage error must not carry the cancellation, or the row proves nothing about the run context")
+
+			recorder, err := executeWithGroupFailures(t, false, groupFailure{
+				group:     "backup",
+				err:       newGroupStageError(GroupStageGroupPreparation, "backup", cause),
+				cancelRun: tt.cancelRun,
+			})
 
 			assert.ErrorIs(t, err, cause)
-			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+			if tt.wantNotified {
+				assert.NotErrorIs(t, err, context.Canceled)
+				assert.Len(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage), 1)
+			} else {
+				assert.ErrorIs(t, err, context.Canceled)
+				assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+			}
 			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage))
 		})
 	}
+}
+
+// newCommandTimeoutError returns an error shaped like a command killed by its
+// own timeout: the executor joins the command context's error with Wait()'s,
+// and executeSingleCommand wraps the result in a *CommandExecutionError.
+func newCommandTimeoutError(group, command string) *CommandExecutionError {
+	return &CommandExecutionError{
+		GroupName:   group,
+		CommandName: command,
+		Err:         errors.Join(context.DeadlineExceeded, errors.New("signal: killed")),
+	}
+}
+
+// groupNames returns the group names of every entry of a *GroupErrors in err,
+// failing when err carries none.
+func groupNames(t *testing.T, err error) []string {
+	t.Helper()
+
+	groupErrs, ok := errors.AsType[*GroupErrors](err)
+	require.True(t, ok, "executeGroups must return a *GroupErrors, got %T", err)
+	names := make([]string, 0, len(groupErrs.Errors()))
+	for _, groupErr := range groupErrs.Errors() {
+		names = append(names, groupErr.GroupName())
+	}
+	return names
+}
+
+// TestRunner_ExecuteGroupsCollectsCommandTimeout fixes that a command's own
+// timeout, with the run context still live, is collected as a group failure
+// and the next group still runs.
+func TestRunner_ExecuteGroupsCollectsCommandTimeout(t *testing.T) {
+	_, executed, err := runWithGroupFailures(t, false,
+		groupFailure{group: "group-1", err: newCommandTimeoutError("group-1", "slow")},
+		groupFailure{group: "group-2"})
+
+	assert.Equal(t, []string{"group-1", "group-2"}, executed, "the group after a timeout must run")
+	assert.Equal(t, []string{"group-1"}, groupNames(t, err))
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.NotErrorIs(t, err, context.Canceled)
+}
+
+// TestRunner_ExecuteGroupsCollectsFailureThenTimeout fixes that a timeout does
+// not discard a failure collected before it: both groups are entries.
+func TestRunner_ExecuteGroupsCollectsFailureThenTimeout(t *testing.T) {
+	exitFailure := &CommandExecutionError{GroupName: "group-1", CommandName: "fails", Err: ErrExecutionFailed}
+
+	_, executed, err := runWithGroupFailures(t, false,
+		groupFailure{group: "group-1", err: exitFailure},
+		groupFailure{group: "group-2", err: newCommandTimeoutError("group-2", "slow")})
+
+	assert.Equal(t, []string{"group-1", "group-2"}, executed)
+	assert.Equal(t, []string{"group-1", "group-2"}, groupNames(t, err))
+	assert.ErrorIs(t, err, ErrExecutionFailed)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// TestRunner_ExecuteGroupsStopsOnRunContextCancellation fixes that the run
+// stops when the run context is cancelled while a group runs, even though the
+// group's error carries no context error (a child ended by the same signal
+// first). The result declares the cancellation and still reaches the group's
+// error.
+func TestRunner_ExecuteGroupsStopsOnRunContextCancellation(t *testing.T) {
+	signalled := &CommandExecutionError{GroupName: "group-1", CommandName: "dump", Err: errors.New("exit status 130")}
+	require.NotErrorIs(t, signalled, context.Canceled)
+
+	_, executed, err := runWithGroupFailures(t, false,
+		groupFailure{group: "group-1", err: signalled, cancelRun: true},
+		groupFailure{group: "group-2"})
+
+	assert.Equal(t, []string{"group-1"}, executed, "no group may run after the run is cancelled")
+	assert.ErrorIs(t, err, context.Canceled)
+	_, isGroupErrs := errors.AsType[*GroupErrors](err)
+	assert.False(t, isGroupErrs, "a cancelled run returns the cancellation, not the collected failures")
+	cmdErr, ok := errors.AsType[*CommandExecutionError](err)
+	require.True(t, ok, "the group's error must stay reachable")
+	assert.Same(t, signalled, cmdErr)
+}
+
+// TestRunner_ExecuteGroupsReturnsCancellationOnLastGroupVerificationFailure
+// fixes that a group file verification failure of the last group, overlapping
+// a cancellation, is still notified and the run still reports the
+// cancellation instead of success. The verification failure is not collected.
+func TestRunner_ExecuteGroupsReturnsCancellationOnLastGroupVerificationFailure(t *testing.T) {
+	newVerErr := func() *verification.Error {
+		return &verification.Error{Op: "group", Group: "backup", Err: verification.ErrGroupVerificationFailed}
+	}
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "bare verification error", err: newVerErr()},
+		{name: "file verification stage", err: newGroupStageError(GroupStageFileVerification, "backup", newVerErr())},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder, err := executeWithGroupFailures(t, false,
+				groupFailure{group: "backup", err: tt.err, cancelRun: true})
+
+			require.Error(t, err, "a cancelled run must not be reported as a success")
+			assert.ErrorIs(t, err, context.Canceled)
+			_, hasVerErr := errors.AsType[*verification.Error](err)
+			assert.False(t, hasVerErr, "a verification failure is notified, never collected")
+			assert.Len(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage), 1,
+				"the verification failure must be notified even when the run is cancelled")
+			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionNotifiedMessage))
+		})
+	}
+}
+
+// TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled fixes
+// that when the last group's child ends on the cancelling signal before the
+// executor sees the cancellation, the result still declares the cancellation
+// and reaches the command's error.
+func TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled(t *testing.T) {
+	signalled := &CommandExecutionError{GroupName: "backup", CommandName: "dump", Err: errors.New("exit status 130")}
+	require.NotErrorIs(t, signalled, context.Canceled)
+
+	_, err := executeWithGroupFailures(t, false,
+		groupFailure{group: "backup", err: signalled, cancelRun: true})
+
+	assert.ErrorIs(t, err, context.Canceled)
+	cmdErr, ok := errors.AsType[*CommandExecutionError](err)
+	require.True(t, ok, "the command's error must stay reachable")
+	assert.Same(t, signalled, cmdErr)
 }
 
 // TestRunner_CommandExecutionFailureSkipsStageNotification fixes that a failure
