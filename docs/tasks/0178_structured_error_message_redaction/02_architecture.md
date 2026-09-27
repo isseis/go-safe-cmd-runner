@@ -288,7 +288,7 @@ type Segment struct {
 // Segments is the result of flattening a Message.
 type Segments struct {
     List      []Segment
-    Truncated bool // a cause was left as Text because the depth limit was reached
+    Truncated bool // a cause was replaced by a Text marker at the depth limit
 }
 
 // Structured is implemented by errors whose body is a Message. Error()
@@ -368,8 +368,8 @@ func (e *Error) StructuredMessage() Message
   - 分けるのを呼び出し側で行わず、原因の部分の種類として宣言するのは、`errmsg.Error` の `Unwrap()` が `*fs.PathError` を返し続け、`errors.Is(err, fs.ErrPermission)` などの到達性が変わらないようにするためである（AC-18）。
   - 型アサーションで足りるのは、`os.MkdirTemp` と `os.Chmod` が失敗したときに `*fs.PathError` を直接返すためである（Go 標準ライブラリの `os/tempfile.go` の `MkdirTemp` と `os/file_posix.go` の `Chmod`）。
 - `IndentedCause` で作った原因の部分は、`Cause` と同じに平らにした後、`GroupError.Error()` と同じ整形を施す（3.1.4 節）。
-- 展開の深さには上限 `maxDepth = 16` を置く。`errmsg` は末端のパッケージなので、`internal/redaction` の `maxRedactionDepth`（`internal/redaction/redactor.go:259`）を import せず、独自の定数を持つ。上限に達した原因の部分は `Error()` 全体を 1 つの `Text` にし、`Segments.Truncated` を立てる。展開の深さが足りなくても保護は弱まらない（fail-closed）。
-  - 本書の対象で最も深い連鎖は 2 つある。最終の実行エラーの `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（resource manager のラップ）→ `errmsg.Error`（executor のラップ）と、group 実行前段の `PreExecutionError` → `GroupStageError` → `errmsg.Error`（事前展開）→ `errmsg.Error`（`ExpandCommand`）→ `errmsg.Error`（`vars`）→ `ErrUndefinedVariableDetail` で、どちらも 6〜7 段である。`GroupErrors` は各 `GroupError` を原因の部分としてではなく、部分を直接並べて持つので、段を増やさない。
+- 展開の深さには上限 `maxDepth = 16` を置く。`errmsg` は末端のパッケージなので、`internal/redaction` の `maxRedactionDepth`（`internal/redaction/redactor.go:259`）を import せず、独自の定数を持つ。上限に達した原因の部分は、原因の `Error()` を呼ばず、固定の文言 `<truncated>` を 1 つの `Text` の断片にして、`Segments.Truncated` を立てる。`Structured` を実装する型の `Error()` は `StructuredMessage().String()` なので、`Error()` を呼ぶと平らにする処理に再び入り、上限が再帰を止めない（自身を原因に持つエラーではスタックがあふれる）。`String()` と `Error()` はどちらも `Segments()` を通るので、上限に達しても一致する。残りの原因の文字列は出ないので、保護は弱まらない（fail-closed）。
+  - 本書の対象で最も深い連鎖は 2 つある。最終の実行エラーの `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（`executeCommandWithOutput` の `:266`）→ `errmsg.Error`（`executeNormal` の `:344`）→ `errmsg.Error`（`Validate`）と、group 実行前段の `PreExecutionError` → `GroupStageError` → `errmsg.Error`（group の展開、`group_executor.go:169`）→ `errmsg.Error`（`expansion.go:1052`）→ `errmsg.Error`（`cmd_allowed`、`:925`）→ `ErrUndefinedVariableDetail` で、6〜7 段である。`GroupErrors` は各 `GroupError` を原因の部分としてではなく、部分を直接並べて持つので、段を増やさない。
   - 実際の最も深い連鎖を組み立てて、深さが `maxDepth - 4` 以下であることを確かめるテストを置く。#1196・#1197 の型を加えたときに余裕が無くなれば、このテストが失敗する。
 
 `*fs.PathError` を分けるのは `PathErrorCause` を使った箇所だけである。`PathErrorCause` を呼べるのは、一時ディレクトリの作成・権限設定の 2 か所（3.6.1 節）だけにし、AST のガードで固定する（3.8.2 節）。他の経路の `*fs.PathError` は、構造を持たないエラーとして 1 つの `Text` のままである（01 決定事項「対象のエラーの役割の割り当ての方針」）。
@@ -406,14 +406,14 @@ func (c *Config) redactedRanges(text string) []byteRange
 - **段の重なり**: 後の段は、前の段が置換文字列を入れた後の文字列に対して一致を探す。後の段の置き換える範囲が、前の段の置換文字列と一部でも重なれば、その置換文字列に当たる元の範囲の全体を置き換える範囲に加える。残す範囲が前の段の置換文字列と重なっても、その置換文字列に当たる元の範囲は置き換えたままとする（置換文字列は分けない）。
 - **表し方**: 範囲は、一致の数に比例する大きさの区間の列で表す。文字列の長さに比例する表は作らない。
 - **正しさの義務**: 任意の入力について、`redactedRanges` が返す各範囲を 1 つの置換文字列に置き換えた結果が、変更していない `RedactText` の出力と一致すること。この一致は、既存の `RedactText` のテストの入力の全体と、`RedactText` を基準にした差分のファジングで確かめる（CLAUDE.md「An optimization that adds a correctness obligation」と同じく、テストで固定する）。
-- **実行時の検査**: `RedactMessage` は描画のたびに、`redactedRanges` から作った文字列が `RedactText` の出力と一致するかを確かめる。一致しなければ、構造化メッセージを使わず、変更前と同じ扱い（redaction 前の描画結果の全体に `RedactText` を適用し、変化がなければ値全体置換）で描画し、失敗を記録する（4.2 節）。範囲の誤りが秘密の漏れにならないようにするためである。
+- **実行時の検査**: `RedactMessage` は描画のたびに、`redactedRanges` から作った文字列が `RedactText` の出力と一致するかを確かめる。一致しなければエラーを返し、呼び出し側は panic と同じに扱う（3.2.3 節）。`error_message` は `RedactionFailurePlaceholder` になり、失敗は `ErrorCollector` に記録される。範囲の誤りが秘密の漏れにならないようにするためである。
 
 #### 3.2.2 `Config.RedactMessage`
 
 ```go
 // RedactMessage renders m with per-segment redaction and the cross-boundary
-// contract, using this Config's rules and replacement string. It recovers
-// from panics raised while flattening m and reports them as an error.
+// contract, using this Config's rules and replacement string. It returns an
+// error when flattening m panics or when the runtime range check fails.
 func (c *Config) RedactMessage(m errmsg.Message) (string, error)
 ```
 
@@ -447,7 +447,7 @@ func (c *Config) RedactMessage(m errmsg.Message) (string, error)
 
 分岐は `RedactingHandler.redactLogAttributeWithContext`（`:799`）と `Config.RedactLogAttribute`（`:330`）の両方に置き、判定と描画は 1 つの補助関数にまとめる。`Config.RedactLogAttribute` は本番のコードから呼ばれていない（`:371` の自身の再帰だけ）。それでも分岐を置くのは、置かないと、この公開の関数に構造化メッセージを渡したときに `LogValue()` の redaction 前の文字列がそのまま出るためである。
 
-**失敗の扱いの担い手**: panic の回復は `RedactMessage` の中の 1 か所で行い、エラーとして返す。
+**失敗の扱いの担い手**: panic の回復と実行時の検査の不一致は、`RedactMessage` の中でエラーとして返す。
 
 - `RedactingHandler` は、返されたエラーを既存の `ErrLogValuePanic` と同じく型付きのエラーとして `ErrorCollector` に記録する（`processLogValuer` と同じ形。`internal/redaction/redactor.go:854-872`）。そのため、終了時の報告（`ShutdownReporter`）に現れる。値は `RedactionFailurePlaceholder` にする。
 - `Config.RedactLogAttribute` は `ErrorCollector` を持たないので、値を `RedactionFailurePlaceholder` にするだけである。
@@ -501,7 +501,7 @@ func (e *ExecutionError) ReportMessage() errmsg.Message
 
 - `HandleExecutionError`（`internal/logging/pre_execution_error.go:243-276`）が文字列で組み立てている本文を、`ReportMessage()` に移す。文言は変更前と同じである（`Message (group: g, command: c): 原因`）。
 - `Message` の型を `errmsg.Summary` に変え、唯一の設定箇所（`cmd/runner/main.go` の `executeRunner` の `error running commands`）は `ConstSummary` にする。`PreExecutionError` と同じく、定数式の要約文を `Constant` にする（01 決定事項「対象のエラーの役割の割り当ての方針」の「固定の文言は `Constant`」）。
-- 外側の context の group 名・コマンド名は `Ident` にする。context の部分の列は 1 つの非公開のメソッドで作り、`ContextString()` はその `String()` を返す。context の文言を 2 か所で保守しない。
+- 外側の context の group 名・コマンド名は `Ident` にする。context の部分の列は 1 つの非公開のメソッド（`contextParts`）で作り、`ContextString()` はその `String()` を返す。context の文言を 2 か所で保守しない。
 - `Error()` と `ContextString()` の文言は変えない。
 
 #### 3.3.3 記録
@@ -639,10 +639,11 @@ func (e *ErrUndefinedVariableDetail) Unwrap() error // ErrUndefinedVariable, unc
 | `ProcessEnv` | `env_vars` の拒否のエラー（`:784`）を作る。`ErrUndefinedVariableDetail` はこの関数を `return nil, err` でそのまま通るだけであり、ラップしない |
 | `resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec` | テンプレートのエラーを作る関数であり、01 の対象外（#1197） |
 
-- ファイル全体を対象にするのは、`ErrUndefinedVariableDetail` を作る箇所（`:128`・`:425`）から、それをラップする箇所（`ExpandGlobal`・`ExpandGroup`・`ExpandCommand` など）までの関数が、すべてこのファイルにあるためである。関数を分けたり加えたりしても、新しい関数は自動で検証の対象になる。除く関数の一覧は 3.8.1 節に置き、一覧の関数がファイルから無くなればガードが失敗する。
-- `ErrUndefinedVariableDetail` は `vars` だけでなく `env`・`cmd`・`args`・`verify_files`・`workdir`・`cmd_allowed` の展開からも作られる。そのため、置き換えるラップを原因の種類で選ばない。置き換えたラップの原因が #1197 の対象の型であれば、その原因は構造を持たないエラーとして `Text` になる。01 の対象外（#1197）は内側のエラー型の構造化であり、ラップが group 名・コマンド名を `Ident` にすることとは矛盾しない。
-- `expandCmdAllowed` のラップ（`:919`・`:925`・`:948`）も対象である。`cmd_allowed` の展開の未定義変数は `ExpandString`（`:923`）から `:925` のラップを通る。`group[%s]` の group 名は `Ident`、index は `Text`、展開前の値（`rawPath`）は生のテンプレートなので `Text`、展開後のパス（`:948` の `expanded`）は `Path` にする。
-- 名前は `Ident`、固定の文言は `Const` にする。例: `failed to process global vars: %w`（`:857`）は `Const("failed to process global vars: ")`・`Cause`、`failed to process group[%s] vars: %w`（`:1023`）は `Const("failed to process group[")`・`Ident(name)`・`Const("] vars: ")`・`Cause`。
+- ファイル全体を対象にするのは、`ErrUndefinedVariableDetail` を作る箇所（`:128`・`:425`）から、それをラップする箇所（`ExpandGlobal`・`ExpandGroup`・`expandCommandVars` など）までの関数が、すべてこのファイルにあるためである。関数を分けたり加えたりしても、新しい関数は自動で検証の対象になる。除く関数の一覧は 3.8.1 節に置き、一覧の関数がファイルから無くなればガードが失敗する。
+- `ErrUndefinedVariableDetail` は `vars` だけでなく `env`・`cmd`・`args`・`verify_files`・`workdir`・`cmd_allowed` の展開からも作られる。これを運ぶラップでは、名前を `Ident`、固定の文言を `Const` にする。例: `failed to process global vars: %w`（`:857`）は `Const("failed to process global vars: ")`・`Cause`、`failed to process group[%s] vars: %w`（`:1023`）は `Const("failed to process group[")`・`Ident(name)`・`Const("] vars: ")`・`Cause`。
+- 原因が `ErrUndefinedVariableDetail` を運びえないラップは、01 の対象外（#1197）に従い、前置きの全体を 1 つの `Text`（`errmsg.Text(fmt.Sprintf(...))`）にして `Cause(err)` を続ける。`Ident`・`Path`・`Const` は使わない。該当するのは、`env_import` の処理の失敗（`:847`・`:1011`・`:1136`）、`cmd_allowed` の空のパスとパスの解決の失敗（`:919`・`:948`）、`Runtime*` の作成の失敗（`:832`・`:982`・`:1226`）である。
+- `expandCmdAllowed` の `:925` のラップも対象である。`cmd_allowed` の展開の未定義変数は `ExpandString`（`:923`）からこのラップを通る。group 名は `Ident`、index は `Text`、展開前の値（`rawPath`）は生のテンプレートなので `Text` にする。
+- `ExpandCommand` はテンプレートの解決のエラーをラップしない。`resolveAndPrepareCommandSpec` のエラーをそのまま返す（`:1219`）。
 
 #### 3.5.4 `ExpandWorkDir`
 
@@ -668,13 +669,13 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 
 | パッケージ | 関数 | 挿入する値（例） |
 |---|---|---|
-| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand` | コマンドパス（`normal_manager.go:147`・`:150` の `cmd.ExpandedCmd`） |
+| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput` | コマンドパス（`normal_manager.go:147`・`:150` の `cmd.ExpandedCmd`）。`:266` は `Cause(err)`・`Const("; and also failed to close output capture: ")`・`Text(closeErr.Error())`、ほかのラップ（`:253`・`:264`・`:290`）は `Const`・`Cause` にする |
 | `internal/runner/resource` | `(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | コマンドパス（`evaluateCommandRisk` の `dryrun_manager.go:416`・`:427`・`:441`） |
 | `internal/runner/base/executor` | `(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | コマンドパス・作業ディレクトリ（`executor.go` の `Validate` など） |
 
 次は対象にしない。
 
-- `(*DefaultExecutor).stageFromFD` と `(*NormalResourceManager).executeCommandWithOutput`: 挿入するのは gid の数値だけで、原因は OS のエラーか出力の取り込みのエラーであり、構造を持たない。置き換えても出力は変わらない。
+- `(*DefaultExecutor).stageFromFD`: 挿入するのは gid の数値だけで、原因は OS のエラーであり、構造を持たない。置き換えても出力は変わらない。
 - `(*DryRunResourceManager).UpdateCommandDebugInfo`・`ValidateOutputPath` と、一時ディレクトリの後始末の関数: 2 つのレコードの原因にならない。
 
 ### 3.7 `cmd/runner`（変更）
@@ -697,17 +698,18 @@ global の展開の原因（`config.ExpandGlobal` のエラー）は 3.5.3 節�
 
 #### 3.8.1 対象の範囲
 
-AC-41 の「対象の経路」を、次の範囲として確定する。この表が、AC-41 の検証の対象の唯一の定義である。
+AC-41 の「対象の経路」を、次の範囲として確定する。この表が、AC-41 の検証の対象と、`Ident`・`Path` を呼べる箇所の唯一の定義である。範囲は 2 つのレコードの原因の経路から取り、その経路で構造を持つ原因をラップする関数と、`Ident`・`Path` を宣言するメソッドをすべて含める。
 
 | パッケージ | 対象 | 除くもの |
 |---|---|---|
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` のファイル全体、`runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` | — |
-| `internal/runner/config` | `expansion.go` のファイル全体 | `ProcessEnvImport`・`ProcessEnv`・`resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec`（理由は 3.5.3 節） |
-| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
+| `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`・`Level.Parts`・`Field.Parts` | `ProcessEnvImport`・`ProcessEnv`・`resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec`（理由は 3.5.3 節） |
+| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
 | `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | — |
-| `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage` | — |
+| `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`contextParts` | — |
 
 - ファイル全体を対象にするのは、group の実行と展開の経路の関数がそのファイルに集まっており、関数を分けたり加えたりしても検証から漏れないようにするためである。`runner.go`・`resource`・`executor` は対象外の経路の関数を多く含むので、関数の単位で指定する。
+- 範囲の中でも、原因が構造を持つ原因を運びえないラップ（`internal/runner/config` のもの。01 対象外（#1197））は、前置きの全体を 1 つの `Text` にする（3.5.3 節）。
 - 関数の単位で指定した名前と、除く関数の名前は、ガードが実際のコードに見つかることを確かめる。名前を変えたり関数を消したりしたときに、黙って検証から外れないようにするためである。
 - `cmd/runner` の 4 か所は、`Message` と `Err` の欄の形なので、この範囲の検証ではなく、AC-34 のシナリオと 3.7 節の単体テストで確かめる。
 
@@ -717,7 +719,7 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 
 - **ラップの検査（AC-41）**: 3.8.1 節の範囲の中に、`fmt.Errorf`（`%w` の有無によらない）、`errors.Join`、定数式でない引数の `errors.New` の呼び出しが無いこと。範囲の中のファイルで `Unwrap` を宣言する型は、`StructuredMessage` も宣言すること。ラップせずに `err` をそのまま返すことは、原因の構造を変えないので許す。
 - **`Const` の検査（AC-24）**: 本番のコードの `errmsg.Const`・`errmsg.ConstSummary` の呼び出しの引数が、文字列リテラル、定数の名前、またはそれらを `+` でつないだ式であること。定数の名前は、同じパッケージの `const` 宣言に解決できるものに限り、解決できない名前は拒否する（fail-closed）。関数の呼び出し以外の使い方（`f := errmsg.Const` など）も拒否する。
-- **免除の役割の検査**: `errmsg.Ident`・`errmsg.Path` を呼べるのは、3.8.1 節の範囲の中と、`StructuredMessage`・`Parts` という名前のメソッドの中だけであること。`errmsg.PathErrorCause` を呼べるのは `(*DefaultTempDirManager).Create` の中だけであること。呼び出し以外の使い方は拒否する。
+- **免除の役割の検査**: `errmsg.Ident`・`errmsg.Path` を呼べるのは、3.8.1 節の範囲の中だけであること。`errmsg.PathErrorCause` を呼べるのは `(*DefaultTempDirManager).Create` の中だけであること。呼び出し以外の使い方は拒否する。
 - **文言と構造の一致**: 本番のコードで `StructuredMessage` を宣言する型の `Error()` の本体が、`return <受け手>.StructuredMessage().String()` の 1 文だけであること。`errmsg.Error` もこの形で書く。`*errmsg.Error` を埋め込んだ型が `Error()` を宣言することも拒否する。`StructuredMessage` という名前のメソッドを持つ型と埋め込みをたどって調べるので、型の一覧は保守しない。
 - **役割を選ぶ処理の禁止（AC-25）**: `internal/redaction` の本番のコードが、`errmsg.Role` の値を作らないこと（`errmsg.RoleText` などの定数の参照、`errmsg.Role(...)` の変換、`Segment` の `Role` 欄への代入が無いこと。`switch` の `case` での参照は読むだけなので許す）。redaction の側は役割を読むだけで、選べない。通知ビルダーとログ出力は `RedactingHandler` の後で描画済みの文字列だけを受け取る（2.1 節）ので、断片や役割に触れない。
 - **形による判定の禁止（AC-33）**: 既存の `TestProductionCodeDoesNotProbeMultiErrorShape` が、`internal/errmsg` と `internal/redaction` を含む本番のコード全体で、`Unwrap() []error` の形による判定が無いことを確かめている。`errmsg` の平らにする処理は、原因の型を `Structured` と `*fs.PathError` のアサーションだけで判定し、この形を見ない。
@@ -772,8 +774,8 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 | 状況 | 扱い |
 |---|---|
 | `StructuredMessage()` または原因の `Error()` が panic する | `RedactMessage` が回復してエラーを返す。`RedactingHandler` は `error_message` を `RedactionFailurePlaceholder` にし、失敗を `ErrorCollector` に記録する（3.2.3 節）。秘密の一部を含むかもしれない途中の描画は出さない |
-| `redactedRanges` の結果が `RedactText` と一致しない | 構造化メッセージを使わず、変更前と同じ扱い（描画結果の全体に `RedactText`、変化がなければ値全体置換）で描画し、失敗を記録する（3.2.1 節） |
-| 展開の深さが上限に達する | 残りの原因を `Error()` 全体の `Text` にし、Debug のログを出す（3.1.3 節・3.2.3 節）。`Text` は全段の redaction を受けるので、保護は弱まらない |
+| `redactedRanges` の結果が `RedactText` と一致しない | `RedactMessage` がエラーを返す。panic と同じく、`error_message` を `RedactionFailurePlaceholder` にし、失敗を `ErrorCollector` に記録する（3.2.1 節） |
+| 展開の深さが上限に達する | 残りの原因の `Error()` を呼ばず、固定の文言 `<truncated>` の `Text` にし、Debug のログを出す（3.1.3 節・3.2.3 節）。残りの原因の文字列は出ないので、保護は弱まらない |
 | `Config` が `NewConfig` を経ていない | `RedactText` と同じく `RedactionFailurePlaceholder` を返す |
 | nil の原因 | `<nil>` の `Text` にする。報告の途中で panic しない（3.1.1 節） |
 | 原因の部分が 1 つでない、または原因が nil の `NewError` | 呼び出し側の誤りとして、エラーを作る時点で panic する。`NewError` は構造化メッセージを作る時点で検査するので、記録の時点では起きない（CLAUDE.md「Reject, don't normalize」） |
@@ -794,7 +796,7 @@ stderr の `Details:` は `msg.String()` で作るので、`RedactMessage` の�
 | `Identifier` は免除 | 断片のバイトは常にそのまま出る。境界をまたぐ秘密のうち `Identifier` の断片に入る箇所も出る | 01 決定事項（承認済み） |
 | `Path` は値全体置換の対象外 | key=value・値形式の検出には当たる | 01 決定事項（承認済み）、0175 の `failed_file_paths` と同じ |
 | 値全体置換は断片ごと | 別の断片の語の巻き添えで隠れていた `Text` の断片が表示されうる | 01 決定事項（承認済み） |
-| 構造を持たないものは `Text` | 未対応の型・深さの上限・範囲外の役割 | 01 決定事項 |
+| 構造を持たないものは `Text` | 未対応の型・範囲外の役割。深さの上限では、残りの原因の代わりに固定の文言 `<truncated>` の `Text` を出す | 01 決定事項 |
 
 `Identifier` と `Path` を宣言できるのは、`errmsg` の構築関数を呼ぶコードだけであり、呼べる箇所は AST のガードで対象の範囲の中に限る（3.8.2 節）。利用者の入力（設定の値や OS の文言）から役割が選ばれることはない。
 
@@ -870,14 +872,13 @@ Legend: 2.1 節の Legend と同じ色分けを使う（青の円柱は入力の
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
     IN[("構造化メッセージ")]
     FL["Segments"]
     PP["断片ごとの redaction"]
     WH["redactedRanges"]
     VC{"RedactText と一致"}
-    LG["変更前の全体の redaction"]
+    ERR[("エラー")]
     CK{"境界の影響を受ける断片"}
     KEEP["断片ごとの結果"]
     MASK["隠すバイトの置換"]
@@ -887,25 +888,23 @@ flowchart TD
     FL --> PP
     FL --> WH
     WH --> VC
-    VC -->|"いいえ"| LG
+    VC -->|"いいえ"| ERR
     VC -->|"はい"| CK
     PP --> CK
     CK -->|"いいえ"| KEEP
     CK -->|"はい"| MASK
     KEEP --> OUT
     MASK --> OUT
-    LG --> OUT
 
-    class IN,OUT data
+    class IN,OUT,ERR data
     class FL,PP,WH,VC,CK,KEEP,MASK enhanced
-    class LG process
 ```
 
 矢印の意味: 矢印 A → B は、A の結果を使って B を行うことを表す。ラベルは判定の結果である。
 
-Legend: 2.1 節の Legend と同じ色分けを使う（青の円柱はデータ、緑は本タスクで加わる処理、橙は既存の処理）。
+Legend: 2.1 節の Legend と同じ色分けを使う（青の円柱はデータ、緑は本タスクで加わる処理）。
 
-`CK` の判定は断片ごとに行う。`Identifier` の断片は常に「いいえ」の側（そのまま出す）である。`KEEP` と `MASK` の結果は、断片の順に連結する。
+`VC` が「いいえ」のとき、`RedactMessage` はエラーを返し、呼び出し側は `error_message` を `RedactionFailurePlaceholder` にする（3.2.3 節）。`CK` の判定は断片ごとに行う。`Identifier` の断片は常に「いいえ」の側（そのまま出す）である。`KEEP` と `MASK` の結果は、断片の順に連結する。
 
 ### 6.2 例
 
@@ -927,13 +926,13 @@ Legend: 2.1 節の Legend と同じ色分けを使う（青の円柱はデータ
 
 ### 7.1 単体テスト
 
-- **`internal/errmsg`**: 平らにする規則（`Structured` の展開、構造を持たない原因、nil の原因、`PathErrorCause`、`IndentedCause` の末尾の除去が断片をまたぐ場合、深さの上限と `Truncated`）、`String()` と `Error()` の一致、`NewError` の到達性（`errors.Is`・`errors.AsType`）と拒否、AC-08。
+- **`internal/errmsg`**: 平らにする規則（`Structured` の展開、構造を持たない原因、nil の原因、`PathErrorCause`、`IndentedCause` の末尾の除去が断片をまたぐ場合、深さの上限と `Truncated`、自身を原因に持つ構造化エラーでも有限の段で止まること）、`String()` と `Error()` の一致、`NewError` の到達性（`errors.Is`・`errors.AsType`）と拒否、AC-08。AC-21: `RedactingHandler` を通らない標準のハンドラ（`slog.NewTextHandler` など）に `errmsg.Message` の属性を渡し、出力が `String()` と同じ文字列になること。
 - **`internal/redaction`**:
   - `redactedRanges`: 範囲を置換文字列に置き換えた結果が `RedactText` と一致すること（既存の `RedactText` のテストの入力の全体と、`RedactText` を基準にした差分のファジング）。残す範囲の種類（前置き、後ろのグループ、`urlCred` の `@`）と段の重なりの入力を含める。
-  - `RedactMessage`: AC-01〜04・07・36・37、実行時の検査で不一致のときに変更前の扱いに戻ること、panic の回復。01「テストの入力についての制約」に従い、1 つの層だけが反応する入力を使い、他の層だけでは入力が変わらないことを先に確かめる。AC-37 は検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに、各断片だけに redaction を適用しても秘密が見えたまま残ることを先に確かめる（design_carryover.md「テストの入力の細則」）。
+  - `RedactMessage`: AC-01〜04・07・36・37、実行時の検査で不一致のときにエラーを返すこと、panic の回復。01「テストの入力についての制約」に従い、1 つの層だけが反応する入力を使い、他の層だけでは入力が変わらないことを先に確かめる。AC-37 は検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに、各断片だけに redaction を適用しても秘密が見えたまま残ることを先に確かめる（design_carryover.md「テストの入力の細則」）。
   - AC-38: 断片の列を受け取る非公開の関数に、範囲外の役割を持つ断片を与える（3.2.2 節）。
   - ハンドラ: `errmsg.Message` の属性が文字列になって後段に渡ること（AC-20）、機密を示す属性名の下で値ごと置換されること（AC-07）、失敗が `ErrorCollector` に記録されること。
-- **各エラー型**: 構造化メッセージの役割の並び、`Error()` の文言が変更前と同じであること（AC-18）、ゼロ値の `Error()` が panic しないこと。`config` の `Level`・`Field` の `String()` が変更前の `fmt.Sprintf` の結果と同じであること。
+- **各エラー型**: 構造化メッセージの役割の並び、`Error()` の文言が変更前と同じであること（AC-18）、ゼロ値の `Error()` が panic しないこと。3.5.3 節の前置きを 1 つの `Text` にするラップの役割の並び（`Text`・原因）。`config` の `Level`・`Field` の `String()` が変更前の `fmt.Sprintf` の結果と同じであること。
 - **深さ**: 3.1.3 節の最も深い連鎖を組み立てて、深さが `maxDepth - 4` 以下であること。
 - **`cancelledRunError`**: 文言が `errors.Join(ctxErr, err)` と同じであること、到達性（AC-32）。
 
@@ -985,7 +984,7 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 | AC-12・AC-16・AC-31・AC-34 | 3.3〜3.7 | 7.2 |
 | AC-18 | 1.1、3.3〜3.7、4.3 | 7.1 各エラー型、3.8.2 文言と構造の一致 |
 | AC-19・AC-22・AC-23 | 3.3.3 | 7.3 |
-| AC-20・AC-21 | 3.1.1、3.2.3、4.2 | 7.1 ハンドラ |
+| AC-20・AC-21 | 3.1.1、3.2.3、4.2 | 7.1 ハンドラ、7.1 `errmsg` |
 | AC-24 | 3.1.1、3.8.2 | 7.4 |
 | AC-25 | 3.2.3、3.8.2 | 7.4 |
 | AC-26 | 5.4 | 文書の確認 |
