@@ -189,6 +189,9 @@ type slackRunSpec struct {
 	configBody  func(slackHost string) string
 	hashedFiles []string
 	runID       string
+	// dryRun requests a dry-run. The zero value keeps the default, which
+	// enforces hash verification.
+	dryRun bool
 }
 
 // runMainWithSlackMock drives the production reporting boundary
@@ -198,10 +201,10 @@ type slackRunSpec struct {
 // mock server's TLS client). stdout and stderr are captured with
 // captureStdoutStderr so a long report cannot fill a pipe and stall the run.
 //
-// The run always uses dryRun = false so hash verification is enforced. It
-// replaces process-wide state (package-level flag variables, the default
-// logger, the default hash directory, the handler factory), so a test that
-// calls it must not call t.Parallel.
+// The run defaults to dryRun = false so hash verification is enforced unless
+// the spec asks for a dry-run. It replaces process-wide state (package-level
+// flag variables, the default logger, the default hash directory, the handler
+// factory), so a test that calls it must not call t.Parallel.
 func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	t.Helper()
 
@@ -277,7 +280,7 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	logLevel = "info"
 	runLogDir := tu.SafeTempDir(t)
 	logDir = runLogDir
-	dryRun = false
+	dryRun = spec.dryRun
 	groups = ""
 	runID = ""
 

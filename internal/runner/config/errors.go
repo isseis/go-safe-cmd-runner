@@ -119,6 +119,10 @@ var (
 	// ErrNegativeTimeout indicates that a timeout value is negative
 	ErrNegativeTimeout = errors.New("timeout must not be negative")
 
+	// ErrNegativeOutputSizeLimit indicates that an output_size_limit value is
+	// negative. An accepted value is non-negative; 0 means unlimited.
+	ErrNegativeOutputSizeLimit = errors.New("output_size_limit must not be negative")
+
 	// ErrInvalidPath is returned when a path validation fails
 	ErrInvalidPath = errors.New("invalid path")
 

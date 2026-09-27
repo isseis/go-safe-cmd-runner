@@ -243,8 +243,8 @@
 
 - [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
 ### Phase 4: 負の `output_size_limit` の読み込み時の拒否
 
@@ -252,12 +252,12 @@
 
 **作業内容**:
 
-- [ ] `config/errors.go` に `ErrNegativeOutputSizeLimit` を追加する。
-- [ ] `config/validation.go` に `ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error` を追加する。`ValidateTimeouts`（`:191-222`）と同じ形で、グローバル・テンプレート・コマンドの負の値をすべて集め、値と設定箇所（テンプレート名、group 名・コマンド名と添字）を含む 1 つのエラーで返す。0・正の値・未指定は受け入れる。
-- [ ] `config/loader.go` の `loadConfigWithIncludes` で、`mergeTemplates` によるテンプレートの合流（`:85-91`）の後に `ValidateOutputSizeLimits(cfg)` を呼ぶ。include で取り込んだテンプレートの負の値もここで拒否される。`loadConfigInternal` には追加しない（取り込んだテンプレートがまだ合流していないため）。
-- [ ] `validation_test.go` に `TestValidateOutputSizeLimits` を追加し、グローバル・テンプレート・コマンドの負の値、0、正の値、未指定を表で確認する。
-- [ ] `loader_includes_test.go` に `TestLoadConfig_NegativeOutputSizeLimitValidation` を追加し、`LoadConfig` を通して主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値を拒否することを確かめる。`LoadConfigForTest` は include を処理しないため使わない。
-- [ ] `cmd/runner/integration_test_helpers.go` の `slackRunSpec` に `dryRun` フィールドを加え、`runMainWithSlackMock` の `dryRun = false` 固定（`:280`）をこの値に変える（既定は false とし、既存の呼び出し元の挙動を変えない）。`cmd/runner/integration_attribution_test.go` に `TestIntegration_NegativeOutputSizeLimitRejectedInDryRun` を追加し、負の `output_size_limit` を含む設定の dry-run が終了コード 1 で、stderr と `error_message` に値と設定箇所を含む読み込みエラー（`output_size_limit` の拒否）を出すことを確かめる（AC-27。dry-run ではもともと group が実行されないため、「どの group も実行されない」は判定に使わない）。
+- [x] `config/errors.go` に `ErrNegativeOutputSizeLimit` を追加する。
+- [x] `config/validation.go` に `ValidateOutputSizeLimits(cfg *runnertypes.ConfigSpec) error` を追加する。`ValidateTimeouts`（`:191-222`）と同じ形で、グローバル・テンプレート・コマンドの負の値をすべて集め、値と設定箇所（テンプレート名、group 名・コマンド名と添字）を含む 1 つのエラーで返す。0・正の値・未指定は受け入れる。
+- [x] `config/loader.go` の `loadConfigWithIncludes` で、`mergeTemplates` によるテンプレートの合流（`:85-91`）の後に `ValidateOutputSizeLimits(cfg)` を呼ぶ。include で取り込んだテンプレートの負の値もここで拒否される。`loadConfigInternal` には追加しない（取り込んだテンプレートがまだ合流していないため）。あわせて、合流後のテンプレートのマップを `ValidateOutputSizeLimits` の前に `ValidateTemplates(cfg)` で検証する。`ValidateTemplates` は `loadConfigInternal` で主のファイルのテンプレートにしか働かず、include のテンプレート名は `ValidateTemplateName` を通らないまま `ValidateOutputSizeLimits` のエラーの文言に生のまま現れうるためである。
+- [x] `validation_test.go` に `TestValidateOutputSizeLimits` を追加し、グローバル・テンプレート・コマンドの負の値、0、正の値、未指定を表で確認する。
+- [x] `loader_includes_test.go` に `TestLoadConfig_NegativeOutputSizeLimitValidation` を追加し、`LoadConfig` を通して主の設定ファイルの負の値と、`includes` で取り込んだテンプレートのファイルの負の値を拒否することを確かめる。`LoadConfigForTest` は include を処理しないため使わない。
+- [x] `cmd/runner/integration_test_helpers.go` の `slackRunSpec` に `dryRun` フィールドを加え、`runMainWithSlackMock` の `dryRun = false` 固定（`:280`）をこの値に変える（既定は false とし、既存の呼び出し元の挙動を変えない）。`cmd/runner/integration_attribution_test.go` に `TestIntegration_NegativeOutputSizeLimitRejectedInDryRun` を追加し、負の `output_size_limit` を含む設定の dry-run が終了コード 1 で、stderr と `error_message` に値と設定箇所を含む読み込みエラー（`output_size_limit` の拒否）を出すことを確かめる（AC-27。dry-run ではもともと group が実行されないため、「どの group も実行されない」は判定に使わない）。このテストは dry-run が実際に有効だったこと（dry-run の検証マネージャの生成記録）も確かめ、`dryRun` を無視する harness では失敗する。あわせて `TestIntegration_NegativeOutputSizeLimitPreventsExecution` を追加し、dry-run でない実行では読み込みで拒否され、失敗が `Failed to load the configuration:` の読み込みエラーであって `failed to execute group` を伴わない（どの group も実行されない）ことを確かめる（AC-27）。`TestLoadConfig_NonNegativeOutputSizeLimitAccepted` は 0・正の値と include のテンプレートが受け入れられることを確かめる。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`ValidateOutputSizeLimits` の呼び出しを外すと `TestLoadConfig_NegativeOutputSizeLimitValidation` の主設定ファイルの行が失敗すること、テンプレートの検査を外すと include の行が失敗することを確認する。
 
@@ -273,8 +273,8 @@
 
 **判定理由**: `ValidateTimeouts` と同じ形の検証関数と、その呼び出し位置の追加であり、検査内容は要件と設計（§3.6）に固定されている。テストは表の追加が中心で、未確定の実装判断が無い。
 
-- [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
-- [ ] PR を作成した
+- [x] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた（次ステップは新しいブランチで作業する）
 
@@ -565,7 +565,7 @@
 | AC-24 | Phase 5 | `test`: `internal/runner/output_capture_integration_test.go::TestRunner_ZeroOutputSizeLimitIntegration` |
 | AC-25 | Phase 6 | `test`: `errors_test.go::TestNewSizeLimitErrorPanicsOnNonPositiveLimit`。`static`: `errors_guard_test.go::TestProductionCaptureErrorLiteralsUseConstructors`（同一パッケージの構築経路の網羅。パッケージ外はコンパイラが拒否する） |
 | AC-26 | Phase 8 | `static`: `make verify-docs-checks`（`scripts/verification/check_output_limit_timeout_docs.sh` が日英の 0 の無制限と負の値の拒否の記述を検査する）。`manual`: 記載した各文を、Phase 5 の `TestRunner_ZeroOutputSizeLimitIntegration` と Phase 4 の `TestLoadConfig_NegativeOutputSizeLimitValidation` の内容と突き合わせてレビューする |
-| AC-27 | Phase 4 | `test`: `internal/runner/config/validation_test.go::TestValidateOutputSizeLimits`、`internal/runner/config/loader_includes_test.go::TestLoadConfig_NegativeOutputSizeLimitValidation`、`cmd/runner/integration_attribution_test.go::TestIntegration_NegativeOutputSizeLimitRejectedInDryRun` |
+| AC-27 | Phase 4 | `test`: `internal/runner/config/validation_test.go::TestValidateOutputSizeLimits`、`internal/runner/config/loader_includes_test.go::TestLoadConfig_NegativeOutputSizeLimitValidation`・`TestLoadConfig_NonNegativeOutputSizeLimitAccepted`、`cmd/runner/integration_attribution_test.go::TestIntegration_NegativeOutputSizeLimitRejectedInDryRun`（dry-run でも読み込みで拒否されること）、`TestIntegration_NegativeOutputSizeLimitPreventsExecution`（dry-run でない実行で読み込みエラーになり、どの group も実行されないこと） |
 | AC-28 | Phase 3 | `test`: `internal/runner/base/executor/output_pump_test.go::TestBoundedBuffer_KeepsCompletePrefixLines`（保持量が上限を超えないこと）、`internal/runner/base/executor/executor_test.go::TestExecute_OutputWriterReceivesAllBytes`・`TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly`・`TestExecute_NilOutputWriter_StdoutBoundedOnSuccess` |
 | AC-29 | Phase 3 | `test`: `TestBoundedBuffer_KeepsCompletePrefixLines`（完全な行への切り詰めと省略の印のバイト数）、`TestExecute_NilOutputWriter_BoundedStderrIsPrefixOnly`、`internal/runner/output_retention_integration_test.go::TestOutputRetention_SlackAndDebugFieldsFromBoundedOutput` |
 | AC-30 | Phase 8 | `static`: `make verify-docs-checks`（`check_output_limit_timeout_docs.sh` が日英の timeout 節の記述を検査する）。`manual`: 記載した各文を、Phase 7 の `TestRunner_CommandTimeoutNotifiesSubsequentGroups` と [02_architecture.md](02_architecture.md) §4.4 の内容と突き合わせてレビューする |
