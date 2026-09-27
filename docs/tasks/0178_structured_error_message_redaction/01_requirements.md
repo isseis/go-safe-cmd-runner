@@ -99,7 +99,7 @@
 ### 対象外
 
 - **その他の `pre_execution_error`**（設定の読み込み、global の展開、テンプレート検証、global 検証、`--groups` の指定誤りなど）。構造を持たない原因として現状と同じ保護を受ける。go-toml のエラー文言（`toml: key timeout is already defined` など）が値全体置換される点も含めて、必要なら別 issue で扱う。
-- **パス解決・依存ライブラリ検証・shebang 検証の内側のエラー、および外部ライブラリや OS のエラー。** 当初は `Text` のままとする。ただし、作業ディレクトリの解決の失敗（対象 4）の OS のエラーは除く。例えば依存検証の失敗では、要約文・コマンドパスは残り、依存ライブラリのパスを含む内側の原因だけが `[REDACTED]` になりうる。
+- **パス解決・依存ライブラリ検証・shebang 検証の内側のエラー、および外部ライブラリや OS のエラー。** 当初は `Text` のままとする。ただし、作業ディレクトリの解決の失敗（対象 4）の OS のエラーは除く。例えば依存検証の失敗では、要約文・コマンドパスは残り、依存ライブラリのパスを含む内側の原因だけが `[REDACTED]` になりうる。 dynlib・shebang 検証のエラー型の構造化は [#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196) で扱う。
 - **値全体置換のパターンの変更。** アンカーや単語境界の追加、特定の語句の除外は行わない（決定事項「検討して採らなかった案」）。
 - **`error_message` 以外の属性。** `slog.Error(..., "error", err)` のように error 型の値を持つ属性（`RedactingHandler.processError`）の扱いは変えない。
 - **最終報告の stderr の `Details:`。** redaction を通さない現状を維持する（決定事項を参照）。
@@ -133,7 +133,7 @@
 | ケース | 変更後 | 消える部分 |
 |---|---|---|
 | 未定義変数 `api_key` を生のテンプレート `%{api_key}` で参照（作業ディレクトリの展開の失敗も同じ） | `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
-| 依存検証の失敗で、原因に `libkeyutils.so.1` などのパスを含む | `Command verification failed: command dependency verification failed for "/usr/bin/curl": [REDACTED]` | 依存ライブラリのパスを含む内側の原因（dynlib 検証のエラーは構造化しない） |
+| 依存検証の失敗で、原因に `libkeyutils.so.1` などのパスを含む | `Command verification failed: command dependency verification failed for "/usr/bin/curl": [REDACTED]` | 依存ライブラリのパスを含む内側の原因（dynlib 検証のエラーは構造化しない。[#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196)） |
 | shebang 検証・パス解決の内側のエラーが語を含む | 要約文とコマンドパスは残る | 内側の原因 |
 
 ### 救われないケース
