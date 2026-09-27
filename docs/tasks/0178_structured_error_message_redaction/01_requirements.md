@@ -91,7 +91,7 @@
    - `GroupStageError`・`GroupErrors`・`GroupError`・`CommandExecutionError`
    - `group_executor.go` が `fmt.Errorf` で付加するエラー書式（group 名・コマンド名・コマンドパス・index を含むもの）と、コマンドの終了コードのエラー書式（`ErrCommandFailed` をラップするもの）
    - `config.ErrUndefinedVariableDetail`
-   - `ErrUndefinedVariableDetail` を AC-12・AC-34 の経路（`vars` の展開）で運ぶ中間のエラー書式。`config.ExpandGroup` の `failed to process group[%s] vars: %w`、`config.ExpandGlobal` の `failed to process global vars: %w`、`config.ExpandCommand` の `failed to process command[%s] vars: %w`（コマンドの準備の経路）の 3 つである。group 名・コマンド名は `Identifier`、固定の文言は `Constant` とする。
+   - `ErrUndefinedVariableDetail` を AC-12・AC-34・AC-40 の経路（`vars` の展開）で運ぶ中間のエラー書式。`config.ExpandGroup` の `failed to process group[%s] vars: %w`、`config.ExpandGlobal` の `failed to process global vars: %w`、`config.ExpandCommand` の `failed to process command[%s] vars: %w`（コマンドの準備の経路）の 3 つである。group 名・コマンド名は `Identifier`、固定の文言は `Constant` とする。
    - 作業ディレクトリの解決の失敗。group・コマンドの両方について、次の 3 種類を対象とする。
      - 変数の展開の失敗（`config.ExpandWorkDir` の `failed to expand workdir: %w`）
      - 相対パスの拒否（`config.ExpandWorkDir` の `ErrInvalidWorkDir`。group・コマンドの名前と展開後のパスを含む）
@@ -165,7 +165,7 @@
 - **stderr の `Details:`:** 変更前から redaction を通らず、原因の全文が出る。本タスクの前後で文言は変わらない。
 - **ログの設定前に報告される失敗:** 起動時の特権降格や `--run-id` の検証などは、変更前から redaction を通らない。
 - **語を含まない本文:** 変更前から値全体置換を受けず、変更後も同じ文字列になる（例: `undefined variable in command[upload].cmd: 'bin_dir' (context: %{bin_dir}/rclone)`）。
-- **秘密:** key=value、`Bearer `・`Basic ` の次の語、値形式の検出、属性名による判定でマスクされていた値は、どの部分にあっても変更後もマスクされる（`Identifier` の部分を除く。F-001）。
+- **秘密:** key=value、`Bearer `・`Basic ` の次の語、値形式の検出、属性名による判定でマスクされていた値は、どの部分にあっても変更後もマスクされる（`Identifier` の部分を除く。F-001）。部分の境界をまたいで検出される秘密でも、`Identifier` の部分のバイトはそのまま残り、それ以外の部分のバイトがマスクされる（決定事項「属性全体と部分の境界に効く保護」）。
 
 ## 決定事項
 
@@ -176,7 +176,7 @@
 | 役割 | 意味 | 適用する redaction |
 |---|---|---|
 | `Constant` | コードに書かれた固定の文言 | 部分単体には適用しない（部分をまたぐ検出は次節） |
-| `Identifier` | 設定で定義された名前（group 名・コマンド名・変数名） | 免除（`identifier.Identifier` と同じ） |
+| `Identifier` | 設定で定義された名前（group 名・コマンド名・変数名。変数名は、定義する側の名前と参照される側の名前の両方を含む） | 免除（`identifier.Identifier` と同じ） |
 | `Path` | ファイルシステム上のパス（コマンドパスなど） | `RedactText` のみ。値全体置換は適用しない |
 | `Text` | 上のどれにも当たらない自由文 | 現行の全段（`RedactText` と、変化がなければ値全体置換） |
 
@@ -187,7 +187,12 @@
 ### 属性全体と部分の境界に効く保護
 
 - 属性名による判定は、従来どおり部分より先に属性全体へ効かせる。機密を示す属性名の下では、構造化メッセージも値ごと置換する。
-- 部分の境界をまたぐ秘密の形式もマスクする。例えば `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値が連結されて key=value になる場合、値はマスクされる。この保証は key=value に限らず、`RedactText` が検出するすべての種類に及ぶ。すなわち、key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出（bearer トークン・PEM ブロック・AWS キー・GitHub トークンなど）である。一般には、redaction 前の描画結果（AC-18 の文言）全体に `RedactText` を適用したときにマスクされる範囲は、出力でもマスクされる。ただし、範囲がすべて 1 つの `Identifier` の部分の中にあるものは除く（F-001、変わらないケース「秘密」と同じ）。どの手段で満たすかは設計で決める。
+- 部分の境界をまたぐ秘密の形式もマスクする。例えば `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値が連結されて key=value になる場合、値はマスクされる。この保証は key=value に限らず、`RedactText` が検出するすべての種類に及ぶ。すなわち、key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出（bearer トークン・PEM ブロック・AWS キー・GitHub トークンなど）である。一般には、redaction 前の描画結果（AC-18 の文言）全体に `RedactText` を適用したときに置き換えられる範囲（以下「全体の検出範囲」）について、出力を次のように決める。どの手段で満たすかは設計で決める。
+  - 範囲がすべて 1 つの `Identifier` の部分の中にあるものは、マスクしない（F-001）。
+  - それ以外の範囲では、`Identifier` 以外の部分（`Constant`・`Path`・`Text`）のバイトを置き換え、`Identifier` の部分のバイトはそのまま出力する。範囲の中で `Identifier` 以外のバイトが連続する区間は、極大の区間ごとに 1 つの置換文字列になる。
+  - 例: `Identifier` の `AKIAIOSFODNN7` と `Text` の `EXAMPLE` が連結されて AWS キーの形になる場合、出力は `AKIAIOSFODNN7[REDACTED]` になる。
+  - 理由: `Identifier` の部分は、`identifier.Identifier` と同じく例外なく免除する（承認済みの扱い）。そのため AC-01 は例外なく成り立つ。表示されるのは、その `Identifier` が単独で置かれた場合にも表示されるバイトだけであり、`Identifier` の外にある秘密の断片はマスクされる。
+  - この規則により、境界をまたぐ秘密のうち `Identifier` の部分に含まれる断片は表示される。これは `Identifier` の免除の境界の一部として受け入れる。
 
 ### 値全体置換は部分ごとに判定する
 
@@ -236,13 +241,18 @@
 | `GroupError`・`CommandExecutionError`・`ExecutionError` の外側の context | group 名・コマンド名 | — | ラップした原因（同上） |
 | 終了コードのエラー書式 | コマンド名 | — | — |
 | `vars` の中間のエラー書式（`failed to process group[%s] vars: %w`・`failed to process global vars: %w`・`failed to process command[%s] vars: %w`） | group 名・コマンド名 | — | ラップした原因（構造を持たなければ） |
-| `config.ErrUndefinedVariableDetail` | 変数名・展開経路（`Chain`）の各変数名・`Level` に含まれる group・コマンドの名前 | — | 生のテンプレート（`Context`） |
+| `config.ErrUndefinedVariableDetail` | 参照された変数名（`VariableName`）・展開経路（`Chain`）の各変数名・`Level` に含まれる group・コマンドの名前・`Field` に含まれる定義側の変数名（`vars.<name>`・`vars.<name>[<index>]` の `<name>`） | — | 生のテンプレート（`Context`） |
 | 作業ディレクトリの相対パスの拒否 | group・コマンドの名前 | 展開後のパス | — |
 | 一時ディレクトリの作成・権限設定の失敗 | — | `*fs.PathError` の `Path` | `*fs.PathError` の `Op`・`Err` |
 | 中断時の最終エラー | — | — | 中断の原因（`ctx.Err()`）。失敗した group のエラーは、その型の宣言に従う |
 
 - 表に無い固定の文言は `Constant` とする。
-- 数値（index・終了コード・件数）の役割と、`ErrUndefinedVariableDetail` の `Field` の役割は、設計で決める。ただし `Constant` にできるのは定数式だけである。
+- 数値（index・終了コード・件数）の役割は、設計で決める。ただし `Constant` にできるのは定数式だけである。
+- `ErrUndefinedVariableDetail` の `Field` は、現在は 1 本の文字列である。コードが作る形は `vars.<name>`・`vars.<name>[<index>]`（`ProcessVars` から呼ばれる `expandVarsWithLazyResolution`）、`cmd`・`args[<index>]`・`env`・`workdir`・`verify_files[<index>]`・`cmd_allowed[<index>]` である。
+  - 固定のキーの文言（`vars.`・`cmd`・`args`・`env`・`workdir`・`verify_files`・`cmd_allowed`・`[`・`]`）は `Constant` とし、定数式から作る。
+  - 利用者が定義した変数名（`vars.<name>` の `<name>`）は `Identifier` とする。
+  - `Field` の中の index は、上の数値の規則に従う。
+  - 部分は、`Field` を組み立てるコード（`ProcessVars` の経路をはじめ、`Field` を作る各箇所）が組み立てるときに宣言する。組み立て済みの `Field` の文字列を後から解析して分けることはしない（「Declare, don't infer」）。
 - 生のテンプレートは、秘密が直書きされうるので `Text` とする。
 
 ### 描画後の本文
@@ -274,13 +284,14 @@
 - **AC-02**: `Path` の部分は、機密を示す語を含むだけ（例: `/usr/bin/ssh-keygen`・`/lib/x86_64-linux-gnu/libkeyutils.so.1`）では書き換えられない。
 - **AC-03**: `Path` の部分に `RedactText` が反応する値（key=value の形、値形式の検出に当たるトークン）が含まれるとき、その値はマスクされる。
 - **AC-04**: `Text` の部分は、`RedactText` が反応すればその結果になる。反応せず値全体置換に当たれば、その部分だけが `[REDACTED]` になり、同じ本文の他の部分は残る。
-- **AC-05**: `Constant` の部分は、機密を示す語を含んでも書き換えられない。
+- **AC-05**: 部分ごとの redaction では、`Constant` の部分は、機密を示す語を含んでも書き換えられない。ただし、部分の境界をまたぐ全体の検出範囲に含まれる `Constant` のバイトは、決定事項「属性全体と部分の境界に効く保護」の規則に従ってマスクされる。
 - **AC-06**: 部分の境界をまたいで key=value の形になる秘密（例: `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値）は、値がマスクされる。
 - **AC-07**: 機密を示す属性名の下に置かれた構造化メッセージは、値ごと置換される。
 - **AC-08**: 役割を明示しない部分（ゼロ値）は `Text` として扱われる。
 - **AC-36**: 値全体置換は `Text` の部分ごとに判定される。`Identifier` の部分だけが語を含み、`Text` の部分が語も形式も含まない本文では、`Text` の部分は書き換えられない。
-- **AC-37**: 部分の境界をまたいで `RedactText` のいずれかの検出（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）に当たる秘密は、マスクされる。例: `Constant` の `Bearer ` と `Text` の `opaque-credential`。判定の基準は、redaction 前の描画結果全体に `RedactText` を適用した結果とし、`Identifier` の部分の中の範囲は除く。
+- **AC-37**: 部分の境界をまたいで `RedactText` のいずれかの検出（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）に当たる秘密は、マスクされる。例: `Constant` の `Bearer ` と `Text` の `opaque-credential`。判定の基準は、redaction 前の描画結果全体に `RedactText` を適用した結果とする。範囲がすべて 1 つの `Identifier` の部分の中にあるものはマスクされない。それ以外の範囲では、`Identifier` の部分の外のバイトだけがマスクされる（決定事項「属性全体と部分の境界に効く保護」）。
 - **AC-38**: 4 つの役割のどれにも当たらない役割を持つ部分は、`Text` として扱われる。値全体置換だけが反応する入力では、その部分が置換文字列に置き換えられる。
+- **AC-39**: 値形式の検出に当たる値が `Identifier` の部分と `Text` の部分にまたがるとき（例: `Identifier` の `AKIAIOSFODNN7` と `Text` の `EXAMPLE`）、`Identifier` の部分は書き換えられずに描画され、`Text` の側の断片は置換文字列に置き換えられる。
 
 #### F-002: 構造を持たないエラーの保護
 
@@ -293,7 +304,7 @@
 
 **Acceptance Criteria**:
 - **AC-12**: 未定義の変数 `api_key` を参照する group の展開の失敗について、Slack の `Error Message` に、段階の要約文・group 名・変数名 `api_key` が出る。生のテンプレートの部分は、`Text` として扱われる。
-- **AC-13**: 名前が機密を示す語を含む group（例: `token-rotate`）の、group 実行前段の失敗（#1〜#7 のいずれか）について、Slack の `Error Message` に group 名が出て、本文全体は `[REDACTED]` にならない。
+- **AC-13**: 名前が機密を示す語を含む group（例: `token-rotate`）でディレクトリ権限の違反が検出されたとき、ディレクトリ権限監査の失敗の Slack の `Error Message` に、段階の要約文と、`for group[%s]` のエラー書式の group 名が出る。本文全体は `[REDACTED]` にならない。
 - **AC-14**: コマンドパスが機密を示す語を含むコマンド（例: `ssh-keygen`）のパス解決の失敗について、Slack の `Error Message` に要約文とコマンドパスが出る。内側の原因は `Text` として扱われる。
 - **AC-15**: 依存検証の失敗について、Slack の `Error Message` に要約文と解決済みのコマンドパスが出る。内側の原因（依存ライブラリのパスを含む）は `Text` として扱われる。
 - **AC-16**: 2 つの group が失敗し、一方の group 名が機密を示す語を含むとき、最終の実行エラーのレコードの `error_message` に、両方の group の名前と、構造を持つ原因の部分が出る。
@@ -303,6 +314,7 @@
 - **AC-30**: 作業ディレクトリの解決以外の経路で生じた `*fs.PathError` は、1 つの `Text` の部分として扱われる。
 - **AC-31**: 実行全体の中断と group の失敗が重なり、失敗した group の名前が機密を示す語を含むとき、最終の実行エラーのレコードの `error_message` に、中断の原因の文言と、失敗した group の宣言された部分（group 名など）が出る。
 - **AC-34**: global の展開で未定義の変数 `api_key` を参照したとき、Slack の `Error Message` に、`Failed to expand global configuration` と変数名 `api_key` が出る。対象 4 で `Err` へ付け替える 4 か所の `PreExecutionError.Detail()` の文言は、変更前と同じである。
+- **AC-40**: group の `vars` の展開の失敗で、定義する変数の名前が機密を示す語を含み（例: `token_file`）、その値が語を含まない未定義の変数（例: `dir`）を参照するとき、Slack の `Error Message` に `vars.token_file` が置き換えられずに出る。
 
 #### F-004: 既存の出力の維持
 
@@ -336,9 +348,18 @@
 ### テストの入力についての制約
 
 - 層ごとの効果を確かめるテストは、1 つの層だけが反応する入力を使う。値全体置換だけが反応する入力（例: 変数名 `api_key`、group 名 `monkey-test`）と、値形式の検出だけが反応する入力（例: GitHub トークン形式の値）を分けて用意する。そのうえで、他の層だけでは入力が変わらないことを先に確かめる。
-- AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34 は、エラーの発生元（group executor、または `cmd/runner` の global の展開）から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
-- AC-12・AC-34 の端から端までのテストは、`vars` の中の未定義変数を使う（対象 4 の `vars` の中間のエラー書式を通る経路）。
-- AC-06・AC-37 は、`RedactText` の検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに 1 回ずつ確かめる。各入力は、接頭辞または key と値を別の部分に分ける。そのうえで、各部分だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを先に確かめる。
+- AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34・AC-40 は、エラーの発生元（group executor、または `cmd/runner` の global の展開）から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
+- AC-12・AC-34・AC-40 の端から端までのテストは、`vars` の中の未定義変数を使う（対象 4 の `vars` の中間のエラー書式を通る経路）。AC-40 では、定義側の変数名（`Field` の中の名前）以外の本文だけでは値全体置換が起きないことを先に確かめる。
+- AC-06・AC-37 は、`RedactText` の検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに 1 回ずつ確かめる。各入力は、接頭辞または key と値を別の部分に分ける。AC-39 の入力は、値形式の検出に当たる値を `Identifier` の部分と `Text` の部分に分ける。AC-06・AC-37・AC-39 のいずれも、各部分だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを先に確かめる。
+- `group_executor.go` のエラー書式のうち、`Identifier` か `Path` の部分を持つものは、どれも少なくとも 1 つの AC の端から端までのテストで通す。対応は次のとおりである。
+  - group の展開の `failed to expand group[%s]`: AC-12・AC-40
+  - group の作業ディレクトリの解決の `failed to resolve work directory`: AC-28・AC-29（group の場合）
+  - コマンドの事前展開の `failed to pre-expand commands for group[%s]: command[%s] (index %d)`: AC-28（コマンドの作業ディレクトリの場合）
+  - ディレクトリ権限監査の `for group[%s]`: AC-13
+  - コマンドのパス解決の `for %q`: AC-14
+  - 依存検証の `for %q`: AC-15
+  - group のファイル検証は、エラー書式を付加しない。
+  - 防御用の `errUnhandledCheckSkipReason` の `… for path %s` は、設定の入力からは到達できない。そのため、端から端までの AC を置かず、役割の割り当ての表に従う（パスを `Path` とする）。
 
 ## Success Criteria（要件レベル）
 
