@@ -40,10 +40,11 @@ var captureErrorFields = []string{"typ", "path", "phase", "cause", "limit"}
 
 // TestProductionCaptureErrorLiteralsUseConstructors fixes the construction
 // forms of CaptureError and the field mutation that could bypass them. The
-// fields are unexported, so other packages cannot build one (the compiler
-// rejects it), but a same-package production file could still build the struct
-// or assign its fields directly; this go/ast guard is what keeps construction
-// in the two constructors.
+// fields are unexported, so another package cannot set them and cannot build a
+// size-limit error or a non-sentinel cause; but it can still write an empty
+// zero-value literal, and a same-package production file could build the
+// struct or assign its fields directly. The compiler alone does not confine
+// construction to the two constructors; this go/ast guard does.
 //
 //   - A composite literal naming CaptureError -- the qualified
 //     output.CaptureError{...} form anywhere, and the unqualified form inside
