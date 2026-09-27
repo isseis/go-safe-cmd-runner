@@ -379,12 +379,12 @@
 
 **作業内容**:
 
-- [ ] `04_global_level.ja.md` の「4.8 output_size_limit」に次を追記する。第 1 に、0 が無制限を表すこと、負の値は設定の読み込みで拒否されること（AC-26）。第 2 に、メモリ上に保持する出力には一定の上限（先頭の完全な行と省略の印）があり、上限を超えた出力の全体が必要なら出力ファイルを指定すること。第 3 に、出力ファイルに出力の全体が残るのは、コマンドが成功して出力が `output_size_limit` に収まったとき（または上限が 0 のとき）であること（AC-31）。0 が無制限である記述の典拠は Phase 5 の `TestCapture_WriteOutput` と `TestRunner_ZeroOutputSizeLimitIntegration`、負の値の拒否の典拠は Phase 4 の `TestValidateOutputSizeLimits`、保持の上限の典拠は Phase 3 の `TestBoundedBuffer_KeepsCompletePrefixLines` とする。
-- [ ] 同書の「4.1 timeout」の「動作の詳細」に、コマンドのタイムアウト後も後続の group が実行されること、既知の制限として、タイムアウトしたコマンドのプロセス（孫プロセスを含む）が残りうることを追記する（AC-30）。典拠は Phase 7 の `TestRunner_CommandTimeoutNotifiesSubsequentGroups` と [02_architecture.md](02_architecture.md) §4.4 とする。
-- [ ] 日本語版をコミットした後、`/mktrans` で `04_global_level.md` に反映し、新しく使った用語を `docs/translation_glossary.md` に登録する。
-- [ ] `scripts/verification/check_output_limit_timeout_docs.sh` を、既存の `check_pre_execution_notification_docs.sh` と同じ POSIX sh の形で追加する。日英の両方について、(a) 0 が無制限であることを述べる文、(b) 負の値が読み込みで拒否されることを述べる文、(c) タイムアウト後も後続の group が実行されることを述べる文、(d) タイムアウトしたプロセスが残りうることを述べる文、(e) メモリ上に保持する出力の上限と出力ファイルの指定を述べる文、のアンカー文字列が存在することを検査する。`make verify-docs-checks` が `check_*.sh` を列挙して実行するため、追加の登録は不要である。
-- [ ] `make verify-docs-checks`・`make test`・`make lint` が通ることを確認する。
-- [ ] `make verify-docs` を実行し、日英の見出し構造の比較が問題を報告しないことを確認する（横断検索チェックリスト）。
+- [x] `04_global_level.ja.md` の「4.8 output_size_limit」に次を追記する。第 1 に、0 が無制限を表すこと、負の値は設定の読み込みで拒否されること（AC-26）。第 2 に、メモリ上に保持する出力には一定の上限（先頭の完全な行と省略の印）があり、上限を超えた出力の全体が必要なら出力ファイルを指定すること。第 3 に、出力ファイルに出力の全体が残るのは、コマンドが成功して出力が `output_size_limit` に収まったとき（または上限が 0 のとき）であること（AC-31）。0 が無制限である記述の典拠は Phase 5 の `TestCapture_WriteOutput` と `TestRunner_ZeroOutputSizeLimitIntegration`、負の値の拒否の典拠は Phase 4 の `TestValidateOutputSizeLimits`、保持の上限の典拠は Phase 3 の `TestBoundedBuffer_KeepsCompletePrefixLines` とする。レビュー指摘により、失敗したコマンドの出力の全体は出力ファイルを指定しても復元できないこと（出力ファイルは失敗時に作成されない）も明記した。
+- [x] 同書の「4.1 timeout」の「動作の詳細」に、コマンドのタイムアウト後も後続の group が実行されること、既知の制限として、タイムアウトしたコマンドのプロセス（孫プロセスを含む）が残りうることを追記する（AC-30）。典拠は Phase 7 の `TestRunner_CommandTimeoutNotifiesSubsequentGroups` と [02_architecture.md](02_architecture.md) §4.4 とする。レビュー指摘により、「次のコマンドに進む」という既存の記述を、group の実行を止めるという実装（`executeAllCommands` は最初のエラーで返る）に合わせて直し、残りうる原因（孫プロセス / 直接の子プロセスの終了・回収失敗）を分けて書いた。
+- [x] 日本語版をコミットした後、`/mktrans` で `04_global_level.md` に反映し、新しく使った用語を `docs/translation_glossary.md` に登録する。
+- [x] `scripts/verification/check_output_limit_timeout_docs.sh` を、既存の `check_pre_execution_notification_docs.sh` と同じ POSIX sh の形で追加する。日英の両方について、(a) 0 が無制限であることを述べる文、(b) 負の値が読み込みで拒否されることを述べる文、(c) タイムアウト後も後続の group が実行されることを述べる文、(d) タイムアウトしたプロセスが残りうることを述べる文、(e) メモリ上に保持する出力の上限と出力ファイルの指定を述べる文、のアンカー文字列が存在することを検査する。`make verify-docs-checks` が `check_*.sh` を列挙して実行するため、追加の登録は不要である。(d) はレビュー指摘により、主語だけでなく「残りうる」という述語まで含むアンカーにして、主張を反転させても失敗するようにした。
+- [x] `make verify-docs-checks`・`make test`・`make lint` が通ることを確認する。
+- [x] `make verify-docs` を実行し、見出し構造の比較の結果を確認する。`compare_doc_structure` は見出し文字列を言語をまたいで literal に比較するツールであり、翻訳済みの対でも全 20 ファイルで `Missing in ...` を報告する（本 Phase 前からのベースラインで、本 Phase の変更に起因しない）。本 Phase で追加した見出しは日英で対称（各 2 つの `###`）であり、見出し数・コードブロック数の差分は変更前と同じである。この状況を §8 の横断検索チェックリストに記録した。
 
 **完了条件**: `make verify-docs-checks`・`make test`・`make lint` が通る。日英どちらかから (a)〜(e) のアンカーを外すと `check_output_limit_timeout_docs.sh` が非ゼロで終了することを確認する。
 
@@ -520,13 +520,13 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1。構築の AST ガード green）
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2。複数 group の帰属の統合テスト green）
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3。redaction の性質テストと保持の上限のテスト green）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4。dry-run の統合テスト green）
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5。0 の統合テスト green）
-- [ ] PR-6 マージ済み（対象ステップ: Phase 6。構築ガード green）
-- [ ] PR-7 マージ済み（対象ステップ: Phase 7。タイムアウト・中断・通知のテスト green）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1。構築の AST ガード green）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2。複数 group の帰属の統合テスト green）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3。redaction の性質テストと保持の上限のテスト green）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4。dry-run の統合テスト green）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5。0 の統合テスト green）
+- [x] PR-6 マージ済み（対象ステップ: Phase 6。構築ガード green）
+- [x] PR-7 マージ済み（対象ステップ: Phase 7。タイムアウト・中断・通知のテスト green）
 - [ ] PR-8 マージ済み（対象ステップ: Phase 8。`/mktrans` 済み、`make verify-docs-checks` green）
 - [ ] すべての AC が §7 の検証で green
 - [ ] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録
@@ -583,11 +583,11 @@
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
 - [x] `nilWriterStderrLimit` の旧名が、本番コード・テスト・コメントのどこにも残っていないこと（改名台帳。`make test` は識別子の参照だけを検出し、コメント中の旧名は検出しない）。
-- [ ] `docs/dev/architecture_design/security-architecture.md` と `security-architecture.ja.md` の §16（出力サイズ制限）が、0 を無制限とする記述と矛盾しないこと。同節は既に「Unlimited: Can disable limit by setting value to 0」としており、変更は不要と見込む（確認して、必要なら別タスクとして記録する）。
+- [x] `docs/dev/architecture_design/security-architecture.md` と `security-architecture.ja.md` の §16（出力サイズ制限）が、0 を無制限とする記述と矛盾しないこと。英語版は「Unlimited: Can disable limit by setting value to 0」、日本語版は「**無制限**: 値を0に設定することで制限を無効化可能（注意が必要）」としており、変更は不要であった。
 - [x] 本番コードの `errors.Is(..., context.Canceled)`・`errors.Is(..., context.DeadlineExceeded)` の使用箇所を列挙し、残る箇所が中断の判定に使われていないことを記録する（[02_architecture.md](02_architecture.md) §7.4。現状はタイムアウトのセキュリティログ `internal/runner/group_executor.go:629` と Slack 送信の再試行 `internal/logging/slack_sender.go:530` の 2 箇所）。`TestExecuteGroupsDoesNotBranchOnCancellationCause` は `executeGroups` の本体だけを固定するため、この列挙は手作業で行う。
-- [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使った用語（先頭の窓、省略の印など）の対訳が `/mktrans` により登録されていること。
-- [ ] 日英の `docs/user/toml_config/04_global_level.ja.md` と `04_global_level.md` の見出し構造が一致すること（`/mktrans` の反映後に `make verify-docs` を実行して確認する）。
-- [ ] `docs/dev/developer_guide/package_reference.md` に、`boundedBuffer`・`CaptureError`・`GroupErrors` の旧い説明が無いこと（現状の記述を確認し、直接矛盾する記述があれば同じ Phase で直す。無ければ変更しない）。
+- [x] `docs/translation_glossary.md` に、Phase 8 で新しく使った用語（先頭の窓 = leading window、省略の印 = omission marker、完全な行 = complete line）の対訳が `/mktrans` により登録されていること。
+- [x] 日英の `docs/user/toml_config/04_global_level.ja.md` と `04_global_level.md` の見出し構造が一致すること。`make verify-docs` を実行したところ、`compare_doc_structure` は見出し文字列を言語をまたいで literal に比較するツールであり、翻訳済みの対でも全 20 ファイルについて `Missing in ...` を報告した（本 Phase 前からのベースライン）。`04_global_level` の見出し数（JA=128、EN=124）とコードブロック数（JA=62、EN=60）の差は変更前と同じで、本 Phase で追加した見出しは日英で対称（各 2 つの `###`）である。ツールの literal 比較と翻訳対の扱いは本タスクの対象外なので、変更しない。
+- [x] `docs/dev/developer_guide/package_reference.md` に、`boundedBuffer`・`CaptureError`・`GroupErrors` の旧い説明が無いこと（`rg` で確認。該当する記述は無く、変更しない）。
 
 ---
 
