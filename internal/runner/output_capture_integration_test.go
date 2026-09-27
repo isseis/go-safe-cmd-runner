@@ -6,13 +6,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
+	securitytestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/security/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	resourcetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/resource/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -243,4 +253,89 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			mockRM.AssertExpectations(t)
 		})
 	}
+}
+
+// TestRunner_ZeroOutputSizeLimitIntegration runs a real command that writes
+// more than the executor's retained-output window with output_size_limit = 0
+// and an output file. The command must complete without a size-limit failure,
+// the output file must hold every byte, and the result's stdout must be bounded
+// and carry the omission marker.
+func TestRunner_ZeroOutputSizeLimitIntegration(t *testing.T) {
+	setupSafeTestEnv(t)
+
+	const bulk = 100 * 1024 // newline-free bytes, beyond the 64 KiB retained window
+	full := strings.Repeat("x", bulk)
+	outputFile := filepath.Join(t.TempDir(), "zero-limit.out")
+
+	script := fmt.Sprintf("head -c %d /dev/zero | tr -c x x", bulk)
+	retained, exitCode, finalizedPath := runZeroLimitCommand(t, outputFile, script)
+
+	require.Equal(t, 0, exitCode, "the command must finish without a size-limit failure")
+	assert.Contains(t, retained, "... omitting ", "the retained stdout must carry the omission marker")
+	assert.NotContains(t, retained, full, "the retained stdout must be bounded")
+	assert.Less(t, len(retained), bulk, "the retained stdout must be smaller than the output")
+
+	written, err := os.ReadFile(finalizedPath)
+	require.NoError(t, err, "the output file must exist")
+	assert.Equal(t, full, string(written), "the output file must hold every byte")
+}
+
+// runZeroLimitCommand runs script under sh through the real executor and
+// resource manager with output_size_limit = 0 and an output file. It returns
+// the retained stdout, the exit code, and the finalized output file path.
+func runZeroLimitCommand(t *testing.T, outputFile, script string) (stdout string, exitCode int, finalizedPath string) {
+	t.Helper()
+
+	exec := executor.NewDefaultExecutor()
+	mockValidator := new(securitytestutil.MockValidator)
+	pathResolver := &mockPathResolver{}
+	pathResolver.On("ResolvePath", mock.Anything).Return(func(path string) string { return path }, nil)
+
+	outputMgr := output.NewDefaultOutputCaptureManager(allowOutputWriteValidator{})
+	rm, err := resourcetestutil.NewDefaultResourceManager(
+		exec,
+		common.NewDefaultFileSystem(),
+		nil, // no privilege manager: the command carries no run_as
+		pathResolver,
+		slog.Default(),
+		resource.ExecutionModeNormal,
+		nil, // dry-run disabled
+		outputMgr,
+		0,
+	)
+	require.NoError(t, err)
+
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:          &runnertypes.ConfigSpec{},
+		Executor:        exec,
+		ResourceManager: rm,
+		Validator:       mockValidator,
+		RunID:           "test-run-zero-limit",
+	})
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+	mockValidator.On("ValidateCommandAllowed", mock.Anything, mock.Anything).Return(nil)
+	mockValidator.On("SanitizeOutputForLogging", mock.Anything).Return("")
+
+	limit, err := common.NewOutputSizeLimit(0)
+	require.NoError(t, err)
+
+	groupSpec := &runnertypes.GroupSpec{Name: "zero-limit-group"}
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name:       "writes-lots",
+			Cmd:        "/bin/sh",
+			Args:       []string{"-c", script},
+			OutputFile: &outputFile,
+			RiskLevel:  runnertypes.RiskLevelMediumPtr,
+		},
+		ExpandedCmd:              "/bin/sh",
+		ExpandedArgs:             []string{"-c", script},
+		EffectiveTimeout:         30,
+		EffectiveOutputSizeLimit: limit,
+	}
+
+	stdout, _, exitCode, err = ge.executeSingleCommand(
+		context.Background(), cmd, groupSpec, newDefaultRuntimeGroup(groupSpec), newDefaultRuntimeGlobal())
+	require.NoError(t, err, "a zero output size limit must not fail on size")
+	return stdout, exitCode, outputFile
 }

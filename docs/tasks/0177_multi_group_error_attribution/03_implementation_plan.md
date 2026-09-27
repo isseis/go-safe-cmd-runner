@@ -284,9 +284,9 @@
 
 **作業内容**:
 
-- [ ] `Capture.WriteOutput`（`capture.go:37-75`）を、`MaxSize == 0` のときサイズを比べずに書き込む形に変える（[02_architecture.md](02_architecture.md) §3.5）。
-- [ ] `capture_test.go` の `TestCapture_WriteOutput` に、`MaxSize` が 0 のとき大きなデータでもエラーを返さない行を加える（AC-23）。
-- [ ] `internal/runner/output_capture_integration_test.go` に `TestRunner_ZeroOutputSizeLimitIntegration` を追加する。`output_size_limit = 0` と出力ファイルを指定したコマンドに 64 KiB を超える出力を書かせ、出力サイズ超過で失敗せず、出力ファイルに全出力が書かれ、結果の stdout が上限付きで省略の印を含むことを確かめる（AC-24）。Phase 3 の後に行う。
+- [x] `Capture.WriteOutput`（`capture.go:37-75`）を、`MaxSize == 0` のときサイズを比べずに書き込む形に変える（[02_architecture.md](02_architecture.md) §3.5）。
+- [x] `capture_test.go` の `TestCapture_WriteOutput` に、`MaxSize` が 0 のとき大きなデータでもエラーを返さない行を加える（AC-23）。
+- [x] `internal/runner/output_capture_integration_test.go` に `TestRunner_ZeroOutputSizeLimitIntegration` を追加する。`output_size_limit = 0` と出力ファイルを指定したコマンドに 64 KiB を超える出力を書かせ、出力サイズ超過で失敗せず、出力ファイルに全出力が書かれ、結果の stdout が上限付きで省略の印を含むことを確かめる（AC-24）。Phase 3 の後に行う。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`MaxSize == 0` の判定を外すと `TestCapture_WriteOutput` の 0 の行と `TestRunner_ZeroOutputSizeLimitIntegration` が失敗することを確認する。
 
