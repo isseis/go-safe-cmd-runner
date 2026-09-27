@@ -790,10 +790,10 @@ func TestExecutionErrorContext(t *testing.T) {
 			wantCommand: "cmd-a",
 		},
 		{
-			// The timeout's cause is joined; the GroupError carries the same
-			// names a single command failure used to.
+			// The inner error carries different names, so only the
+			// GroupErrors lookup can produce the expected context.
 			name:        "one group failure from a command timeout",
-			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", timeoutErr("group-a", "cmd-a"))),
+			err:         groupErrs(runner.NewGroupErrorForTest("group-a", "cmd-a", timeoutErr("inner-group", "inner-cmd"))),
 			wantGroup:   "group-a",
 			wantCommand: "cmd-a",
 		},
@@ -806,7 +806,9 @@ func TestExecutionErrorContext(t *testing.T) {
 		},
 		{
 			// A timeout after another group's failure no longer discards it,
-			// so there are two failures and no single outer context.
+			// so there are two failures and no single outer context. The
+			// decision reads only the count, so this row documents the
+			// timeout case rather than adding a separate check.
 			name: "a failure then a command timeout leave the context empty",
 			err: groupErrs(
 				runner.NewGroupErrorForTest("group-a", "cmd-a", cmdErr("group-a", "cmd-a")),

@@ -474,7 +474,10 @@ const executeGroupsFile = "internal/runner/runner.go"
 // group's error carries context.Canceled or context.DeadlineExceeded: a
 // command's own timeout carries DeadlineExceeded without the run being
 // cancelled. The body of executeGroups must not reference either sentinel.
-// The recognizer rows keep the scan from becoming a no-op.
+// The recognizer rows keep the scan from becoming a no-op. Only the body of
+// executeGroups is scanned: a check moved into a helper it calls is not
+// detected, so the remaining production uses of the sentinels are reviewed by
+// hand.
 func TestExecuteGroupsDoesNotBranchOnCancellationCause(t *testing.T) {
 	t.Run("production executeGroups", func(t *testing.T) {
 		src := identitymutationguard.ReadProductionSource(t, executeGroupsFile)

@@ -3099,6 +3099,11 @@ func TestRunner_ExecuteGroupsCollectsCommandTimeout(t *testing.T) {
 	assert.Equal(t, []string{"group-1"}, groupNames(t, err))
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.NotErrorIs(t, err, context.Canceled)
+	// The command name is read from the timeout's *CommandExecutionError, so a
+	// lone timeout keeps the outer context it had before.
+	groupErrs, ok := errors.AsType[*GroupErrors](err)
+	require.True(t, ok)
+	assert.Equal(t, "slow", groupErrs.Errors()[0].CommandName())
 }
 
 // TestRunner_ExecuteGroupsCollectsFailureThenTimeout fixes that a timeout does
@@ -3129,6 +3134,8 @@ func TestRunner_ExecuteGroupsStopsOnRunContextCancellation(t *testing.T) {
 		groupFailure{group: "group-1", err: signalled, cancelRun: true},
 		groupFailure{group: "group-2"})
 
+	// The between-groups check alone would also keep group-2 from running;
+	// the assertions below pin the check made right after the group returns.
 	assert.Equal(t, []string{"group-1"}, executed, "no group may run after the run is cancelled")
 	assert.ErrorIs(t, err, context.Canceled)
 	_, isGroupErrs := errors.AsType[*GroupErrors](err)
