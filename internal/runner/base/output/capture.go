@@ -38,14 +38,11 @@ func (c *Capture) WriteOutput(data []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// Only 0 means unlimited (see common.OutputSizeLimit); a negative MaxSize that bypassed PrepareOutput must fail closed, not become unlimited.
+	// Only 0 means unlimited (see common.OutputSizeLimit); a negative MaxSize
+	// that bypassed PrepareOutput must fail closed, not become unlimited. It
+	// reaches newSizeLimitError, which rejects the non-positive limit.
 	if c.MaxSize != 0 && c.CurrentSize+int64(len(data)) > c.MaxSize {
-		err := &CaptureError{
-			Type:  ErrorTypeSizeLimit,
-			Path:  c.OutputPath,
-			Phase: PhaseExecution,
-			Cause: ErrOutputSizeExceeded,
-		}
+		err := newSizeLimitError(c.OutputPath, c.MaxSize)
 		if c.Logger != nil {
 			c.Logger.Error("Output size limit exceeded",
 				"output_path", c.OutputPath,
@@ -61,12 +58,7 @@ func (c *Capture) WriteOutput(data []byte) error {
 	if c.FileHandle != nil {
 		n, err := c.FileHandle.Write(data)
 		if err != nil {
-			return &CaptureError{
-				Type:  ErrorTypeFileSystem,
-				Path:  c.OutputPath,
-				Phase: PhaseExecution,
-				Cause: err,
-			}
+			return newFileSystemError(c.OutputPath, err)
 		}
 		c.CurrentSize += int64(n)
 	}

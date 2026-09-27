@@ -362,6 +362,7 @@ func newFileSystemError(path string, cause error) *CaptureError
   - `Capture.WriteOutput` のサイズ超過は `newSizeLimitError(c.OutputPath, c.MaxSize)` で作る。構築関数が種類・段階（`PhaseExecution`）・原因（`ErrOutputSizeExceeded`）を決めるので、サイズ超過の原因が常にセンチネルであることを 1 箇所で保証する。`newSizeLimitError` は上限値が 0 以下なら panic する。
   - 書き込み失敗は `newFileSystemError(c.OutputPath, err)` で作る。種類は `ErrorTypeFileSystem`、段階は `PhaseExecution` に固定する。
   - フィールドが非公開なので、パッケージの外からは、上限値が 0 以下のサイズ超過のエラーも、原因がセンチネルでないサイズ超過のエラーも作れない。不変条件は、本番の経路がたまたま構築関数を呼んでいることではなく、コンパイラが保証する（CLAUDE.md「Enforce invariants with the type」）。本番でこの panic に届く入力は無い。
+  - ただし、空の複合リテラル `output.CaptureError{}` はパッケージの外でもコンパイルできる（種類の既定値は `ErrorTypePathValidation` で、サイズ超過のエラーにはならない）。本番ファイルからの構築はコンパイラでは防げないので、`errors_guard_test.go` の `TestProductionCaptureErrorLiteralsUseConstructors` が値・ポインタ・elided・位置指定の複合リテラルと `new(CaptureError)` をリポジトリ全体で拒否する。
   - 上限 0 では、上の項目のとおり比較しないので呼ばれない。
   - 負の上限は、設定の読み込みで拒否される（§3.6）。
   - 本番で `Capture` を作るのは `DefaultOutputCaptureManager.PrepareOutput`（`internal/runner/base/output/manager.go:98-106`、`:122-130`）だけで、その `maxSize` は検証済みの設定から来る（`normal_manager.go:244-251`）。`Capture` はフィールドが公開された構造体なので、テストが負の `MaxSize` で作ることはできる。panic の影響は §4.5 を参照。
@@ -481,7 +482,8 @@ Slack の欄の値は、監査ログの `stdout`・`stderr`（`internal/runner/b
 | `internal/logging/pre_execution_error_test.go:43-48`、`:70-80` | `Detail()` が `UserMessage` を優先すること、`errors.Join` の子を分けること | `friendlyTestError`（`Error()` と `UserMessage()` が異なる型）は残し、期待値を `Error()` の文言に反転する |
 | `internal/logging/pre_execution_error_test.go:609-640` `TestHandleExecutionError_CauseFormatting` | `HandleExecutionError` が `UserMessage` を使うこと | 同上。期待値を `Error()` の文言に反転する |
 | `internal/runner/base/output/errors_test.go` の `TestCaptureError`（`:21`）・`TestCaptureErrorInterface`（`:162`） | 公開のフィールドを持つリテラルで作った `CaptureError` の文言と `Unwrap`。サイズ超過は旧文言（`:74-86`） | 構築関数で作り直す（§3.5）。サイズ超過は新しい文言と上限値に更新し `newSizeLimitError` で、書き込み失敗は `newFileSystemError` で作る。構築関数の無い種類の行は、同じパッケージのテスト専用の構築関数で作り、文言が変わらないこと（AC-18）を確かめる |
-| `internal/runner/base/output/capture_test.go:205` | サイズ超過のエラーの `Type` フィールド | 非公開のフィールドを読む形に更新する（同じパッケージなので読める） |
+| `internal/runner/base/output/capture_test.go` のサイズ超過の行 | サイズ超過のエラーの `Type` フィールド | 非公開のフィールドを読む形に更新し、`errors.Is(err, ErrOutputSizeExceeded)` と `limit` が `MaxSize` に一致することを加える（同じパッケージなので読める。行番号は Phase 5 の追記でずれている） |
+| `internal/runner/base/output/capture_test.go` の負の `MaxSize` の行 | 負の上限の書き込みがサイズ超過として拒否されること | `newSizeLimitError` が 0 以下を拒否するため、`WriteOutput` が panic し、サイズが変わらないことの検証に書き換える。本番の入力からは panic に届かない（§3.5・§4.5）。この行は PR-5 のレビュー修正で追加されたもので、本設計時に想定していなかった |
 | `internal/runner/runner_test.go:2831-2842` `TestRunner_CancellationSkipsStageNotification` | モックが `context.Canceled`・`DeadlineExceeded` を原因に持つ段階のエラーを返すと、実行前段の通知をしないこと | モックのエラーを返すときに実行全体の context を取り消すように変える。取り消さない場合は通知されることを別の行で検証する |
 | `internal/runner/base/executor/output_pump_test.go:343-345` | stderr の上限が出力ファイルの有無で 0（上限なし）と 32 KiB に分かれること | 出力ファイルの有無によらず stdout・stderr の上限が同じであることの検証に更新する |
 | `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の変更に合わせて更新する（コンパイラが検出する） |
@@ -825,7 +827,7 @@ flowchart LR
 | AC-35, AC-36 | §3.2、§4.2、§4.3、§6.3 | §7.1（`executeGroups`） |
 | AC-22 | §3.3 | §7.1（`executionErrorContext`） |
 | AC-23, AC-24 | §3.5 | §7.1（`CaptureError`・`Capture`）、§7.2 |
-| AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`）、コンパイラ（非公開のフィールド） |
+| AC-25 | §3.5、§4.5 | §7.1（`CaptureError`・`Capture`）。`static`: `errors_guard_test.go::TestProductionCaptureErrorLiteralsUseConstructors`（空の複合リテラルはパッケージ外でもコンパイルできるため、ガードで拒否する） |
 | AC-26 | §3.8 | §7.4 |
 | AC-27 | §3.6 | §7.1（`ValidateOutputSizeLimits`）、§7.2 |
 | AC-28, AC-29 | §3.7、§4.3、§4.4、§5.1 | §7.1（`boundedBuffer`、行の境目での切断の性質、出力ポンプ）、§7.2（Slack の欄とデバッグログを含む） |
