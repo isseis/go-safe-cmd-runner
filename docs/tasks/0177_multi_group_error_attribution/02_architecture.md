@@ -481,7 +481,8 @@ Slack の欄の値は、監査ログの `stdout`・`stderr`（`internal/runner/b
 | `internal/logging/pre_execution_error_test.go:43-48`、`:70-80` | `Detail()` が `UserMessage` を優先すること、`errors.Join` の子を分けること | `friendlyTestError`（`Error()` と `UserMessage()` が異なる型）は残し、期待値を `Error()` の文言に反転する |
 | `internal/logging/pre_execution_error_test.go:609-640` `TestHandleExecutionError_CauseFormatting` | `HandleExecutionError` が `UserMessage` を使うこと | 同上。期待値を `Error()` の文言に反転する |
 | `internal/runner/base/output/errors_test.go` の `TestCaptureError`（`:21`）・`TestCaptureErrorInterface`（`:162`） | 公開のフィールドを持つリテラルで作った `CaptureError` の文言と `Unwrap`。サイズ超過は旧文言（`:74-86`） | 構築関数で作り直す（§3.5）。サイズ超過は新しい文言と上限値に更新し `newSizeLimitError` で、書き込み失敗は `newFileSystemError` で作る。構築関数の無い種類の行は、同じパッケージのテスト専用の構築関数で作り、文言が変わらないこと（AC-18）を確かめる |
-| `internal/runner/base/output/capture_test.go:205` | サイズ超過のエラーの `Type` フィールド | 非公開のフィールドを読む形に更新する（同じパッケージなので読める） |
+| `internal/runner/base/output/capture_test.go` のサイズ超過の行 | サイズ超過のエラーの `Type` フィールド | 非公開のフィールドを読む形に更新し、`errors.Is(err, ErrOutputSizeExceeded)` と `limit` が `MaxSize` に一致することを加える（同じパッケージなので読める。行番号は Phase 5 の追記でずれている） |
+| `internal/runner/base/output/capture_test.go` の負の `MaxSize` の行 | 負の上限の書き込みがサイズ超過として拒否されること | `newSizeLimitError` が 0 以下を拒否するため、`WriteOutput` が panic し、サイズが変わらないことの検証に書き換える。本番の入力からは panic に届かない（§3.5・§4.5）。この行は PR-5 のレビュー修正で追加されたもので、本設計時に想定していなかった |
 | `internal/runner/runner_test.go:2831-2842` `TestRunner_CancellationSkipsStageNotification` | モックが `context.Canceled`・`DeadlineExceeded` を原因に持つ段階のエラーを返すと、実行前段の通知をしないこと | モックのエラーを返すときに実行全体の context を取り消すように変える。取り消さない場合は通知されることを別の行で検証する |
 | `internal/runner/base/executor/output_pump_test.go:343-345` | stderr の上限が出力ファイルの有無で 0（上限なし）と 32 KiB に分かれること | 出力ファイルの有無によらず stdout・stderr の上限が同じであることの検証に更新する |
 | `newOutputPump` を呼ぶテスト（`output_pump_test.go:139`、`:194`、`:220`、`:269`、`:287`、`:302`、`:355`、`executor_lifecycle_test.go:362`） | 現在の引数で出力ポンプを作ること | 引数の変更に合わせて更新する（コンパイラが検出する） |

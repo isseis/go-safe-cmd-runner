@@ -313,13 +313,13 @@
 
 **作業内容**:
 
-- [ ] `CaptureError` のフィールドを非公開（`typ`・`path`・`phase`・`cause`・`limit`）にし、メソッドの受け手をポインタにそろえる。`Error()` は宣言された `typ` で分岐し、`ErrorTypeSizeLimit` のときだけ段階・パス・上限値を含む文言を返して原因の文言を付けない。それ以外の種類は変更前と同じ文言を返す（AC-16・AC-18）。
-- [ ] 構築関数 `newSizeLimitError(path string, limit int64) *CaptureError`（種類 `ErrorTypeSizeLimit`・段階 `PhaseExecution`・原因 `ErrOutputSizeExceeded` を固定し、`limit` が 0 以下で panic する）と `newFileSystemError(path string, cause error) *CaptureError`（種類 `ErrorTypeFileSystem`・段階 `PhaseExecution`）を追加する。`Unwrap()` は引き続き原因を返し、`errors.Is(err, ErrOutputSizeExceeded)` が成り立つ。
-- [ ] `capture.go` のサイズ超過を `newSizeLimitError(c.OutputPath, c.MaxSize)`、書き込み失敗を `newFileSystemError(c.OutputPath, err)` に変える。
-- [ ] `GetType`・`GetPath` を削除する（`UserMessage` は Phase 2 で削除済み）。パッケージ外にアクセサを加えない。
-- [ ] `errors_test.go` の `TestCaptureError`・`TestCaptureErrorInterface` を構築関数で作り直す。サイズ超過は新しい文言と上限値、書き込み失敗は `newFileSystemError` を使う。構築関数の無い種類（`ErrorTypePathValidation`・`ErrorTypePermission`・`ErrorTypeCleanup`）の行は、このテストファイル内のテスト専用の構築関数で作り、文言が変わらないことを確かめる（AC-18）。`TestNewSizeLimitErrorPanicsOnNonPositiveLimit` を追加する（AC-25）。
-- [ ] `capture_test.go:205` の `.Type` の読み取りを非公開フィールドの読み取りに更新する（同じパッケージなので読める）。
-- [ ] `errors_guard_test.go` に `TestProductionCaptureErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を `ProductionGoFilesInRepo` で拒否し、`.typ`・`.path`・`.phase`・`.cause`・`.limit` の代入・インクリメントは `internal/runner/base/output` 直下の本番ファイルに限って拒否する。検出器自身は `TestCaptureErrorConstructionCheckRecognizesForms` で各形を固定する）と `TestCaptureErrorHasNoLegacyAccessors`（本番ファイルに `CaptureError` の `GetType`・`GetPath` の宣言が無いこと）を追加する。
+- [x] `CaptureError` のフィールドを非公開（`typ`・`path`・`phase`・`cause`・`limit`）にし、メソッドの受け手をポインタにそろえる。`Error()` は宣言された `typ` で分岐し、`ErrorTypeSizeLimit` のときだけ段階・パス・上限値を含む文言を返して原因の文言を付けない。それ以外の種類は変更前と同じ文言を返す（AC-16・AC-18）。
+- [x] 構築関数 `newSizeLimitError(path string, limit int64) *CaptureError`（種類 `ErrorTypeSizeLimit`・段階 `PhaseExecution`・原因 `ErrOutputSizeExceeded` を固定し、`limit` が 0 以下で panic する）と `newFileSystemError(path string, cause error) *CaptureError`（種類 `ErrorTypeFileSystem`・段階 `PhaseExecution`）を追加する。`Unwrap()` は引き続き原因を返し、`errors.Is(err, ErrOutputSizeExceeded)` が成り立つ。
+- [x] `capture.go` のサイズ超過を `newSizeLimitError(c.OutputPath, c.MaxSize)`、書き込み失敗を `newFileSystemError(c.OutputPath, err)` に変える。
+- [x] `GetType`・`GetPath` を削除する（`UserMessage` は Phase 2 で削除済み）。パッケージ外にアクセサを加えない。
+- [x] `errors_test.go` の `TestCaptureError`・`TestCaptureErrorInterface` を構築関数で作り直す。サイズ超過は新しい文言と上限値、書き込み失敗は `newFileSystemError` を使う。構築関数の無い種類（`ErrorTypePathValidation`・`ErrorTypePermission`・`ErrorTypeCleanup`）の行は、このテストファイル内のテスト専用の構築関数で作り、文言が変わらないことを確かめる（AC-18）。`TestNewSizeLimitErrorPanicsOnNonPositiveLimit` を追加する（AC-25）。
+- [x] `capture_test.go` の `.Type` の読み取りを非公開フィールドの読み取りに更新し、サイズ超過の行では `errors.Is(err, ErrOutputSizeExceeded)` と `limit` が `MaxSize` に一致することも確かめる（同じパッケージなので非公開フィールドを読める）。負の `MaxSize` の行は、`newSizeLimitError` が 0 以下を拒否するようになったため（構築関数の panic）、「書き込みが拒否される」から「構築関数が panic し、サイズが変わらない」へ書き換える（PR-5 のレビュー修正で追加された行であり、Phase 6 の計画時に想定していなかった。§3.5 のとおり、本番の入力からは panic に届かない）。
+- [x] `errors_guard_test.go` に `TestProductionCaptureErrorLiteralsUseConstructors`（複合リテラルの値形・ポインタ形・elided 形・位置指定形を `ProductionGoFilesInRepo` で拒否し、`.typ`・`.path`・`.phase`・`.cause`・`.limit` の代入・インクリメントは `internal/runner/base/output` 直下の本番ファイルに限って拒否する。検出器自身は `TestCaptureErrorConstructionCheckRecognizesForms` で各形を固定する）と `TestCaptureErrorHasNoLegacyAccessors`（本番ファイルに `CaptureError` の `GetType`・`GetPath` の宣言が無いこと）を追加する。
 
 **完了条件**: `make fmt`・`make test`・`make lint` が通る。`newSizeLimitError` の panic を外すと `TestNewSizeLimitErrorPanicsOnNonPositiveLimit` が失敗すること、`errors.go` に直接リテラルを置く／`.limit` に代入すると `TestProductionCaptureErrorLiteralsUseConstructors` が失敗すること、`GetType` を戻すと `TestCaptureErrorHasNoLegacyAccessors` が失敗することを確認する。
 

@@ -72,6 +72,7 @@ func TestCapture_WriteOutput(t *testing.T) {
 		setupFunc   func() (*Capture, func(), error)
 		data        []byte
 		wantError   bool
+		wantPanic   bool
 		errorType   ErrorType
 		wantWritten int64
 	}{
@@ -218,7 +219,7 @@ func TestCapture_WriteOutput(t *testing.T) {
 			wantWritten: int64(len(unlimitedData)),
 		},
 		{
-			name: "negative max size rejects the write instead of meaning unlimited",
+			name: "negative max size panics instead of meaning unlimited",
 			setupFunc: func() (*Capture, func(), error) {
 				tmpFile, err := os.CreateTemp("", "capture_test_*.tmp")
 				if err != nil {
@@ -239,8 +240,7 @@ func TestCapture_WriteOutput(t *testing.T) {
 				return capture, cleanup, nil
 			},
 			data:      []byte("x"),
-			wantError: true,
-			errorType: ErrorTypeSizeLimit,
+			wantPanic: true,
 		},
 	}
 
@@ -251,13 +251,23 @@ func TestCapture_WriteOutput(t *testing.T) {
 			defer cleanup()
 
 			initialSize := capture.CurrentSize
+			if tt.wantPanic {
+				assert.Panics(t, func() { _ = capture.WriteOutput(tt.data) },
+					"a non-positive max size must be rejected by the constructor")
+				assert.Equal(t, initialSize, capture.CurrentSize, "a panicking write must not change the size")
+				return
+			}
 			err = capture.WriteOutput(tt.data)
 
 			if tt.wantError {
 				assert.Error(t, err)
 				var captureErr *CaptureError
 				assert.ErrorAs(t, err, &captureErr)
-				assert.Equal(t, tt.errorType, captureErr.Type)
+				assert.Equal(t, tt.errorType, captureErr.typ)
+				if tt.errorType == ErrorTypeSizeLimit {
+					assert.ErrorIs(t, err, ErrOutputSizeExceeded)
+					assert.Equal(t, capture.MaxSize, captureErr.limit)
+				}
 				// Size should not change on error
 				assert.Equal(t, initialSize, capture.CurrentSize)
 			} else {

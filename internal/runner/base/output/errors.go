@@ -71,43 +71,78 @@ func (p ExecutionPhase) String() string {
 	}
 }
 
-// CaptureError represents an error that occurred during output capture
+// CaptureError represents an error that occurred during output capture. Its
+// fields are unexported, so a value is built only through the constructors
+// below; the compiler rejects construction from any other package.
 type CaptureError struct {
-	Type  ErrorType      // Type of error
-	Path  string         // File path related to the error
-	Phase ExecutionPhase // Execution phase when error occurred
-	Cause error          // Underlying cause of the error
+	typ   ErrorType      // kind of error
+	path  string         // file path related to the error
+	phase ExecutionPhase // execution phase when the error occurred
+	cause error          // underlying cause
+	limit int64          // size limit in bytes; set only for ErrorTypeSizeLimit
 }
 
-// Error implements the error interface
-func (e CaptureError) Error() string {
-	if e.Cause == nil {
-		return fmt.Sprintf("output capture error during %s: %s for '%s'",
-			e.Phase.String(),
-			e.Type.String(),
-			e.Path)
+// Error implements the error interface. A size-limit error names the phase,
+// the output path and the limit that was exceeded, and does not append its
+// cause: the cause is the ErrOutputSizeExceeded sentinel, which states the
+// same fact. Every other kind keeps the generic
+// "output capture error during <phase>: <type> for '<path>'" text with its
+// cause appended.
+func (e *CaptureError) Error() string {
+	switch e.typ {
+	case ErrorTypeSizeLimit:
+		return fmt.Sprintf("output capture error during %s: output size limit exceeded for '%s' (limit: %d bytes)",
+			e.phase.String(),
+			e.path,
+			e.limit)
+	default:
+		if e.cause == nil {
+			return fmt.Sprintf("output capture error during %s: %s for '%s'",
+				e.phase.String(),
+				e.typ.String(),
+				e.path)
+		}
+
+		return fmt.Sprintf("output capture error during %s: %s for '%s': %v",
+			e.phase.String(),
+			e.typ.String(),
+			e.path,
+			e.cause)
 	}
-
-	return fmt.Sprintf("output capture error during %s: %s for '%s': %v",
-		e.Phase.String(),
-		e.Type.String(),
-		e.Path,
-		e.Cause)
 }
 
-// Unwrap implements the error unwrapping interface
-func (e CaptureError) Unwrap() error {
-	return e.Cause
+// Unwrap implements the error unwrapping interface.
+func (e *CaptureError) Unwrap() error {
+	return e.cause
 }
 
-// GetType returns the error type as a string (for error detection without package dependency)
-func (e CaptureError) GetType() string {
-	return e.Type.String()
+// newSizeLimitError builds the size-limit error. Its phase is PhaseExecution
+// and its cause is always ErrOutputSizeExceeded, so errors.Is against the
+// sentinel holds for every size-limit failure. It panics when limit is not
+// positive: such a limit is a caller mistake, and accepting it would attach a
+// value to the message that did not bound the write.
+func newSizeLimitError(path string, limit int64) *CaptureError {
+	if limit <= 0 {
+		panic("newSizeLimitError: limit must be positive")
+	}
+	return &CaptureError{
+		typ:   ErrorTypeSizeLimit,
+		path:  path,
+		phase: PhaseExecution,
+		cause: ErrOutputSizeExceeded,
+		limit: limit,
+	}
 }
 
-// GetPath returns the file path associated with the error
-func (e CaptureError) GetPath() string {
-	return e.Path
+// newFileSystemError builds the error for a failed write to the output file.
+// Its phase is PhaseExecution and its cause is the underlying write error.
+func newFileSystemError(path string, cause error) *CaptureError {
+	return &CaptureError{
+		typ:   ErrorTypeFileSystem,
+		path:  path,
+		phase: PhaseExecution,
+		cause: cause,
+	}
 }
 
 // Standard error values
