@@ -217,6 +217,31 @@ func TestCapture_WriteOutput(t *testing.T) {
 			wantError:   false,
 			wantWritten: int64(len(unlimitedData)),
 		},
+		{
+			name: "negative max size rejects the write instead of meaning unlimited",
+			setupFunc: func() (*Capture, func(), error) {
+				tmpFile, err := os.CreateTemp("", "capture_test_*.tmp")
+				if err != nil {
+					return nil, nil, err
+				}
+				cleanup := func() {
+					tmpFile.Close()
+					os.Remove(tmpFile.Name())
+				}
+				capture := &Capture{
+					OutputPath:   "/tmp/final-output.txt",
+					TempFilePath: tmpFile.Name(),
+					FileHandle:   tmpFile,
+					MaxSize:      -1,
+					CurrentSize:  0,
+					StartTime:    time.Now(),
+				}
+				return capture, cleanup, nil
+			},
+			data:      []byte("x"),
+			wantError: true,
+			errorType: ErrorTypeSizeLimit,
+		},
 	}
 
 	for _, tt := range tests {

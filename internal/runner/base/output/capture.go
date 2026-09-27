@@ -38,9 +38,8 @@ func (c *Capture) WriteOutput(data []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// A MaxSize of 0 means unlimited (see common.OutputSizeLimit), so the size
-	// comparison is skipped and every write is accepted.
-	if c.MaxSize > 0 && c.CurrentSize+int64(len(data)) > c.MaxSize {
+	// Only 0 means unlimited (see common.OutputSizeLimit); a negative MaxSize that bypassed PrepareOutput must fail closed, not become unlimited.
+	if c.MaxSize != 0 && c.CurrentSize+int64(len(data)) > c.MaxSize {
 		err := &CaptureError{
 			Type:  ErrorTypeSizeLimit,
 			Path:  c.OutputPath,
