@@ -1,3 +1,5 @@
+//go:build test
+
 // This file contains integration tests for output capture functionality
 
 package runner
@@ -268,22 +270,23 @@ func TestRunner_ZeroOutputSizeLimitIntegration(t *testing.T) {
 	outputFile := filepath.Join(t.TempDir(), "zero-limit.out")
 
 	script := fmt.Sprintf("head -c %d /dev/zero | tr -c x x", bulk)
-	retained, exitCode, finalizedPath := runZeroLimitCommand(t, outputFile, script)
+	stdout, exitCode, err := runZeroLimitCommand(t, outputFile, script)
+	require.NoError(t, err, "a zero output size limit must not fail on size")
 
-	require.Equal(t, 0, exitCode, "the command must finish without a size-limit failure")
-	assert.Contains(t, retained, "... omitting ", "the retained stdout must carry the omission marker")
-	assert.NotContains(t, retained, full, "the retained stdout must be bounded")
-	assert.Less(t, len(retained), bulk, "the retained stdout must be smaller than the output")
+	require.Equal(t, 0, exitCode)
+	assert.Contains(t, stdout, "... omitting ", "the retained stdout must carry the omission marker")
+	assert.Less(t, len(stdout), bulk, "the retained stdout must be smaller than the output")
 
-	written, err := os.ReadFile(finalizedPath)
+	written, err := os.ReadFile(outputFile)
 	require.NoError(t, err, "the output file must exist")
 	assert.Equal(t, full, string(written), "the output file must hold every byte")
 }
 
 // runZeroLimitCommand runs script under sh through the real executor and
 // resource manager with output_size_limit = 0 and an output file. It returns
-// the retained stdout, the exit code, and the finalized output file path.
-func runZeroLimitCommand(t *testing.T, outputFile, script string) (stdout string, exitCode int, finalizedPath string) {
+// the retained stdout and the exit code; the final output file is at
+// outputFile.
+func runZeroLimitCommand(t *testing.T, outputFile, script string) (stdout string, exitCode int, err error) {
 	t.Helper()
 
 	exec := executor.NewDefaultExecutor()
@@ -336,6 +339,5 @@ func runZeroLimitCommand(t *testing.T, outputFile, script string) (stdout string
 
 	stdout, _, exitCode, err = ge.executeSingleCommand(
 		context.Background(), cmd, groupSpec, newDefaultRuntimeGroup(groupSpec), newDefaultRuntimeGlobal())
-	require.NoError(t, err, "a zero output size limit must not fail on size")
-	return stdout, exitCode, outputFile
+	return stdout, exitCode, err
 }

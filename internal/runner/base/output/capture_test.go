@@ -63,8 +63,8 @@ func TestCapture(t *testing.T) {
 
 // TestCapture_WriteOutput tests the WriteOutput method behavior
 func TestCapture_WriteOutput(t *testing.T) {
-	// Larger than any plausible finite limit, so a test row with MaxSize 0 can
-	// only pass if the size comparison is skipped.
+	// Non-empty data, so this row fails if the size comparison runs with
+	// MaxSize 0.
 	unlimitedData := bytes.Repeat([]byte("u"), 256*1024)
 
 	tests := []struct {
