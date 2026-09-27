@@ -167,6 +167,7 @@
 | イベント種別 | event type | 通知が表すイベントの種別（Task 0172） |
 | エスケープ | escape / escaping | |
 | 完全一致 | exact match | basename 照合方式の文脈 |
+| 完全な行 | complete line | 最後の改行までを含む行。メモリ上に保持する出力はこの単位に切り詰める（Task 0177） |
 | 排他性 | exclusivity | Field exclusivity context |
 | 例 | example | |
 | 例外 | exception | |
@@ -548,7 +549,9 @@
 | 単一値 | single-value | 設定項目の文脈 |
 | サイズ | size | |
 | サイズ制限 | size limit | |
+| 省略の印 | omission marker | メモリ上の保持上限を超えた出力に置く `... omitting N bytes ...` の文字列（Task 0177） |
 | スキップ | skip | |
+| 先頭の窓 | leading window | メモリ上に保持する出力の先頭部分（64 KiB）。「窓」単独の window の項（隙）とは別の概念（Task 0177） |
 | Slack | Slack | |
 | Slack通知 | Slack notification | |
 | 成功通知 | success notification | Slackへの正常完了通知 |
@@ -825,6 +828,7 @@
 | 2026-09-25 | group 実行前段の失敗の通知（Task 0176）のレビュー指摘を反映 (wrap)。エラーの wrap の訳語を「ラップする」に定め、「包む」「包み」を使わないことを明記 |
 | 2026-09-25 | group 実行前段の失敗の通知（Task 0176）関連の用語を追加 (pre-execution stage, stage, stage error, stage definition table, record-only notification, generic row) |
 | 2026-09-14 | 識別子の型宣言と値ベース redaction からの免除（Task 0173）関連の用語を追加 (identifier, exemption, value-based redaction, whole-value detection) |
+| 2026-09-27 | 複数 group 失敗時の帰属と出力保持（Task 0177）関連の用語を追加 (complete line, leading window, omission marker) |
 
 ---
 

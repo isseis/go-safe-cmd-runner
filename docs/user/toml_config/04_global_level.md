@@ -149,7 +149,11 @@ timeout = 60  # Command-specific: 60 seconds (overrides global)
 When a timeout occurs:
 1. Sends termination signal (SIGTERM) to the running command
 2. After waiting for a certain period, sends forced termination signal (SIGKILL)
-3. Records as error and proceeds to the next command
+3. Records as an error and stops the group
+
+When a command times out, the group containing that command is recorded as a failure, but subsequent groups are executed. This is the same as when a command fails with a non-zero exit code.
+
+⚠️ **Known limitation**: The process of a timed-out command may remain, including any grandchildren it started. The executor terminates only the direct child process and never the whole process group, so grandchildren can survive; a direct child also remains if it cannot be terminated and reaped. A leftover process can run in parallel with subsequent groups, so take care with configurations where a subsequent group assumes that an earlier group has completed.
 
 #### For Unlimited Timeout (`timeout = 0`)
 When unlimited timeout is set:
@@ -1115,8 +1119,14 @@ output_size_limit = bytes
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global only |
 | **Default Value** | 10485760 (10MB) |
-| **Valid Values** | Positive integer (in bytes) |
+| **Valid Values** | 0 (unlimited) or positive integer (in bytes) |
 | **Override** | Not possible (global level only) |
+
+### Handling of 0 and Negative Values
+
+`output_size_limit = 0` means **unlimited**. In this case, there is no upper limit on the amount written to the output file.
+
+Negative values are rejected when the configuration is loaded, and the runner does not start. This validation is also performed in dry-run mode.
 
 ### Role
 
@@ -1181,6 +1191,12 @@ When output size exceeds the limit:
 1. Command execution continues (only output is limited)
 2. Error message warning of excess is recorded
 3. Output up to that point is saved
+
+### Output Retained in Memory
+
+A command's standard output and standard error are retained in the runner's memory only up to the leading 64 KiB (the leading window), regardless of whether an output file is specified or of the value of `output_size_limit`. The part beyond the limit is not retained; the retained leading window is truncated at its last newline (at the end of the last complete line), and then a `... omitting N bytes ...` omission marker is placed on its own line. `N` is the number of bytes that were not retained. If the leading window contains no newline, only the omission marker remains.
+
+If you need the full output beyond the limit (for example, the output of a command that succeeds), specify an output file for the command. However, the full output remains in the output file only when the command succeeds and its output fits within `output_size_limit` (or when the limit is 0). If the command fails, the output file is not created. For this reason, the full output beyond the limit, such as the trailing lines of a failed command's standard error, cannot be recovered from an output file even if you specify one.
 
 ### Best Practices
 
