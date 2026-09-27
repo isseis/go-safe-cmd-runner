@@ -16,6 +16,7 @@
 - 派生元: Task 0176（`docs/tasks/0176_group_pre_execution_failure_notification/02_architecture.md` §3.7・§5.2・§9）
 - 関連: [#1153](https://github.com/isseis/go-safe-cmd-runner/issues/1153)（Task 0177 で解決済み。`executeGroups` が全 group のエラーを返す）
 - 関連: [#1154](https://github.com/isseis/go-safe-cmd-runner/issues/1154)（失敗対象一覧を持たない検証失敗の報告形式の統一）
+- 後続: [#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196)（依存検証の dynlib・shebang のエラー型の構造化）、[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)（設定の展開・検証のエラー型の構造化）
 
 ## 背景
 
@@ -70,7 +71,7 @@
 ## 目的
 
 - 対象の本文を、役割を型で宣言した部分の列として運ぶ。redaction は部分ごとに役割に応じて適用し、機密ではない名前やパスのために本文全体が消えないようにする。
-- 秘密の保護を弱めない。現在マスクされる値は、引き続きマスクされる。値全体置換を免れるのは、型で役割を宣言した部分だけとする。
+- 秘密の保護を弱めない。key=value、`Bearer `・`Basic ` の次の語、値形式の検出、属性名による判定でマスクされる値は、引き続きマスクされる。値全体置換を免れるのは、型で役割を宣言した部分だけとする（値全体置換の判定の単位の変化は、決定事項「値全体置換は部分ごとに判定する」を参照）。
 - 役割は、エラーを作るコードが宣言する。redaction や通知ビルダーは、文字列の内容から役割を推測しない（CLAUDE.md「Declare, don't infer」）。
 - 構造を持たないエラーは、現状と同じ保護を受ける（fail-closed）。これにより、エラー型を段階的に移行できる。
 
@@ -80,8 +81,8 @@
 
 1. 役割付きの部分の列を持つ本文の型（以下「構造化メッセージ」）と、エラー型が構造化メッセージを返すためのインターフェースを新設する。
 2. `RedactingHandler` が、構造化メッセージの部分ごとに役割に応じた redaction を適用し、1 本の文字列に描画する。
-3. 次の 2 つのレコードの `error_message` を、構造化メッセージとして記録する。
-   - group 実行前段の失敗（`NotifyPreExecutionError`。0176 の #1〜#7）
+3. 次のレコードの `error_message` を、構造化メッセージとして記録する。
+   - `pre_execution_error` のレコード（`HandlePreExecutionError`・`NotifyPreExecutionError`。両者はレコードの組み立て `preExecutionRecordParams` を共有する）。group 実行前段の失敗（0176 の #1〜#7）を含む。
    - 最終の実行エラー（`HandleExecutionError`）
 4. 次のエラーを構造化する（役割の割り当ては決定事項を参照）。
    - `PreExecutionError`（段階の要約文と原因）と `ExecutionError`（要約文と外側の context）
@@ -103,7 +104,7 @@
 
 ### 対象外
 
-- **その他の `pre_execution_error` の原因の構造化**（設定の読み込み、global の展開、テンプレート検証、`--groups` の指定誤りなど）。対象 4 の `Err` への付け替えを除き、原因は構造を持たない `Text` として現状と同じ保護を受ける。
+- **その他の `pre_execution_error` の原因の構造化**（設定の読み込み、global の展開、テンプレート検証、`--groups` の指定誤りなど）。`Message` は決定事項「`PreExecutionError.Message` の役割」に従う。原因は、対象 4 で構造化する型（`ErrUndefinedVariableDetail` など）を除き、構造を持たない `Text` として現状と同じ保護を受ける。
   - 設定の展開・検証のエラー型（`internal/runner/config` の 51 型と 48 か所のエラー書式）と `cli.FilterGroups` のエラーの構造化は、[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197) で扱う。この中には、0178 の対象の本文（group の展開の失敗の原因）に現れる `env_import`・allowlist のエラーも含まれる。
   - 設定ファイルの検証・読み込みのエラー（主にパス）は、Slack に届かず stderr に全文が残るため、対処しない。
   - go-toml のエラー文言（`toml: key timeout is already defined` など）は、語が外部ライブラリの固定の文言の中にあり、型で宣言できないため、対処しない。
@@ -144,16 +145,16 @@
 | 未定義変数 `api_key` を生のテンプレート `%{api_key}` で参照（作業ディレクトリの展開の失敗、global の展開の失敗も同じ） | `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
 | 依存検証の失敗で、原因に `libkeyutils.so.1` などのパスを含む | `Command verification failed: command dependency verification failed for "/usr/bin/curl": [REDACTED]` | 依存ライブラリのパスを含む内側の原因（dynlib 検証のエラーは構造化しない。[#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196)） |
 | shebang 検証・パス解決の内側のエラーが語を含む | 要約文とコマンドパスは残る | 内側の原因 |
+| group・コマンドの展開の失敗で、原因が `env_import`・allowlist などのエラー（例: `system environment variable 'GITHUB_TOKEN' not in allowlist …`） | 要約文・group 名・コマンド名は残る | 原因。そのエラー型を構造化しないため（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)） |
+| 対象外の `pre_execution_error` で、`Message` が定数式、原因が構造を持たないもの（例: `Invalid groups specified: group(s) [secret-rotate] specified in --groups do not exist in configuration …`、`Failed to verify and read the configuration file: … /etc/gscr/basic.toml`、`Failed to load the configuration: toml: key timeout is already defined`） | `Message` の固定の文言（`Invalid groups specified` など）は残る | 原因。構造化しない（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)。go-toml の文言は型で宣言できない） |
 
 ### 救われないケース
 
-次のケースでは、変更前と同じく本文全体が `[REDACTED]` になりうる。
+次のケースでは、変更前と同じく本文全体（または属性の値全体）が `[REDACTED]` になりうる。
 
 | ケース | 理由 |
 |---|---|
-| 対象外の `pre_execution_error` のうち、原因が構造を持たないもの（例: `Invalid groups specified: group(s) [secret-rotate] specified in --groups do not exist in configuration …`、`Failed to verify and read the configuration file: … /etc/gscr/basic.toml`） | 原因を構造化しない（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)）。`Message` の固定の文言は残るが、原因全体が `Text` |
-| group・コマンドの展開の失敗で、原因が `env_import`・allowlist などのエラー（例: `system environment variable 'GITHUB_TOKEN' not in allowlist …`） | 要約文・group 名・コマンド名は残る。原因のエラー型を構造化しないため（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)）、原因の部分は `Text` |
-| 設定の読み込みの失敗で、go-toml の文言が語を含む（例: `toml: key timeout is already defined`） | 同上。値全体置換のパターンも変えない |
+| 対象外の `pre_execution_error` で、`Message` を `fmt.Sprintf` で値を含めて作り、原因も `Message` に埋め込んでいるもの（例: `Verification manager initialization failed: %v`） | `Message` 全体が 1 つの `Text` の部分になる |
 | `error_message` 以外の属性（例: 依存検証の失敗時の `slog.Error` の `error` 属性・`command` 属性） | 対象外。属性の扱いを変えない |
 
 ### 変わらないケース
@@ -185,6 +186,14 @@
 - 属性名による判定は、従来どおり部分より先に属性全体へ効かせる。機密を示す属性名の下では、構造化メッセージも値ごと置換する。
 - 部分の境界をまたぐ秘密の形式もマスクする。例えば `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値が連結されて key=value になる場合、値はマスクされる。どの手段で満たすかは設計で決める。
 
+### 値全体置換は部分ごとに判定する
+
+値全体置換は、`Text` の部分ごとに、その部分の文字列だけで判定する。そのため、変更前は別の部分（group 名など）に語があったために本文ごと消えていた `Text` の部分が、それ自体は語も形式も含まなければ、変更後は表示される。
+
+例: group 名 `token-rotate` の group で、生のテンプレート `%{x} hunter2` を含む未定義変数のエラーが起きた場合。変更前は group 名が引き金となり本文全体が消えていた。変更後は `hunter2` を含む `Text` の部分が表示される。
+
+これは、本文全体を 1 つの単位として判定する限り機密ではない名前のために本文が消えることを避けられない、という本タスクの前提から生じる。語も形式も持たない秘密を `Text` の部分から拾えないことは、構造を持たない自由文の値全体置換の現状の限界と同じである。この変化を、保護の境界として承認する。
+
 ### 構造を持たないエラーは `Text`
 
 原因の連鎖の中で構造化メッセージを返さないエラーは、その `Error()` 全体を 1 つの `Text` の部分とする。未対応のエラー型、`errors.Join` などの標準ライブラリのエラー、外部ライブラリのエラーは、現状と同じ保護を受ける。
@@ -195,7 +204,7 @@
 
 `PreExecutionError.Message` は、現在は普通の文字列のフィールドである。`Constant` として扱えるのは、定数式で作られたことが型で保証される場合だけとする。
 
-- group 実行前段の要約文（段階の定義表の定数）と、対象 4 で固定の文言にする 4 か所の `Message` は、`Constant` として扱う。
+- 定数式で作られた `Message` は `Constant` として扱う。group 実行前段の要約文（段階の定義表の定数）、対象 4 で固定の文言にする 4 か所、もともと固定の文言である箇所（`Failed to load the configuration` など）が当たる。
 - `fmt.Sprintf` などで値を含めて作る `Message`（例: `Total: %d, Verified: %d, …`、`unhandled check skip reason %d for path %s`）は `Text` として扱う。
 - どう保証するか（型の変更、構築関数、AST ガードの範囲）は設計で決める。
 
@@ -237,7 +246,7 @@
 - **文言:** redaction を適用する前の描画結果は、現在の `Error()`・`Detail()` の文言と一致する。`Error()` の文言と `errors.Is`・`errors.AsType` の到達性は変えない。
 - **ログの形:** 構造化ログの `error_message` は、`RedactingHandler` の後段のハンドラ（Slack・ログファイル・コンソール）に、描画済みの文字列として渡す。ログの利用者と通知ビルダー（`buildPreExecutionError`）は変わらない。
 - **redaction を通らない場合:** `RedactingHandler` を通らないハンドラに渡った場合も、文字列として描画される。
-- **Slack での表示:** Slack の `Error Message` は、描画済みの文字列に従来どおり 0172 の補間契約（`common.Interpolate` の `InterpolationRoleFreeText`：1 行・制御文字なし・500 byte 上限）を適用する。切り詰められても、先頭の段階の要約文は残る。
+- **Slack での表示:** Slack の `Error Message` は、描画済みの文字列に従来どおり 0172 の補間契約（`common.Interpolate` の `InterpolationRoleFreeText`：1 行・制御文字なし・500 byte 上限）を適用する。group 実行前段の失敗では、切り詰められても先頭の段階の要約文が残る。
 
 ### stderr は現状を維持する
 
@@ -265,13 +274,14 @@
 - **AC-06**: 部分の境界をまたいで key=value の形になる秘密（例: `Identifier` の `API_KEY`、`Constant` の `=`、`Text` の値）は、値がマスクされる。
 - **AC-07**: 機密を示す属性名の下に置かれた構造化メッセージは、値ごと置換される。
 - **AC-08**: 役割を明示しない部分（ゼロ値）は `Text` として扱われる。
+- **AC-36**: 値全体置換は `Text` の部分ごとに判定される。`Identifier` の部分だけが語を含み、`Text` の部分が語も形式も含まない本文では、`Text` の部分は書き換えられない。
 
 #### F-002: 構造を持たないエラーの保護
 
 **Acceptance Criteria**:
 - **AC-09**: 構造化メッセージを返さないエラーを原因とする本文では、その原因の `Error()` 全体が 1 つの `Text` の部分として扱われる。この部分に値全体置換だけが反応する入力（例: `token` を含み、key=value の形でも値形式にも当たらない文言）では、その部分が `[REDACTED]` になる。
 - **AC-10**: 構造化メッセージを返すエラーが、構造を持たないエラーをラップしているとき、外側の宣言された部分は役割どおりに扱われ、内側の原因は `Text` として扱われる。
-- **AC-11**: 対象外の `pre_execution_error`（例: 設定の読み込みの失敗）の `error_message` は、現状と同じ redaction の結果になる。
+- **AC-11**: 対象外の `pre_execution_error`（例: 設定の読み込みの失敗）で、原因の部分は、原因の `Error()` だけを現状の redaction に通した結果と同じになる。定数式の `Message` の部分は書き換えられない。
 
 #### F-003: 対象の本文
 
@@ -296,7 +306,7 @@
 - **AC-32**: 実行全体の中断と group の失敗が重なったとき、`executeGroups` が返すエラーの `Error()` の文言は、変更前の `errors.Join(ctxErr, err)` と同じである。`errors.Is(err, ctx.Err())` が成り立ち、`errors.Is`・`errors.AsType` は失敗した group の原因に届く。中断時に返すエラーが含む group の失敗は、変更前と同じである。
 - **AC-20**: `RedactingHandler` の後段のハンドラが受け取る `error_message` は、文字列である。
 - **AC-21**: `RedactingHandler` を通らないハンドラに渡った構造化メッセージは、redaction 前の描画結果（AC-18 の文言）の文字列として出力される。
-- **AC-22**: Slack の `Error Message` の値は、0172 の補間契約（1 行・制御文字なし・500 byte 上限）を満たす。500 byte を超える本文でも、先頭の段階の要約文が残る。
+- **AC-22**: Slack の `Error Message` の値は、0172 の補間契約（1 行・制御文字なし・500 byte 上限）を満たす。group 実行前段の失敗では、500 byte を超える本文でも、先頭の段階の要約文が残る。
 - **AC-23**: 通知の件数・`message_type`・`error_type`・Scope・Slack のフィールド構成は、変更前と同じである。
 
 #### F-005: 宣言の保証
@@ -320,7 +330,7 @@
 ### テストの入力についての制約
 
 - 層ごとの効果を確かめるテストは、1 つの層だけが反応する入力を使う。値全体置換だけが反応する入力（例: 変数名 `api_key`、group 名 `monkey-test`）と、値形式の検出だけが反応する入力（例: GitHub トークン形式の値）を分けて用意する。そのうえで、他の層だけでは入力が変わらないことを先に確かめる。
-- AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34 は、group executor から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
+- AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34 は、エラーの発生元（group executor、または `cmd/runner` の global の展開）から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
 
 ## Success Criteria（要件レベル）
 
