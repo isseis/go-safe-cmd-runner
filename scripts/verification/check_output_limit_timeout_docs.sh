@@ -65,7 +65,7 @@ check_word "$GLOBAL_JA" '負の値は設定の読み込み時に拒否され' "n
 check_word "$GLOBAL_EN" 'Negative values are rejected when the configuration is loaded' "negative values rejected at load time in the English guide (AC-26, AC-27)"
 
 # (c) Subsequent groups run after a command timeout.
-check_word "$GLOBAL_JA" '後続の group は実行されます' "subsequent groups run after a command timeout in the Japanese guide (AC-30)"
+check_word "$GLOBAL_JA" '後続のグループは実行されます' "subsequent groups run after a command timeout in the Japanese guide (AC-30)"
 check_word "$GLOBAL_EN" 'subsequent groups are executed' "subsequent groups run after a command timeout in the English guide (AC-30)"
 
 # (d) A timed-out command's process (including grandchildren) may remain.
