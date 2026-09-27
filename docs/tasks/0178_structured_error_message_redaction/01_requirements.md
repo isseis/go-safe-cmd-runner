@@ -93,12 +93,21 @@
      - 相対パスの拒否（`config.ExpandWorkDir` の `ErrInvalidWorkDir`。group・コマンドの名前と展開後のパスを含む）
      - 一時ディレクトリの作成・権限設定の失敗（`executor.DefaultTempDirManager.Create`。OS のエラー `*fs.PathError` がパスを持つ）
    - 実行全体の中断と group の失敗が重なったときの最終エラー。現在は `executeGroups` が `errors.Join(ctxErr, err)` で返している。これを、中断であることを宣言する専用の型に置き換える。
+   - `cmd/runner/main.go` で、原因を `fmt.Sprintf("…: %v", err)` で `Message` に埋め込んでいる次の 4 か所。`Message` を固定の文言にし、原因は `Err` で運ぶ。これにより、構造を持つ原因（`ErrUndefinedVariableDetail` など）の役割の宣言が、この経路でも失われない。
+     - global の展開の失敗（`Failed to expand global configuration`）
+     - テンプレート検証の失敗（`Template validation failed`）
+     - ディレクトリ権限チェッカーの初期化の失敗（`directory permission checker initialisation failed`）
+     - `--groups` の指定誤り（`Invalid groups specified`）
 5. 役割 `Constant` の部分が定数式からしか作られないことを、AST ガードのテストで保証する。
 6. 開発者向け文書 `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、構造化メッセージの役割ごとの redaction と、`Path` 役を値全体置換の対象外とする保護の境界を追記する。英語版は `/mktrans` で反映する。
 
 ### 対象外
 
-- **その他の `pre_execution_error`**（設定の読み込み、global の展開、テンプレート検証、global 検証、`--groups` の指定誤りなど）。構造を持たない原因として現状と同じ保護を受ける。go-toml のエラー文言（`toml: key timeout is already defined` など）が値全体置換される点も含めて、必要なら別 issue で扱う。
+- **その他の `pre_execution_error` の原因の構造化**（設定の読み込み、global の展開、テンプレート検証、`--groups` の指定誤りなど）。対象 4 の `Err` への付け替えを除き、原因は構造を持たない `Text` として現状と同じ保護を受ける。
+  - 設定の展開・検証のエラー型（`internal/runner/config` の 51 型と 48 か所のエラー書式）と `cli.FilterGroups` のエラーの構造化は、[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197) で扱う。この中には、0178 の対象の本文（group の展開の失敗の原因）に現れる `env_import`・allowlist のエラーも含まれる。
+  - 設定ファイルの検証・読み込みのエラー（主にパス）は、Slack に届かず stderr に全文が残るため、対処しない。
+  - go-toml のエラー文言（`toml: key timeout is already defined` など）は、語が外部ライブラリの固定の文言の中にあり、型で宣言できないため、対処しない。
+  - Webhook URL の検証エラーは、URL そのものが秘密なので `Text` のまま現状の保護を維持する。
 - **パス解決・依存ライブラリ検証・shebang 検証の内側のエラー、および外部ライブラリや OS のエラー。** 当初は `Text` のままとする。ただし、作業ディレクトリの解決の失敗（対象 4）の OS のエラーは除く。例えば依存検証の失敗では、要約文・コマンドパスは残り、依存ライブラリのパスを含む内側の原因だけが `[REDACTED]` になりうる。 dynlib・shebang 検証のエラー型の構造化は [#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196) で扱う。
 - **値全体置換のパターンの変更。** アンカーや単語境界の追加、特定の語句の除外は行わない（決定事項「検討して採らなかった案」）。
 - **`error_message` 以外の属性。** `slog.Error(..., "error", err)` のように error 型の値を持つ属性（`RedactingHandler.processError`）の扱いは変えない。
@@ -132,7 +141,7 @@
 
 | ケース | 変更後 | 消える部分 |
 |---|---|---|
-| 未定義変数 `api_key` を生のテンプレート `%{api_key}` で参照（作業ディレクトリの展開の失敗も同じ） | `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
+| 未定義変数 `api_key` を生のテンプレート `%{api_key}` で参照（作業ディレクトリの展開の失敗、global の展開の失敗も同じ） | `Group preparation failed: failed to expand group[backup]: undefined variable in group[backup].vars: 'api_key' (context: [REDACTED])` | 生のテンプレート。変数名そのものを含むので、変数名が語を含めば必ず消える |
 | 依存検証の失敗で、原因に `libkeyutils.so.1` などのパスを含む | `Command verification failed: command dependency verification failed for "/usr/bin/curl": [REDACTED]` | 依存ライブラリのパスを含む内側の原因（dynlib 検証のエラーは構造化しない。[#1196](https://github.com/isseis/go-safe-cmd-runner/issues/1196)） |
 | shebang 検証・パス解決の内側のエラーが語を含む | 要約文とコマンドパスは残る | 内側の原因 |
 
@@ -142,7 +151,8 @@
 
 | ケース | 理由 |
 |---|---|
-| 対象外の `pre_execution_error`（例: `Invalid groups specified: group "secret-rotate" not found`、`Failed to verify and read the configuration file: … /etc/gscr/basic.toml`） | 構造化しない。原因全体が `Text` |
+| 対象外の `pre_execution_error` のうち、原因が構造を持たないもの（例: `Invalid groups specified: group(s) [secret-rotate] specified in --groups do not exist in configuration …`、`Failed to verify and read the configuration file: … /etc/gscr/basic.toml`） | 原因を構造化しない（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)）。`Message` の固定の文言は残るが、原因全体が `Text` |
+| group・コマンドの展開の失敗で、原因が `env_import`・allowlist などのエラー（例: `system environment variable 'GITHUB_TOKEN' not in allowlist …`） | 要約文・group 名・コマンド名は残る。原因のエラー型を構造化しないため（[#1197](https://github.com/isseis/go-safe-cmd-runner/issues/1197)）、原因の部分は `Text` |
 | 設定の読み込みの失敗で、go-toml の文言が語を含む（例: `toml: key timeout is already defined`） | 同上。値全体置換のパターンも変えない |
 | `error_message` 以外の属性（例: 依存検証の失敗時の `slog.Error` の `error` 属性・`command` 属性） | 対象外。属性の扱いを変えない |
 
@@ -180,6 +190,14 @@
 原因の連鎖の中で構造化メッセージを返さないエラーは、その `Error()` 全体を 1 つの `Text` の部分とする。未対応のエラー型、`errors.Join` などの標準ライブラリのエラー、外部ライブラリのエラーは、現状と同じ保護を受ける。
 
 `errors.Join` の結果の子を、`Unwrap() []error` を持つという形から判定して個別に扱うことはしない。これは、Task 0177 が複数 group の失敗を形から判定しないと決めたのと同じ理由による。部分ごとに扱いたい複合エラーは、専用の型で宣言する。
+
+### `PreExecutionError.Message` の役割
+
+`PreExecutionError.Message` は、現在は普通の文字列のフィールドである。`Constant` として扱えるのは、定数式で作られたことが型で保証される場合だけとする。
+
+- group 実行前段の要約文（段階の定義表の定数）と、対象 4 で固定の文言にする 4 か所の `Message` は、`Constant` として扱う。
+- `fmt.Sprintf` などで値を含めて作る `Message`（例: `Total: %d, Verified: %d, …`、`unhandled check skip reason %d for path %s`）は `Text` として扱う。
+- どう保証するか（型の変更、構築関数、AST ガードの範囲）は設計で決める。
 
 ### 中断時の最終エラーは専用の型で宣言する
 
@@ -253,7 +271,7 @@
 **Acceptance Criteria**:
 - **AC-09**: 構造化メッセージを返さないエラーを原因とする本文では、その原因の `Error()` 全体が 1 つの `Text` の部分として扱われる。この部分に値全体置換だけが反応する入力（例: `token` を含み、key=value の形でも値形式にも当たらない文言）では、その部分が `[REDACTED]` になる。
 - **AC-10**: 構造化メッセージを返すエラーが、構造を持たないエラーをラップしているとき、外側の宣言された部分は役割どおりに扱われ、内側の原因は `Text` として扱われる。
-- **AC-11**: 対象外の `pre_execution_error`（例: global の展開の失敗）の `error_message` は、現状と同じ redaction の結果になる。
+- **AC-11**: 対象外の `pre_execution_error`（例: 設定の読み込みの失敗）の `error_message` は、現状と同じ redaction の結果になる。
 
 #### F-003: 対象の本文
 
@@ -268,6 +286,7 @@
 - **AC-29**: 一時ディレクトリの作成に失敗し、そのパスが機密を示す語を含むとき（例: group 名 `token-rotate` から作られるパス）、Slack の `Error Message` に要約文とパスが出る。`*fs.PathError` の `Op`・`Err` は `Text` として扱われる。
 - **AC-30**: 作業ディレクトリの解決以外の経路で生じた `*fs.PathError` は、1 つの `Text` の部分として扱われる。
 - **AC-31**: 実行全体の中断と group の失敗が重なり、失敗した group の名前が機密を示す語を含むとき、最終の実行エラーのレコードの `error_message` に、中断の原因の文言と、失敗した group の宣言された部分（group 名など）が出る。
+- **AC-34**: global の展開で未定義の変数 `api_key` を参照したとき、Slack の `Error Message` に、`Failed to expand global configuration` と変数名 `api_key` が出る。対象 4 で `Err` へ付け替える 4 か所の `PreExecutionError.Detail()` の文言は、変更前と同じである。
 
 #### F-004: 既存の出力の維持
 
@@ -286,6 +305,7 @@
 - **AC-24**: 本番コードで `Constant` の部分を作る箇所は、定数式だけを渡している。定数式でない値を渡すコードがあると、AST ガードのテストが失敗する。
 - **AC-25**: 本番コードの `RedactingHandler`・通知ビルダー・ログ出力に、部分の文字列の内容を見て役割を選ぶ分岐がない。
 - **AC-33**: 本番コードの構造化メッセージの組み立てに、`Unwrap() []error` を持つかどうかで複合エラーの子を個別に扱う分岐がない。中断時の最終エラーは専用の型で宣言される。
+- **AC-35**: 値を含めて作られた `PreExecutionError.Message` は `Text` として扱われる。この `Message` に値全体置換だけが反応する入力では、`Message` の部分が `[REDACTED]` になる。
 
 #### F-006: 文書
 
@@ -300,7 +320,7 @@
 ### テストの入力についての制約
 
 - 層ごとの効果を確かめるテストは、1 つの層だけが反応する入力を使う。値全体置換だけが反応する入力（例: 変数名 `api_key`、group 名 `monkey-test`）と、値形式の検出だけが反応する入力（例: GitHub トークン形式の値）を分けて用意する。そのうえで、他の層だけでは入力が変わらないことを先に確かめる。
-- AC-12〜AC-17・AC-28・AC-29・AC-31 は、group executor から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
+- AC-12〜AC-17・AC-28・AC-29・AC-31・AC-34 は、group executor から、`RedactingHandler` を通った後のレコードまでを通すテストで確かめる。Slack へ届くレコード（group 実行前段の失敗）では、Slack のメッセージ組み立てまでを通す。
 
 ## Success Criteria（要件レベル）
 
