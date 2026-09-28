@@ -276,6 +276,7 @@ type Structured interface {
 5. `String()` は redaction 前の描画である。`LogValue()` はそれを `RedactingHandler` を通らないハンドラに渡す（AC-21）。`Constant` を作る構築関数（`Const`・`ConstSummary`）は定数式だけを受け取る。この制約は型では表せないので、AST のガード（3.8.2 節）で固定する（01 対象 5、AC-24）。
 6. `Summary` は `Constant` か `Text` のどちらかであることが型で保証される（01 決定事項「`PreExecutionError.Message` の役割」）。
 7. `Identifier`・`Path` を宣言する構築関数と、`*fs.PathError` を分ける原因の部分の構築関数は、呼べる箇所を AST のガードで対象の範囲の中に限る（3.8.2 節）。
+8. errmsg の外で、結果に `errmsg.Part` を含む関数とメソッド（`[]Part` のような複合の型で含むものも同じ）は、非公開で、対象の範囲の中にある。errmsg の外の公開の構築関数（`GroupLevel`・`CommandLevel` など）は名前を受け取ってよいが、返すのは本文の形を範囲の中のコードが決める値であり、部分ではない。
 
 #### 3.1.2 どの役割にも当たらない値
 
@@ -316,10 +317,10 @@ type Structured interface {
 - `RedactText` は変えない。範囲を返す関数は別の関数であり、`RedactMessage` からだけ呼ぶ。`RedactText` を範囲を返す実装に差し替える案は採らない。`RedactText` はすべてのログ行・取り込んだ出力・監査のログで使われ、差し替えの誤りがあると、秘密の漏れや panic がそのすべてに及ぶためである。01 は範囲を求めることを求めているだけで、`RedactText` の差し替えは求めていない。
 - 規則の共有: 範囲を返す関数は `RedactText` の各段と同じ規則を同じ順序で使い、規則の写しを作らない。
 - 正しさの義務: 任意の入力について、返した各範囲を 1 つの置換文字列に置き換えた結果が、変更していない `RedactText` の出力と一致すること。この一致は、既存の `RedactText` のテストの入力の全体と、`RedactText` を基準にした差分のファジングで固定する（CLAUDE.md「An optimization that adds a correctness obligation」）。
-- 前提条件: 置換文字列は、どの規則の一致にも関与しない。満たさない置換文字列は `NewConfig` が番兵のエラーで拒否する（CLAUDE.md「Reject, don't normalize」）。置換文字列が後の段の規則に再び一致すると、正しさの義務が成り立たないためである。
+- 前提条件: 置換文字列は定数 `DefaultPlaceholder` である。`WithPlaceholder` は本番のコードから呼ばれていないので削除する（CLAUDE.md「count its real uses」）。この定数がどの規則の一致にも関与しないことは、`RedactText` を基準にした差分のファジングで固定する。置換文字列が後の段の規則に再び一致すると、正しさの義務が成り立たないためである。実行時の検査は、fail-closed の最後の備えとして残す。
 - 実行時の検査: `RedactMessage` は描画のたびに、範囲から作った文字列が `RedactText` の出力と一致するかを確かめる。一致しなければ失敗として扱い、`error_message` は `RedactionFailurePlaceholder` になり、失敗は記録される（3.2.3 節）。範囲の誤りが秘密の漏れにならないようにするためである（fail-closed）。
 
-関数のシグネチャ、残す範囲と段の重なりの扱い、置換文字列の検査の仕方は、詳細仕様書で決める（申し送り「範囲を返す処理の細則」）。
+関数のシグネチャ、残す範囲と段の重なりの扱い、`WithPlaceholder` の削除の細目は、詳細仕様書で決める（申し送り「範囲を返す処理の細則」）。
 
 #### 3.2.2 `Config.RedactMessage`
 
@@ -482,7 +483,7 @@ func (e *cancelledRunError) StructuredMessage() errmsg.Message
 
 次は対象にしない。
 
-- 特権の実行で補助グループを設定する処理（`(*DefaultExecutor).stageFromFD`）: 挿入するのは gid の数値だけで、原因は OS のエラーであり、構造を持たない。置き換えても出力は変わらない。
+- `(*DefaultExecutor).stageFromFD` など、3.8.1 節の範囲に入れる規則に当たらない関数。
 - `(*DryRunResourceManager).UpdateCommandDebugInfo`・`ValidateOutputPath` と、一時ディレクトリの後始末の関数: 2 つのレコードの原因にならない。
 
 関数ごとの箇所と部分の並びは申し送り「コマンドの実行の経路の箇所ごとの部分の並び」にある。
@@ -502,12 +503,19 @@ func (e *cancelledRunError) StructuredMessage() errmsg.Message
 
 #### 3.8.1 対象の範囲
 
-AC-41 の「対象の経路」を、次の範囲として確定する。この表が、AC-41 の検証の対象と、`Identifier`・`Path` を宣言できる箇所の唯一の定義である。範囲は 2 つのレコードの原因の経路から取り、その経路で構造を持つ原因をラップする関数と、`Identifier`・`Path` を宣言するメソッドをすべて含める。
+AC-41 の「対象の経路」を、次の範囲として確定する。この表が、AC-41 の検証の対象と、`Identifier`・`Path` を宣言できる箇所の唯一の定義である。
+
+範囲に入れる規則: 2 つのレコードの原因の経路にあるラップの箇所は、次のどちらかに当たるときに限り範囲に入る。
+
+- (i) 原因が `errmsg.Structured` のエラーを運びうる。
+- (ii) group 名・コマンド名・変数名、またはパスを挿入する。
+
+どちらにも当たらない箇所は範囲に入れない。原因はどちらの書き方でも 1 つの `Text` の断片に平らになり、出力が変わらないためである。下の表は、この規則を現在のコードに当てはめた結果である。
 
 | パッケージ | 対象 | 除くもの |
 |---|---|---|
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` のファイル全体、`runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` | — |
-| `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`・`Level.Parts`・`Field.Parts` | 下の表の関数 |
+| `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`、`Level`・`Field` の非公開の部分の組み立て | 下の表の関数 |
 | `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
 | `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | — |
 | `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`contextParts` | — |
@@ -520,7 +528,7 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 | `ProcessEnv` | `env_vars` の拒否のエラーを作る。`ErrUndefinedVariableDetail` はこの関数をそのまま通るだけであり、ラップしない |
 | `resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec` | テンプレートのエラーを作る関数であり、01 の対象外（#1197） |
 
-- `Level.Parts`・`Field.Parts`・`contextParts` は仮の名前である。詳細仕様書で名前を確定したら、この表に書き戻す。
+- `contextParts` は仮の名前である。詳細仕様書で名前を確定したら、この表に書き戻す。
 - 範囲の決め方: ファイル全体を対象にするのは、group の実行と展開の経路の関数がそのファイルに集まっており、関数を分けたり加えたりしても検証から漏れないようにするためである。`runner.go`・`resource`・`executor` は対象外の経路の関数を多く含むので、関数の単位で指定する。
 - 範囲の中でも、原因が構造を持つ原因を運びえないラップ（`internal/runner/config` のもの。01 対象外（#1197））は、前置きの全体を 1 つの `Text` にする（3.5.3 節）。
 - 関数の単位で指定した名前と、除く関数の名前は、ガードが実際のコードに見つかることを確かめる。名前を変えたり関数を消したりしたときに、警告なく検証から外れないようにするためである。
@@ -538,6 +546,7 @@ AST のガードは、次の不変条件を守る。
 - redaction の側は役割の値を作らない。読むだけである（AC-25）。通知ビルダーとログ出力は `RedactingHandler` の後で描画済みの文字列だけを受け取る（2.1 節）ので、断片や役割に触れない。
 - 本番のコードに、`Unwrap() []error` を持つかどうかで複合エラーの子を扱い分ける判定が無い（AC-33）。既存の 0177 のガードが `internal/errmsg` と `internal/redaction` を含む本番のコード全体を調べる。
 - `Part` の欄は非公開であり、errmsg の外で `Part` を直接組み立てない（3.1.2 節）。
+- errmsg の外に、結果の型が `errmsg.Part` を含む公開の関数・メソッドが無い。結果に `errmsg.Part` を含む非公開の関数・メソッドは 3.8.1 節の範囲の中にある（3.1.1 節の契約 8）。
 - 呼び出し側が渡すバイトが、整形として免除の役割の断片に入らない（1.1 節、3.1.4 節）。
 
 各ガードには、検出すべき形を与えて検出されることを確かめる自己テストを付ける。ガードが何も見ない状態のまま通ることを防ぐためである。
@@ -549,7 +558,7 @@ AST のガードは、次の不変条件を守る。
 | コンポーネント | 区分 | 責務 |
 |---|---|---|
 | `internal/errmsg` | 新規 | 役割・部分・構造化メッセージ・断片・要約文・`Structured`・`errmsg.Error`、構築、平らにする処理、字下げの再現 |
-| `internal/redaction` | 変更 | 範囲を返す関数、置換文字列の検査、`RedactMessage`、ハンドラと `RedactLogAttribute` の分岐、失敗の記録 |
+| `internal/redaction` | 変更 | 範囲を返す関数、`WithPlaceholder` の削除、`RedactMessage`、ハンドラと `RedactLogAttribute` の分岐、失敗の記録 |
 | `internal/logging` | 変更 | `PreExecutionError`・`ExecutionError` の要約文の型と構造化メッセージ、構造化メッセージの記録 |
 | `internal/runner`（`group_executor.go`・`group_stage.go`・`group_errors.go`・`runner.go`） | 変更 | エラー型の `Structured`、ラップ、`cancelledRunError`、段階の定義表の要約文 |
 | `internal/runner/config`（`expansion.go`・`errors.go`・`template_expansion.go`） | 変更 | `Level`・`Field`、`ErrUndefinedVariableDetail`、ラップ |
@@ -572,7 +581,6 @@ AST のガードは、次の不変条件を守る。
 |---|---|
 | 構造化メッセージの取得または原因の `Error()` が panic する | `RedactMessage` が回復して失敗を報告する。`RedactingHandler` は `error_message` を `RedactionFailurePlaceholder` にし、失敗を `ErrorCollector` に記録する（3.2.3 節）。秘密の一部を含むかもしれない途中の描画は出さない |
 | 範囲を返す関数の結果が `RedactText` と一致しない | panic と同じく、`error_message` を `RedactionFailurePlaceholder` にし、失敗を記録する（3.2.1 節） |
-| 置換文字列がどれかの規則の一致に関与する | `NewConfig` が番兵のエラーで拒否する。黙って受け付けない（3.2.1 節） |
 | 展開の深さが上限に達する | 残りの原因を評価せず、固定の目印の `Text` にする。`RedactMessage` が切り詰めを呼び出し側に報告し、`RedactingHandler` は Debug の診断のログを出す（3.1.3 節・3.2.3 節）。残りの原因の文字列は出ないので、保護は弱まらない |
 | `Config` が `NewConfig` を経ていない | `RedactText` と同じく `RedactionFailurePlaceholder` を返す |
 | nil の原因 | `<nil>` の `Text` にする。報告の途中で panic しない（3.1.1 節） |
@@ -597,7 +605,7 @@ stderr の `Details:` は redaction 前の描画で作るので、`RedactMessage
 | 構造を持たないものは `Text` | 未対応の型・範囲外の役割。深さの上限では、残りの原因の代わりに固定の目印の `Text` を出す | 01 決定事項 |
 | 免除の役割の断片に入るバイトの出どころ | 宣言された値、定数式、errmsg が持つ固定の文字だけである。呼び出し側が整形のために渡すバイトは入らない | 本書 1.1 節 |
 
-`Identifier` と `Path` を宣言できるのは、`errmsg` の構築関数を呼ぶコードだけであり、呼べる箇所は AST のガードで対象の範囲の中の位置に限る（3.8.2 節）。範囲は名前ではなく位置で決める。利用者の入力（設定の値や OS の文言）から役割が選ばれることはない。
+`Identifier` と `Path` を宣言できるのは、`errmsg` の構築関数を呼ぶコードだけであり、呼べる箇所は AST のガードで対象の範囲の中の位置に限る（3.8.2 節）。範囲は名前ではなく位置で決める。利用者の入力（設定の値や OS の文言）から役割が選ばれることはない。免除の境界は、本文の形を誰が組み立てるかで引く。範囲の外のコードは、範囲の中の関数と範囲の中の型の欄に値を渡せるが、部分を組み立てることはできない（3.1.1 節の契約 8）。
 
 ### 5.2 脅威モデル
 
@@ -729,7 +737,7 @@ Legend: 2.1 節の Legend と同じ色分けを使う（青の円柱はデータ
 - 共通の規則: 層ごとの効果を確かめるテストは、1 つの層だけが反応する入力を使い、他の層だけでは入力が変わらないことを先に確かめる（01「テストの入力についての制約」）。
 - `internal/errmsg`: 平らにする契約（`Structured` の展開、構造を持たない原因、nil の原因、`*fs.PathError` の分解、字下げの再現、深さの上限と切り詰めの報告、自身を原因に持つ構造化エラーでも有限の段で止まること）、`String()` と `Error()` の一致、`errmsg.Error` の到達性と構築の拒否、AC-08、AC-21（`RedactingHandler` を通らないハンドラでの出力）。
 - 深さの余裕: 実際の最も深い連鎖と上限の間の余裕を見張る。
-- 範囲を返す関数: 範囲を置換文字列に置き換えた結果が `RedactText` と一致すること（既存の入力の全体と差分のファジング）。置換文字列の検査が、規則に関与する置換文字列を拒否し、既定の置換文字列を受け付けること。
+- 範囲を返す関数: 範囲を置換文字列に置き換えた結果が `RedactText` と一致すること（既存の入力の全体と差分のファジング）。
 - `RedactMessage`: AC-01〜04・07・36・37、実行時の検査の不一致と panic が失敗として報告されること。AC-37 は検出の種類ごとに、各断片だけに redaction を適用しても秘密が見えたまま残ることを先に確かめる（design_carryover.md「テストの入力の細則」）。
 - AC-38: 範囲外の役割を持つ断片を redaction の側に直接与える。
 - ハンドラ: 構造化メッセージの属性が文字列になって後段に渡ること（AC-20）、機密を示す属性名の下で値ごと置換されること（AC-07）、失敗が記録されること、切り詰めで診断のログが出ること。
@@ -756,7 +764,7 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 ## 8. 実装の優先順位
 
 1. `internal/errmsg`（型、平らにする処理、`errmsg` のガード）。
-2. `internal/redaction` の範囲を返す関数と差分のファジング、置換文字列の検査、性能の確認。
+2. `internal/redaction` の範囲を返す関数と差分のファジング、`WithPlaceholder` の削除、性能の確認。
 3. `Config.RedactMessage` とハンドラの分岐。
 4. `internal/logging` の `PreExecutionError`・`ExecutionError`・記録。`Message` のリテラルを書き換える。
 5. `internal/runner` のエラー型、`group_executor.go` のラップ、`cancelledRunError`。
@@ -804,4 +812,4 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 - 01 のレビューで、要件に実装の箇所を列挙すると「列挙した箇所に AC が無い」という指摘が続いた。そのため、01 では箇所を列挙せず不変条件（AC-41）とし、対象の範囲を本書（3.8.1 節）で確定した。01 から移した箇所の一覧と細則は design_carryover.md にある。
 - design_carryover.md は「範囲の中で `Identifier` 以外のバイトが連続する区間ごとに 1 つの置換文字列」とする細則を持つ。本書は、境界をまたぐ検出が触れない断片では断片単独の結果を出す規則（3.2.2 節 (d)）を加えた。AC-04・AC-11 の「断片単独と同じ結果」を、境界をまたぐ検出が無い場合に保つためである。
 - 本書の初版は、`RedactText` を範囲を返す実装に差し替える設計だった。設計レビューで、差し替えの誤りがすべてのログ行に及び、比べる基準も無くなることが指摘されたため、`RedactText` を変えずに別の関数を置く設計（3.2.1 節）に改めた。
-- 本書の草稿は、実際のコード、構築関数の一覧、箇所ごとの部分の並び、行番号を含んでいた。設計レビューで、コードが持つ文言を書き写した箇所に誤り（一時ディレクトリの権限設定のラップの前置き）が見つかり、ほかにも裏付けの無い主張（組み合わせる API の無い `GroupErrors` の深さ）や、呼び出し側のバイトが免除の役割の断片に入る API（字下げの引数）が指摘された。本書を契約・不変条件・対象の範囲に絞り、細目は [detailed_spec_carryover.md](detailed_spec_carryover.md) に移して詳細仕様書で決めることにした。あわせて、免除の役割の断片に入るバイトの出どころの不変条件（1.1 節・5.1 節・3.8.2 節）、置換文字列の前提条件（3.2.1 節）、構造化メッセージを組み合わせる契約（3.1.1 節）、切り詰めの報告の担い手（3.2.3 節）を加えた。
+- 本書の草稿は、実際のコード、構築関数の一覧、箇所ごとの部分の並び、行番号を含んでいた。設計レビューで、コードが持つ文言を書き写した箇所に誤り（一時ディレクトリの権限設定のラップの前置き）が見つかり、ほかにも裏付けの無い主張（組み合わせる API の無い `GroupErrors` の深さ）や、呼び出し側のバイトが免除の役割の断片に入る API（字下げの引数）が指摘された。本書を契約・不変条件・対象の範囲に絞り、細目は [detailed_spec_carryover.md](detailed_spec_carryover.md) に移して詳細仕様書で決めることにした。あわせて、免除の役割の断片に入るバイトの出どころの不変条件（1.1 節・5.1 節・3.8.2 節）、置換文字列を定数に限る前提条件（3.2.1 節）、構造化メッセージを組み合わせる契約（3.1.1 節）、切り詰めの報告の担い手（3.2.3 節）を加えた。

@@ -92,7 +92,7 @@ func (e *Error) StructuredMessage() Message
 - `Cause(nil)` などの nil の原因は panic しない。平らにすると、`fmt` の `%v` が nil のエラーに対して出す文字列 `<nil>` を 1 つの `Text` の断片にする。
 - `String()` は平らにした断片の文字列をそのまま連結する。`LogValue()` は `String()` を `slog.StringValue` で返す。
 - 名前: 構造化メッセージを返すものを `NewMessage`、エラーを返すものを `NewError` とし、`errors.New` と取り違えないようにする。
-- 構造化メッセージの組み合わせ（未設計）: `GroupErrors` は各 `GroupError` の構造化メッセージを、平らにせずに改行の `Constant` でつないで 1 つの構造化メッセージにする（02 §3.1.1 の契約 2、§3.4.1）。02 の初版はこれを「各 `GroupError` の部分を直接並べる」と書いたが、`Part` の欄は非公開で、`Message` から部分の列を取り出す公開の API も無かった。組み合わせる API（`Message` を部分として受け付ける構築関数、部分の列を返すメソッド、`NewMessage` の可変長の引数に `Message` を渡す形など）を詳細仕様書で決める。決めるときは、組み合わせた `Message` が役割を外から選べる経路にならないこと（部分の欄を公開しないこと）を保つ。
+- 構造化メッセージの組み合わせ（未設計）: `GroupErrors` は各 `GroupError` の構造化メッセージを、平らにせずに改行の `Constant` でつないで 1 つの構造化メッセージにする（02 §3.1.1 の契約 2、§3.4.1）。02 の初版はこれを「各 `GroupError` の部分を直接並べる」と書いたが、`Part` の欄は非公開で、`Message` から部分の列を取り出す公開の API も無かった。組み合わせる API（`Message` を部分として受け付ける構築関数、`NewMessage` の可変長の引数に `Message` を渡す形など）を詳細仕様書で決める。組み合わせは `Message` の全体の単位だけで行い、`Message` から部分の列を返すメソッドは置かない（02 §3.1.1 の契約 8）。組み合わせた `Message` が役割を外から選べる経路にならないこと（部分の欄を公開しないこと）を保つ。
 
 ## 平らにする処理の細則
 
@@ -145,13 +145,11 @@ func (e *Error) StructuredMessage() Message
 - 残す範囲: 各段の置換のテンプレートが再び出力する範囲を「残す範囲」とする。前置きのグループ（`${1}` など。`Bearer `、key と区切り、`"private_key_id":"` など）と後ろのグループ（`gcpSAKey` の `${2}`、`jwt` の `${1}`）がこれに当たる。`urlCred` が一致の末尾の `@` を文字列リテラルとして出し直すのは、一致の最後の 1 バイトを残す範囲とみなす。
 - 段の重なり: 後の段は、前の段が置換文字列を入れた後の文字列に対して一致を探す。後の段の置き換える範囲が、前の段の置換文字列と一部でも重なれば、その置換文字列に当たる元の範囲の全体を置き換える範囲に加える。残す範囲が前の段の置換文字列と重なっても、その置換文字列に当たる元の範囲は置き換えたままとする（置換文字列は分けない）。
 - 表し方: 範囲は、一致の数に比例する大きさの区間の列で表す。文字列の長さに比例する表は作らない。
-- 置換文字列の検査（02 §3.2.1 の前提条件）: `NewConfig` は、置換文字列が次のどれにも当たらないことを確かめ、当たれば番兵のエラーを返す。
-  - 置換文字列だけを `RedactText` に通すと変わる。
-  - 各規則の残す範囲（`Bearer `・`Basic `・key と区切り・`"private_key_id":"` など）の後ろに置換文字列を置いた文字列を `RedactText` に通すと変わる。
-  - 検査に使う規則の一覧は、`Config` と `valueDetectorPatterns` から取り、写しを作らない。
-  - テスト: `DefaultPlaceholder` が受け付けられること。`Bearer x` のように規則の一致に関与する置換文字列が番兵のエラーで拒否されること（`errors.Is` で確かめる）。
-  - 背景: 置換文字列が後の段の規則に再び一致すると、`RedactText` の出力は範囲を置換文字列に置き換えた結果と一致しなくなり、正しさの義務が成り立たない。本番のコードで `WithPlaceholder` を呼ぶ箇所は無い（テストだけ）。前提条件を満たさない置換文字列を黙って受け付けた場合の結果は、実行時の検査の不一致による `RedactionFailurePlaceholder` であり、秘密の漏れではない。拒否するのは、誤った設定を黙って通さないためである（CLAUDE.md「Reject, don't normalize」）。
-- 差分のファジング: `RedactText` を基準にして、`redactedRanges` の範囲を置換文字列に置き換えた結果と比べる。既存の `RedactText` のテストの入力の全体を種にする。残す範囲の種類（前置き、後ろのグループ、`urlCred` の `@`）と段の重なりの入力を含める。
+- `WithPlaceholder` の削除（02 §3.2.1 の前提条件）: 本番のコードで呼ぶ箇所は無く、使うのは `internal/redaction/redactor_test.go` の次の 3 か所だけである（コミット `d429b663` で確認）。
+  - `:1728`（`placeholder reaches both redaction layers` の subtest）と `:3767`（`the placeholder option reaches the configured-host pattern` の subtest）: オプションを確かめるためだけのテストなので削除する。
+  - `:3352`（`TestRedactText_ValueBasedDetection_BypassWhenNil`）: 置換文字列は付随的な使い方なので、`NewConfig()` の既定の置換文字列に替え、期待値を `password=[REDACTED] value AKIAIOSFODNN7EXAMPLE` に改める。
+  - 削除の後、`go tool cover -func` の結果が関数ごとに変わらないことを確かめる（CLAUDE.md「Deleting a test is a claim that must be checked」）。`WithPlaceholder` 自体の行は消える。ほかの関数に差があれば（例: `internal/redaction` のテストでは `:1730` だけが呼ぶ `Placeholder()`）、その関数に届くテストを残すか加える。
+- 差分のファジング: `RedactText` を基準にして、`redactedRanges` の範囲を置換文字列に置き換えた結果と比べる。既存の `RedactText` のテストの入力の全体を種にする。残す範囲の種類（前置き、後ろのグループ、`urlCred` の `@`）と段の重なりの入力を含める。`DefaultPlaceholder` がどの規則の一致にも関与しないことを固定するため、PEM ブロックの直後に `[0-9A-Z]{16}` の文字列を続けた入力と、PEM ブロックの直後にほかの規則の前置き（`Bearer ` など）を続けた入力も種に含める。
 
 ## RedactMessage の描画手順
 
@@ -312,15 +310,16 @@ type Field struct {
 }
 
 func (l Level) String() string       // "", "global", "group[<name>]", "command[<name>]", "template[<name>]"
-func (l Level) Parts() []errmsg.Part // Const("group["), Ident(name), Const("]") etc.
+func (l Level) parts() []errmsg.Part // Const("group["), Ident(name), Const("]") etc.
 func (f Field) String() string       // "", "cmd", "args[0]", "vars.<name>", "vars.<name>[0]", ...
-func (f Field) Parts() []errmsg.Part
+func (f Field) parts() []errmsg.Part
 ```
 
 - ゼロ値: `HasVariableReference` は空の `level` と `field` で `processVarRefs` を呼ぶ（`internal/runner/config/expansion.go:92-104`）ので、このゼロ値で表す。index の有無は `hasIndex` で表し、値に番兵（`-1` など）を使わない。
 - 種類: `levelKind` は global・group・command・template の 4 つと無し。template は `template_expansion.go` の `template[<name>]`（`processVarRefs` の呼び出し元、`internal/runner/config/template_expansion.go:686`・`:1114`）に使う。`fieldKey` は、`processVarRefs`・`ExpandString` のすべての呼び出し元が使うキー（`cmd`・`args`・`env`・`env_vars`・`env_import`・`workdir`・`verify_files`・`cmd_allowed`・`vars`）と無し。キーの一覧は呼び出し元をたどって確定し、単体テストで、変更前に `fmt.Sprintf` で作っていた文字列と `String()` が一致することを確かめる。
 - 構築: `config` パッケージの中だけで使う関数は非公開にする（`globalLevel()`・`groupLevel(name)`・`varField(name)` など）。`group_executor.go` が `ExpandWorkDir` に渡す `Level` だけは、公開の `GroupLevel(name)`・`CommandLevel(name)` で作る。
-- `Parts()` の文言: 種類ごとの `switch` で、各文言を `Const` の文字列リテラルから作る。キーの文言を変数から `Const` に渡すと、AST のガードが定数式でないとして拒否するためである。呼び出し側は、`Parts()` の結果をほかの部分と `slices.Concat` でつないで `NewMessage`・`NewError` に渡す。
+- `parts()` は非公開である（02 §3.1.1 の契約 8）。呼び出し側は `config` パッケージの中（`ErrUndefinedVariableDetail.StructuredMessage` と `ExpandWorkDir`）だけである。
+- `parts()` の文言: 種類ごとの `switch` で、各文言を `Const` の文字列リテラルから作る。キーの文言を変数から `Const` に渡すと、AST のガードが定数式でないとして拒否するためである。呼び出し側は、`parts()` の結果をほかの部分と `slices.Concat` でつないで `NewMessage`・`NewError` に渡す。
 - 引数の型の変更: `level string` を受け取る関数（`ExpandString`・`ProcessVars`・`ProcessEnv`・`ProcessEnvImport`・`resolveAndExpand`・`processVarRefs`・`newVarExpander` などの 13 個）の引数を `Level` に、`field string` を受け取る関数の引数を `Field` に変える。
 - 変数の定義側の名前を `Field` に入れる箇所（`expandVarsWithLazyResolution` の `vars.%s`・`vars.%s[%d]`、`:724`・`:740`）は、`varField`・`varElementField` で作る。
 - `Level` の文字列を使うほかのエラー型（`ErrCircularReferenceDetail` など）は、`level.String()` を保持する。これらは #1197 の対象なので構造化しない。
@@ -344,7 +343,7 @@ func (e *ErrUndefinedVariableDetail) StructuredMessage() errmsg.Message
 func (e *ErrUndefinedVariableDetail) Unwrap() error // ErrUndefinedVariable, unchanged
 ```
 
-- 構造化メッセージ: `Const("undefined variable in ")`・`Level.Parts()`・`Const(".")`・`Field.Parts()`・`Const(": '")`・`Ident(VariableName)`・`Const("' (context: ")`・`Text(Context)`・`Const(")")`。`Chain` が空でなければ、`Const(" (expansion path: ")`・各変数名の `Ident` を `Const(" -> ")` でつないだもの・`Const(")")` を続ける。
+- 構造化メッセージ: `Const("undefined variable in ")`・`Level.parts()`・`Const(".")`・`Field.parts()`・`Const(": '")`・`Ident(VariableName)`・`Const("' (context: ")`・`Text(Context)`・`Const(")")`。`Chain` が空でなければ、`Const(" (expansion path: ")`・各変数名の `Ident` を `Const(" -> ")` でつないだもの・`Const(")")` を続ける。
 - 変更前の文言の定義: `internal/runner/config/errors.go:262-268`。
 
 ## expansion.go のラップの分類（出発点の一覧）
@@ -368,7 +367,7 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 ```
 
 - 変数の展開の失敗（`expansion.go:58`）: `Const("failed to expand workdir: ")`・`Cause(err)`。
-- 相対パスの拒否（`:63-64`）: `Level.Parts()`・`Const(": ")`・`Cause(ErrInvalidWorkDir)`・`Const(": ")`・`Path(strconv.Quote(expanded))`・`Const(" (relative paths are not allowed for security reasons)")`。
+- 相対パスの拒否（`:63-64`）: `Level.parts()`・`Const(": ")`・`Cause(ErrInvalidWorkDir)`・`Const(": ")`・`Path(strconv.Quote(expanded))`・`Const(" (relative paths are not allowed for security reasons)")`。
 - 呼び出し側（`internal/runner/group_executor.go:686`・`:723`）は `GroupLevel`・`CommandLevel` を渡す。
 
 ## 一時ディレクトリの 2 つのラップ
@@ -396,6 +395,10 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 | `internal/runner/base/executor` | `(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | コマンドパス・作業ディレクトリ（`executor.go` の `Validate` など） |
 
 - `:266` は 2 つのエラー（コマンドの失敗と出力の取り込みの後始末の失敗）を持つ。変更前も後始末の失敗は `%v` で入れていてラップしていないので、`Text(closeErr.Error())` にしても到達性は変わらない。
+- 02 §3.8.1 の範囲に入れる規則による分類（コミット `d429b663` で確認）:
+  - 範囲外: `internal/runner/base/executor/command_lifecycle.go` の `prepareCommand`・`runCommand`・`reportStartFailure`・`superviseCommand`・`killChild`・`killOutcome`・`rankedError`、`output_pump.go`・`fdexec_linux.go` のラップ、`executor.go` の `stageFromFD`。原因は OS・標準ライブラリのエラーか executor の番兵であり、挿入するのは固定の文言と pid（`stageFromFD` は gid）だけである。そのため、ここの `errors.Join` に中断の宣言のような専用の型は要らない。
+  - 規則に当たるが 02 に書いていない箇所: `privilege.Error`（`internal/runner/base/privilege/errors.go`）。run-as の実行で `seteuid(0)` が失敗したとき（`internal/runner/base/privilege/unix.go` の `escalatePrivileges`）に作られ、`CommandName` を挿入する。`WithPrivileges` のラップを経て `runCommand` の `elevErr` に入り、`reportStartFailure` を通って最終の実行エラーに届く。構造化しなくても最悪の結果は過剰な置換であり、秘密の漏れではない。詳細仕様書では、範囲に入れる（`Structured` を実装し、`CommandName` を `Ident` にする）か、01 の対象外「外部ライブラリや OS のエラー」として明示して除くかのどちらかを決める。
+  - #1196・#1197 でこの経路のどれかの型が `Structured` を実装したら、規則 (i) に当たる箇所が変わるので、この分類を確かめ直す。
 
 ## cmd/runner の 4 か所
 
@@ -423,6 +426,7 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 - 役割を選ぶ処理の禁止（AC-25）: `internal/redaction` の本番のコードが、`errmsg.Role` の値を作らないこと（`errmsg.RoleText` などの定数の参照、`errmsg.Role(...)` の変換、`Segment` の `Role` 欄への代入が無いこと。`switch` の `case` での参照は読むだけなので許す）。
 - 形による判定の禁止（AC-33）: 既存の `TestProductionCodeDoesNotProbeMultiErrorShape` が、`internal/errmsg` と `internal/redaction` を含む本番のコード全体を調べている。
 - 欄の非公開の検査: `errmsg.Part` の欄が非公開であり、`errmsg` の外で `Part` の複合リテラルを作っていないこと。
+- 部分を返す関数の検査（02 §3.1.1 の契約 8）: `errmsg` の外に、結果の型が `errmsg.Part` を含む（`[]errmsg.Part` や、`Part` を欄に持つ型などの複合も含む）公開の関数・メソッドが無いこと。結果に `errmsg.Part` を含む非公開の関数・メソッドは 02 §3.8.1 の範囲の中にあること。自己テストには、公開の `Parts()` メソッドを持つ型を与えて検出されることを確かめる。
 - 整形のバイトの検査（02 §3.8.2 で加えた不変条件）: 呼び出し側が渡すバイトが、整形として `Identifier`・`Path`・`Constant` の断片に入らないこと。判定の仕方（公開の構築関数の引数の型を調べる、`IndentedCause` の引数が原因だけであることをシグネチャで固定するなど）を決める。
 - 自己テスト: 各ガードに、検出すべき形を与えて検出されることを確かめるテストを付ける（既存の `TestMultiErrorShapeProbeCheckRecognizesForms` と同じ形）。
 - 案のファイル: `internal/errmsg/errmsg_guard_test.go`（`Const`・免除の役割・欄の非公開・文言と構造の一致）、`internal/redaction/redaction_guard_test.go`（AC-25）、`internal/runner/wrap_guard_test.go`（AC-41）。
@@ -439,7 +443,7 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 - 変わらない既存のテスト: `error` 属性の全文が値全体置換を受けることを固定するテスト（`internal/redaction/redactor_test.go:3947` の `failed to execute group monkey`）。対象外の属性（01 対象外「`error_message` 以外の属性」）についてのものである。
 - 0176 の `error_message` の本文が `[REDACTED]` になることを固定するテストは無い。`internal/logging`・`internal/runner`・`cmd/runner` のテストのうち `REDACTED` と `error_message` の両方を含むものは 3 つ（`internal/logging/slack_handler_test.go`・`internal/runner/runner_test.go`・`internal/runner/base/security/logging_security_test.go`）で、いずれも宣言された識別子が消えないこと、または key=value・Webhook の値が置き換えられることを確かめている。
 - security-architecture の書き換える段落: `docs/dev/architecture_design/security-architecture.ja.md` の `:645-651`（「識別子の型宣言による免除」）。
-- 案の新しいテストファイル: `internal/errmsg/errmsg_test.go`（平らにする規則、`String()` と `Error()` の一致、`PathErrorCause`、`IndentedCause`、nil の原因、深さの上限）、`internal/redaction/message_test.go`・`ranges_test.go`（AC-01〜04・07・36〜38、範囲と `RedactText` の差分のファジング、実行時の検査、置換文字列の検査）。
+- 案の新しいテストファイル: `internal/errmsg/errmsg_test.go`（平らにする規則、`String()` と `Error()` の一致、`PathErrorCause`、`IndentedCause`、nil の原因、深さの上限）、`internal/redaction/message_test.go`・`ranges_test.go`（AC-01〜04・07・36〜38、範囲と `RedactText` の差分のファジング、実行時の検査）。
 
 ## テストの細則
 
@@ -450,7 +454,6 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 - AC-21: `RedactingHandler` を通らない標準のハンドラ（`slog.NewTextHandler` など）に `errmsg.Message` の属性を渡し、出力が `String()` と同じ文字列になること。
 - AC-37: 検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに、各断片だけに redaction を適用しても秘密が見えたまま残ることを先に確かめる（design_carryover.md「テストの入力の細則」）。
 - 一時ディレクトリ: 2 つのラップのそれぞれで文言を確かめる（「一時ディレクトリの 2 つのラップ」）。
-- 置換文字列: 「範囲を返す処理の細則」の置換文字列の検査のテスト。
 - 切り詰め: 深さの上限に達したとき、`RedactingHandler` が Debug のログを出し、`RedactLogAttribute` は出さないこと（戻り値の形を決めた後に書く）。
 - `cancelledRunError`: 文言が `errors.Join(ctxErr, err)` と同じであること、到達性（AC-32）。
 - `config` の `Level`・`Field`: `String()` が変更前の `fmt.Sprintf` の結果と同じであること。
