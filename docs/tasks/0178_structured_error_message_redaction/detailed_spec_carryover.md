@@ -146,11 +146,19 @@ func (e *Error) StructuredMessage() Message
 - 残す範囲: 各段の置換のテンプレートが再び出力する範囲を「残す範囲」とする。前置きのグループ（`${1}` など。`Bearer `、key と区切り、`"private_key_id":"` など）と後ろのグループ（`gcpSAKey` の `${2}`、`jwt` の `${1}`）がこれに当たる。`urlCred` が一致の末尾の `@` を文字列リテラルとして出し直すのは、一致の最後の 1 バイトを残す範囲とみなす。
 - 段の重なり: 後の段は、前の段が置換文字列を入れた後の文字列に対して一致を探す。後の段の置き換える範囲が、前の段の置換文字列と一部でも重なれば、その置換文字列に当たる元の範囲の全体を置き換える範囲に加える。残す範囲が前の段の置換文字列と重なっても、その置換文字列に当たる元の範囲は置き換えたままとする（置換文字列は分けない）。
 - 表し方: 範囲は、一致の数に比例する大きさの区間の列で表す。文字列の長さに比例する表は作らない。
+- 幅が 0 の範囲: 置き換える区間が空の一致（`password=""` の引用の間など）でも、`RedactText` は置換文字列を入れる（`internal/redaction/redactor_test.go:404` が `password=""` → `password="[REDACTED]"` を固定している）。そのため `redactedRanges` は `start == end` の範囲（挿入点）を返すことがある。挿入点は捨てずに返し、「sorted and non-overlapping」の定義に含める（同じ位置の挿入点と幅のある範囲の並べ方も決める）。描画での扱いは「RedactMessage の描画手順」の手順 4・6。
 - `WithPlaceholder` の削除（02 §3.2.1 の前提条件）: 本番のコードで呼ぶ箇所は無く、使うのは `internal/redaction/redactor_test.go` の次の 3 か所だけである（コミット `d429b663` で確認）。
   - `:1728`（`placeholder reaches both redaction layers` の subtest）と `:3767`（`the placeholder option reaches the configured-host pattern` の subtest）: オプションを確かめるためだけのテストなので削除する。
   - `:3352`（`TestRedactText_ValueBasedDetection_BypassWhenNil`）: 置換文字列は付随的な使い方なので、`NewConfig()` の既定の置換文字列に替え、期待値を `password=[REDACTED] value AKIAIOSFODNN7EXAMPLE` に改める。
   - 削除の後、`go tool cover -func` の結果が関数ごとに変わらないことを確かめる（CLAUDE.md「Deleting a test is a claim that must be checked」）。`WithPlaceholder` 自体の行は消える。ほかの関数に差があれば（例: `internal/redaction` のテストでは `:1730` だけが呼ぶ `Placeholder()`）、その関数に届くテストを残すか加える。
-- 差分のファジング: `RedactText` を基準にして、`redactedRanges` の範囲を置換文字列に置き換えた結果と比べる。既存の `RedactText` のテストの入力の全体を種にする。残す範囲の種類（前置き、後ろのグループ、`urlCred` の `@`）と段の重なりの入力を含める。`DefaultPlaceholder` がどの規則の一致にも関与しないことを固定するため、PEM ブロックの直後に `[0-9A-Z]{16}` の文字列を続けた入力と、PEM ブロックの直後にほかの規則の前置き（`Bearer ` など）を続けた入力も種に含める。
+- 差分のファジング: `RedactText` を基準にして、`redactedRanges` の範囲を置換文字列に置き換えた結果と比べる。既存の `RedactText` のテストの入力の全体を種にする。残す範囲の種類（前置き、後ろのグループ、`urlCred` の `@`）と段の重なりの入力を含める。`DefaultPlaceholder` がどの規則の一致にも関与しないことを固定するため、PEM ブロックの直後に `[0-9A-Z]{16}` の文字列を続けた入力と、PEM ブロックの直後にほかの規則の前置き（`Bearer ` など）を続けた入力も種に含める。空の引用の値（`password=""`・`"password":""`・`password=''`）も種に含める（幅が 0 の範囲）。
+- `WithWebhookHost` の規則と置換文字列: 種に、設定した webhook のホストの URL を置換文字列の隣に置いた入力（例: `https://hooks.example.com/[REDACTED]`、`[REDACTED]https://hooks.example.com/x`）を含める。この規則は `\bhttps://` から一致を始め、パスの文字の集合は `[` を含まない（`internal/redaction/value_detector.go:125` の `compileWebhookHostPattern`）。そのため一致は `[REDACTED]` の中で始まることも終わることもない。
+- `WithAdditionalKeyValuePatterns` の削除（02 §3.2.1 の前提条件）: 本番のコードで呼ぶ箇所は無い。使うのは `internal/redaction/redactor_test.go` の次の 5 か所だけである（コミット `89dbc8b1` で確認）。
+  - `:645`（`TestKeyBoundaryGroup_Classification/user-added key is redacted with the loose boundary`）: 利用者が足すキーの境界を固定するテストで、足す経路が無くなるので削除する。
+  - `:654`（同じ関数の `zero value of PatternKind is the key kind`）: `Kind` のゼロ値が key の規則になることは残す価値がある。`applyPattern`（`:48`）で `KeyValuePattern{Literal: "passphrase"}` を直接コンパイルする形に書き換える。
+  - `:1574`（`TestPerformKeyValueRedaction/unknown kind never reaches the redaction path`）: `NewConfig` を通す後半を削除し、`compilePattern` での拒否（`:1571`）だけを残す。
+  - `:1712`・`:1721`（`TestNewConfig_RejectsInvalidPatterns` の 2 つの subtest）: 足す経路の検証なので削除する。パターンの検証そのものは `TestKeyValuePattern_Validate` に残る。`WithPlaceholder` の subtest（`:1728`）も削除するので、関数ごと消える。
+  - 削除の後、`go tool cover -func` の結果が関数ごとに変わらないことを確かめる。`NewConfig` の中の、パターンの検証とコンパイルが失敗したときに返す分岐は、既定の規則だけでは届かなくなる。これらの分岐を残すか（既定の規則が不正な形に編集されたときの拒否の境界として。`TestDefaultKeyValuePatterns_AreValid` と役割が重なる）、除くかを決め、`NewConfig` の網羅率の差をその判断として記録する。
 
 ## RedactMessage の描画手順
 
@@ -172,8 +180,11 @@ func (e *Error) StructuredMessage() Message
    - `Text`（どの役割にも当たらない値を含む）: 断片の文字列に `RedactText` を適用し、変化がなければ `IsSensitiveValue` で判定して、当たれば断片全体を置換文字列にする。値全体置換は断片ごとに判定する（AC-36）。
 3. S に `redactedRanges` を適用し、全体の検出範囲を得る。範囲を置換文字列に置き換えた結果が `RedactText(S)` と一致するかを確かめ、一致しなければエラーを返す（実行時の検査）。
 4. `Identifier` 以外の断片のうち、全体の検出範囲に含まれるのに手順 2 では置き換えられないバイトを持つ断片を「境界の影響を受ける断片」とする。断片の外の文字列があって初めて検出される秘密は、この断片に現れる。
+   - 幅が 0 の範囲（挿入点。「範囲を返す処理の細則」）は、その位置を含む断片を境界の影響を受ける断片にする。ただし手順 2 がその断片で同じ位置に置換文字列を入れていれば影響は無い。
+   - 挿入点が断片の境界にあるときは、隣の `Identifier` でない断片に付ける。両隣がどちらも `Identifier` の断片なら、置換文字列はその 2 つの断片の間に出す。`Identifier` のバイトは隠さない。
 5. 境界の影響を受けない断片は、手順 2 の結果をそのまま出す。
-6. 境界の影響を受ける断片では、次のバイトを「隠すバイト」とする: 全体の検出範囲に含まれるバイト、手順 2 で置き換えられたバイト、手順 2 で値全体置換に当たった断片のすべてのバイト。`Identifier` の断片のバイトは隠さない（AC-37）。隠すバイトが連続する区間は、極大の区間ごとに 1 つの置換文字列にする。区間は、隣り合う境界の影響を受ける断片をまたいでよい。
+6. 境界の影響を受ける断片では、次のバイトを「隠すバイト」とする: 全体の検出範囲に含まれるバイト、手順 2 で置き換えられたバイト、手順 2 で値全体置換に当たった断片のすべてのバイト。`Identifier` の断片のバイトは隠さない（AC-37）。隠すバイトが連続する区間は、極大の区間ごとに 1 つの置換文字列にする。区間は、隣り合う境界の影響を受ける断片をまたいでよい。挿入点は、隣接する隠すバイトがあればそれと合わせて 1 つの極大の区間にし、無ければ幅が 0 の区間として 1 つの置換文字列を出す。
+   - テスト: `Constant("password=\"")`・`Text("")`・`Constant("\"")` の 3 つの断片を与え、出力が `RedactText("password=\"\"")` と同じ `password="[REDACTED]"` になることを確かめる。挿入点は空の `Text` の断片の位置（2 つの `Constant` の境界）にあり、どの断片も単独では検出されない。
 
 - 非公開の関数: 手順 2〜6 は、断片の列（`[]errmsg.Segment`）を受け取る非公開の関数で行う。`RedactMessage` は手順 1 の後にこの関数を呼ぶ。AC-38 のテストはこの関数に範囲外の役割を持つ断片を与える。
 - 手順 5 の分け方を採る理由の詳細: 境界をまたぐ検出が無いときまで隠すバイトによる描画を使うと、置換文字列の数が断片単独の `RedactText` の結果と変わることがある（隣り合う 2 つの置き換えが 1 つの置換文字列にまとまるなど）。AC-04・AC-11 は、境界をまたぐ検出が無い断片では断片単独の結果と同じになることを求めている。
@@ -239,7 +250,10 @@ func (e *ExecutionError) ReportMessage() errmsg.Message
 02 §3.3.3 から移した細則である。
 
 - `errorRecordParams.errorMsg` の型を `errmsg.Message` に変える。`writeErrorLogRecord` は `error_message` を `slog.Any(key, msg)` で記録する（変更前は `slog.String`、`internal/logging/pre_execution_error.go:187`）。
-- stderr の `Details:` は `msg.String()` を使う。
+- 凍結の操作（02 §3.3.3 の「1 回だけ平らにする」）: errmsg に、`Message` を 1 回平らにして、平らにした断片と切り詰めの有無だけを持つ `Message` を返す操作を置く（案: `func (m Message) Freeze() Message`）。断片の役割は平らにした結果のものをそのまま移すので、役割を errmsg の外で選ぶ経路にはならない（02 §3.1.1 の契約 1）。凍結した `Message` は原因を持たないので、`String()`・`Segments()` は原因の `Error()` を呼ばない。
+- 凍結する位置: `handleErrorCommon` が報告ごとに 1 回凍結し、stderr の `Details:` には凍結した `Message` の `String()` を使い、記録にも凍結した `Message` を渡す。そのため、`RedactMessage` の 1 回の `Segments()` の呼び出しは原因の `Error()` を評価しない。記録だけの `NotifyPreExecutionError`（`internal/logging/pre_execution_error.go:237-239`）も同じ扱いにそろえるなら、凍結を記録の組み立て（`preExecutionRecordParams`・`HandleExecutionError`）へ移す。どちらにするかは詳細仕様書で決める。
+- 原因の `Error()` の panic は凍結の時点で起きる。変更前に `preExecutionRecordParams` の `Detail()`（`:215`）や `HandleExecutionError` の組み立てで起きていたのと同じく、報告は回復しない（02 §4.2）。
+- テスト: 呼ぶたびに文言が変わる原因を持つ構造化メッセージで報告し、stderr の `Details:` と記録された `error_message` の redaction 前の文字列が同じ 1 回の結果から来ること（原因の `Error()` が 1 回だけ呼ばれること）を確かめる。
 - `preExecutionRecordParams` は `DetailMessage()` を、`HandleExecutionError` は `ReportMessage()` を渡す。
 - 通知ビルダー（`buildPreExecutionError`、`internal/logging/slack_handler.go:841`）は変えない。
 
@@ -399,8 +413,12 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 
 - `:266` は 2 つのエラー（コマンドの失敗と出力の取り込みの後始末の失敗）を持つ。変更前も後始末の失敗は `%v` で入れていてラップしていないので、`Text(closeErr.Error())` にしても到達性は変わらない。
 - 02 §3.8.1 の範囲に入れる規則による分類（コミット `24b0c2f7` で確認。`internal/runner/base` はコミット `3bb634bd` から変わっておらず、下の行番号はどちらでも同じ）:
-  - 範囲外: `internal/runner/base/executor/command_lifecycle.go` の `prepareCommand`・`reportStartFailure`・`rankedError`、`output_pump.go`・`fdexec_linux.go` のラップ、`executor.go` の `stageFromFD`。原因は OS・標準ライブラリのエラーか executor の番兵であり、`privilege.Error` を運ばない。挿入するのは固定の文言と pid（`stageFromFD` は gid）だけである。
-  - `reportStartFailure` の注意: `runCommand` の `!started` の分岐（`:591`）が渡す `errors.Join(elevErr, closeErr, fdErr)` も、`runCommand` を範囲に入れると宣言した複合の型になる。この型は `Structured` を実装するので、規則 (i) を字面どおりに当てはめると `reportStartFailure` も範囲に入る。この分岐では窓が開いているので、`WithPrivileges` は `fn` の結果（開始の失敗）を返し、`privilege.Error` は入らない（権限の復元の失敗は `emergencyShutdown` に進み、戻り値にならない）。出力は変わらないが、`reportStartFailure` を範囲に入れるか、規則 (i) の読み方を「`privilege.Error` などの構造を持つ子を運びうる」と定めるかを詳細仕様書で決め、02 の表に書き戻す。
+  - 範囲外: `internal/runner/base/executor/command_lifecycle.go` の `prepareCommand`・`rankedError`、`output_pump.go`・`fdexec_linux.go` のラップ、`executor.go` の `stageFromFD`。原因は OS・標準ライブラリのエラーか executor の番兵であり、`privilege.Error` を運ばない。挿入するのは固定の文言と pid（`stageFromFD` は gid）だけである。
+  - `reportStartFailure`（`command_lifecycle.go:618-626`）は範囲に入れた（02 §3.8.1 の表に反映済み）。`runCommand` の `!started` の分岐（`:591`）が渡す `errors.Join(elevErr, closeErr, fdErr)` は、`runCommand` を範囲に入れると宣言した複合の型になり、この型は `Structured` を実装するので、規則 (i) に当たる。この分岐では `privilege.Error` は入らない（窓が開いているので `WithPrivileges` は `fn` の結果を返し、権限の復元の失敗は `emergencyShutdown` に進む）が、規則は字面どおりに当てはめる。
+    - `:619` の `errors.Join(startErr, pc.release())` は、同じ宣言した複合の型にする。
+    - `:625` の `fmt.Errorf("command execution failed: %w", combinedErr)` は `Const("command execution failed: ")`・`Cause(combinedErr)` にする。
+    - 文言は変わらない（AC-18）。`:620-624` のログの `error` 属性の値も、同じ文言の複合の型になる。
+    - テスト: 2 つの呼び出し元の経路のそれぞれで、`Error()` の文言が変更前の `fmt.Errorf("command execution failed: %w", errors.Join(startErr, releaseErr))` と同じであること、`errors.Is` が変更前と同じ対象に届くことを確かめる。1 つは `pc.spent` の経路（`:557`、`ErrPreparedCommandSpent`。既存の `TestRunCommand_ChildStateTransitions/spent_command_stays_not_started`（`executor_supervise_test.go:433`）が `errors.Is` だけを確かめている）、もう 1 つは開始の失敗の経路（`:591`。既存の `TestExecute_FdBoundStartFailureNoLeak`（`executor_fdexec_test.go:111`）と `TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow`（`executor_lifecycle_test.go:815`）が通る）。
   - #1196・#1197 でこの経路のどれかの型が `Structured` を実装したら、規則 (i) に当たる箇所が変わるので、この分類を確かめ直す。
 - `privilege.Error` は範囲に入れる（ユーザーの決定。規則どおりで、例外を設けない）。`Structured` を実装し、`CommandName` を `Ident` にする。
   - 部分の並び（変更前の書式は `internal/runner/base/privilege/errors.go:34-37` の `privilege operation '%s' failed for command '%s' (uid %d->%d): %v`）: `Const("privilege operation '")`・`Text(string(Operation))`・`Const("' failed for command '")`・`Ident(CommandName)`・`Const("' (uid ")`・`Text(strconv.Itoa(OriginalUID))`・`Const("->")`・`Text(strconv.Itoa(TargetUID))`・`Const("): ")`・`Cause(SyscallErr)`。`Timestamp` は描画しない。`SyscallErr` は変更前も `%v` で入れているが、`Unwrap()` が `SyscallErr` を返すので、`Cause` にしても到達性は変わらない。nil の `SyscallErr` は `<nil>` になり、`%v` と同じである。

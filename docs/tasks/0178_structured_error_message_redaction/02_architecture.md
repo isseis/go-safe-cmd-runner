@@ -319,10 +319,10 @@ type Structured interface {
 - `RedactText` は変えない。範囲を返す関数は別の関数であり、`RedactMessage` からだけ呼ぶ。`RedactText` を範囲を返す実装に差し替える案は採らない。`RedactText` はすべてのログ行・取り込んだ出力・監査のログで使われ、差し替えの誤りがあると、秘密の漏れや panic がそのすべてに及ぶためである。01 は範囲を求めることを求めているだけで、`RedactText` の差し替えは求めていない。
 - 規則の共有: 範囲を返す関数は `RedactText` の各段と同じ規則を同じ順序で使い、規則の写しを作らない。
 - 正しさの義務: 任意の入力について、返した各範囲を 1 つの置換文字列に置き換えた結果が、変更していない `RedactText` の出力と一致すること。この一致は、既存の `RedactText` のテストの入力の全体と、`RedactText` を基準にした差分のファジングで固定する（CLAUDE.md「An optimization that adds a correctness obligation」）。
-- 前提条件: 置換文字列は定数 `DefaultPlaceholder` である。`WithPlaceholder` は本番のコードから呼ばれていないので削除する（CLAUDE.md「count its real uses」）。この定数がどの規則の一致にも関与しないことは、`RedactText` を基準にした差分のファジングで固定する。置換文字列が後の段の規則に再び一致すると、正しさの義務が成り立たないためである。実行時の検査は、fail-closed の最後の備えとして残す。
+- 前提条件: 規則の集合は既定の規則（と、検証済みの `WithWebhookHost` の規則）に固定し、置換文字列は定数 `DefaultPlaceholder` である。`WithPlaceholder` と `WithAdditionalKeyValuePatterns` は、どちらも本番のコードから呼ばれていないので削除する（CLAUDE.md「count its real uses」）。規則を足したり置換文字列を変えたりすると、置換文字列が後の段の規則に再び一致することがあり、正しさの義務が成り立たなくなるためである。この前提条件は、`RedactText` を基準にした差分のファジングで固定する。実行時の検査は、fail-closed の最後の備えとして残す。
 - 実行時の検査: `RedactMessage` は描画のたびに、範囲から作った文字列が `RedactText` の出力と一致するかを確かめる。一致しなければ失敗として扱い、`error_message` は `RedactionFailurePlaceholder` になり、失敗は記録される（3.2.3 節）。範囲の誤りが秘密の漏れにならないようにするためである（fail-closed）。
 
-関数のシグネチャ、残す範囲と段の重なりの扱い、`WithPlaceholder` の削除の細目は、詳細仕様書で決める（申し送り「範囲を返す処理の細則」）。
+関数のシグネチャ、残す範囲と段の重なりの扱い、2 つのオプションの削除の細目は、詳細仕様書で決める（申し送り「範囲を返す処理の細則」）。
 
 #### 3.2.2 `Config.RedactMessage`
 
@@ -382,6 +382,7 @@ type Structured interface {
 #### 3.3.3 記録
 
 - 2 つのレコードは、`error_message` に構造化メッセージを記録する。
+- 各報告は、構造化メッセージを 1 回だけ平らにする。stderr の `Details:` の文字列と、記録する `error_message` は、その 1 回の結果から作る（stderr は redaction なし、`error_message` は redaction あり）。原因の `Error()` を報告ごとに 2 回以上呼ばないためである（3.2.2 節 (a) と同じ理由）。
 - stderr の `Details:` は redaction 前の描画を使う。redaction を通らないことと文言は変わらない（01「stderr は現状を維持する」、AC-19）。
 - 通知ビルダーは、`RedactingHandler` の後で `error_message` を描画済みの文字列として受け取るので、変えない（AC-23）。
 
@@ -521,7 +522,7 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` のファイル全体、`runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` | — |
 | `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`、`Level`・`Field` の非公開の部分の組み立て | 下の表の関数 |
 | `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
-| `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup`・`runCommand`・`superviseCommand`・`killChild`、`killOutcome` | — |
+| `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup`・`runCommand`・`reportStartFailure`・`superviseCommand`・`killChild`、`killOutcome` | — |
 | `internal/runner/base/privilege` | `(*Error).StructuredMessage`、`(*UnixPrivilegeManager).performElevation` | — |
 | `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`contextParts` | — |
 
@@ -563,7 +564,7 @@ AST のガードは、次の不変条件を守る。
 | コンポーネント | 区分 | 責務 |
 |---|---|---|
 | `internal/errmsg` | 新規 | 役割・部分・構造化メッセージ・断片・要約文・`Structured`・`errmsg.Error`、構築、平らにする処理、字下げの再現 |
-| `internal/redaction` | 変更 | 範囲を返す関数、`WithPlaceholder` の削除、`RedactMessage`、ハンドラと `RedactLogAttribute` の分岐、失敗の記録 |
+| `internal/redaction` | 変更 | 範囲を返す関数、`WithPlaceholder`・`WithAdditionalKeyValuePatterns` の削除、`RedactMessage`、ハンドラと `RedactLogAttribute` の分岐、失敗の記録 |
 | `internal/logging` | 変更 | `PreExecutionError`・`ExecutionError` の要約文の型と構造化メッセージ、構造化メッセージの記録 |
 | `internal/runner`（`group_executor.go`・`group_stage.go`・`group_errors.go`・`runner.go`） | 変更 | エラー型の `Structured`、ラップ、`cancelledRunError`、段階の定義表の要約文 |
 | `internal/runner/config`（`expansion.go`・`errors.go`・`template_expansion.go`） | 変更 | `Level`・`Field`、`ErrUndefinedVariableDetail`、ラップ |
@@ -584,7 +585,8 @@ AST のガードは、次の不変条件を守る。
 
 | 状況 | 扱い |
 |---|---|
-| 構造化メッセージの取得または原因の `Error()` が panic する | `RedactMessage` が回復して失敗を報告する。`RedactingHandler` は `error_message` を `RedactionFailurePlaceholder` にし、失敗を `ErrorCollector` に記録する（3.2.3 節）。秘密の一部を含むかもしれない途中の描画は出さない |
+| 報告の中で原因の `Error()` が panic する | 報告が構造化メッセージを平らにする時点で起きる。変更前に `Detail()` で起きたのと同じ時点である。報告はこれを回復せず、変更前と同じく呼び出し元へ伝わる。記録する `error_message` は平らにした結果だけを持つので、`RedactMessage` が原因の `Error()` を呼ぶことはない（3.3.3 節） |
+| 平らにしていない構造化メッセージの取得または原因の `Error()` が `RedactMessage` の中で panic する | `RedactMessage` が回復して失敗を報告する。`RedactingHandler` は `error_message` を `RedactionFailurePlaceholder` にし、失敗を `ErrorCollector` に記録する（3.2.3 節）。秘密の一部を含むかもしれない途中の描画は出さない |
 | 範囲を返す関数の結果が `RedactText` と一致しない | panic と同じく、`error_message` を `RedactionFailurePlaceholder` にし、失敗を記録する（3.2.1 節） |
 | 展開の深さが上限に達する | 残りの原因を評価せず、固定の目印の `Text` にする。`RedactMessage` が切り詰めを呼び出し側に報告し、`RedactingHandler` は Debug の診断のログを出す（3.1.3 節・3.2.3 節）。残りの原因の文字列は出ないので、保護は弱まらない |
 | `Config` が `NewConfig` を経ていない | `RedactText` と同じく `RedactionFailurePlaceholder` を返す |
@@ -769,7 +771,7 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 ## 8. 実装の優先順位
 
 1. `internal/errmsg`（型、平らにする処理、`errmsg` のガード）。
-2. `internal/redaction` の範囲を返す関数と差分のファジング、`WithPlaceholder` の削除、性能の確認。
+2. `internal/redaction` の範囲を返す関数と差分のファジング、`WithPlaceholder`・`WithAdditionalKeyValuePatterns` の削除、性能の確認。
 3. `Config.RedactMessage` とハンドラの分岐。
 4. `internal/logging` の `PreExecutionError`・`ExecutionError`・記録。`Message` のリテラルを書き換える。
 5. `internal/runner` のエラー型、`group_executor.go` のラップ、`cancelledRunError`。
@@ -817,4 +819,4 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 - 01 のレビューで、要件に実装の箇所を列挙すると「列挙した箇所に AC が無い」という指摘が続いた。そのため、01 では箇所を列挙せず不変条件（AC-41）とし、対象の範囲を本書（3.8.1 節）で確定した。01 から移した箇所の一覧と細則は design_carryover.md にある。
 - design_carryover.md は「範囲の中で `Identifier` 以外のバイトが連続する区間ごとに 1 つの置換文字列」とする細則を持つ。本書は、境界をまたぐ検出が触れない断片では断片単独の結果を出す規則（3.2.2 節 (d)）を加えた。AC-04・AC-11 の「断片単独と同じ結果」を、境界をまたぐ検出が無い場合に保つためである。
 - 本書の初版は、`RedactText` を範囲を返す実装に差し替える設計だった。設計レビューで、差し替えの誤りがすべてのログ行に及び、比べる基準も無くなることが指摘されたため、`RedactText` を変えずに別の関数を置く設計（3.2.1 節）に改めた。
-- 本書の草稿は、実際のコード、構築関数の一覧、箇所ごとの部分の並び、行番号を含んでいた。設計レビューで、コードが持つ文言を書き写した箇所に誤り（一時ディレクトリの権限設定のラップの前置き）が見つかり、ほかにも裏付けの無い主張（組み合わせる API の無い `GroupErrors` の深さ）や、呼び出し側のバイトが免除の役割の断片に入る API（字下げの引数）が指摘された。本書を契約・不変条件・対象の範囲に絞り、細目は [detailed_spec_carryover.md](detailed_spec_carryover.md) に移して詳細仕様書で決めることにした。あわせて、免除の役割の断片に入るバイトの出どころの不変条件（1.1 節・5.1 節・3.8.2 節）、置換文字列を定数に限る前提条件（3.2.1 節）、構造化メッセージを組み合わせる契約（3.1.1 節）、切り詰めの報告の担い手（3.2.3 節）を加えた。
+- 本書の草稿は、実際のコード、構築関数の一覧、箇所ごとの部分の並び、行番号を含んでいた。設計レビューで、コードが持つ文言を書き写した箇所に誤り（一時ディレクトリの権限設定のラップの前置き）が見つかり、ほかにも裏付けの無い主張（組み合わせる API の無い `GroupErrors` の深さ）や、呼び出し側のバイトが免除の役割の断片に入る API（字下げの引数）が指摘された。本書を契約・不変条件・対象の範囲に絞り、細目は [detailed_spec_carryover.md](detailed_spec_carryover.md) に移して詳細仕様書で決めることにした。あわせて、免除の役割の断片に入るバイトの出どころの不変条件（1.1 節・5.1 節・3.8.2 節）、規則の集合と置換文字列を既定に固定する前提条件（3.2.1 節）、構造化メッセージを組み合わせる契約（3.1.1 節）、切り詰めの報告の担い手（3.2.3 節）を加えた。
