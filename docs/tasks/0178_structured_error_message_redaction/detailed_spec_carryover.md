@@ -106,7 +106,8 @@ func (e *Error) StructuredMessage() Message
 - 02 の作成時点で確認した最も深い連鎖（出発点。組み合わせの深さの数え方を決めた後で数え直す）:
   - 最終の実行エラー: `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（`executeCommandWithOutput` の `normal_manager.go:266`）→ `errmsg.Error`（`executeNormal` の `executor.go:344`）→ `errmsg.Error`（`Validate`）。
   - group 実行前段: `PreExecutionError` → `GroupStageError` → `errmsg.Error`（group の展開、`group_executor.go:169`）→ `errmsg.Error`（`expansion.go:1052`）→ `errmsg.Error`（`cmd_allowed`、`expansion.go:925`）→ `ErrUndefinedVariableDetail`。
-  - どちらも 6〜7 段である。
+  - run-as の停止の窓（「コマンドの実行の経路の箇所ごとの部分の並び」の経路 B。`privilege.Error` を範囲に入れたことで加わった）: `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（`normal_manager.go:266`）→ `errmsg.Error`（`executor.go:305`）→ `errmsg.Error`（`command_lifecycle.go:789`）→ 複合の型（`:782`）→ 複合の型（`killOutcome`、`:942`）→ `errmsg.Error`（`performElevation`、`unix.go:217`）→ `privilege.Error`。
+  - 最初の 2 つは 6〜7 段、経路 B は 11 段で、いまの最も深い連鎖である。案の `maxDepth = 16` と余裕の案（`maxDepth - 4` = 12 段以下）では、残りは 1 段しかない。上限と余裕の値は、この連鎖で導き直す。
 - 組み合わせの深さの数え方: 02 の初版は「`GroupErrors` は段を増やさない」と書いたが、組み合わせる API が無かったので根拠が無かった（「errmsg の公開 API」の組み合わせの項）。組み合わせた `Message` を 1 段と数えるかどうかを、API を決めるときに決め、上の連鎖の段数を数え直す。
 - 余裕を見張るテスト: 案は「実際の最も深い連鎖を組み立てて、深さが `maxDepth - 4` 以下であることを確かめる」。組み合わせの深さの数え方を決めた後で、上限と余裕の値を導き直す。#1196・#1197 の型を加えたときに余裕が無くなれば失敗する形にする。
 
@@ -393,12 +394,35 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 | `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput` | コマンドパス（`normal_manager.go:147`・`:150` の `cmd.ExpandedCmd`）。`:266` は `Cause(err)`・`Const("; and also failed to close output capture: ")`・`Text(closeErr.Error())`、ほかのラップ（`:253`・`:264`・`:290`）は `Const`・`Cause` |
 | `internal/runner/resource` | `(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | コマンドパス（`evaluateCommandRisk` の `dryrun_manager.go:416`・`:427`・`:441`） |
 | `internal/runner/base/executor` | `(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | コマンドパス・作業ディレクトリ（`executor.go` の `Validate` など） |
+| `internal/runner/base/executor` | `runCommand`・`superviseCommand`・`killChild`・`killOutcome`（`command_lifecycle.go`） | 挿入する名前は無い。`privilege.Error` を運ぶので範囲に入る（下の経路 A・B） |
+| `internal/runner/base/privilege` | `(*Error).StructuredMessage`・`(*UnixPrivilegeManager).performElevation` | コマンド名（`Error.CommandName`） |
 
 - `:266` は 2 つのエラー（コマンドの失敗と出力の取り込みの後始末の失敗）を持つ。変更前も後始末の失敗は `%v` で入れていてラップしていないので、`Text(closeErr.Error())` にしても到達性は変わらない。
-- 02 §3.8.1 の範囲に入れる規則による分類（コミット `d429b663` で確認）:
-  - 範囲外: `internal/runner/base/executor/command_lifecycle.go` の `prepareCommand`・`runCommand`・`reportStartFailure`・`superviseCommand`・`killChild`・`killOutcome`・`rankedError`、`output_pump.go`・`fdexec_linux.go` のラップ、`executor.go` の `stageFromFD`。原因は OS・標準ライブラリのエラーか executor の番兵であり、挿入するのは固定の文言と pid（`stageFromFD` は gid）だけである。そのため、ここの `errors.Join` に中断の宣言のような専用の型は要らない。
-  - 規則に当たるが 02 に書いていない箇所: `privilege.Error`（`internal/runner/base/privilege/errors.go`）。run-as の実行で `seteuid(0)` が失敗したとき（`internal/runner/base/privilege/unix.go` の `escalatePrivileges`）に作られ、`CommandName` を挿入する。`WithPrivileges` のラップを経て `runCommand` の `elevErr` に入り、`reportStartFailure` を通って最終の実行エラーに届く。構造化しなくても最悪の結果は過剰な置換であり、秘密の漏れではない。詳細仕様書では、範囲に入れる（`Structured` を実装し、`CommandName` を `Ident` にする）か、01 の対象外「外部ライブラリや OS のエラー」として明示して除くかのどちらかを決める。
+- 02 §3.8.1 の範囲に入れる規則による分類（コミット `24b0c2f7` で確認。`internal/runner/base` はコミット `3bb634bd` から変わっておらず、下の行番号はどちらでも同じ）:
+  - 範囲外: `internal/runner/base/executor/command_lifecycle.go` の `prepareCommand`・`reportStartFailure`・`rankedError`、`output_pump.go`・`fdexec_linux.go` のラップ、`executor.go` の `stageFromFD`。原因は OS・標準ライブラリのエラーか executor の番兵であり、`privilege.Error` を運ばない。挿入するのは固定の文言と pid（`stageFromFD` は gid）だけである。
+  - `reportStartFailure` の注意: `runCommand` の `!started` の分岐（`:591`）が渡す `errors.Join(elevErr, closeErr, fdErr)` も、`runCommand` を範囲に入れると宣言した複合の型になる。この型は `Structured` を実装するので、規則 (i) を字面どおりに当てはめると `reportStartFailure` も範囲に入る。この分岐では窓が開いているので、`WithPrivileges` は `fn` の結果（開始の失敗）を返し、`privilege.Error` は入らない（権限の復元の失敗は `emergencyShutdown` に進み、戻り値にならない）。出力は変わらないが、`reportStartFailure` を範囲に入れるか、規則 (i) の読み方を「`privilege.Error` などの構造を持つ子を運びうる」と定めるかを詳細仕様書で決め、02 の表に書き戻す。
   - #1196・#1197 でこの経路のどれかの型が `Structured` を実装したら、規則 (i) に当たる箇所が変わるので、この分類を確かめ直す。
+- `privilege.Error` は範囲に入れる（ユーザーの決定。規則どおりで、例外を設けない）。`Structured` を実装し、`CommandName` を `Ident` にする。
+  - 部分の並び（変更前の書式は `internal/runner/base/privilege/errors.go:34-37` の `privilege operation '%s' failed for command '%s' (uid %d->%d): %v`）: `Const("privilege operation '")`・`Text(string(Operation))`・`Const("' failed for command '")`・`Ident(CommandName)`・`Const("' (uid ")`・`Text(strconv.Itoa(OriginalUID))`・`Const("->")`・`Text(strconv.Itoa(TargetUID))`・`Const("): ")`・`Cause(SyscallErr)`。`Timestamp` は描画しない。`SyscallErr` は変更前も `%v` で入れているが、`Unwrap()` が `SyscallErr` を返すので、`Cause` にしても到達性は変わらない。nil の `SyscallErr` は `<nil>` になり、`%v` と同じである。
+  - `WithPrivileges`（`internal/runner/base/privilege/unix.go:105-143`）は `performElevation` のエラーをそのまま返す（`:132-134`）。ラップしないので範囲に入れない。`escalatePrivileges` は `&Error{...}` を作って返すだけで、ラップしない（`ErrPrivilegedExecutionNotAvailable` のラップ（`:302`）は構造を持つ原因を運ばず、名前も挿入しない）。
+- 経路 A（開始の窓）: run-as の実行で `seteuid(0)` が拒否された場合。
+  1. `escalatePrivileges`（`unix.go:316-325`）が `syscall.Seteuid(0)` の失敗で `&Error{...}` を返す。
+  2. `performElevation`（`unix.go:217`）の `fmt.Errorf("privilege escalation failed: %w", err)` を `Const("privilege escalation failed: ")`・`Cause(err)` にする。
+  3. `WithPrivileges` がそのまま返す。`executeWithUserGroup` の窓の関数（`executor.go:258-274`）は、`fn` が走らないので `opened` が偽のまま、それを `elevErr` として返す。
+  4. `runCommand` の `!opened` の分岐（`command_lifecycle.go:583-589`）の `errors.Join(elevErr, closeErr, fdErr, pc.release())` を宣言した複合の型にする。ガードは関数の単位で働くので、同じ関数の `:591`・`:593` の `errors.Join` も同じ型にする。`reportStartFailure` を通らないことに注意する（02 の初版の申し送りは `reportStartFailure` を通ると書いていたが誤りだった）。
+  5. `executeWithUserGroup` の `fmt.Errorf("user/group privilege execution failed: %w", err)`（`executor.go:305`）は、すでに範囲の中にある。
+  6. `NormalResourceManager` の `executeCommandInternal` はそのまま返し、出力を取り込む場合は `executeCommandWithOutput` の `:266` を経て、`group_executor.go` の `CommandExecutionError`（`:645`・`:668`）の原因になる。
+- 経路 B（中断の後の停止の窓）: run-as の子プロセスを中断の後に止めるとき。
+  1. `killChild` の `killReelevated` の分岐（`command_lifecycle.go:919-922`）が `WithPrivileges` を呼び、昇格が拒否されると `privilege.Error` を運ぶエラーが返る。
+  2. `killOutcome`（`:942`）の `fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, err)` を `Cause(ErrKillAfterCancel)`・`Const(": pid=")`・`Text(strconv.Itoa(pid))`・`Const(": ")`・`Cause(err)` にする。変更前は 2 つの `%w` の両方に `errors.Is` が届くので、両方を保つ。02 §3.1.1 の契約 3 は `errmsg.Error` が原因をちょうど 1 つラップすると定めている。原因を 2 つ持つ `errmsg.Error` の形を加えるのではなく、宣言した複合の型を使う（詳細仕様書で決める。契約 3 を変えるなら 02 を先に直す）。
+  3. `killChild` の `ErrNoPrivilegeManager` の分岐（`:906`）も同じ形である。`ErrKillStrategyUnset` の分岐（`:931`）は `Cause(ErrKillStrategyUnset)`・`Const(": pid=")`・`Text(strconv.Itoa(pid))`。
+  4. `superviseCommand` の `errors.Join(rankedError(outcome), outcome.killErr, notReapedErr, startupErr)`（`:782`）を宣言した複合の型にする。`fmt.Errorf("command execution failed: %w", cmdErr)`（`:789`）は `Const("command execution failed: ")`・`Cause(cmdErr)`。同じ関数の `notReapedErr`（`:736`）は `Cause(ErrChildNotReaped)`・`Const(": pid=")`・`Text(strconv.Itoa(pid))`。
+  5. その後は経路 A の 5・6 と同じく `executor.go:305` を経て届く。
+  - 一時コピーの後始末の窓（`removeStagedCopy`、`:806-852`）の失敗は `pc.stagingWindowErr` に記録してログに出すだけで、返すエラーに入らない（`superviseCommand` は `:756` で戻り値を捨てる）。そのため範囲に入れない。
+- 複合の型: 子を `Unwrap() []error` で返し、`errors.Join` と同じく子の文言を改行でつなぐ（nil の子は除く。すべて nil なら nil を返す点も `errors.Join` と同じにする）。構造を持たない子は `Text` になるので、文言は変わらない（AC-18）。`cancelledRunError` と共通の型にできるかを詳細仕様書で決める。
+- テスト:
+  - 2 つの経路のそれぞれで、`Error()` の文言が変更前と同じであること、`errors.Is`・`errors.AsType` が変更前と同じ対象（`*privilege.Error`、`ErrKillAfterCancel` など）に届くこと。
+  - AC-41: 検出される語を含むコマンド名が、`error_message` で置き換えられずに出ること。入力は `Identifier` の免除だけが効くものにする。先に、コマンド名を `Text` として redaction すると置き換えられることを確かめる（値全体置換だけが反応する語を使い、key=value・値形式の検出は反応しない形にする）。
 
 ## cmd/runner の 4 か所
 

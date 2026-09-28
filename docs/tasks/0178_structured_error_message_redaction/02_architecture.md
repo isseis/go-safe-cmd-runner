@@ -180,6 +180,7 @@ flowchart LR
     RES["internal/runner/resource"]
     CFG["internal/runner/config"]
     EXE["internal/runner/base/executor"]
+    PRV["internal/runner/base/privilege"]
     LOG["internal/logging"]
     RED["internal/redaction"]
     MSG["internal/errmsg"]
@@ -190,11 +191,12 @@ flowchart LR
     RES --> MSG
     CFG --> MSG
     EXE --> MSG
+    PRV --> MSG
     LOG --> MSG
     RED --> MSG
     RED --> ID
 
-    class CMD,RUN,RES,CFG,EXE,LOG,RED enhanced
+    class CMD,RUN,RES,CFG,EXE,PRV,LOG,RED enhanced
     class MSG newpkg
     class ID process
 ```
@@ -203,7 +205,7 @@ flowchart LR
 
 Legend: 2.1 節の Legend と同じ色分けを使う。
 
-`internal/errmsg` は標準ライブラリだけを import する末端のパッケージにする。`internal/identifier` と同じ位置づけであり、上の 7 つのパッケージのどれから import しても循環しない（各パッケージの import を確認した）。
+`internal/errmsg` は標準ライブラリだけを import する末端のパッケージにする。`internal/identifier` と同じ位置づけであり、上の 8 つのパッケージのどれから import しても循環しない（各パッケージの import を確認した）。
 
 `internal/identifier` を拡張する案は採らない。`identifier` は「group 名・コマンド名が識別子である」という 1 つの宣言だけを担う（パッケージの doc コメント）。役割の列を運ぶ責務はそれと別である。
 
@@ -464,7 +466,7 @@ func (e *cancelledRunError) StructuredMessage() errmsg.Message
 
 シグネチャと部分の並びは申し送り「ExpandWorkDir の変更の細則」にある。
 
-### 3.6 `internal/runner/base/executor` と `internal/runner/resource`（変更）
+### 3.6 `internal/runner/base/executor`・`internal/runner/base/privilege`・`internal/runner/resource`（変更）
 
 #### 3.6.1 一時ディレクトリ
 
@@ -480,6 +482,8 @@ func (e *cancelledRunError) StructuredMessage() errmsg.Message
 01 の対象 4 は「コマンドの実行」の経路で原因に文言を付加するエラーを含む。コマンドの実行の失敗は `CommandExecutionError` の原因として最終の実行エラーに入る。この経路の関数（3.8.1 節で定める）のラップは、`errmsg` の構造化エラーで行う。
 
 - コマンドパスと作業ディレクトリのパスは `Path`、コマンド名は `Identifier`、危険度や理由の文言は `Text` にする。
+- run-as の実行で権限の昇格が失敗したときのエラー（`privilege.Error`）も、この経路のラップの原因である。コマンド名を `Identifier`、操作と uid を `Text` にし、システムコールのエラーは原因として `Text` のままにする。このエラーは、コマンドを開始する前の昇格と、中断の後に子プロセスを止めるための昇格の 2 つの経路で届く。
+- この経路の関数は、開始や停止の失敗と資源の解放の失敗を `errors.Join` でまとめている。これを、宣言した複合の型に置き換える（01「`Unwrap() []error` の形から判定しない」、3.4.3 節と同じ考え方）。構造を持たない子は `Text` になるので、文言は変わらない（AC-18）。
 
 次は対象にしない。
 
@@ -517,7 +521,8 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` のファイル全体、`runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` | — |
 | `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`、`Level`・`Field` の非公開の部分の組み立て | 下の表の関数 |
 | `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
-| `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` | — |
+| `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup`・`runCommand`・`superviseCommand`・`killChild`、`killOutcome` | — |
+| `internal/runner/base/privilege` | `(*Error).StructuredMessage`、`(*UnixPrivilegeManager).performElevation` | — |
 | `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`contextParts` | — |
 
 `expansion.go` から除く関数:
@@ -562,7 +567,7 @@ AST のガードは、次の不変条件を守る。
 | `internal/logging` | 変更 | `PreExecutionError`・`ExecutionError` の要約文の型と構造化メッセージ、構造化メッセージの記録 |
 | `internal/runner`（`group_executor.go`・`group_stage.go`・`group_errors.go`・`runner.go`） | 変更 | エラー型の `Structured`、ラップ、`cancelledRunError`、段階の定義表の要約文 |
 | `internal/runner/config`（`expansion.go`・`errors.go`・`template_expansion.go`） | 変更 | `Level`・`Field`、`ErrUndefinedVariableDetail`、ラップ |
-| `internal/runner/resource`・`internal/runner/base/executor` | 変更 | コマンドの実行と一時ディレクトリのラップ |
+| `internal/runner/resource`・`internal/runner/base/executor`・`internal/runner/base/privilege` | 変更 | コマンドの実行と一時ディレクトリのラップ、複合の型、`privilege.Error` の構造化メッセージ |
 | `cmd/runner`、`internal/runner/bootstrap`、`internal/runner/runerrors` | 変更 | 4 か所の `Err` への付け替え、要約文の書き換え |
 | `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | 5.4 節（AC-26） |
 | `docs/dev/developer_guide/package_reference.md` | 変更 | `internal/errmsg` の追加 |
@@ -573,7 +578,7 @@ AST のガードは、次の不変条件を守る。
 
 ### 4.1 エラー型
 
-新しいエラー型は `errmsg.Error`（3.1 節）と `cancelledRunError`（3.4.3 節）である。どちらも番兵のエラーを持たない。原因への到達性は `Unwrap` で保つ。
+新しいエラー型は `errmsg.Error`（3.1 節）、`cancelledRunError`（3.4.3 節）、コマンドの実行の経路の複合の型（3.6.2 節）である。どれも番兵のエラーを持たない。原因への到達性は `Unwrap` で保つ。
 
 ### 4.2 失敗時の扱い
 
@@ -769,7 +774,7 @@ design_carryover.md「サイトごとの確認場面」の場面は、AC-41 の�
 4. `internal/logging` の `PreExecutionError`・`ExecutionError`・記録。`Message` のリテラルを書き換える。
 5. `internal/runner` のエラー型、`group_executor.go` のラップ、`cancelledRunError`。
 6. `internal/runner/config` の `Level`・`Field`、`ErrUndefinedVariableDetail`、`expansion.go` のラップ。
-7. `internal/runner/resource`・`internal/runner/base/executor`・`cmd/runner`。
+7. `internal/runner/resource`・`internal/runner/base/executor`・`internal/runner/base/privilege`・`cmd/runner`。
 8. AC-41 のガード、例示のシナリオのテスト、文書（AC-26）。
 
 1〜3 は、それだけで既存の出力を変えない。構造化メッセージを記録する箇所がまだ無く、`RedactText` も変えないためである。4 から後で、記録が構造化メッセージになる。
