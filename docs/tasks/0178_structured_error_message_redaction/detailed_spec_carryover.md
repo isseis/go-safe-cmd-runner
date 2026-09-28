@@ -2,7 +2,7 @@
 
 本書は設計書ではない。[02_architecture.md](02_architecture.md) から移した詳細（実際のコード、構築関数の一覧、箇所ごとの部分の並び、行番号、バイト単位の手順、ガードの判定の仕方、テストの細則）を集めたものであり、詳細仕様書（Task 0091 の命名に従い `03_detailed_specification.md`）と、関係する場合は実装計画を書くときの入力として使う。本書には承認の状態がない。本書の内容と 02 が食い違う場合は、02 に従う。
 
-- 実装計画のファイル名: [design_carryover.md](design_carryover.md) と 01 は `03_implementation_plan.md` と呼んでいる。0091 の番号付けでは詳細仕様書が `03` になるので、実装計画は `04_implementation_plan.md` になる。どちらにするかは詳細仕様書を作るときに決め、参照をそろえる。
+- 実装計画のファイル名: [design_carryover.md](design_carryover.md) と 01 は `03_implementation_plan.md` と呼んでいる。0091 の番号付けでは詳細仕様書が `03` になるので、実装計画は `04_implementation_plan.md` になる。どちらにするかは詳細仕様書を作るときに決め、参照をそろえる。→ [03_detailed_specification.md](03_detailed_specification.md) §0 で `04_implementation_plan.md` に確定した。
 - 行番号は、特に断らない限りコミット `3bb634bd` のものである。詳細仕様書を書く時点で確かめ直す。
 - 用語は 02 の §0 に従う（部分・断片・置換文字列・値全体置換など）。
 
