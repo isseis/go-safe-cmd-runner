@@ -184,11 +184,11 @@
 
 ### PR-1 作成ポイント: the structured message package
 
-**対象ステップ**: Phase 1
-**推奨タイトル**: `feat(0178): add internal/errmsg for role-tagged error bodies`
-**レビュー観点**: 平らにする契約（直接の型でだけ `Structured` を展開すること、構造を持たない原因が `Text` になること、`*fs.PathError` の分解が `(*fs.PathError).Error()` と一致すること）、`IndentedCause` が `GroupError.Error()` の整形と一致すること、`Const`・免除の役割・`Part` の非公開のガードが自己テストで実際に検出すること、ゼロ値と nil が panic しないこと
-**実装モデル要件**: frontier-required
-**判定理由**: 本タスク全体の土台であり、バイト単位の整形と AST ガードの判定は後続のすべての Phase の正しさを決める。設計判断の密度が高く、誤ると広範囲に波及する
+- **対象ステップ**: Phase 1
+- **推奨タイトル**: `feat(0178): add internal/errmsg for role-tagged error bodies`
+- **レビュー観点**: 平らにする契約（直接の型でだけ `Structured` を展開すること、構造を持たない原因が `Text` になること、`*fs.PathError` の分解が `(*fs.PathError).Error()` と一致すること）、`IndentedCause` が `GroupError.Error()` の整形と一致すること、`Const`・免除の役割・`Part` の非公開のガードが自己テストで実際に検出すること、ゼロ値と nil が panic しないこと
+- **実装モデル要件**: frontier-required
+- **判定理由**: 本タスク全体の土台であり、バイト単位の整形と AST ガードの判定は後続のすべての Phase の正しさを決める。設計判断の密度が高く、誤ると広範囲に波及する
 
 ### Phase 2: `internal/redaction` の置き換え範囲の関数とオプションの削除
 
@@ -208,11 +208,11 @@
 
 ### PR-2 作成ポイント: derive the replaced ranges from the shared rules
 
-**対象ステップ**: Phase 2
-**推奨タイトル**: `feat(0178): add redactedRanges and drop unused redaction options`
-**レビュー観点**: `RedactText` の挙動が変わっていないこと、規則と段の順序が写しになっていないこと、段の重なりと幅 0 の範囲の扱い、差分テストとファジングの種が残す範囲・重なり・挿入点を網羅すること、オプション削除後の網羅率の差が記録されていること
-**実装モデル要件**: frontier-required
-**判定理由**: 秘密の漏れに直結する範囲の導出であり、`RedactText` との一致義務をテストと実行時の検査の両方で負う。設計の正しさがそのまま安全性になる
+- **対象ステップ**: Phase 2
+- **推奨タイトル**: `feat(0178): add redactedRanges and drop unused redaction options`
+- **レビュー観点**: `RedactText` の挙動が変わっていないこと、規則と段の順序が写しになっていないこと、段の重なりと幅 0 の範囲の扱い、差分テストとファジングの種が残す範囲・重なり・挿入点を網羅すること、オプション削除後の網羅率の差が記録されていること
+- **実装モデル要件**: frontier-required
+- **判定理由**: 秘密の漏れに直結する範囲の導出であり、`RedactText` との一致義務をテストと実行時の検査の両方で負う。設計の正しさがそのまま安全性になる
 
 ### Phase 3: `Config.RedactMessage` とハンドラの分岐
 
@@ -232,11 +232,11 @@
 
 ### PR-3 作成ポイント: render a structured message with per-segment redaction
 
-**対象ステップ**: Phase 3
-**推奨タイトル**: `feat(0178): redact structured messages per segment`
-**レビュー観点**: `Identifier` の免除と境界をまたぐ契約（AC-37）、`Text` の値全体置換が断片ごとであること（AC-36）、範囲の不一致・平らにする処理の panic が fail-closed に倒れること、panic 値が `ShutdownReporter` の報告に漏れないこと、後段のハンドラが文字列を受け取ること、`Config.RedactLogAttribute` の fail-closed の分岐、ベンチマークの予算
-**実装モデル要件**: frontier-required
-**判定理由**: 部分ごとの redaction と境界をまたぐ置換は本タスクの中心のセキュリティ境界であり、バイト単位の手順と失敗時の扱いを同時に満たす必要がある
+- **対象ステップ**: Phase 3
+- **推奨タイトル**: `feat(0178): redact structured messages per segment`
+- **レビュー観点**: `Identifier` の免除と境界をまたぐ契約（AC-37）、`Text` の値全体置換が断片ごとであること（AC-36）、範囲の不一致・平らにする処理の panic が fail-closed に倒れること、panic 値が `ShutdownReporter` の報告に漏れないこと、後段のハンドラが文字列を受け取ること、`Config.RedactLogAttribute` の fail-closed の分岐、ベンチマークの予算
+- **実装モデル要件**: frontier-required
+- **判定理由**: 部分ごとの redaction と境界をまたぐ置換は本タスクの中心のセキュリティ境界であり、バイト単位の手順と失敗時の扱いを同時に満たす必要がある
 
 ### Phase 4: `internal/logging` の構造化メッセージへの移行
 
@@ -258,11 +258,11 @@
 
 ### PR-4 作成ポイント: record the two reports as structured messages
 
-**対象ステップ**: Phase 4
-**推奨タイトル**: `feat(0178): record pre-execution and execution errors as structured messages`
-**レビュー観点**: `Detail()`・`Error()`・stderr の文言が変わっていないこと、原因の `Error()` の評価が報告ごとに 1 回であること、`PreExecutionError.Message` が `Constant` か `Text` のどちらかに限られていること、`cmd/runner` の 4 か所で原因が `Err` に移っても報告の種別と終了コードが変わらないこと、既存テストの書き換えが機械的であること
-**実装モデル要件**: frontier-recommended
-**判定理由**: 型の変更は機械的だが、凍結の位置と原因の到達性、`Message` の分類の網羅が正しさを決める。範囲は広いが設計は確定している
+- **対象ステップ**: Phase 4
+- **推奨タイトル**: `feat(0178): record pre-execution and execution errors as structured messages`
+- **レビュー観点**: `Detail()`・`Error()`・stderr の文言が変わっていないこと、原因の `Error()` の評価が報告ごとに 1 回であること、`PreExecutionError.Message` が `Constant` か `Text` のどちらかに限られていること、`cmd/runner` の 4 か所で原因が `Err` に移っても報告の種別と終了コードが変わらないこと、既存テストの書き換えが機械的であること
+- **実装モデル要件**: frontier-recommended
+- **判定理由**: 型の変更は機械的だが、凍結の位置と原因の到達性、`Message` の分類の網羅が正しさを決める。範囲は広いが設計は確定している
 
 ### Phase 5: `internal/runner` のエラー型と `cancelledRunError`
 
@@ -279,11 +279,11 @@
 
 ### PR-5 作成ポイント: structured error types in internal/runner
 
-**対象ステップ**: Phase 5
-**推奨タイトル**: `feat(0178): make runner error types carry structured messages`
-**レビュー観点**: 4 型の `Error()` の文言が変更前と同じであること、`GroupErrors` が `Merge` で識別子の断片を保つこと、11 か所の役割の割り当てが 01 の方針に合うこと、`cancelledRunError` が専用の型であること（形による判定をしないこと）、`errors.Is` の到達性
-**実装モデル要件**: frontier-recommended
-**判定理由**: 文言の維持と構造の引き継ぎが中心で、設計は 03 で確定している。箇所数が多いが機械的である
+- **対象ステップ**: Phase 5
+- **推奨タイトル**: `feat(0178): make runner error types carry structured messages`
+- **レビュー観点**: 4 型の `Error()` の文言が変更前と同じであること、`GroupErrors` が `Merge` で識別子の断片を保つこと、11 か所の役割の割り当てが 01 の方針に合うこと、`cancelledRunError` が専用の型であること（形による判定をしないこと）、`errors.Is` の到達性
+- **実装モデル要件**: frontier-recommended
+- **判定理由**: 文言の維持と構造の引き継ぎが中心で、設計は 03 で確定している。箇所数が多いが機械的である
 
 ### Phase 6: `internal/runner/config` の `Level`・`Field` と `ErrUndefinedVariableDetail`
 
@@ -302,11 +302,11 @@
 
 ### PR-6 作成ポイント: type the expansion level and field
 
-**対象ステップ**: Phase 6
-**推奨タイトル**: `feat(0178): declare expansion levels and fields as types`
-**レビュー観点**: `String()` が変更前の文言と同じであること、`parts()` が構築時に役割を宣言すること（組み立て済みの文字列を解析しないこと）、`ErrUndefinedVariableDetail` を運びうるか運びえないかの分類が 03 §6.5 のとおりであること、引数の型の変更が全関数に及んでいること、`ErrUndefinedVariableDetail` の `Unwrap()` が変わっていないこと
-**実装モデル要件**: frontier-recommended
-**判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
+- **対象ステップ**: Phase 6
+- **推奨タイトル**: `feat(0178): declare expansion levels and fields as types`
+- **レビュー観点**: `String()` が変更前の文言と同じであること、`parts()` が構築時に役割を宣言すること（組み立て済みの文字列を解析しないこと）、`ErrUndefinedVariableDetail` を運びうるか運びえないかの分類が 03 §6.5 のとおりであること、引数の型の変更が全関数に及んでいること、`ErrUndefinedVariableDetail` の `Unwrap()` が変わっていないこと
+- **実装モデル要件**: frontier-recommended
+- **判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
@@ -327,11 +327,11 @@
 
 ### PR-7 作成ポイント: structure the command-execution path and cmd/runner
 
-**対象ステップ**: Phase 7
-**推奨タイトル**: `feat(0178): structure command-execution errors and verify entrypoint reachability`
-**レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認され、`base/output/path.go` の `validatePathSecurity`・`validateRelativePath` が範囲と役割の許可位置に入っていること
-**実装モデル要件**: frontier-recommended
-**判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
+- **対象ステップ**: Phase 7
+- **推奨タイトル**: `feat(0178): structure command-execution errors and verify entrypoint reachability`
+- **レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認され、`base/output/path.go` の `validatePathSecurity`・`validateRelativePath` が範囲と役割の許可位置に入っていること
+- **実装モデル要件**: frontier-recommended
+- **判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
 
 ### Phase 8: AC-41 のガード、例示のシナリオのテスト、文書
 
@@ -359,11 +359,11 @@
 
 ### PR-8 作成ポイント: scope guard, end-to-end scenarios, and documentation
 
-**対象ステップ**: Phase 8
-**推奨タイトル**: `feat(0178): guard the in-scope wraps and document the boundary`
-**レビュー観点**: AC-41 のガードの範囲が 03 §9.1 と一致し、関数やファイルの名前が消えたことを検出すること、例示のシナリオがエラーの発生元から Slack の組み立て・記録までを通すこと、日英の文書が同じ内容であること、検査スクリプトが `make verify-docs-checks` から実行されること、Slack の手動確認の結果
-**実装モデル要件**: frontier-recommended
-**判定理由**: ガードの範囲の定義と、端から端までのシナリオの組み立てに設計の理解が要る。文書は内容が確定している
+- **対象ステップ**: Phase 8
+- **推奨タイトル**: `feat(0178): guard the in-scope wraps and document the boundary`
+- **レビュー観点**: AC-41 のガードの範囲が 03 §9.1 と一致し、関数やファイルの名前が消えたことを検出すること、例示のシナリオがエラーの発生元から Slack の組み立て・記録までを通すこと、日英の文書が同じ内容であること、検査スクリプトが `make verify-docs-checks` から実行されること、Slack の手動確認の結果
+- **実装モデル要件**: frontier-recommended
+- **判定理由**: ガードの範囲の定義と、端から端までのシナリオの組み立てに設計の理解が要る。文書は内容が確定している
 
 ---
 
