@@ -8,7 +8,7 @@
 | Created | 2026-09-28 |
 | Review date | 2026-09-29 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 03_detailed_specification.md の確定を受けた編集上の修正（`contextParts` の名前の書き戻し。決定は変わらない） |
 
 ## 0. 前提
 
@@ -533,7 +533,7 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 | `ProcessEnv` | `env_vars` の拒否のエラーを作る。`ErrUndefinedVariableDetail` はこの関数をそのまま通るだけであり、ラップしない |
 | `resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec` | テンプレートのエラーを作る関数であり、01 の対象外（#1197） |
 
-- `contextParts` は仮の名前である。詳細仕様書で名前を確定したら、この表に書き戻す。
+- `contextParts` は `(*ExecutionError).contextParts` として確定した（[03_detailed_specification.md](03_detailed_specification.md) §4.2・§9.1）。
 - 範囲の決め方: ファイル全体を対象にするのは、group の実行と展開の経路の関数がそのファイルに集まっており、関数を分けたり加えたりしても検証から漏れないようにするためである。`runner.go`・`resource`・`executor` は対象外の経路の関数を多く含むので、関数の単位で指定する。
 - 範囲の中でも、原因が構造を持つ原因を運びえないラップ（`internal/runner/config` のもの。01 対象外（#1197））は、前置きの全体を 1 つの `Text` にする（3.5.3 節）。
 - 関数の単位で指定した名前と、除く関数の名前は、ガードが実際のコードに見つかることを確かめる。名前を変えたり関数を消したりしたときに、警告なく検証から外れないようにするためである。
