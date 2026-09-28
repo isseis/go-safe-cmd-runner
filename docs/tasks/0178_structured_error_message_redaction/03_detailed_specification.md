@@ -14,7 +14,7 @@
 | # | 申し送りの論点 | 確定 |
 |---|---|---|
 | 1 | 実装計画のファイル名 | `04_implementation_plan.md`（§0） |
-| 2 | `errmsg` の型の内部表現 | 申し送りの案を採用。`Part` に `causeKind` を持たせ、`indent` 欄は置かない（§2.2） |
+| 2 | `errmsg` の型の内部表現 | 申し送りの案を基に、役割の部分と原因の部分を `kind` で区別する（`indent` 欄は置かない）（§2.2） |
 | 3 | 構造化メッセージを組み合わせる API | パッケージ関数 `Merge(messages ...Message) Message`。`Message` から部分の列を返す API は置かない（§2.3・§2.6） |
 | 4 | 1 回だけ平らにする操作 | `Message.Freeze()`（§2.5） |
 | 5 | `ExpandCommand` の `failed to create RuntimeCommand ...` の分類 | 原因は `NewRuntimeCommand` の検証エラーで `ErrUndefinedVariableDetail` を運びえない。02 §3.5.3 に従い前置き全体を 1 つの `Text`（§6.5） |
@@ -111,9 +111,19 @@ const (
     causeIndented
 )
 
+// partKind declares whether a Part carries a role and text, or a cause.
+// The zero value is a role part.
+type partKind int
+
+const (
+    partRole partKind = iota
+    partCause
+)
+
 // Part is one element of a Message. Its fields are unexported, so a part
 // can only be built by the constructors in this package.
 type Part struct {
+    kind      partKind
     role      Role
     text      string
     cause     error
@@ -209,8 +219,8 @@ func (e *JoinedError) StructuredMessage() Message
 
 `Segments()` は部分の列を次の規則で断片の列にする。
 
-1. 役割を持つ部分は、そのまま 1 つの `Segment{Role: p.role, Text: p.text}` にする。役割がどの値でも（ゼロ値・範囲外でも）そのまま移す。
-2. 原因の部分は `causeKind` で分岐する。
+1. `kind == partRole` の部分は、そのまま 1 つの `Segment{Role: p.role, Text: p.text}` にする。役割がどの値でも（ゼロ値・範囲外でも）そのまま移す。
+2. `kind == partCause` の部分は `causeKind` で分岐する。`Cause(nil)` は `kind == partCause` なので `Text("")`・`Part{}` と区別でき、平らにすると `<nil>` になる。
    - `causePlain`: 原因が `Structured` を実装していれば `cause.StructuredMessage().Segments()` を展開する。判定は原因の直接の動的な型で行い、`errors.As` で連鎖の奥を探さない（02 §3.1.3。奥の型を探すと途中のラップの文言が消え、`String()` が `Error()` と一致しなくなる）。実装していなければ `Segment{RoleText, cause.Error()}` を 1 つ追加する。原因が nil なら `Segment{RoleText, "<nil>"}` にする。
    - `causePathError`: 原因が `*fs.PathError`（型アサーション）なら、`Text(pe.Op)`・`Const(" ")`・`Path(pe.Path)`・`Const(": ")` と、`pe.Err` の部分（`causePlain` と同じ規則）を展開する。`pe.Err` が nil なら `<nil>` になる（`(*fs.PathError).Error()` は nil で panic するが、この書式は `fmt` の `%v` と同じに扱う。`os` は Err を必ず入れるので実務では起きない）。`*fs.PathError` でなければ `causePlain` と同じにする。この並びは `(*fs.PathError).Error()` と同じ文言になる。
    - `causeIndented`: まず `causePlain` と同じ規則で原因を平らにし、その断片の列に §2.4.1 の整形を施す。役割は変えない。
@@ -221,9 +231,15 @@ func (e *JoinedError) StructuredMessage() Message
 `GroupError.Error()`（`internal/runner/group_errors.go:31-34`）は、原因の文言の末尾の `"\r\n"` の並びを除き、残りの改行の後に 2 つの空白を入れる。`IndentedCause` はこの整形を原因の断片の列の上で再現する。
 
 1. 原因を `causePlain` と同じ規則で平らにする。
-2. 末尾の除去: 断片を末尾から順に見る。各断片の `Text` を `strings.TrimRight(text, "\r\n")` した結果で置き換える。結果が空で元の `Text` が空でなければ（すなわち改行だけの断片なら）その断片を除き、前の断片に進む。結果が空で元の `Text` も空のとき、または結果が空でないときは、そこで止める（空のままの断片は残す）。
+2. 末尾の除去: 断片を末尾から順に見る。
+   - 各断片の `Text` を `strings.TrimRight(text, "\r\n")` した結果で置き換える。
+   - 結果が空で、元の `Text` も空なら、その断片はそのまま残し、前の断片に進む（元から空の断片は連結に寄与しない。これが、末尾の空の断片の前にある改行を引き続き除くために要る）。
+   - 結果が空で、元の `Text` が空でなければ（改行だけの断片）、その断片を除き、前の断片に進む。
+   - 結果が空でなければ、その断片で止める。
 3. 字下げ: 残った各断片の `Text` を `strings.ReplaceAll(text, "\n", "\n  ")` にする。役割は変えない。
 4. 1〜3 の結果の連結は `GroupError.Error()` の整形結果と一致する。`Constant` の断片に字下げが入るのは、errmsg が持つ固定の空白と元の断片の改行だけであり、呼び出し側のバイトは入らない。§9.9 のガードで守る。
+
+例: 断片の列が `[Text("cause\n"), Text("")]` のとき、手順 2 の結果は `[Text("cause"), Text("")]` になり、その連結は `GroupError.Error()` の整形結果と一致する。
 
 ### 2.5 `Freeze`
 
@@ -268,7 +284,7 @@ func Join(errs ...error) error {
 func (e *JoinedError) Error() string { return e.StructuredMessage().String() }
 func (e *JoinedError) Unwrap() []error { return e.errs }
 func (e *JoinedError) StructuredMessage() Message {
-    parts := make([]Part, 0, 2*len(e.errs)-1)
+    parts := make([]Part, 0, max(0, 2*len(e.errs)-1))
     for i, err := range e.errs {
         if i > 0 {
             parts = append(parts, Const("\n"))
@@ -283,6 +299,7 @@ func (e *JoinedError) StructuredMessage() Message {
 - `Unwrap() []error` を持つので、`errors.Is`・`errors.AsType` はすべての子に届く。
 - 子が `Structured` なら平らにするときに構造を展開する。子の `String()` は子の `Error()` と一致する（§9.5 のガード）ので、文言は `errors.Join` と変わらない。
 - 具体的な型に `Unwrap() []error` を宣言することは、0177 の形の判定を禁じるガードと両立する（02 §3.4.3）。ガードが禁じているのは、形によって子を扱い分ける判定のほうである。
+- ゼロ値の `JoinedError`（`len(e.errs) == 0`）は空文字列を返し、panic しない（§2.8 のゼロ値の契約）。`Join` は空の `JoinedError` を返さないが、公開の型なのでゼロ値を許す。
 
 ### 2.8 panic とゼロ値
 
@@ -418,7 +435,9 @@ func (c *Config) redactMessageAttribute(key string, value slog.Value, collector 
 ```
 
 - 分岐の位置: `RedactingHandler.redactLogAttributeWithContext`（`redactor.go:799`）では、宣言済みの識別子の判定（`declaredIdentifier`、`:315`）の後、`switch value.Kind()` の前に置く。`Config.RedactLogAttribute`（`:330`）でも宣言済みの識別子の判定の後に同じ分岐を置く。
-- 判定は値の動的な型だけで行う。`value.Any().(errmsg.Message)` が成功したときだけ `handled` を真にする。属性名や値の内容は見ない。ポインタや別の `LogValuer` の中に入ったものは、既存の経路で `String()` の文字列として全体の redaction を受ける（fail-closed）。
+- 判定は値の動的な型だけで行う。`value.Any().(errmsg.Message)` が成功したときだけ `handled` を真にする（exact の `errmsg.Message` の分岐は両方の関数に置く）。属性名や値の内容は見ない。
+- `RedactingHandler.redactLogAttributeWithContext`: exact の `errmsg.Message` 以外の `LogValuer`（`*errmsg.Message` を含む）は、既存の `processLogValuer` が `LogValue()` を解決し、`String()` の文字列として全体の redaction を受ける（fail-closed）。
+- `Config.RedactLogAttribute`: exact の `errmsg.Message` の分岐の後、`slog.KindLogValuer` の値は `RedactionFailurePlaceholder` にする（fail-closed）。この公開の関数は `LogValue()` を解決する経路と、panic の回復・再帰の深さの管理を持たない。`LogValue()` が panic する値や自身を返す値を安全に扱えないので、解決せずに値をそのまま後段へ渡さない。
 - 分岐は属性名による判定（`IsSensitiveKey`）より後に行う。機密を示す属性名の下では、構造化メッセージも値ごと置換する（AC-07）。
 - `RedactingHandler` は `collector` に `r.errorCollector` を渡す。失敗は既存の `ErrLogValuePanic` と同じく型付きのエラーとして記録され、終了時の報告（`ShutdownReporter`）に現れる。`Config.RedactLogAttribute` は `collector` に nil を渡すので、失敗のときに値を `RedactionFailurePlaceholder` にするだけである（02 §3.2.3）。
 - `RedactLogAttribute` は本番のコードから呼ばれていない（`:371` の自身の再帰だけ）が、公開の関数なので分岐を置く。置かないと、この関数に構造化メッセージを渡したときに `LogValue()` の redaction 前の文字列がそのまま出る。
@@ -1014,7 +1033,9 @@ func (e *Error) StructuredMessage() errmsg.Message {
 ### 9.2 ラップの検査（AC-41）
 
 - §9.1 の範囲の中に、`fmt.Errorf`（`%w` の有無によらない）・`errors.Join`・定数式でない引数の `errors.New` の呼び出しが無いこと。ラップせずに `err` をそのまま返すことは許す。
-- 範囲の中のファイル全体の単位に属する型（レシーバがそのファイルにある型）が `Unwrap` を宣言するなら、同じ型が `StructuredMessage` も宣言すること。関数の単位の範囲では、この型の検査は行わない（`(*PreExecutionError)` は `Unwrap` を持ち `Structured` を実装しないため。この型は範囲の関数の中でラップを組み立てない）。`privilege.Error` は `(*Error).StructuredMessage` を範囲に持ち、`Error()` の形と文言の一致・`Unwrap` の到達性のテストで固定する（§7.3・§10.6）。
+- 範囲の中のファイル全体の単位に属する型（レシーバがそのファイルにある型）が `Unwrap` を宣言するなら、同じ型が `StructuredMessage` も宣言すること（ファイル全体の単位の検査は残す）。
+- 関数の単位の範囲では、次の明示の一覧の型が `StructuredMessage` を宣言すること: `runner.cancelledRunError`・`executor.killAfterCancelError`・`privilege.Error`。これらの型は、範囲の関数から到達する原因をラップするが、ファイル全体の単位のファイルに属さないため、上のファイル全体の検査では拾われない。ガードは、列挙した各型がコードに実在し、`StructuredMessage` を宣言することを確かめる。
+- 次の例外の型は、`Unwrap` を宣言しても `Structured` を実装しなくてよい: `logging.PreExecutionError`・`logging.ExecutionError`（記録の原因を `DetailMessage`・`ReportMessage` で組み立てる）と、`internal/runner/config/errors.go` の `*...Detail` のエラー型（範囲外。#1197）。
 - ガードは `internal/runner/wrap_guard_test.go`（`//go:build test`）に置く。
 - 実装の指針: `identitymutationguard.ProductionGoFilesInRepo`・`ReadProductionSource`・`ParseSource`・`ResolveLocalImports` を使い、範囲の定義（ファイル全体・関数の単位・除く関数）をテストの中の表として持つ。関数の単位は、`*ast.FuncDecl` のレシーバ型名と関数名で照合する。範囲の全ファイルを調べ、`fmt.Errorf`・`errors.Join`・`errors.New` の呼び出し位置が範囲の中にあるかで判定する。
 
@@ -1084,7 +1105,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - 免除の役割の検査: 範囲内の呼び出し・範囲外の呼び出し・別名 import・ドット import・関数値としての参照を並べる。
 - `Part` の検査: `errmsg.Part{}`・`[]errmsg.Part{{}}`・公開の `Parts()` メソッドを持つ型・別パッケージの `Part` 風の型を並べる。
 - 文言と構造の一致: `Error()` が 2 文の型・違う式を返す型・`*errmsg.Error` を埋め込んで `Error()` を宣言する型を並べる。
-- ラップの検査: 範囲内の `fmt.Errorf`・`errors.Join`・非定数 `errors.New`・範囲外の `fmt.Errorf` を並べる。範囲の関数名と除外関数名がコードに見つかることも確かめる。
+- ラップの検査: 範囲内の `fmt.Errorf`・`errors.Join`・非定数 `errors.New`・範囲外の `fmt.Errorf` を並べる。範囲の関数名と除外関数名がコードに見つかることも確かめる。型の検査では、明示の一覧の型が `StructuredMessage` を欠く形を検出し、例外の型（`PreExecutionError`・`ExecutionError`・config の `*Detail` 型）を検出しないことを確かめる。
 - AC-25: `errmsg.Role(99)` の変換・`errmsg.RoleText` の参照・`Segment.Role` への代入・`case errmsg.RolePath` を並べる。
 
 ## 10. テスト
@@ -1092,6 +1113,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 ### 10.1 `internal/errmsg`
 
 - 平らにする契約: `Structured` の展開（直接の型だけで判定し、奥の `Structured` を探さないこと）、構造を持たない原因が `Text` になること（AC-09・AC-10）、nil の原因が `<nil>` になること、`*fs.PathError` の分解が `(*fs.PathError).Error()` と一致すること、分けない `*fs.PathError` が 1 つの `Text` になること。
+- 役割の部分と原因の部分の区別: `NewMessage(Cause(nil))` が `<nil>` に、`NewMessage(Text(""))` と `Message{}` が空文字列になること。
 - `String()` と `Error()` の一致: `Structured` を実装する型の `Error()` が `StructuredMessage().String()` と一致すること（§9.5 のガードと対）。
 - `IndentedCause`: 末尾の除去が断片をまたぐ場合（末尾の断片が改行だけ、`\r\n` の並び）、途中の断片の改行、`Identifier`・`Path` の断片の中の改行、原因が構造を持たない場合。どれも `GroupError.Error()` と比べる。字下げの引数が API に無いことは、シグネチャのコンパイル時の固定で確かめる。
 - 深い連鎖: 16 段より深い構造化エラーの連鎖の `String()` が、同じ形の `fmt.Errorf` の `%w` の連鎖の `Error()` と一致すること。深さの上限を仮に戻すとこのテストが失敗することを確かめる。
@@ -1136,6 +1158,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - 属性名が機密を示す場合に値ごと置換されること（AC-07）。
 - 失敗が `ErrorCollector` に記録されること。
 - `Config.RedactLogAttribute`（公開の関数）に構造化メッセージを渡しても、redaction 前の文字列がそのまま出ないこと。
+- `Config.RedactLogAttribute` に `*errmsg.Message`・`slog.Any` で包んだ別の `LogValuer`・panic する `LogValuer` を渡すと、`RedactionFailurePlaceholder` になること。
 
 ### 10.5 各エラー型
 
