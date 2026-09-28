@@ -403,7 +403,7 @@ func (c *Config) redactSegments(segs errmsg.Segments) (string, error)
    - `default`（`RoleText` と、どの役割にも当たらない値）: `r := c.RedactText(seg.Text)` とし、`r == seg.Text` かつ `c.patterns.IsSensitiveValue(seg.Text)` なら `out_i = c.placeholder`、そうでなければ `out_i = r`。値全体置換は断片ごとに判定する（AC-36）。
 3. `ranges := c.redactedRanges(S)` を求め、実行時の検査を行う。`ranges` の各範囲を順に 1 つの置換文字列で置き換えた結果（挿入点はその位置に置換文字列を挿入する）が `c.RedactText(S)` と一致しなければ、失敗として `*ErrMessageRangeMismatch`（§3.4）を返す。失敗のときは途中の描画を出さない。
 4. 境界の影響を受ける断片を決める。`Identifier` の断片は常に受けない。それ以外の断片 `i` について、`L_i` を手順 2 でその断片が置き換えたバイトの集合とする（値全体置換なら全バイト、`RedactText` の結果が変わったなら `c.redactedRanges(seg.Text)` の範囲のバイト、変わらなければ空。断片の座標から `S` の座標に写して持つ）。断片 `i` が受けるのは、次のいずれかのときである。
-   - `ranges` の幅のある範囲 `[s, e)` のバイトのうち、断片 `i` のバイトと重なり、かつ `L_i` に含まれないものが 1 つ以上ある。
+   - `ranges` の幅のある範囲 `[s, e)` のうち、断片 `i` のバイトと重なり、かつその範囲の全体が `L_i` に含まれないものが 1 つ以上ある。範囲が断片の外（隣の断片）へ続く場合も、この条件でその断片を影響ありにする。隣の断片のバイトと連結した 1 つの極大の区間（手順 6）にまとめるためである。
    - `ranges` の挿入点 `p` が `start_i <= p <= end_i` を満たし、次の付与規則でその断片に付き、かつ `p` が `L_i` に含まれない（幅のある置き換えの内部でも、同じ位置の挿入点でもない）。`p` が断片の内部（`start_i < p < end_i`）ならその断片に付く。`p` が断片の境界にあるときは、次の断片（`p` が末尾なら直前の断片）が `Identifier` でなければそれに付け、そうでなければ前の断片が `Identifier` でなければそれに付ける。両隣とも `Identifier` なら、その境界に置換文字列を出す（手順 7）。
 5. 境界の影響を受けない断片は、`out_i` をそのまま出す。
 6. 境界の影響を受ける断片では、次のバイトを「隠すバイト」とする。
@@ -421,6 +421,7 @@ func (c *Config) redactSegments(segs errmsg.Segments) (string, error)
 - `Identifier("AKIAIOSF")`・`Identifier("ODNN7EXAMPLE")`。`ranges` は 2 つの `Identifier` のバイトにまたがるが、どちらの断片も影響を受けない。出力は元のままで、何も置き換えない（AC-37 の例）。
 - `Constant("Bearer ")`・`Text("opaque-credential")`。`ranges` は `Text` のバイトだけ（`Bearer ` は残す範囲）。`Text` が影響を受け、全バイトが隠れる。出力は `Bearer [REDACTED]`（AC-37 の例）。
 - `Identifier("AKIAIOSFODNN7")` の直後に `Text("EXAMPLE")` が続き、その次の `Text` にも値形式の一致の続きがある場合、隠すバイトは `Identifier` の前後で分かれ、`Identifier` のバイトはそのまま出る（`…[REDACTED]AKIAIOSFODNN7[REDACTED]…`）。範囲の中で `Identifier` 以外のバイトが連続する区間ごとに 1 つの置換文字列になる。
+- `Text("password=secret")` の直後に `Text("suffix")` が続き、全体の検出範囲が値 `secretsuffix` を 1 つの区間として覆う場合。断片 1 は `L_1`（`secret`）に加えて隣の断片へ続く範囲にも触れるので影響を受け、`L_1` と範囲のバイトは連結した 1 つの極大区間になる。出力は `password=[REDACTED]`（置換文字列は 1 つ）。
 
 ### 3.3 `RedactingHandler`・`RedactLogAttribute` の分岐
 
@@ -726,7 +727,7 @@ func varElementField(name string, index int) Field {
 ```
 
 - `Level.String()` の描画: `""`・`"global"`・`"group[<name>]"`・`"command[<name>]"`・`"template[<name>]"`。種類ごとの `switch` で、`default` は `""` を返す。
-- `Field.String()` の描画: `""`・`"cmd"`・`"args[<index>]"`・`"env"`・`"env_vars[<index>]"`・`"env_import"`・`"workdir"`・`"verify_files[<index>]"`・`"cmd_allowed[<index>]"`・`"vars"`・`"vars.<name>"`・`"vars.<name>[<index>]"`。index は `strconv.Itoa` で作る。`hasIndex` が真のときだけ `[<index>]` を続ける。`fieldVars` は `name` が空なら `"vars"`、空でなければ `"vars." + name` を基本にし、`hasIndex` が真なら `name + "[" + index + "]"` を続ける。
+- `Field.String()` の描画: `""`・`"cmd"`・`"args[<index>]"`・`"env"`・`"env_vars[<index>]"`・`"env_import"`・`"workdir"`・`"verify_files[<index>]"`・`"cmd_allowed[<index>]"`・`"vars"`・`"vars.<name>"`・`"vars.<name>[<index>]"`。index は `strconv.Itoa` で作る。`hasIndex` が真のときだけ `[<index>]` を続ける。`fieldVars` は `name` が空なら `"vars"`、空でなければ `"vars." + name` を基本にし、`hasIndex` が真なら `"[" + index + "]"` を基本の後ろに続ける（`varElementField("foo", 2)` は `vars.foo[2]` になる）。
 - `parts()` は非公開である（02 §3.1.1 の契約 8）。呼び出し側は `config` パッケージの中（`ErrUndefinedVariableDetail.StructuredMessage` と `ExpandWorkDir`）だけである。
 - `Level.parts()`: `levelGlobal` は `[]Part{Const("global")}`、`levelGroup` は `Const("group[")`・`Ident(l.name)`・`Const("]")`、`levelCommand` は `Const("command[")` で同じ形、`levelTemplate` は `Const("template[")` で同じ形、`levelNone` は nil。
 - `Field.parts()`: キーごとの `switch` で、各文言を `Const` の文字列リテラルから作る。キーの文言を変数から `Const` に渡すと §9.3 のガードが定数式でないとして拒否するためである。`args`・`verify_files`・`cmd_allowed` の index と `vars` の index は `Text(strconv.Itoa(...))`。`vars.<name>` の名前は `Ident(f.name)`（`name` が空なら `Const("vars")` だけ）。`fieldNone` は nil。
@@ -1145,7 +1146,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - AC-04: `Text` の断片が `RedactText` の結果になり、反応せず値全体置換に当たればその断片だけが置換文字列になり、同じ本文の他の断片が残ること。
 - AC-07: 機密を示す属性名の下では、構造化メッセージが値ごと置換されること（ハンドラのテスト）。
 - AC-36: `Identifier` の断片だけが語を含み、`Text` の断片が語も形式も含まない本文で、`Text` の断片が書き換えられないこと。
-- AC-37: 検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに 1 回ずつ確かめる。各入力は、接頭辞または key と値を別の断片に分ける。値形式の検出の場合の 1 つは、値形式に当たる値を `Identifier` の断片と `Text` の断片に分ける。どの入力でも、各部分だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを先に確かめる（01「テストの入力についての制約」）。§3.2 の手順 4・6・7 の例（`AKIAIOSFODNN7` + `EXAMPLE`、`AKIAIOSF` + `ODNN7EXAMPLE`、`Bearer ` + `opaque-credential`、`API_KEY` + `=` + 値）を表で固定する。
+- AC-37: 検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに 1 回ずつ確かめる。各入力は、接頭辞または key と値を別の断片に分ける。値形式の検出の場合の 1 つは、値形式に当たる値を `Identifier` の断片と `Text` の断片に分ける。どの入力でも、各部分だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを先に確かめる（01「テストの入力についての制約」）。§3.2 の手順 4・6・7 の例（`AKIAIOSFODNN7` + `EXAMPLE`、`AKIAIOSF` + `ODNN7EXAMPLE`、`Bearer ` + `opaque-credential`、`API_KEY` + `=` + 値）を表で固定する。断片の値が全体の一致で隣の断片へ延びる場合（`Text("password=secret")` + `Text("suffix")`）に、置換文字列が 1 つにまとまることも確かめる。
 - AC-38: `redactSegments` に `errmsg.Segment{Role: errmsg.Role(99), Text: ...}` を直接与える。値全体置換だけが反応する入力を使い、その断片が置換文字列になること。
 - 挿入点: `Constant("password=\"")`・`Text("")`・`Constant("\"")` の 3 つの断片で、出力が `RedactText("password=\"\"")` と同じ `password="[REDACTED]"` になること。
 - 実行時の検査: `redactedRanges` を差し替えて不一致を起こすテスト（テスト内で範囲を改変する）で `*ErrMessageRangeMismatch` が返ること。平らにする処理が panic する原因（`StructuredMessage()` が panic する型）で `*ErrMessageFlattenPanic` が返ること。どちらも `error_message` が `RedactionFailurePlaceholder` になり、`ErrorCollector` に記録されること（ハンドラのテスト）。
