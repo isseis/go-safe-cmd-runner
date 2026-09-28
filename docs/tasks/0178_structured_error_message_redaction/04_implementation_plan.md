@@ -109,7 +109,7 @@
 | ガードの自己テストの形 | `internal/runner/group_errors_guard_test.go::TestMultiErrorShapeProbeCheckRecognizesForms`（`:419`） | 検出器に検出すべき形を与える表。各ガードに同じ形で付ける |
 | ログレコーダ | `internal/testutil`（`tu.NewCallbackHandler` など） | `redaction`・`logging` のハンドラテスト |
 | Slack モック実行 | `cmd/runner/integration_test_helpers.go`（`runMainWithSlackMock`・`slackRunSpec`・`jsonLogRecords`）と `requireSinglePreExecutionError`・`attachmentField` | AC-12・AC-34 の端から端までのテスト |
-| 複数 group の帰属テストの土台 | `internal/runner/multi_group_error_integration_test.go`（`captureExecutionErrorReport`・`executionErrorMessage`） | AC-16 のテスト |
+| 複数 group の帰属テストの土台 | `internal/runner/multi_group_error_integration_test.go`（`captureExecutionErrorReport`・`executionErrorMessage`） | AC-16 のテスト。`captureExecutionErrorReport` は内側のコールバックハンドラを `redaction.NewRedactingHandler` で包み、`Text` の対照値を含む記録にする |
 | 中断のテストの土台 | `internal/runner/runner_test.go`（`TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled` ほか） | AC-31・AC-32 のテスト |
 | 一時ディレクトリのテスト | `internal/runner/base/executor/tempdir_manager_test.go` | 2 つのラップの文言のテストを追加 |
 | 実行の失敗の経路のテスト | `executor_supervise_test.go:433`（`spent_command_stays_not_started`）・`executor_fdexec_test.go:111`・`executor_lifecycle_test.go:815` | `errmsg.Join` と `killAfterCancelError` の到達性の確認 |
@@ -141,7 +141,8 @@
 | 03 §11.2 | `package_reference.md` に `internal/identifier` の記述が無い | ディレクトリ一覧のアルファベット順の位置と Package Responsibilities に `internal/errmsg` を追記し、`internal/identifier` の記述の有無には依存しない |
 | 03 §10.7 | `ErrUndefinedVariableDetail.Level`・`Field` を文字列として比べるテストは無い | `errors_test.go:71-76` のリテラルだけを書き換え、`String()` の期待値テストは新設する |
 | 03 §2.9・§9.10 | `identitymutationguard` に自己テスト用の共通ヘルパは無い | 各ガードの自己テストは `group_errors_guard_test.go` の表の形で各ガードファイルに置く |
-| 02 §3.8.1・03 §7.1・§9.1 | `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`（および両者が委譲する `(*DefaultOutputCaptureManager).ValidateOutputPath` と `validateAndResolvePath`）を「2 つのレコードの原因にならない」として対象外にしている。しかし `group_executor.go:520-521` の `output path validation failed: %w`（対象の範囲内）を通って最終の実行エラーの原因になり、`dryrun_manager.go:159` と `base/output/manager.go:71`・`:76` で出力パスを挿入する。02 §3.8.1 の規則 (ii)（パスを挿入するラップは対象）と矛盾する | **ブロッキングタスク**として扱う。02 の対象の範囲を修正して再承認を得るまで Phase 7・8 を開始しない（Phase 7 の冒頭）。03 §7.1・§9.1・§9.4 も承認後に合わせる |
+| 02 §3.8.1・03 §7.1・§9.1 | `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`（および両者が委譲する `(*DefaultOutputCaptureManager).ValidateOutputPath` と `validateAndResolvePath`）を「2 つのレコードの原因にならない」として対象外にしている。しかし `group_executor.go:520-521` の `output path validation failed: %w`（対象の範囲内）を通って最終の実行エラーの原因になり、`dryrun_manager.go:159` と `base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`base/output/manager.go:71`・`:76` のラップは `path validation failed: `・`security validation failed: ` の定数の前置きだけで、パスは挿入しない）。02 §3.8.1 の規則 (ii)（パスを挿入するラップは対象）と矛盾する | **ブロッキングタスク**として扱う。02 の対象の範囲を修正して再承認を得るまで Phase 7・8 を開始しない（Phase 7 の冒頭）。修正では `base/output/path.go` の `validatePathSecurity`・`validateRelativePath` を対象に加え、03 §9.1 の範囲と §9.4 の役割の許可位置にも同じ関数を加えてから承認を得る |
+| 03 §3.4 | `ErrMessageFlattenPanic` は `PanicValue any` を持ち、既存の `ErrLogValuePanic`（`errors.go:13-15`）と同じ `%v` の `Error()` にすると panic 値が `ShutdownReporter` の出力（`reporter.go:132` の `%v`）に漏れる。本文を含まないという記述だけでは足りない | **編集上の修正**として Phase 3 で扱う。`PanicValue` の欄を設けないか、`Error()` を鍵と固定の文言だけにして panic 値とスタックトレースを描画しない。`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` で固定する |
 | 03 §13 | 手順 4（`Message` のリテラルの書き換え）と手順 7（`cmd/runner`）が、どちらも `cmd/runner` の 4 か所に触れる | `Message` の型の変更により 23 か所のリテラルの書き換えと 4 か所の原因の `Err` への付け替えは Phase 4 で完了させる。4 か所の到達性の検証だけを Phase 7 で行う |
 
 #### 外部前提の確認
@@ -218,11 +219,12 @@
 **Files**: `internal/redaction/message.go`（新規）、`internal/redaction/message_test.go`（新規）、`internal/redaction/redaction_guard_test.go`（新規・`//go:build test`）、`internal/redaction/errors.go`・`redactor.go`（変更）
 
 - [ ] `message.go` に `RedactMessage`・`redactSegments`（03 §3.2 の手順 1〜8。`Config` が `NewConfig` を経ていなければ `RedactionFailurePlaceholder` を返す）を実装する。`RedactMessage` の中で、平らにする処理の panic を回復して `*ErrMessageFlattenPanic` を返し、範囲から作った文字列が `RedactText` の出力と一致するかを検査して一致しなければ `*ErrMessageRangeMismatch` を返す（03 §3.1.1・§3.2）。
-- [ ] `errors.go` に `ErrMessageFlattenPanic`・`ErrMessageRangeMismatch` を追加する（03 §3.4。秘密を含みうる文字列を持たない）。
+- [ ] `errors.go` に `ErrMessageFlattenPanic`・`ErrMessageRangeMismatch` を追加する（03 §3.4。秘密を含みうる文字列を持たない）。`ErrMessageFlattenPanic` は 03 §3.4 の `PanicValue`・`StackTrace` を `Error()` に描画しない（欄を設けない、または `Error()` を鍵と固定の文言だけにする）。panic 値には秘密が入りうるためであり、§1.3 の食い違い表に 03 §3.4 の編集上の修正として記録する。
 - [ ] `redactMessageAttribute`（03 §3.3）を実装し、`redactLogAttributeWithContext`（`redactor.go:799`）と公開の `Config.RedactLogAttribute`（`:330`）の両方の、宣言済みの識別子の判定の後・`switch value.Kind()` の前に置く。判定は値の動的な型がちょうど `errmsg.Message` のときだけ行う。
 - [ ] `RedactingHandler` は失敗を `ErrorCollector` に型付きのエラーとして記録し、値を `RedactionFailurePlaceholder` にする。`Config.RedactLogAttribute` は `collector` に nil を渡し、`slog.KindLogValuer` の値を `RedactionFailurePlaceholder` にする（fail-closed）。
 - [ ] `message_test.go` に 03 §10.3・§10.4 のテスト（AC-01〜04・07・20・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ、`Config.RedactLogAttribute`）を置く。AC-08 は `TestRedactSegments_ZeroRoleFallsBackToText`（ゼロ値の役割）、AC-38 は `TestRedactSegments_UnknownRoleFallsBackToText`（範囲外の役割）で確かめる。AC-37 の各入力では、先に各断片だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを確かめる。
 - [ ] `TestRedactMessage_RangeMismatchReportsFailure` の不一致は、パッケージ内のテストが `cfg.placeholder` を `DefaultPlaceholder` 以外に設定して起こす（範囲の描画は `DefaultPlaceholder` を、`RedactText` は `cfg.placeholder` を使うため、意図的に食い違わせられる）。`TestRedactMessage_FlattenPanicReportsFailure` は、`StructuredMessage()` が panic する型をテスト内に定義し、その panic が `RedactMessage` の平らにする処理の時点で回復されることを確かめる。
+- [ ] `TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` を `message_test.go` に置く。秘密を `PanicValue` に持つ `StructuredMessage()` が panic する型を `RedactingHandler`（`ErrorCollector` 付き）に通し、記録された失敗を `ShutdownReporter` に報告させる。報告の出力と `Failure.Err.Error()` にその秘密が現れないことを確かめ、§1.3 の食い違い表のとおり `Error()` が panic 値とスタックトレースを描画しないことを固定する。
 - [ ] `BenchmarkRedactMessage` を `BenchmarkRedactText`（`redactor_test.go:3569`）に並べて置き、100 group の失敗を連結した数十 KiB の入力で 1 回の描画が 10 ms 以下であることを確かめ、結果（実測値と実行環境）をコミットメッセージに記録する（03 §3.6）。
 - [ ] `redaction_guard_test.go` に 03 §9.6 の AC-25 のガードと自己テストを置く。
 
@@ -232,7 +234,7 @@
 
 **対象ステップ**: Phase 3
 **推奨タイトル**: `feat(0178): redact structured messages per segment`
-**レビュー観点**: `Identifier` の免除と境界をまたぐ契約（AC-37）、`Text` の値全体置換が断片ごとであること（AC-36）、範囲の不一致・平らにする処理の panic が fail-closed に倒れること、後段のハンドラが文字列を受け取ること、`Config.RedactLogAttribute` の fail-closed の分岐、ベンチマークの予算
+**レビュー観点**: `Identifier` の免除と境界をまたぐ契約（AC-37）、`Text` の値全体置換が断片ごとであること（AC-36）、範囲の不一致・平らにする処理の panic が fail-closed に倒れること、panic 値が `ShutdownReporter` の報告に漏れないこと、後段のハンドラが文字列を受け取ること、`Config.RedactLogAttribute` の fail-closed の分岐、ベンチマークの予算
 **実装モデル要件**: frontier-required
 **判定理由**: 部分ごとの redaction と境界をまたぐ置換は本タスクの中心のセキュリティ境界であり、バイト単位の手順と失敗時の扱いを同時に満たす必要がある
 
@@ -308,15 +310,16 @@
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
-**Files**: `internal/runner/resource/normal_manager.go`・`dryrun_manager.go`、`internal/runner/base/output/manager.go`（上の修正の再承認後。`validateAndResolvePath` などのパス検証）、`internal/runner/base/executor/tempdir_manager.go`・`executor.go`・`command_lifecycle.go`、`internal/runner/base/privilege/errors.go`・`unix.go`、`cmd/runner/main_test.go`（到達性テストの追加）、および対応するテスト。`cmd/runner/main.go` ほかの `Message` のリテラルと 4 か所の原因の付け替えは Phase 4 で完了している（§1.3 の食い違い表を参照）
+**Files**: `internal/runner/resource/normal_manager.go`・`dryrun_manager.go`、`internal/runner/base/output/path.go`（`validatePathSecurity`・`validateRelativePath` のパスを挿入する 3 か所）・`manager.go`（上の修正の再承認後。`validateAndResolvePath` などのパス検証）、`internal/runner/base/executor/tempdir_manager.go`・`executor.go`・`command_lifecycle.go`、`internal/runner/base/privilege/errors.go`・`unix.go`、`cmd/runner/main_test.go`（到達性テストの追加）、および対応するテスト。`cmd/runner/main.go` ほかの `Message` のリテラルと 4 か所の原因の付け替えは Phase 4 で完了している（§1.3 の食い違い表を参照）
 
-- [ ] **【ブロッキング】** 02 §3.8.1 の `ValidateOutputPath` の除外を修正する。出力パスの検証の失敗は `group_executor.go:520-521` の `output path validation failed: %w` を通って最終の実行エラーの原因になり、出力パスを挿入する（§1.3 の食い違い表）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`(*DefaultOutputCaptureManager).ValidateOutputPath`（およびそのパス検証）を加え、出力パスを `Path` として宣言できるようにする修正を提案し、レビュアーの再承認を得る。03 §7.1・§9.1・§9.4 も承認後に合わせる。**再承認が完了するまで、この Phase の resource の実装と Phase 8 の AC-41 のガードを開始しない。**
+- [ ] **【ブロッキング】** 02 §3.8.1 の `ValidateOutputPath` の除外を修正する。出力パスの検証の失敗は `group_executor.go:520-521` の `output path validation failed: %w` を通って最終の実行エラーの原因になり、`base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`manager.go:71`・`:76` のラップは定数の前置きだけで、パスを挿入しない。§1.3 の食い違い表）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`(*DefaultOutputCaptureManager).ValidateOutputPath`・`(*DefaultPathValidator).ValidateAndResolvePath` とその先の `validatePathSecurity`・`validateRelativePath`（および `validateAndResolvePath`）を加え、出力パスを `Path` として宣言できるようにする修正を提案し、レビュアーの再承認を得る。03 §9.1 の範囲と §9.4 の役割の許可位置に同じ関数を加え、§7.1 の resource の表にも `ValidateOutputPath` 系を加えてから合わせる。**再承認が完了するまで、この Phase の resource の実装と Phase 8 の AC-41 のガードを開始しない。**
 - [ ] `internal/runner/resource` の対象の箇所（16 か所と、上の修正で加わる `ValidateOutputPath` 系）を 03 §7.1 の表と修正後の範囲のとおりに構造化する。`CreateTempDir`・`CleanupTempDir`・`CleanupAllTempDirs`・`UpdateCommandDebugInfo` は変えない。
+- [ ] `internal/runner/base/output/path.go` の `validatePathSecurity`・`validateRelativePath` の 3 か所（`:57`・`:62`・`:91`）の挿入するパスを `Path`、番兵と固定の文言を `Const`、原因を `Cause` として構造化する。`manager.go:71`・`:76` の定数の前置きのラップも、原因が運ぶ `Path` の断片を保つように構造化する（再承認後）。
 - [ ] `tempdir_manager.go` の 2 つのラップを `PathErrorCause` にし、前置きは既存の文言（`failed to create temporary directory: `・`failed to set permissions on temporary directory: `）を保つ。`os.MkdirTemp` と `os.Chmod` の失敗をそれぞれ別に起こして文言を確かめる（03 §7.2.1）。
 - [ ] `executor.go` の 12 か所を 03 §7.2.2 のとおりに構造化する。パスは `Path`、固定の文言は `Const`。`stageFromFD`・`prepareCommand`・`output_pump.go`・`fdexec_linux.go` の `fmt.Errorf` は変えない。
 - [ ] `command_lifecycle.go` の `runCommand`・`reportStartFailure`・`superviseCommand` の `errors.Join` を `errmsg.Join` にし、`killChild`・`killOutcome` の 2 つの `%w` の書式を `killAfterCancelError`（03 §7.2.3）にする。`:736`・`:789`・`:931` は 03 の表のとおりに構造化する。`rankedError`・`release`・`startPrepared` は変えない。
 - [ ] `privilege/errors.go` の `(*Error).Error()` を `StructuredMessage()` から作るようにし、`unix.go:217` の `fmt.Errorf` を構造化する（03 §7.3）。`WithPrivileges`・`escalatePrivileges` は変えない。
-- [ ] 03 §10.5 の各エラー型のテスト（ラップごとの文言、到達性、`killAfterCancelError` の 2 経路、`privilege.Error`）を追加・更新する。`killAfterCancelError` は `TestKillAfterCancelError_TextAndReachability` で確かめる。一時ディレクトリの 2 つのラップは `TestTempDirManager_Create_WrapTexts` で確かめる。`TestRunCommand_ChildStateTransitions/spent_command_stays_not_started`・`TestExecute_FdBoundStartFailureNoLeak`・`TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が green のままであることを確かめる。
+- [ ] 03 §10.5 の各エラー型のテスト（ラップごとの文言、到達性、`killAfterCancelError` の 2 経路、`privilege.Error`）を追加・更新する。`killAfterCancelError` は `TestKillAfterCancelError_TextAndReachability` で確かめる。一時ディレクトリの 2 つのラップは `TestTempDirManager_Create_WrapTexts` で確かめる。`base/output/path.go` の 2 関数と `manager.go` の 2 つのラップは `TestPathValidationWraps_KeepInsertedPath` で、文言が変更前と同じであり、出力パスが `Path` の断片として残ることを確かめる（再承認後）。`TestRunCommand_ChildStateTransitions/spent_command_stays_not_started`・`TestExecute_FdBoundStartFailureNoLeak`・`TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が green のままであることを確かめる。
 - [ ] `cmd/runner/main_test.go` に表駆動の `TestPreExecutionCauseReachability` を追加する。global の展開・テンプレート検証・ディレクトリ権限チェッカーの初期化・`--groups` の各失敗について、`PreExecutionError.Err` に付け替えた原因へ `errors.Is`・`errors.AsType` が届くことと、`Detail()` の文言が変更前と同じであることを確かめる。`run`・`executeRunner` はパッケージ内テストからフラグと設定ファイルを与えて直接呼ぶ。既存の `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` の seam をチェッカーの初期化の行に使う。
 - [ ] 数値の役割（index・終了コード・件数・理由の番号）が `Text` であり、`Const` を使っていないことを確かめる。
 
@@ -326,28 +329,30 @@
 
 **対象ステップ**: Phase 7
 **推奨タイトル**: `feat(0178): structure command-execution errors and verify entrypoint reachability`
-**レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認されていること
+**レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認され、`base/output/path.go` の `validatePathSecurity`・`validateRelativePath` が範囲と役割の許可位置に入っていること
 **実装モデル要件**: frontier-recommended
 **判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
 
 ### Phase 8: AC-41 のガード、例示のシナリオのテスト、文書
 
-**Files**: `internal/runner/wrap_guard_test.go`（新規・`//go:build test`）、`cmd/runner/integration_pre_execution_error_test.go`・`internal/runner/multi_group_error_integration_test.go`・`internal/runner/runner_test.go`（テスト追加）、`docs/dev/architecture_design/security-architecture.ja.md`・`.md`、`docs/dev/developer_guide/package_reference.md`、`scripts/verification/check_structured_message_redaction_docs.sh`（新規）と `scripts/verification/check_structured_message_redaction_docs_selftest.sh`（新規）、`sample/slack-group-notification-test.toml`・`Makefile`（手動確認用）
+**Files**: `internal/runner/wrap_guard_test.go`（新規・`//go:build test`）、`cmd/runner/integration_pre_execution_error_test.go`・`internal/runner/multi_group_error_integration_test.go`・`internal/runner/runner_test.go`（テスト追加）、`docs/dev/architecture_design/security-architecture.ja.md`・`.md`、`docs/dev/developer_guide/package_reference.md`、`docs/user/security-risk-assessment.ja.md`・`.md`、`scripts/verification/check_structured_message_redaction_docs.sh`（新規）と `scripts/verification/check_structured_message_redaction_docs_selftest.sh`（新規）、`sample/slack-group-notification-test.toml`・`Makefile`（手動確認用）
 
 - [ ] 03 §9.2 の AC-41 のガードを `wrap_guard_test.go` に実装する。対象の範囲（ファイル全体・関数の単位・除く関数）をテストの中の表として持ち、§9.1 の関数名とファイル名が実際のコードに見つかることも確かめる。`cancelledRunError`・`killAfterCancelError`・`privilege.Error` の `StructuredMessage` の宣言も確かめる。自己テストを付ける。範囲の定義は 02 §3.8.1 の修正の再承認後の内容に合わせる（Phase 7 の冒頭）。
 - [ ] AC-12 のテストを `cmd/runner/integration_pre_execution_error_test.go` に追加する。名前が値全体置換の引き金になる語（`password`・`token` など。以下「語」）を含む group（`token-rotate`）の `vars` で定義する変数（`token_file`）が、語を含む未定義の変数（`api_key`）を参照する設定を使い、`runMainWithSlackMock` と `requireSinglePreExecutionError`・`attachmentField` で Slack の `Error Message` まで通す。group 名・定義側の変数名 `token_file`・参照された変数名 `api_key` の 3 つが `Error Message` に残ることを確かめる。先に、識別子以外の本文だけでは値全体置換が起きないことを確かめる。
 - [ ] AC-34 のテストを同ファイルに追加する。global の `vars` が未定義の `api_key` を参照する設定で、`Error Message` に `Failed to expand global configuration` と `api_key` が出ることを確かめる。
-- [ ] AC-16 のテストを `internal/runner/multi_group_error_integration_test.go` に追加する。2 つの group でコマンドが 0 以外の終了コードで失敗し、一方の group 名が語を含むとき、`error_message` に両方の group のエラーが宣言する `Identifier` の部分が置き換えられずに出ることを確かめる（終了コードのエラー書式はパスを宣言しないため、このシナリオで `Path` の断片は現れない）。
+- [ ] AC-16 のテストを `internal/runner/multi_group_error_integration_test.go` に追加する。`captureExecutionErrorReport` は、内側のコールバックハンドラを `redaction.NewRedactingHandler`（`redaction.DefaultConfig()`）で包み、報告する `ExecutionError.Message` を呼び出し側から受け取るようにする。既存の 4 つの呼び出しは `errmsg.ConstSummary("error running commands")` を渡し、AC-16 は `Text` としてだけ置換される語を含む `errmsg.TextSummary`（対照値）を渡す。2 つの group でコマンドが 0 以外の終了コードで失敗し、一方の group 名が語を含むとき、`error_message` に両方の group のエラーが宣言する `Identifier` の部分が置き換えられずに出ることと、対照値が置換文字列になることを確かめる（終了コードのエラー書式はパスを宣言しないため、このシナリオで `Path` の断片は現れない）。
 - [ ] AC-31 のテスト `TestRunner_CancelledRunErrorMessageKeepsIdentifiers` を `internal/runner/runner_test.go` に追加する。`executeGroups` の経路で context を中断してから group を失敗させ、返すエラーの動的な型が `*cancelledRunError` であること（`errors.AsType`）、`error_message` に中断の原因と失敗した group の原因が出ることを確かめる。文言と到達性は Phase 5 の `TestCancelledRunError_TextAndReachability` が担う。
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」の節全体（`:636-660`）を 03 §11.1 の内容に合わせて書き換える。旧称「値まるごと判定」は節内の `:640`・`:649`・`:650` にもあるので、行範囲ではなく節全体を対象にし、用語集の「値全体置換」にそろえる。`error` 属性・`record.Message` は変更前と同じ扱いであることを残す。
 - [ ] 同節の戻し方に、戻す単位を書く。構造化メッセージの記録を使う変更（Phase 4）は、後の Phase のガード・テスト・文書と結び付いている。そのため、PR-4〜PR-8 をまとめて戻す。個別に戻す場合は `git revert -n` を使い、戻した記録の変更に合わせて `wrap_guard_test.go`・AC-12/AC-34 のテスト・日英の文書を同じコミットで整合させてから、`make test`・`make lint` を通す。実行時のスイッチが無く、`RedactText` を変えないのでほかのログの redaction は影響を受けないことを記す（02 §5.4、既存の #1136 の戻し方の段落と同じ形）。
 - [ ] `security-architecture.md` の対応する節を `/mktrans` で日本語版と同じ内容に反映する（用語集の登録を含む）。
-- [ ] `scripts/verification/check_structured_message_redaction_docs.sh` を追加する。日英それぞれについて、構造化メッセージ・役割・`Path` を値全体置換の対象外とする境界・構造を持たないエラーが `Text` であること・旧称を使っていないことを検査し、`package_reference.md` に `errmsg/` と `internal/errmsg` の責務の記述があることも検査する。参照するルートは環境変数で上書きできるようにし、既定はリポジトリのルートにする。既存の `check_identifier_exemption_docs.sh` の必須語（識別子・免除・NewIdentifier・identifier・exempt）が書き換え後も残ることを確かめ、必要なら同スクリプトのアンカーを更新する。
-- [ ] `scripts/verification/check_structured_message_redaction_docs_selftest.sh` を追加する。検査対象の語をすべて含むフィクスチャでは終了コード 0、1 語を欠くフィクスチャでは非ゼロになることを確かめ、検査が空振りしないことを固定する（`make verify-docs-checks` は `check_*.sh` を列挙して実行するので、この自己テストも自動で走る）。
+- [ ] `docs/user/security-risk-assessment.ja.md`:301・`docs/user/security-risk-assessment.md`:305 の識別子の免除の段落を更新する。普通の `error` 文字列・`record.Message` は値全体置換で全文が置換されうるままであることと、構造化 `error_message` では宣言された `Identifier` の断片が値全体置換を受けずに残ることとを区別して書き、`error` 属性・`record.Message` についての説明として正確にする。日本語版を先に直し、英語版は `/mktrans` で反映する。両ファイルの必須語を次の検査スクリプトに加える。
+- [ ] `scripts/verification/check_structured_message_redaction_docs.sh` を追加する。本スクリプトと次の自己テストは strict POSIX sh で書く（`#!/bin/sh`、`[[ ]]`・配列・`local` を使わず、`CDPATH= cd -- "$dir"` を使う）。既存の `scripts/verification/check_*.sh` は `make verify-docs-checks` が `sh` で実行する（§1.3 の外部前提）。日英それぞれについて、構造化メッセージ・役割・`Path` を値全体置換の対象外とする境界・構造を持たないエラーが `Text` であること・旧称を使っていないこと・security-risk-assessment の免除の記述が構造化 `error_message` を「免除されない」と読ませないことを検査し、`package_reference.md` に `errmsg/` と `internal/errmsg` の責務の記述があることも検査する。参照するルートは環境変数で上書きできるようにし、既定はリポジトリのルートにする。既存の `check_identifier_exemption_docs.sh` の必須語（識別子・免除・NewIdentifier・identifier・exempt）が書き換え後も残ることを確かめ、必要なら同スクリプトのアンカーを更新する。
+- [ ] `scripts/verification/check_structured_message_redaction_docs_selftest.sh` を追加する（自己テストも同じ strict POSIX sh の規約で書く）。検査対象の語をすべて含むフィクスチャでは終了コード 0、1 語を欠くフィクスチャでは非ゼロになることを確かめ、検査が空振りしないことを固定する（`make verify-docs-checks` は `check_*.sh` を列挙して実行するので、この自己テストも自動で走る）。
 - [ ] `docs/dev/developer_guide/package_reference.md` のディレクトリ一覧に `errmsg/` を、Package Responsibilities に `internal/errmsg` の責務を追記する（§1.3 の食い違い表のとおり、`internal/identifier` の記述の有無に依存しない）。追記は上の検査スクリプトで確かめる。
 - [ ] `make verify-docs-checks` を実行し green を確かめる。`make verify-docs` も実行し、本タスクで追加した記述に起因する報告が無いことを確かめる。
 - [ ] `sample/slack-group-notification-test.toml` と `Makefile`（`:654-674`）を更新する。既存の `pre_execution_failure_group`（`env_vars` の未定義変数）を残し、group 名が語を含み `vars` の未定義変数で group 実行前段に失敗する group を追加して、期待通知を 5 件から 6 件に更新する（2 つの `pre_execution_error` の違いを説明に書く）。`internal/runner/config` の互換テスト 3 件が green のままであることを確かめる。
 - [ ] `make slack-group-notification-test` を実行し、Slack の `Error Message` に要約文と group 名・変数名が出ることを確かめる（手動。結果をコミットメッセージに記録する）。
+- [ ] 【突き合わせ】 本タスク以前からある「識別子の免除」の説明を引き継いだ成果物を横断して監査し、次の 3 つを同じ変更の中で更新する。(1) 02 §3.8.1 の対象の範囲と 03 §9.1・§9.4 の役割の許可位置の表に `internal/runner/base/output/path.go` のパスを挿入する `validatePathSecurity`・`validateRelativePath` を加える（Phase 7 の冒頭のブロッキングタスクの再承認に含める）。(2) `internal/runner/multi_group_error_integration_test.go` の `captureExecutionErrorReport` を `redaction.NewRedactingHandler` 経由にし、`Text` としてだけ置換される対照値を加える。(3) `docs/user/security-risk-assessment.ja.md`・`.md` の免除の記述を、構造化 `error_message` の `Identifier` の断片が残る新しい挙動に合わせる。3 つとも本タスク以前の免除の説明を引き継いだ成果物であり、1 つだけ直すと食い違うため同時に更新する。日英の文書の一致は `make verify-docs-checks` で機械的に確かめる。
 - [ ] 最後に `make test`・`make lint` を通す。
 
 **完了条件**: AC-41 のガードと自己テストが green。例示のシナリオのテストが green。`make verify-docs-checks`・`make test`・`make lint` が green。`make slack-group-notification-test` の結果が記録されている。
@@ -389,7 +394,7 @@
 
 ### 3.3 順序の根拠
 
-[02_architecture.md](02_architecture.md) §8 の優先順位 1〜8 をそのまま保つ。1〜3 はそれだけで既存の出力を変えない（構造化メッセージを記録する箇所がまだ無く、`RedactText` も挙動を変えない）。4 以降で、記録が構造化メッセージになる。Phase 3 は Phase 1・2 に依存する。Phase 4 は Phase 1・3 に依存する。Phase 5 の `GroupError` などの型は Phase 4 の `Message` の型に依存する。Phase 6 は Phase 1 に依存し、`ExpandWorkDir` の呼び出しの変更だけをここで行う（03 §13 との食い違いは §1.3 の食い違い表のとおり）。Phase 7 は Phase 4 の `PreExecutionError` の型に依存する。`cmd/runner` の実装は `Message` の型の変更のために Phase 4 で完了させ、Phase 7 では到達性の検証だけを行う（§1.3 の食い違い表のとおり）。Phase 7 の resource の実装と Phase 8 は、02 §3.8.1 の `ValidateOutputPath` の除外の修正の再承認を前提とする（Phase 7 の冒頭のブロッキングタスク）。Phase 8 の AC-41 のガードは Phase 5〜7 の対象の範囲の変更がすべて入った後でなければ green にならない。
+[02_architecture.md](02_architecture.md) §8 の優先順位 1〜8 をそのまま保つ。1〜3 はそれだけで既存の出力を変えない（構造化メッセージを記録する箇所がまだ無く、`RedactText` も挙動を変えない）。4 以降で、記録が構造化メッセージになる。Phase 3 は Phase 1・2 に依存する。Phase 4 は Phase 1・3 に依存する。Phase 5 の `GroupError` などの型は Phase 4 の `Message` の型に依存する。Phase 6 は Phase 1 に依存し、`ExpandWorkDir` の呼び出しの変更だけをここで行う（03 §13 との食い違いは §1.3 の食い違い表のとおり）。Phase 7 は Phase 4 の `PreExecutionError` の型に依存する。`cmd/runner` の実装は `Message` の型の変更のために Phase 4 で完了させ、Phase 7 では到達性の検証だけを行う（§1.3 の食い違い表のとおり）。Phase 7 の resource の実装と Phase 8 は、02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落の修正の再承認を前提とする（Phase 7 の冒頭のブロッキングタスク）。Phase 8 の AC-41 のガードは Phase 5〜7 の対象の範囲の変更がすべて入った後でなければ green にならない。
 
 ---
 
@@ -402,7 +407,7 @@
 - `internal/errmsg/errmsg_test.go`: 平らにする契約、`String()` と `Error()` の一致、`IndentedCause`、深い連鎖、`Freeze`、`Join`、`errmsg.Error` の構築と到達性、nil・ゼロ値、AC-08、AC-21（03 §10.1）。
 - `internal/errmsg/errmsg_guard_test.go`: AC-24（03 §9.3）、免除の役割の位置（§9.4）、文言と構造の一致（§9.5）、`Part` の非公開と部分を返す関数（§9.8）、整形のバイト（§9.9）と、それぞれの自己テスト（§9.10）。
 - `internal/redaction/ranges_test.go`: `redactedRanges` の差分テスト（既存の `RedactText` のテストの入力をすべて種にする）と `FuzzRedactedRangesMatchesRedactText`、幅 0 の範囲、段の重なり（03 §10.2）。
-- `internal/redaction/message_test.go`: AC-01〜04・07・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ（AC-20）、`Config.RedactLogAttribute`、`BenchmarkRedactMessage`（03 §10.3・§10.4）。
+- `internal/redaction/message_test.go`: AC-01〜04・07・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ（AC-20）、`Config.RedactLogAttribute`、`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport`（失敗の報告に panic 値が現れないこと）、`BenchmarkRedactMessage`（03 §10.3・§10.4）。
 - `internal/redaction/redaction_guard_test.go`: AC-25（03 §9.6）と自己テスト。
 - `internal/runner/wrap_guard_test.go`: AC-41（03 §9.2）と自己テスト。
 - 各エラー型（03 §10.5）: `internal/logging`・`internal/runner`・`internal/runner/config`・`internal/runner/resource`・`internal/runner/base/executor`・`internal/runner/base/privilege` の既存テストファイルに、部分の並びと文言の確認を追加する。
@@ -412,7 +417,7 @@
 AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生元から `RedactingHandler` を通った後のレコードまでを通す（01「テストの入力についての制約」、03 §10.6）。
 
 - AC-12・AC-34: `cmd/runner/integration_pre_execution_error_test.go`。`runMainWithSlackMock` で起動し、Slack のメッセージ組み立て（`buildPreExecutionError`）までを通して `Error Message` を確かめる。`vars` の中の未定義変数を使う。
-- AC-16: `internal/runner/multi_group_error_integration_test.go`。2 つの group の失敗を `HandleExecutionError` に通し、`error_message` を確かめる。
+- AC-16: `internal/runner/multi_group_error_integration_test.go`。`captureExecutionErrorReport` が内側のコールバックハンドラを `redaction.NewRedactingHandler` で包み、2 つの group の失敗を `HandleExecutionError` に通して `error_message` を確かめる。`Identifier` が置き換えられずに残ることと、`Text` の対照値が置換文字列になることの両方を確かめる。
 - AC-31: `internal/runner/runner_test.go`。`executeGroups` の経路で context を中断してから group を失敗させる。
 
 ### 4.3 層の切り分け
@@ -423,6 +428,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 - AC-11 は、定数式の `Message` の部分が書き換えられず、原因の部分が `RedactText(原因の Error())` と同じ結果になることを `RedactMessage` のテストで確かめる。
 - AC-32 は `cancelledRunError` の単体テスト（文言と到達性）と、`executeGroups` の経路のテスト（返すエラーの中身）の 2 層で確かめる。
 - AC-41 は `wrap_guard_test.go`（範囲の網羅）と、例示のシナリオのテスト・各エラー型のテスト（実際の宣言）の 2 層で確かめる。
+- AC-16 は、1 つの記録の中に残る `Identifier`（group 名）と置換される `Text` の対照値を並べる。対照値が置換されることは記録が `redaction.NewRedactingHandler` を通ったことの証拠になり、識別子が残ることは部分ごとの描画の証拠になる。どちらか片方だけでは層を切り分けられない。
 
 ### 4.4 実装時に行うテスト失敗確認
 
@@ -446,6 +452,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 3 | 既定の分岐で `Text` の全段を適用しない | `TestRedactSegments_UnknownRoleFallsBackToText` |
 | 3 | `redactedRanges` の結果の検査を外す | `TestRedactMessage_RangeMismatchReportsFailure` |
 | 3 | 平らにする処理の `recover` を外す | `TestRedactMessage_FlattenPanicReportsFailure` |
+| 3 | `ErrMessageFlattenPanic.Error()` が `PanicValue` を描画する（既存の `ErrLogValuePanic` と同じ `%v` にする） | `TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` |
 | 3 | redaction の本番コードで `errmsg.Role(99)` の変換を行う、または `Segment.Role` に代入する（`case` での参照は許されるため、参照ではなく値の作成を変異させる） | `TestProductionRedactionDoesNotConstructRoles` |
 | 4 | `HandleExecutionError` で `Freeze()` を外し、stderr と記録がそれぞれ `ReportMessage()` を評価する | `TestHandleExecutionError_EvaluatesCauseOnce` |
 | 5 | `GroupErrors` を `Merge` ではなく平らにして作る | `TestGroupErrors_MergePreservesIdentifierSegments` |
@@ -467,10 +474,10 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 範囲を返す関数と `RedactText` の規則が食い違い、秘密が漏れる | セキュリティの後退 | 規則と段の順序を共有し、写しを作らない。既存のテストの入力の全体を種にした差分テストとファジング、`RedactMessage` の実行時の検査（不一致は `RedactionFailurePlaceholder`）の 3 層で固定する |
 | 部分の境界をまたぐ検出の描画が `RedactText` と異なる | 秘密の漏れ、または本文の過剰な置換 | `Identifier` のバイトだけを残す契約を AC-37 のテストで固定し、どの入力でも断片単独では秘密が見えたまま残ることを先に確かめる |
 | `Error()` の文言が構造の再現の誤りで変わる | AC-18 違反、既存の運用の混乱 | `Structured` の `Error()` を 1 文に固定するガード（§9.5）と、各エラー型の文言のテスト（§10.5）。`IndentedCause` の整形は `GroupError.Error()` と比較する（03 §2.4.1・§10.1） |
-| 02 §3.8.1 の `ValidateOutputPath` の除外が規則 (ii) と矛盾し、出力パスを含む原因が過剰に置換される | タスクの目的（本文が消えない）が一部達成されない | Phase 7 の冒頭のブロッキングタスクで 02 の修正と再承認を得る。再承認まで Phase 7 の resource の実装と Phase 8 のガードを開始しない |
+| 02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落が規則 (ii) と矛盾し、出力パスを含む原因が過剰に置換される | タスクの目的（本文が消えない）が一部達成されない | Phase 7 の冒頭のブロッキングタスクで 02・03 の範囲と役割の許可位置の修正と再承認を得る。再承認まで Phase 7 の resource の実装と Phase 8 のガードを開始しない |
 | `make verify-docs-checks` が CI から実行されない | 後からの編集で文書の検査が黙って壊れうる | 本タスクの範囲では Phase 8 の完了ゲートと PR レビューでローカルに実行する。CI への組み込みは本タスクの対象外として、§1.3 の外部前提に記録する |
 | 深い連鎖・自己参照の連鎖でスタックがあふれる | プロセスの異常終了 | 変更前の `fmt` の `%v` と同じ挙動であり後退ではない（02 §3.1.3）。深さの上限を置かない理由をテスト（深い連鎖の一致）で固定する |
-| 失敗の記録（`ErrMessageFlattenPanic`・`ErrMessageRangeMismatch`）が本文を含む | 秘密の漏れ | 失敗の型は本文・範囲の内容を持たない（03 §3.4）。記録するのは件数とキーだけにする |
+| 失敗の記録（`ErrMessageFlattenPanic`・`ErrMessageRangeMismatch`）が本文や panic 値を含む | 秘密の漏れ | `ErrMessageRangeMismatch` は本文・範囲の内容を持たない。`ErrMessageFlattenPanic` も `PanicValue`・スタックトレースを `Error()` に描画しない（03 §3.4 の編集上の修正。§1.3 の食い違い表）。`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` で報告の出力を固定する |
 | 既存テストの削除で確認が減る | 退行の見逃し | 削除の前後で `go tool cover -func` を関数ごとに比較し、差をコミットメッセージに記録する。差分テストの種には既存の `RedactText` のテストの入力の全体を含める |
 | `Config.RedactLogAttribute` の fail-closed 化が既存の呼び出しに影響する | 公開関数の挙動の変化 | 本番の呼び出しは `:371` の自身の再帰だけである（確認済み）。テストで新しい挙動を固定する |
 | Phase 8 まで AC-41 のガードが無いため、途中の Phase で範囲外のラップが混入する | 網羅の漏れ | Phase 5〜7 の各完了時に、対象のファイルのラップの一覧を 03 の表と突き合わせることを PR レビューで確認する。Phase 8 のガードが最終的な網羅を担う |
@@ -482,7 +489,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 
 ## 6. 実装チェックリスト
 
-- [ ] 02 §3.8.1 の `ValidateOutputPath` の除外の修正が再承認されている（Phase 7・8 の前提）
+- [ ] 02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落の修正が再承認され、03 §9.1・§9.4 に同じ関数が入っている（Phase 7・8 の前提）
 - [ ] PR-1 マージ済み（対象ステップ: Phase 1。`internal/errmsg` とそのガードが green）
 - [ ] PR-2 マージ済み（対象ステップ: Phase 2。差分テストとファジングが green、網羅率の差を記録済み）
 - [ ] PR-3 マージ済み（対象ステップ: Phase 3。`RedactMessage` のテストとベンチマークが green）
@@ -513,7 +520,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | AC-10 | Phase 1、Phase 3 | `test`: `TestMessage_SegmentsFollowFlatteningContracts`（外側の宣言された部分と内側の `Text`）、各エラー型のテスト |
 | AC-11 | Phase 3、Phase 4 | `test`: `internal/redaction/message_test.go::TestRedactMessage_OutOfScopeBodyMatchesRedactText`（定数式の `Message` の部分が書き換えられないこと、原因の部分が `RedactText` の結果と一致すること） |
 | AC-12 | Phase 4、Phase 5、Phase 6、Phase 8 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_GroupVarsUndefinedVariableIdentifiersSurviveRedaction`（Slack の `Error Message` まで通す） |
-| AC-16 | Phase 5、Phase 8 | `test`: `internal/runner/multi_group_error_integration_test.go::TestRunner_MultiGroupSensitiveNamesSurvive`（両方の group のエラーが宣言する `Identifier` の部分が置き換えられずに出ること。終了コードのエラー書式は `Path` を宣言しないため、このシナリオで `Path` は現れない） |
+| AC-16 | Phase 5、Phase 8 | `test`: `internal/runner/multi_group_error_integration_test.go::TestRunner_MultiGroupSensitiveNamesSurvive`（記録を `redaction.NewRedactingHandler` に通し、両方の group のエラーが宣言する `Identifier` の部分が置き換えられずに出ること、および `Text` の対照値が置換文字列になること。終了コードのエラー書式は `Path` を宣言しないため、このシナリオで `Path` は現れない） |
 | AC-18 | Phase 1、Phase 4〜7 | `test`: `internal/errmsg/errmsg_test.go::TestMessage_StringEqualsErrorForStructuredTypes`・`TestMessage_DeepChainMatchesFmtErrorfChain`・`TestIndentedCause_MatchesGroupErrorFormatting`、`internal/logging/pre_execution_error_test.go::TestPreExecutionError_DetailMessage`・`TestExecutionError_ReportMessage`、`internal/runner/config/errors_test.go::TestLevelAndField_StringMatchesLegacyFormat`、各エラー型の文言のテスト、`cmd/runner/main_test.go::TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError`・`TestPreExecutionCauseReachability`（4 か所で原因が `Err` に移っても `Detail()` の文言が変わらず、付け替えた原因に `errors.Is`・`errors.AsType` が届くこと）。`static`: `internal/errmsg/errmsg_guard_test.go::TestProductionStructuredErrorsRenderFromTheirMessage` |
 | AC-19 | Phase 4、Phase 8 | `test`: `internal/logging/pre_execution_error_test.go::TestHandleExecutionError_WithWrappedError`・`TestHandleExecutionError_CauseFormatting`（最終報告の stderr の `Details:` の完全一致）、`internal/runner/multi_group_error_integration_test.go` の `Details:` の比較が変更なしで通る。`TestHandlePreExecutionError_AllTypes` は前段の失敗の stderr の補助的な固定として残る。`manual`: 既存の `cmd/runner` の統合テストの stderr の確認 |
 | AC-20 | Phase 3、Phase 4 | `test`: `internal/redaction/message_test.go::TestRedactingHandler_MessageAttributeBecomesString`（後段のハンドラが文字列を受け取ること） |
@@ -522,7 +529,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | AC-23 | Phase 3、Phase 4 | `test`: `internal/logging/pre_execution_error_test.go::TestHandleExecutionError_DoesNotNotifySlack`・`TestHandlePreExecutionError_SlackNotification`、`cmd/runner/integration_pre_execution_error_test.go::TestIntegration_GroupPreparationFailureNotifiesAndReportsOnce`（通知の件数・`message_type`・Scope）。`static`: `internal/logging/notification_contract_guard_test.go`（変更なしで通る） |
 | AC-24 | Phase 1、Phase 4〜7 | `static`: `internal/errmsg/errmsg_guard_test.go::TestProductionConstCallsUseConstantExpressions` と自己テスト。`test`: 各エラー型の部分の並びのテスト（`Const` の断片が期待どおりであること） |
 | AC-25 | Phase 3 | `static`: `internal/redaction/redaction_guard_test.go::TestProductionRedactionDoesNotConstructRoles` と自己テスト |
-| AC-26 | Phase 8 | `static`: `make verify-docs-checks`（`scripts/verification/check_structured_message_redaction_docs.sh` が日英の必須語と旧称の不在、および `package_reference.md` の `errmsg/` を検査し、`check_structured_message_redaction_docs_selftest.sh` が検査の空振りを防ぐ）。`manual`: 日英の内容を突き合わせてレビューする |
+| AC-26 | Phase 8 | `static`: `make verify-docs-checks`（`scripts/verification/check_structured_message_redaction_docs.sh` が security-architecture と security-risk-assessment の日英の必須語・免除の記述の区別・旧称の不在、および `package_reference.md` の `errmsg/` を検査し、`check_structured_message_redaction_docs_selftest.sh` が検査の空振りを防ぐ）。`manual`: 日英の内容を突き合わせてレビューする |
 | AC-27 | 各 Phase | `static`: 各 Phase の `make fmt`（Go を変更した場合）・`make test`・`make lint` |
 | AC-31 | Phase 5、Phase 8 | `test`: `internal/runner/runner_test.go::TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの動的な型が `*cancelledRunError` であること、`error_message` に中断の原因の文言と失敗した group が宣言する `Identifier`・`Path` の部分が出ること） |
 | AC-32 | Phase 5 | `test`: `internal/runner/runner_test.go::TestCancelledRunError_TextAndReachability`（文言が `errors.Join` と同じ、`errors.Is(err, ctx.Err())`、失敗した group の原因への到達）。`test`: `TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの中身） |
@@ -541,7 +548,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
 - [ ] 削除した `WithPlaceholder`・`WithAdditionalKeyValuePatterns` の名前が、本番コード・テスト・コメントのどこにも残っていないこと。Go のソースだけを対象にする（`rg -n '\bWithPlaceholder\b|\bWithAdditionalKeyValuePatterns\b' internal cmd`）。設計文書（02・03・本書）と過去のタスクの文書には、決定の記録として旧名が残る。`TestOptionalParameter_EnvKeyWithPlaceholder` は語の途中に現れるので、単語境界で除外される。`make test` は参照だけを検出し、コメントの旧名は検出しない。
-- [ ] 旧称「値まるごと判定」と "whole-value detection" が `docs/dev/architecture_design/security-architecture.ja.md` と `.md` に残っていないこと（`docs/translation_glossary.md:658` の旧称の注記は除く）。`docs/user/security-risk-assessment.ja.md:301`・`.md:305` の識別子の免除の記述については、(1) `error` 属性・`record.Message` についての説明として正確であること、(2) 構造化メッセージの `error_message` を「免除されない」と読める形で残っていないこと、の 2 点を確認し、矛盾があれば PR レビューで報告する（本タスクの承認済みのスコープは security-architecture と package_reference だけである）。
+- [ ] 旧称「値まるごと判定」と "whole-value detection" が `docs/dev/architecture_design/security-architecture.ja.md` と `.md` に残っていないこと（`docs/translation_glossary.md:658` の旧称の注記は除く）。`docs/user/security-risk-assessment.ja.md:301`・`.md:305` の識別子の免除の記述は Phase 8 の文書タスクで更新し、(1) `error` 属性・`record.Message` についての説明として正確であること、(2) 構造化メッセージの `error_message` では宣言された `Identifier` の断片が値全体置換を受けずに残り、普通の `error` 文字列・`record.Message` は従来どおり値全体置換で全文が置換されうること、の 2 点を満たすこと。英語版は `/mktrans` で反映し、`check_structured_message_redaction_docs.sh` の必須語と `make verify-docs-checks` で機械的に確かめる。
 - [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使う用語（構造化メッセージ = structured message、断片 = segment、役割 = role など）の対訳が `/mktrans` により登録されていること。値全体置換 = whole-value replacement は登録済みである（`:658`）。
 - [ ] `internal/runner/config` の `Level`・`Field` と同名の型が他のパッケージにあり、import の別名が必要になっていないこと（`rg -n "type Level |type Field "`。config の中には既存の同名型は無い）。
 - [ ] 0176 の `error_message` の本文が値全体置換で `[REDACTED]` になることを固定するテストが無いこと（`rg` で確認済み。3 つの `REDACTED` と `error_message` を含むテストはいずれも識別子の免除または key=value を確かめている）。新しく加えたテストがこの逆を固定していないことを確認する。
@@ -554,12 +561,12 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 - **品質**: 各 Phase の `make fmt`・`make test`・`make lint` が green。§4.4 の変異確認をすべて実施し記録済み。`go tool cover -func` の差が削除台帳の範囲に収まっている。
 - **セキュリティ**: key=value・`Bearer `・`Basic ` の次の語・値形式の検出・属性名による判定でマスクされていた値が、構造化メッセージでもマスクされる。値全体置換を免れるのは型で役割を宣言した断片だけであり、`Identifier` の免除と `Path` の値全体置換の対象外は承認済みの境界である（02 §5.1）。範囲を返す関数の不一致は fail-closed に倒れる。
 - **一貫性**: 対象のエラーの `Error()`・`PreExecutionError.Detail()`・stderr の文言が変更前と同じである。通知の件数・`message_type`・`error_type`・Scope・Slack のフィールド構成が変わらない。
-- **文書**: security-architecture の日英に、構造化メッセージの役割ごとの redaction、`Path` の境界、構造を持たないエラーの扱いが記載され、`make verify-docs-checks` が green。`package_reference.md` に `internal/errmsg` がある。
+- **文書**: security-architecture の日英に、構造化メッセージの役割ごとの redaction、`Path` の境界、構造を持たないエラーの扱いが記載され、security-risk-assessment の日英の免除の記述が構造化 `error_message` の `Identifier` の断片を正しく説明し、`make verify-docs-checks` が green。`package_reference.md` に `internal/errmsg` がある。
 
 ---
 
 ## 10. 次のステップ
 
-- 本書が承認されたら、Phase 1（PR-1）から順に実装を開始する。Phase 7 の冒頭のブロッキングタスク（02 §3.8.1 の `ValidateOutputPath` の除外の修正の再承認）を、Phase 7 の実装開始前に完了する。
+- 本書が承認されたら、Phase 1（PR-1）から順に実装を開始する。Phase 7 の冒頭のブロッキングタスク（02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落の修正の再承認）を、Phase 7 の実装開始前に完了する。
 - 実装の完了後は、§7 の全 AC と §4.4 の変異確認の記録をレビューし、Phase 8 の手動確認（Slack）の結果を PR に記録する。
 - スコープの外にあるものは、既存の Issue で扱う: dynlib・shebang 検証のエラー型の構造化は #1196、設定の展開・検証のエラー型の構造化は #1197。
