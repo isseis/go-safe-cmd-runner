@@ -37,8 +37,7 @@ type Segment struct {
 
 // Segments is the result of flattening a Message.
 type Segments struct {
-    List      []Segment
-    Truncated bool // a cause was replaced by a Text marker at the depth limit
+    List []Segment
 }
 
 // Summary is the summary line of a report: a constant or free text only.
@@ -55,6 +54,7 @@ type Error struct {
 ```
 
 - 02 の初版は `Part` に字下げの文字列の欄（`indent`）を持たせていた。字下げは errmsg が持つ固定の文字にしたので（「GroupError の整形の再現手順」）、この欄は置かない。字下げの有無は `causeKind` で表す。
+- `Segments` は断片の列だけを持つ。深さの上限を置かないので、切り詰めの有無の欄は無い。`[]Segment` そのものにしてよい。
 - `Segment` の欄は公開である。redaction の側が役割で分岐するために読む。範囲外の役割の値を直接与えるテストに使える（「テストの細則」）。
 
 ## errmsg の公開 API（構築関数・メソッド・シグネチャ）
@@ -100,16 +100,7 @@ func (e *Error) StructuredMessage() Message
 
 - `*fs.PathError` の分け方: `PathErrorCause` で作った原因の部分は、原因が `*fs.PathError`（型アサーションで判定する）なら、`Op` を `Text`、区切りの空白を `Constant`、`Path` を `Path`、`": "` を `Constant`、`Err` を原因の部分として平らにする。この結果は `(*fs.PathError).Error()` と同じ文言になる。`*fs.PathError` でなければ、`Cause` と同じに扱う。
 - 型アサーションで足りる理由: `os.MkdirTemp` と `os.Chmod` は、失敗したときに `*fs.PathError` を直接返す（Go 標準ライブラリの `os/tempfile.go` の `MkdirTemp` と `os/file_posix.go` の `Chmod`）。
-- 深さの上限: 案は `maxDepth = 16`。`errmsg` は末端のパッケージなので、`internal/redaction` の `maxRedactionDepth`（`internal/redaction/redactor.go:259`）を import せず、独自の定数を持つ。
-- 上限に達したときの文言: 案は `<truncated>`。1 つの `Text` の断片にして、`Segments.Truncated` を立てる。
-- 上限で原因の `Error()` を呼ばない理由: `Structured` を実装する型の `Error()` は `StructuredMessage().String()` なので、`Error()` を呼ぶと平らにする処理に再び入り、上限が再帰を止めない（自身を原因に持つエラーではスタックがあふれる）。
-- 02 の作成時点で確認した最も深い連鎖（出発点。組み合わせの深さの数え方を決めた後で数え直す）:
-  - 最終の実行エラー: `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（`executeCommandWithOutput` の `normal_manager.go:266`）→ `errmsg.Error`（`executeNormal` の `executor.go:344`）→ `errmsg.Error`（`Validate`）。
-  - group 実行前段: `PreExecutionError` → `GroupStageError` → `errmsg.Error`（group の展開、`group_executor.go:169`）→ `errmsg.Error`（`expansion.go:1052`）→ `errmsg.Error`（`cmd_allowed`、`expansion.go:925`）→ `ErrUndefinedVariableDetail`。
-  - run-as の停止の窓（「コマンドの実行の経路の箇所ごとの部分の並び」の経路 B。`privilege.Error` を範囲に入れたことで加わった）: `ExecutionError` → `GroupErrors` → `GroupError` → `CommandExecutionError` → `errmsg.Error`（`normal_manager.go:266`）→ `errmsg.Error`（`executor.go:305`）→ `errmsg.Error`（`command_lifecycle.go:789`）→ 複合の型（`:782`）→ 複合の型（`killOutcome`、`:942`）→ `errmsg.Error`（`performElevation`、`unix.go:217`）→ `privilege.Error`。
-  - 最初の 2 つは 6〜7 段、経路 B は 11 段で、いまの最も深い連鎖である。案の `maxDepth = 16` と余裕の案（`maxDepth - 4` = 12 段以下）では、残りは 1 段しかない。上限と余裕の値は、この連鎖で導き直す。
-- 組み合わせの深さの数え方: 02 の初版は「`GroupErrors` は段を増やさない」と書いたが、組み合わせる API が無かったので根拠が無かった（「errmsg の公開 API」の組み合わせの項）。組み合わせた `Message` を 1 段と数えるかどうかを、API を決めるときに決め、上の連鎖の段数を数え直す。
-- 余裕を見張るテスト: 案は「実際の最も深い連鎖を組み立てて、深さが `maxDepth - 4` 以下であることを確かめる」。組み合わせの深さの数え方を決めた後で、上限と余裕の値を導き直す。#1196・#1197 の型を加えたときに余裕が無くなれば失敗する形にする。
+- 深さ: 上限は置かない（02 §3.1.3）。`Structured` を実装する型の `Error()` は `StructuredMessage().String()` なので、原因の `Error()` を呼ぶと平らにする処理に再び入る。そのため、自身を原因に持つエラーではスタックがあふれる。変更前に `fmt` の `%v` で同じ連鎖を表示したときと同じである。
 
 ## GroupError の整形の再現手順
 
@@ -164,7 +155,7 @@ func (e *Error) StructuredMessage() Message
 
 02 §3.2.2 から移した手順である（処理の流れの図は 02 §6.1）。
 
-- 案のシグネチャ（戻り値の形は「RedactingHandler・RedactLogAttribute の分岐の置き場所と戻り値の形」で、切り詰めの報告を含めて決め直す）:
+- 案のシグネチャ（戻り値の形は「RedactingHandler・RedactLogAttribute の分岐の置き場所と戻り値の形」で確定した）:
 
   ```go
   // RedactMessage renders m with per-segment redaction and the cross-boundary
@@ -198,8 +189,7 @@ func (e *Error) StructuredMessage() Message
 - 分岐の置き場所: `RedactingHandler.redactLogAttributeWithContext`（`internal/redaction/redactor.go:799`）で、宣言済みの識別子の判定（`declaredIdentifier`、`:308-319`）と並べる。`Config.RedactLogAttribute`（`:330`）にも同じ分岐を置く。判定と描画は 1 つの補助関数にまとめる。
 - `Config.RedactLogAttribute` は本番のコードから呼ばれていない（`:371` の自身の再帰だけ）。
 - 失敗の記録: `RedactingHandler` は、`RedactMessage` が返したエラーを、既存の `ErrLogValuePanic` と同じく型付きのエラーとして `ErrorCollector` に記録する（`processLogValuer` と同じ形。`:854-872`）。そのため、終了時の報告（`ShutdownReporter`）に現れる。
-- 切り詰めの Debug のログ: 既存の深さの上限の扱い（`:1048-1054`）と同じく、`failureLogger` に出す。
-- 戻り値の形（未決定）: `RedactMessage` は、描画した文字列、失敗（panic・範囲の不一致）、切り詰めの有無を呼び出し側に返す。02 の初版は `Segments.Truncated` をハンドラが読むとしていたが、`Segments()` を呼ぶのは `RedactMessage` の中だけで、ハンドラには切り詰めを知る経路が無かった。例えば `(string, bool, error)` や結果の構造体を返す形がある。`Segments()` を 1 回だけ呼ぶ規則（02 §3.2.2 (a)）を崩さない形にする。
+- 戻り値の形: `RedactMessage` は `(string, error)` を返す。エラーは失敗（panic・範囲の不一致）だけを表す。深さの上限を置かないので、切り詰めの報告は無い。
 
 ## PreExecutionError・ExecutionError の変更の細則
 
@@ -250,7 +240,7 @@ func (e *ExecutionError) ReportMessage() errmsg.Message
 02 §3.3.3 から移した細則である。
 
 - `errorRecordParams.errorMsg` の型を `errmsg.Message` に変える。`writeErrorLogRecord` は `error_message` を `slog.Any(key, msg)` で記録する（変更前は `slog.String`、`internal/logging/pre_execution_error.go:187`）。
-- 凍結の操作（02 §3.3.3 の「1 回だけ平らにする」）: errmsg に、`Message` を 1 回平らにして、平らにした断片と切り詰めの有無だけを持つ `Message` を返す操作を置く（案: `func (m Message) Freeze() Message`）。断片の役割は平らにした結果のものをそのまま移すので、役割を errmsg の外で選ぶ経路にはならない（02 §3.1.1 の契約 1）。凍結した `Message` は原因を持たないので、`String()`・`Segments()` は原因の `Error()` を呼ばない。
+- 凍結の操作（02 §3.3.3 の「1 回だけ平らにする」）: errmsg に、`Message` を 1 回平らにして、平らにした断片だけを持つ `Message` を返す操作を置く（案: `func (m Message) Freeze() Message`）。断片の役割は平らにした結果のものをそのまま移すので、役割を errmsg の外で選ぶ経路にはならない（02 §3.1.1 の契約 1）。凍結した `Message` は原因を持たないので、`String()`・`Segments()` は原因の `Error()` を呼ばない。
 - 凍結する位置: `handleErrorCommon` が報告ごとに 1 回凍結し、stderr の `Details:` には凍結した `Message` の `String()` を使い、記録にも凍結した `Message` を渡す。そのため、`RedactMessage` の 1 回の `Segments()` の呼び出しは原因の `Error()` を評価しない。記録だけの `NotifyPreExecutionError`（`internal/logging/pre_execution_error.go:237-239`）も同じ扱いにそろえるなら、凍結を記録の組み立て（`preExecutionRecordParams`・`HandleExecutionError`）へ移す。どちらにするかは詳細仕様書で決める。
 - 原因の `Error()` の panic は凍結の時点で起きる。変更前に `preExecutionRecordParams` の `Detail()`（`:215`）や `HandleExecutionError` の組み立てで起きていたのと同じく、報告は回復しない（02 §4.2）。
 - テスト: 呼ぶたびに文言が変わる原因を持つ構造化メッセージで報告し、stderr の `Details:` と記録された `error_message` の redaction 前の文字列が同じ 1 回の結果から来ること（原因の `Error()` が 1 回だけ呼ばれること）を確かめる。
@@ -485,17 +475,16 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 - 変わらない既存のテスト: `error` 属性の全文が値全体置換を受けることを固定するテスト（`internal/redaction/redactor_test.go:3947` の `failed to execute group monkey`）。対象外の属性（01 対象外「`error_message` 以外の属性」）についてのものである。
 - 0176 の `error_message` の本文が `[REDACTED]` になることを固定するテストは無い。`internal/logging`・`internal/runner`・`cmd/runner` のテストのうち `REDACTED` と `error_message` の両方を含むものは 3 つ（`internal/logging/slack_handler_test.go`・`internal/runner/runner_test.go`・`internal/runner/base/security/logging_security_test.go`）で、いずれも宣言された識別子が消えないこと、または key=value・Webhook の値が置き換えられることを確かめている。
 - security-architecture の書き換える段落: `docs/dev/architecture_design/security-architecture.ja.md` の `:645-651`（「識別子の型宣言による免除」）。
-- 案の新しいテストファイル: `internal/errmsg/errmsg_test.go`（平らにする規則、`String()` と `Error()` の一致、`PathErrorCause`、`IndentedCause`、nil の原因、深さの上限）、`internal/redaction/message_test.go`・`ranges_test.go`（AC-01〜04・07・36〜38、範囲と `RedactText` の差分のファジング、実行時の検査）。
+- 案の新しいテストファイル: `internal/errmsg/errmsg_test.go`（平らにする規則、`String()` と `Error()` の一致、`PathErrorCause`、`IndentedCause`、nil の原因、深い連鎖の描画）、`internal/redaction/message_test.go`・`ranges_test.go`（AC-01〜04・07・36〜38、範囲と `RedactText` の差分のファジング、実行時の検査）。
 
 ## テストの細則
 
 02 §3.1.2・§7.1 から移した細則である。
 
 - AC-38: `RedactMessage` の中の断片の列を受け取る非公開の関数（「RedactMessage の描画手順」）に、`Segment{Role: errmsg.Role(99), ...}` を直接与える。`Segment` の欄は公開なので、範囲外の値を与えられる。値全体置換だけが反応する入力を使い、その断片が置換文字列になることを確かめる。
-- 深さ: 「平らにする処理の細則」の最も深い連鎖を組み立て、余裕を見張る（案: 深さが `maxDepth - 4` 以下）。自身を原因に持つ構造化エラーでも有限の段で止まり、原因の `Error()` が呼ばれないこと。
+- 深い連鎖: 16 段より深い構造化エラーの連鎖の `String()` が、同じ形の `fmt.Errorf` の `%w` の連鎖の `Error()` と一致すること。深さの上限を仮に戻すとこのテストが失敗することを確かめる（CLAUDE.md「Every test must be able to fail for its stated reason」）。
 - AC-21: `RedactingHandler` を通らない標準のハンドラ（`slog.NewTextHandler` など）に `errmsg.Message` の属性を渡し、出力が `String()` と同じ文字列になること。
 - AC-37: 検出の種類（key=value、`Bearer `・`Basic ` の次の語、`Authorization` のヘッダ値、値形式の検出）ごとに、各断片だけに redaction を適用しても秘密が見えたまま残ることを先に確かめる（design_carryover.md「テストの入力の細則」）。
 - 一時ディレクトリ: 2 つのラップのそれぞれで文言を確かめる（「一時ディレクトリの 2 つのラップ」）。
-- 切り詰め: 深さの上限に達したとき、`RedactingHandler` が Debug のログを出し、`RedactLogAttribute` は出さないこと（戻り値の形を決めた後に書く）。
 - `cancelledRunError`: 文言が `errors.Join(ctxErr, err)` と同じであること、到達性（AC-32）。
 - `config` の `Level`・`Field`: `String()` が変更前の `fmt.Sprintf` の結果と同じであること。
