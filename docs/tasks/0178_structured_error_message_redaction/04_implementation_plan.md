@@ -341,7 +341,7 @@
 - [ ] AC-12 のテストを `cmd/runner/integration_pre_execution_error_test.go` に追加する。名前が値全体置換の引き金になる語（`password`・`token` など。以下「語」）を含む group（`token-rotate`）の `vars` で定義する変数（`token_file`）が、語を含む未定義の変数（`api_key`）を参照する設定を使い、`runMainWithSlackMock` と `requireSinglePreExecutionError`・`attachmentField` で Slack の `Error Message` まで通す。group 名・定義側の変数名 `token_file`・参照された変数名 `api_key` の 3 つが `Error Message` に残ることを確かめる。先に、識別子以外の本文だけでは値全体置換が起きないことを確かめる。
 - [ ] AC-34 のテストを同ファイルに追加する。global の `vars` が未定義の `api_key` を参照する設定で、`Error Message` に `Failed to expand global configuration` と `api_key` が出ることを確かめる。
 - [ ] AC-16 のテストを `internal/runner/multi_group_error_integration_test.go` に追加する。`captureExecutionErrorReport` は、内側のコールバックハンドラを `redaction.NewRedactingHandler`（`redaction.DefaultConfig()`）で包み、報告する `ExecutionError.Message` を呼び出し側から受け取るようにする。既存の 4 つの呼び出しは `errmsg.ConstSummary("error running commands")` を渡し、AC-16 は `Text` としてだけ置換される語を含む `errmsg.TextSummary`（対照値）を渡す。2 つの group でコマンドが 0 以外の終了コードで失敗し、一方の group 名が語を含むとき、`error_message` に両方の group のエラーが宣言する `Identifier` の部分が置き換えられずに出ることと、対照値が置換文字列になることを確かめる（終了コードのエラー書式はパスを宣言しないため、このシナリオで `Path` の断片は現れない）。
-- [ ] AC-31 のテスト `TestRunner_CancelledRunErrorMessageKeepsIdentifiers` を `internal/runner/runner_test.go` に追加する。`executeGroups` の経路で context を中断してから group を失敗させ、返すエラーの動的な型が `*cancelledRunError` であること（`errors.AsType`）、`error_message` に中断の原因と失敗した group の原因が出ることを確かめる。文言と到達性は Phase 5 の `TestCancelledRunError_TextAndReachability` が担う。
+- [ ] AC-31 のテスト `TestRunner_CancelledRunErrorMessageKeepsIdentifiers` を `internal/runner/runner_test.go` に追加する。`executeGroups` の経路で context を中断してから group を失敗させ、返したエラーの動的な型が `*cancelledRunError` であること（`errors.AsType`）を確かめる。続いて、返した `*cancelledRunError` を `captureExecutionErrorReport` に `Err` として渡し、`logging.ExecutionError`（`Message` は呼び出し側が渡し、`Component`・`RunID` はヘルパーの既存の値、`GroupName`・`CommandName` は `cmd/runner` の `executionErrorContext` が返す値（このテストでは失敗した group の `*CommandExecutionError` の `GroupName`・`CommandName`）、`Err` は返したエラー）として `logging.HandleExecutionError` に通す。これで、記録は AC-16 と同じく `redaction.NewRedactingHandler`（`redaction.DefaultConfig()`）を横断した後の `error_message` になる。`Message` には `Text` としてだけ置換される語を含む `errmsg.TextSummary`（対照値）を渡し、対照値が置換文字列になり、`error_message` に中断の原因の文言（`context canceled`）と失敗した group のエラーが宣言する `Identifier`・`Path` の部分が残ることを確かめる（失敗した group のエラーは、`CommandExecutionError` の原因に `Path` を宣言する `errmsg` の構築を置くなど、`Identifier` と `Path` の両方を宣言する形にする）。文言と到達性は Phase 5 の `TestCancelledRunError_TextAndReachability` が担う。
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」の節全体（`:636-660`）を 03 §11.1 の内容に合わせて書き換える。旧称「値まるごと判定」は節内の `:640`・`:649`・`:650` にもあるので、行範囲ではなく節全体を対象にし、用語集の「値全体置換」にそろえる。`error` 属性・`record.Message` は変更前と同じ扱いであることを残す。
 - [ ] 同節の戻し方に、戻す単位を書く。構造化メッセージの記録を使う変更（Phase 4）は、後の Phase のガード・テスト・文書と結び付いている。そのため、PR-4〜PR-8 をまとめて戻す。個別に戻す場合は `git revert -n` を使い、戻した記録の変更に合わせて `wrap_guard_test.go`・AC-12/AC-34 のテスト・日英の文書を同じコミットで整合させてから、`make test`・`make lint` を通す。実行時のスイッチが無く、`RedactText` を変えないのでほかのログの redaction は影響を受けないことを記す（02 §5.4、既存の #1136 の戻し方の段落と同じ形）。
 - [ ] `security-architecture.md` の対応する節を `/mktrans` で日本語版と同じ内容に反映する（用語集の登録を含む）。
@@ -418,7 +418,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 
 - AC-12・AC-34: `cmd/runner/integration_pre_execution_error_test.go`。`runMainWithSlackMock` で起動し、Slack のメッセージ組み立て（`buildPreExecutionError`）までを通して `Error Message` を確かめる。`vars` の中の未定義変数を使う。
 - AC-16: `internal/runner/multi_group_error_integration_test.go`。`captureExecutionErrorReport` が内側のコールバックハンドラを `redaction.NewRedactingHandler` で包み、2 つの group の失敗を `HandleExecutionError` に通して `error_message` を確かめる。`Identifier` が置き換えられずに残ることと、`Text` の対照値が置換文字列になることの両方を確かめる。
-- AC-31: `internal/runner/runner_test.go`。`executeGroups` の経路で context を中断してから group を失敗させる。
+- AC-31: `internal/runner/runner_test.go`。`executeGroups` の経路で context を中断してから group を失敗させ、返した `*cancelledRunError` を AC-16 と同じ `captureExecutionErrorReport`（内側のコールバックハンドラは `redaction.NewRedactingHandler` で包まれる）経由で `logging.HandleExecutionError` に通し、`error_message` を確かめる。`Identifier`・`Path` が置き換えられずに残ることと、`Text` の対照値が置換文字列になることの両方を確かめる。
 
 ### 4.3 層の切り分け
 
@@ -429,6 +429,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 - AC-32 は `cancelledRunError` の単体テスト（文言と到達性）と、`executeGroups` の経路のテスト（返すエラーの中身）の 2 層で確かめる。
 - AC-41 は `wrap_guard_test.go`（範囲の網羅）と、例示のシナリオのテスト・各エラー型のテスト（実際の宣言）の 2 層で確かめる。
 - AC-16 は、1 つの記録の中に残る `Identifier`（group 名）と置換される `Text` の対照値を並べる。対照値が置換されることは記録が `redaction.NewRedactingHandler` を通ったことの証拠になり、識別子が残ることは部分ごとの描画の証拠になる。どちらか片方だけでは層を切り分けられない。
+- AC-31 も同じく、1 つの記録の中に残る `Identifier`・`Path` と置換される `Text` の対照値を並べる。`executeGroups` が返す `*cancelledRunError` の構造化メッセージを直接読むだけでは、本番の報告の境界（`logging.HandleExecutionError` が `errmsg.Message` として記録し、`RedactingHandler` が `RedactMessage` で描画する）が役割の情報を落とす変更に気づけない。返したエラーを `captureExecutionErrorReport` に通し、対照値が置換されることと `Identifier`・`Path` が残ることの両方を同じ記録で確かめることで、記録の境界と redaction を横断したことを切り分ける。
 
 ### 4.4 実装時に行うテスト失敗確認
 
@@ -461,6 +462,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 7 | 一時ディレクトリの 2 つ目のラップの前置きを 1 つ目と同じにする | `TestTempDirManager_Create_WrapTexts`（`os.Chmod` の行） |
 | 7 | `cmd/runner` の 4 か所のうち 1 か所で原因を `Err` に移さず `Message` に残す | `cmd/runner/main_test.go::TestPreExecutionCauseReachability`（Phase 7 で追加する。Phase 4 の完了時点ではこのテストはまだ無い） |
 | 8 | `executeGroups` が `cancelledRunError` の代わりに `errors.Join(ctxErr, err)` を返す | `TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの動的な型が `*cancelledRunError` であることの確認） |
+| 8 | `logging.HandleExecutionError` が `execErr.ReportMessage().Freeze()` ではなく、原因を連結した redaction 前の 1 本の文字列を `error_message` に記録する | `TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（全文が値全体置換で置換文字列になり、中断の原因の文言と `Identifier`・`Path` が消えることの確認）・`TestRunner_MultiGroupSensitiveNamesSurvive` |
 | 8 | 対象の範囲の中の関数に `fmt.Errorf` を一時的に置く | `TestInScopeWrapsUseStructuredErrors` |
 | 8 | 明示の一覧の型から `StructuredMessage` を外す | `TestInScopeErrorTypesDeclareStructuredMessage` |
 | 8 | 日英どちらかから検査対象の語を外す | `scripts/verification/check_structured_message_redaction_docs.sh`（`make verify-docs-checks`） |
@@ -531,7 +533,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | AC-25 | Phase 3 | `static`: `internal/redaction/redaction_guard_test.go::TestProductionRedactionDoesNotConstructRoles` と自己テスト |
 | AC-26 | Phase 8 | `static`: `make verify-docs-checks`（`scripts/verification/check_structured_message_redaction_docs.sh` が security-architecture と security-risk-assessment の日英の必須語・免除の記述の区別・旧称の不在、および `package_reference.md` の `errmsg/` を検査し、`check_structured_message_redaction_docs_selftest.sh` が検査の空振りを防ぐ）。`manual`: 日英の内容を突き合わせてレビューする |
 | AC-27 | 各 Phase | `static`: 各 Phase の `make fmt`（Go を変更した場合）・`make test`・`make lint` |
-| AC-31 | Phase 5、Phase 8 | `test`: `internal/runner/runner_test.go::TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの動的な型が `*cancelledRunError` であること、`error_message` に中断の原因の文言と失敗した group が宣言する `Identifier`・`Path` の部分が出ること） |
+| AC-31 | Phase 5、Phase 8 | `test`: `internal/runner/runner_test.go::TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返したエラーの動的な型が `*cancelledRunError` であること、返したエラーを `captureExecutionErrorReport` 経由で `logging.HandleExecutionError` と `redaction.NewRedactingHandler` に通した後の `error_message` に中断の原因の文言と失敗した group が宣言する `Identifier`・`Path` の部分が出ること、`Text` の対照値が置換文字列になること） |
 | AC-32 | Phase 5 | `test`: `internal/runner/runner_test.go::TestCancelledRunError_TextAndReachability`（文言が `errors.Join` と同じ、`errors.Is(err, ctx.Err())`、失敗した group の原因への到達）。`test`: `TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの中身） |
 | AC-33 | Phase 5、Phase 8 | `static`: `internal/runner/group_errors_guard_test.go::TestProductionCodeDoesNotProbeMultiErrorShape`（変更なしで通る）、`internal/runner/wrap_guard_test.go::TestInScopeErrorTypesDeclareStructuredMessage`（`cancelledRunError` が `StructuredMessage` を宣言すること） |
 | AC-34 | Phase 6、Phase 7、Phase 8 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_GlobalExpansionUndefinedVariableIdentifiersSurviveRedaction`（Slack の `Error Message` に固定の文言と `api_key` が出ること） |
