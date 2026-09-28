@@ -308,7 +308,7 @@
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
-**Files**: `internal/runner/resource/normal_manager.go`・`dryrun_manager.go`、`internal/runner/base/executor/tempdir_manager.go`・`executor.go`・`command_lifecycle.go`、`internal/runner/base/privilege/errors.go`・`unix.go`、`cmd/runner/main_test.go`（到達性テストの追加）、および対応するテスト。`cmd/runner/main.go` ほかの `Message` のリテラルと 4 か所の原因の付け替えは Phase 4 で完了している（§1.3 の食い違い表を参照）
+**Files**: `internal/runner/resource/normal_manager.go`・`dryrun_manager.go`、`internal/runner/base/output/manager.go`（上の修正の再承認後。`validateAndResolvePath` などのパス検証）、`internal/runner/base/executor/tempdir_manager.go`・`executor.go`・`command_lifecycle.go`、`internal/runner/base/privilege/errors.go`・`unix.go`、`cmd/runner/main_test.go`（到達性テストの追加）、および対応するテスト。`cmd/runner/main.go` ほかの `Message` のリテラルと 4 か所の原因の付け替えは Phase 4 で完了している（§1.3 の食い違い表を参照）
 
 - [ ] **【ブロッキング】** 02 §3.8.1 の `ValidateOutputPath` の除外を修正する。出力パスの検証の失敗は `group_executor.go:520-521` の `output path validation failed: %w` を通って最終の実行エラーの原因になり、出力パスを挿入する（§1.3 の食い違い表）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`(*DefaultOutputCaptureManager).ValidateOutputPath`（およびそのパス検証）を加え、出力パスを `Path` として宣言できるようにする修正を提案し、レビュアーの再承認を得る。03 §7.1・§9.1・§9.4 も承認後に合わせる。**再承認が完了するまで、この Phase の resource の実装と Phase 8 の AC-41 のガードを開始しない。**
 - [ ] `internal/runner/resource` の対象の箇所（16 か所と、上の修正で加わる `ValidateOutputPath` 系）を 03 §7.1 の表と修正後の範囲のとおりに構造化する。`CreateTempDir`・`CleanupTempDir`・`CleanupAllTempDirs`・`UpdateCommandDebugInfo` は変えない。
@@ -384,7 +384,7 @@
 | PR-4 | Phase 4 | `PreExecutionError`・`ExecutionError`・記録と凍結・`Message` のリテラル | frontier-recommended |
 | PR-5 | Phase 5 | runner の 4 型・`group_executor.go` の 11 か所・`cancelledRunError` | frontier-recommended |
 | PR-6 | Phase 6 | `Level`・`Field`・`ErrUndefinedVariableDetail`・`expansion.go`・`ExpandWorkDir` | frontier-recommended |
-| PR-7 | Phase 7 | resource・executor・privilege・`cmd/runner` の到達性テスト | frontier-recommended |
+| PR-7 | Phase 7 | resource・`base/output`（再承認後）・executor・privilege・`cmd/runner` の到達性テスト | frontier-recommended |
 | PR-8 | Phase 8 | AC-41 のガード・例示のシナリオ・日英の文書・検査スクリプト | frontier-recommended |
 
 ### 3.3 順序の根拠
@@ -447,12 +447,12 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 3 | `redactedRanges` の結果の検査を外す | `TestRedactMessage_RangeMismatchReportsFailure` |
 | 3 | 平らにする処理の `recover` を外す | `TestRedactMessage_FlattenPanicReportsFailure` |
 | 3 | redaction の本番コードで `errmsg.Role(99)` の変換を行う、または `Segment.Role` に代入する（`case` での参照は許されるため、参照ではなく値の作成を変異させる） | `TestProductionRedactionDoesNotConstructRoles` |
-| 4 | `cmd/runner` の 4 か所のうち 1 か所で原因を `Err` に移さず `Message` に残す | `cmd/runner/main_test.go::TestPreExecutionCauseReachability` |
 | 4 | `HandleExecutionError` で `Freeze()` を外し、stderr と記録がそれぞれ `ReportMessage()` を評価する | `TestHandleExecutionError_EvaluatesCauseOnce` |
 | 5 | `GroupErrors` を `Merge` ではなく平らにして作る | `TestGroupErrors_MergePreservesIdentifierSegments` |
 | 6 | `Field.String()` の `vars.<name>` の組み立てを変える | `TestLevelAndField_StringMatchesLegacyFormat` |
 | 7 | `killAfterCancelError` を `Cause` だけの 1 原因にする | `TestKillAfterCancelError_TextAndReachability`（2 経路の両方） |
 | 7 | 一時ディレクトリの 2 つ目のラップの前置きを 1 つ目と同じにする | `TestTempDirManager_Create_WrapTexts`（`os.Chmod` の行） |
+| 7 | `cmd/runner` の 4 か所のうち 1 か所で原因を `Err` に移さず `Message` に残す | `cmd/runner/main_test.go::TestPreExecutionCauseReachability`（Phase 7 で追加する。Phase 4 の完了時点ではこのテストはまだ無い） |
 | 8 | `executeGroups` が `cancelledRunError` の代わりに `errors.Join(ctxErr, err)` を返す | `TestRunner_CancelledRunErrorMessageKeepsIdentifiers`（返すエラーの動的な型が `*cancelledRunError` であることの確認） |
 | 8 | 対象の範囲の中の関数に `fmt.Errorf` を一時的に置く | `TestInScopeWrapsUseStructuredErrors` |
 | 8 | 明示の一覧の型から `StructuredMessage` を外す | `TestInScopeErrorTypesDeclareStructuredMessage` |
@@ -540,7 +540,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] 削除した `WithPlaceholder`・`WithAdditionalKeyValuePatterns` の名前が、本番コード・テスト・コメント・文書のどこにも残っていないこと（`rg -n "WithPlaceholder|WithAdditionalKeyValuePatterns"`。`make test` は参照だけを検出し、コメントと文書の旧名は検出しない）。
+- [ ] 削除した `WithPlaceholder`・`WithAdditionalKeyValuePatterns` の名前が、本番コード・テスト・コメントのどこにも残っていないこと。Go のソースだけを対象にする（`rg -n '\bWithPlaceholder\b|\bWithAdditionalKeyValuePatterns\b' internal cmd`）。設計文書（02・03・本書）と過去のタスクの文書には、決定の記録として旧名が残る。`TestOptionalParameter_EnvKeyWithPlaceholder` は語の途中に現れるので、単語境界で除外される。`make test` は参照だけを検出し、コメントの旧名は検出しない。
 - [ ] 旧称「値まるごと判定」と "whole-value detection" が `docs/dev/architecture_design/security-architecture.ja.md` と `.md` に残っていないこと（`docs/translation_glossary.md:658` の旧称の注記は除く）。`docs/user/security-risk-assessment.ja.md:301`・`.md:305` の識別子の免除の記述については、(1) `error` 属性・`record.Message` についての説明として正確であること、(2) 構造化メッセージの `error_message` を「免除されない」と読める形で残っていないこと、の 2 点を確認し、矛盾があれば PR レビューで報告する（本タスクの承認済みのスコープは security-architecture と package_reference だけである）。
 - [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使う用語（構造化メッセージ = structured message、断片 = segment、役割 = role など）の対訳が `/mktrans` により登録されていること。値全体置換 = whole-value replacement は登録済みである（`:658`）。
 - [ ] `internal/runner/config` の `Level`・`Field` と同名の型が他のパッケージにあり、import の別名が必要になっていないこと（`rg -n "type Level |type Field "`。config の中には既存の同名型は無い）。
