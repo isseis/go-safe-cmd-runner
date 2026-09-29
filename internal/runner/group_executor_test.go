@@ -514,6 +514,21 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrCommandFailed)
 
+	// The exit-code wrap must keep its exact text and roles: the sentinel is a
+	// Text cause, the command name an Identifier and the number free Text.
+	cmdErr, ok := errors.AsType[*CommandExecutionError](err)
+	require.True(t, ok)
+	structured, ok := cmdErr.Err.(errmsg.Structured)
+	require.True(t, ok, "the exit-code wrap must be a structured error, got %T", cmdErr.Err)
+	assert.Equal(t, "command failed: command test-cmd failed with exit code 127", cmdErr.Err.Error())
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: "command failed"},
+		{Role: errmsg.RoleConstant, Text: ": command "},
+		{Role: errmsg.RoleIdentifier, Text: "test-cmd"},
+		{Role: errmsg.RoleConstant, Text: " failed with exit code "},
+		{Role: errmsg.RoleText, Text: "127"},
+	}, structured.StructuredMessage().Segments())
+
 	// Verify notification was sent with error status and correct exit code
 	require.NotNil(t, capturedNotification)
 	assert.Equal(t, GroupExecutionStatusError, capturedNotification.status)
@@ -3662,7 +3677,11 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 		wantCommand     string
 		wantIdentifiers []string
 		wantPaths       []string
-		checkErr        func(t *testing.T, err error, msg string)
+		// wantSegments, when set, pins every role and string of the wrap. The
+		// rows that use it have a cause the phase leaves unstructured, so the
+		// expectation stays valid when a later phase structures other causes.
+		wantSegments errmsg.Segments
+		checkErr     func(t *testing.T, err error, msg string)
 	}{
 		{
 			// #1: group expansion. The template is multi-line, as a TOML
@@ -3787,6 +3806,12 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			wantStage:   GroupStageCommandVerification,
 			wantCommand: cmdName,
 			wantPaths:   []string{fmt.Sprintf("%q", hostilePath)},
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command path resolution failed for "},
+				{Role: errmsg.RolePath, Text: fmt.Sprintf("%q", hostilePath)},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "injected cause"},
+			},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.True(t, strings.HasPrefix(msg, "command path resolution failed for "), msg)
@@ -3808,6 +3833,12 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			wantStage:   GroupStageCommandVerification,
 			wantCommand: cmdName,
 			wantPaths:   []string{fmt.Sprintf("%q", hostilePath)},
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command dependency verification failed for "},
+				{Role: errmsg.RolePath, Text: fmt.Sprintf("%q", hostilePath)},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "injected cause"},
+			},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.Equal(t, fmt.Sprintf("command dependency verification failed for %q: %s", hostilePath, errCause), msg)
@@ -3828,7 +3859,13 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			assert.Equal(t, tt.wantStage, stageErr.Stage())
 			assert.Equal(t, groupName, stageErr.GroupName())
 			assert.Equal(t, tt.wantCommand, stageErr.CommandName())
+			// The expected identifiers are only the wrap's own: the causes in
+			// this table are unstructured during this phase. A later phase that
+			// makes a cause structured adds its own Identifier segments here.
 			assertDeclaredRoles(t, stageErr.StructuredMessage().Segments(), tt.wantIdentifiers, tt.wantPaths)
+			if tt.wantSegments != nil {
+				assert.Equal(t, tt.wantSegments, stageErr.StructuredMessage().Segments())
+			}
 			tt.checkErr(t, err, stageErr.Error())
 		})
 	}

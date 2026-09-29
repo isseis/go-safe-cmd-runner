@@ -90,23 +90,57 @@ func TestGroupErrorStructuredRoles(t *testing.T) {
 }
 
 // TestCommandExecutionErrorStructuredRoles pins the role sequence a command
-// failure declares: the command and group names are Identifiers and the cause
-// is carried as Text unless the cause is itself structured.
+// failure declares: the command and group names are Identifiers, an
+// unstructured cause is one Text segment, and a structured cause keeps its own
+// roles instead of being flattened.
 func TestCommandExecutionErrorStructuredRoles(t *testing.T) {
-	cmdErr := &CommandExecutionError{
-		GroupName:   "token-rotate",
-		CommandName: "renew",
-		Err:         errors.New("plain cause"),
+	const prefix = 5
+	structuredCause := errmsg.NewError(
+		errmsg.Const("failed: "),
+		errmsg.Ident("api_key"),
+		errmsg.Cause(errors.New("boom")),
+	)
+
+	tests := []struct {
+		name  string
+		cause error
+		tail  errmsg.Segments
+	}{
+		{
+			name:  "unstructured cause",
+			cause: errors.New("plain cause"),
+			tail:  errmsg.Segments{{Role: errmsg.RoleText, Text: "plain cause"}},
+		},
+		{
+			name:  "structured cause",
+			cause: structuredCause,
+			tail: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "failed: "},
+				{Role: errmsg.RoleIdentifier, Text: "api_key"},
+				{Role: errmsg.RoleText, Text: "boom"},
+			},
+		},
 	}
 
-	assert.Equal(t, errmsg.Segments{
-		{Role: errmsg.RoleConstant, Text: "command "},
-		{Role: errmsg.RoleIdentifier, Text: "renew"},
-		{Role: errmsg.RoleConstant, Text: " in group "},
-		{Role: errmsg.RoleIdentifier, Text: "token-rotate"},
-		{Role: errmsg.RoleConstant, Text: " failed: "},
-		{Role: errmsg.RoleText, Text: "plain cause"},
-	}, cmdErr.StructuredMessage().Segments())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdErr := &CommandExecutionError{
+				GroupName:   "token-rotate",
+				CommandName: "renew",
+				Err:         tt.cause,
+			}
+
+			want := errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command "},
+				{Role: errmsg.RoleIdentifier, Text: "renew"},
+				{Role: errmsg.RoleConstant, Text: " in group "},
+				{Role: errmsg.RoleIdentifier, Text: "token-rotate"},
+				{Role: errmsg.RoleConstant, Text: " failed: "},
+			}
+			assert.Len(t, want, prefix)
+			assert.Equal(t, append(want, tt.tail...), cmdErr.StructuredMessage().Segments())
+		})
+	}
 }
 
 // TestGroupErrors_MergePreservesIdentifierSegments pins that a multi-group
@@ -138,6 +172,8 @@ func TestGroupErrors_MergePreservesIdentifierSegments(t *testing.T) {
 // TestStructuredRunnerErrorZeroValuesDoNotPanic pins that a zero value never
 // panics while it is rendered.
 func TestStructuredRunnerErrorZeroValuesDoNotPanic(t *testing.T) {
+	// GroupStageError's zero value is covered by
+	// TestGroupStageErrorZeroValueDoesNotPanic.
 	tests := []struct {
 		name string
 		err  error
@@ -145,7 +181,6 @@ func TestStructuredRunnerErrorZeroValuesDoNotPanic(t *testing.T) {
 	}{
 		{name: "GroupError", err: &GroupError{}, want: "failed to execute group : <nil>"},
 		{name: "GroupErrors", err: &GroupErrors{}, want: ""},
-		{name: "GroupStageError", err: &GroupStageError{}, want: "group pre-execution failed"},
 		{name: "CommandExecutionError", err: &CommandExecutionError{}, want: "command  in group  failed: <nil>"},
 	}
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/testutil/identitymutationguard"
@@ -291,6 +292,22 @@ func TestGroupStageErrorUnwrapsCause(t *testing.T) {
 	require.True(t, ok, "the stage error must survive wrapping")
 	assert.Equal(t, GroupStageGroupPreparation, got.Stage())
 	assert.Equal(t, "backup", got.GroupName())
+}
+
+// TestGroupStageErrorStructuredMessagePassesCauseRoles pins that the stage
+// wrapper adds no wording and preserves the cause's declared roles, so a
+// structured cause is not flattened to Text on the way to the report.
+func TestGroupStageErrorStructuredMessagePassesCauseRoles(t *testing.T) {
+	cause := errmsg.NewError(
+		errmsg.Const("failed to expand group["),
+		errmsg.Ident("api_key"),
+		errmsg.Const("]"),
+		errmsg.Cause(errors.New("boom")),
+	)
+	stageErr := newGroupStageError(GroupStageGroupPreparation, "backup", cause)
+
+	assert.Equal(t, cause.StructuredMessage().Segments(), stageErr.StructuredMessage().Segments())
+	assert.Equal(t, cause.Error(), stageErr.Error())
 }
 
 // TestGroupStageStringCoversEveryStage pins that each declared stage has a

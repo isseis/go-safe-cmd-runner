@@ -322,6 +322,11 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 文言の維持と構造の引き継ぎが中心で、設計は 03 で確定している。箇所数が多いが機械的である
 
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
+
 ### Phase 6: `internal/runner/config` の `Level`・`Field` と `ErrUndefinedVariableDetail`
 
 **Files**: `internal/runner/config/errors.go`・`expansion.go`・`validation.go`・`template_expansion.go`（変更）、`internal/runner/group_executor.go`（`ExpandWorkDir` の呼び出し）、および対応するテスト
@@ -344,6 +349,11 @@
 - **レビュー観点**: `String()` が変更前の文言と同じであること、`parts()` が構築時に役割を宣言すること（組み立て済みの文字列を解析しないこと）、`ErrUndefinedVariableDetail` を運びうるか運びえないかの分類が 03 §6.5 のとおりであること、引数の型の変更が全関数に及んでいること、`ErrUndefinedVariableDetail` の `Unwrap()` が変わっていないこと
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
@@ -369,6 +379,11 @@
 - **レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認され、`base/output/path.go` の `validatePathSecurity`・`validateRelativePath` が範囲と役割の許可位置に入っていること
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 8: AC-41 のガード、例示のシナリオのテスト、文書
 
@@ -401,6 +416,11 @@
 - **レビュー観点**: AC-41 のガードの範囲が 03 §9.1 と一致し、関数やファイルの名前が消えたことを検出すること、例示のシナリオがエラーの発生元から Slack の組み立て・記録までを通すこと、日英の文書が同じ内容であること、検査スクリプトが `make verify-docs-checks` から実行されること、Slack の手動確認の結果
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: ガードの範囲の定義と、端から端までのシナリオの組み立てに設計の理解が要る。文書は内容が確定している
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ---
 
