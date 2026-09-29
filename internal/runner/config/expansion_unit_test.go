@@ -2,8 +2,10 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -936,4 +938,72 @@ func TestHasVariableReference_MustBeAskedOfTheTemplate(t *testing.T) {
 	// makes the failure loud if someone later moves the call to the expanded value.
 	assert.True(t, HasVariableReference(expanded),
 		"the expanded value cannot answer the question; it must not be the thing asked")
+}
+
+// TestExpandWorkDir_RelativePathError pins the roles and the wording of the
+// relative-path rejection: the scope name is an Identifier (exempt from
+// redaction) while the expanded path is a Path (still redacted). Swapping them
+// would stop RedactText from running on a config-controlled path.
+func TestExpandWorkDir_RelativePathError(t *testing.T) {
+	tests := []struct {
+		name  string
+		level Level
+		want  errmsg.Segments
+	}{
+		{
+			name:  "group",
+			level: groupLevel("backup"),
+			want: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "group["},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: "]"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: ErrInvalidWorkDir.Error()},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RolePath, Text: `"relative/path"`},
+				{Role: errmsg.RoleConstant, Text: " (relative paths are not allowed for security reasons)"},
+			},
+		},
+		{
+			name:  "command",
+			level: commandLevel("build"),
+			want: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command["},
+				{Role: errmsg.RoleIdentifier, Text: "build"},
+				{Role: errmsg.RoleConstant, Text: "]"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: ErrInvalidWorkDir.Error()},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RolePath, Text: `"relative/path"`},
+				{Role: errmsg.RoleConstant, Text: " (relative paths are not allowed for security reasons)"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ExpandWorkDir("relative/path", map[string]string{}, tt.level)
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrInvalidWorkDir)
+
+			want := fmt.Sprintf("%s: %s: %q (relative paths are not allowed for security reasons)",
+				tt.level, ErrInvalidWorkDir, "relative/path")
+			assert.Equal(t, want, err.Error())
+
+			structured, ok := errors.AsType[errmsg.Structured](err)
+			require.True(t, ok, "ExpandWorkDir must return a structured error; got %T", err)
+			assert.Equal(t, tt.want, structured.StructuredMessage().Segments())
+		})
+	}
+}
+
+// TestExpandWorkDir_ExpandFailureKeepsField pins that a failed expansion wraps
+// the cause and still declares the workdir field.
+func TestExpandWorkDir_ExpandFailureKeepsField(t *testing.T) {
+	_, err := ExpandWorkDir("prefix/%{UNDEFINED_VAR}", map[string]string{}, groupLevel("backup"))
+	require.ErrorIs(t, err, ErrUndefinedVariable)
+
+	want := "failed to expand workdir: undefined variable in group[backup].workdir: " +
+		"'UNDEFINED_VAR' (context: prefix/%{UNDEFINED_VAR})"
+	assert.Equal(t, want, err.Error())
 }

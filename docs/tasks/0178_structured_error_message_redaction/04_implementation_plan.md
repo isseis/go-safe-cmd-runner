@@ -342,7 +342,7 @@
 - [x] `errors_test.go:71-76` のリテラルを `globalLevel()`・`envField()` に書き換える。`Level`・`Field` の `String()` が変更前の `fmt.Sprintf` の結果と同じであることを確かめるテスト（`TestLevelAndField_StringMatchesLegacyFormat`）をキーごとに追加する。
 - [x] `ErrUndefinedVariableDetail` の部分の並び（`Chain` が空・非空の両方）を確かめるテスト（`TestErrUndefinedVariableDetail_StructuredMessage`）を追加する。
 - [x] §1.3「更新が必要な既存テスト」のとおり、引数の型が変わる関数を呼ぶ既存テストを更新する。`expansion_unit_test.go` は `package config` へ移し、`group_executor_test.go::TestExecuteGroup_PreExecutionStageErrors` の `wantIdentifiers` に構造化された原因の断片を足す。
-- [x] §4.4 の変異（`Field.String()` の `vars.<name>` の組み立てを変える）で `TestLevelAndField_StringMatchesLegacyFormat` が失敗することを確認した。
+- [x] §4.4 の変異で `TestLevelAndField_StringMatchesLegacyFormat`（`Field.String()` の `vars.<name>` の組み立てを変える）と `TestExpandWorkDir_RelativePathError`（相対パス拒否のパスを `Path` から `Ident` に変える）が失敗することを確認した。レビューの指摘を受け、`ExpandWorkDir` の相対パス拒否の役割と文言、`Level`・`Field` の `parts()` と `String()` の一致を固定するテストを追加した。
 
 **完了条件**: `internal/runner/config` のテストが green。`ErrUndefinedVariableDetail.Error()` の文言が変更前と同じである。`go test -tags test ./internal/runner/config/... ./internal/runner/...` が通る。
 
@@ -519,6 +519,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 4 | `HandleExecutionError` で `Freeze()` を外し、stderr と記録がそれぞれ `ReportMessage()` を評価する | `TestHandleExecutionError_EvaluatesCauseOnce` |
 | 5 | `GroupErrors` を `Merge` ではなく平らにして作る | `TestGroupErrors_MergePreservesIdentifierSegments` |
 | 6 | `Field.String()` の `vars.<name>` の組み立てを変える | `TestLevelAndField_StringMatchesLegacyFormat` |
+| 6 | `ExpandWorkDir` の相対パス拒否で、パスを `Path` ではなく `Ident` にする | `TestExpandWorkDir_RelativePathError` |
 | 7 | `killAfterCancelError` を `Cause` だけの 1 原因にする | `TestKillAfterCancelError_TextAndReachability`（2 経路の両方） |
 | 7 | 一時ディレクトリの 2 つ目のラップの前置きを 1 つ目と同じにする | `TestTempDirManager_Create_WrapTexts`（`os.Chmod` の行） |
 | 7 | `cmd/runner` の 4 か所のうち 1 か所で原因を `Err` に移さず `Message` に残す | `cmd/runner/main_test.go::TestPreExecutionCauseReachability`（Phase 7 で追加する。Phase 4 の完了時点ではこのテストはまだ無い） |

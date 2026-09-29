@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
@@ -81,6 +82,9 @@ func TestErrUndefinedVariableDetail_Unwrap(t *testing.T) {
 
 // TestLevelAndField_StringMatchesLegacyFormat pins that the typed Level and
 // Field render exactly the strings the old fmt.Sprintf call sites produced.
+// The expected values are rebuilt with the legacy expressions, and each case
+// also checks that String() equals the rendering of parts(), so the two
+// representations cannot drift.
 func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 	levelCases := []struct {
 		name string
@@ -89,13 +93,14 @@ func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 	}{
 		{"zero", Level{}, ""},
 		{"global", globalLevel(), "global"},
-		{"group", groupLevel("deploy"), "group[deploy]"},
-		{"command", commandLevel("build"), "command[build]"},
-		{"template", templateLevel("tpl"), "template[tpl]"},
+		{"group", groupLevel("deploy"), fmt.Sprintf("group[%s]", "deploy")},
+		{"command", commandLevel("build"), fmt.Sprintf("command[%s]", "build")},
+		{"template", templateLevel("tpl"), fmt.Sprintf("template[%s]", "tpl")},
 	}
 	for _, tc := range levelCases {
 		t.Run("level_"+tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, tc.got.String())
+			assert.Equal(t, tc.got.String(), errmsg.NewMessage(tc.got.parts()...).String())
 		})
 	}
 
@@ -106,20 +111,21 @@ func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 	}{
 		{"zero", Field{}, ""},
 		{"cmd", cmdField(), "cmd"},
-		{"args", argsField(2), "args[2]"},
+		{"args", argsField(2), fmt.Sprintf("args[%d]", 2)},
 		{"env", envField(), "env"},
-		{"env_vars", envVarsField(1), "env_vars[1]"},
+		{"env_vars", envVarsField(1), fmt.Sprintf("env_vars[%d]", 1)},
 		{"env_import", envImportField(), "env_import"},
 		{"workdir", workdirField(), "workdir"},
-		{"verify_files", verifyFilesField(0), "verify_files[0]"},
-		{"cmd_allowed", cmdAllowedField(3), "cmd_allowed[3]"},
+		{"verify_files", verifyFilesField(0), fmt.Sprintf("verify_files[%d]", 0)},
+		{"cmd_allowed", cmdAllowedField(3), fmt.Sprintf("cmd_allowed[%d]", 3)},
 		{"vars", varsField(), "vars"},
-		{"vars name", varField("dest"), "vars.dest"},
-		{"vars element", varElementField("dest", 1), "vars.dest[1]"},
+		{"vars name", varField("dest"), fmt.Sprintf("vars.%s", "dest")},
+		{"vars element", varElementField("dest", 1), fmt.Sprintf("vars.%s[%d]", "dest", 1)},
 	}
 	for _, tc := range fieldCases {
 		t.Run("field_"+tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, tc.got.String())
+			assert.Equal(t, tc.got.String(), errmsg.NewMessage(tc.got.parts()...).String())
 		})
 	}
 }

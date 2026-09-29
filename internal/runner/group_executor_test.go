@@ -3860,9 +3860,9 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			assert.Equal(t, tt.wantStage, stageErr.Stage())
 			assert.Equal(t, groupName, stageErr.GroupName())
 			assert.Equal(t, tt.wantCommand, stageErr.CommandName())
-			// The expected identifiers are only the wrap's own: the causes in
-			// this table are unstructured during this phase. A later phase that
-			// makes a cause structured adds its own Identifier segments here.
+			// wantIdentifiers lists the wrap's own Identifier segments followed
+			// by the segments a structured cause contributes (the undefined
+			// variable's level name and the variable name itself).
 			assertDeclaredRoles(t, stageErr.StructuredMessage().Segments(), tt.wantIdentifiers, tt.wantPaths)
 			if tt.wantSegments != nil {
 				assert.Equal(t, tt.wantSegments, stageErr.StructuredMessage().Segments())

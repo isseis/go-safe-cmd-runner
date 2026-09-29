@@ -136,8 +136,8 @@ func isControlOrFormatCharacter(r rune) bool {
 //
 // Parameters:
 //   - varName: The variable name to validate
-//   - level: The configuration level (e.g., "global", "group:mygroup", "cmd:mycmd")
-//   - field: The field name where the variable appears (e.g., "env", "env_import", "vars")
+//   - level: The configuration level (e.g., globalLevel(), groupLevel("mygroup"))
+//   - field: The field where the variable appears (e.g., envField(), varsField())
 //
 // Returns:
 //   - nil if valid
