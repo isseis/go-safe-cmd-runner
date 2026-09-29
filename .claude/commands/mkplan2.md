@@ -44,15 +44,11 @@ Work in the following order.
    ```
    ### PR-N 作成ポイント: <scope label in English>
 
-   **対象ステップ**: X-Y / X-Z / …
-
-   **推奨タイトル**: `feat(<task-id>): <concise English title>`
-
-   **レビュー観点**: <key1> / <key2> / <key3>
-
-   **実装モデル要件**: frontier-required | frontier-recommended | standard
-
-   **判定理由**: <one line>
+   - **対象ステップ**: X-Y / X-Z / …
+   - **推奨タイトル**: `feat(<task-id>): <concise English title>`
+   - **レビュー観点**: <key1> / <key2> / <key3>
+   - **実装モデル要件**: frontier-required | frontier-recommended | standard
+   - **判定理由**: <one line>
 
    - [ ] グリーンゲート（`_context.md` の "Green gate" 参照）がパスしていることを確認した
    - [ ] PR を作成した
@@ -68,6 +64,7 @@ Work in the following order.
    - `**レビュー観点**` lists 2–4 key review points in Japanese.
    - `**実装モデル要件**` is exactly one of `frontier-required`, `frontier-recommended`, or `standard`, chosen by applying the **Model requirement** principle in step 4 to the steps this PR covers. A PR takes the highest tier any of its steps requires.
    - `**判定理由**` is a one-line Japanese justification naming the specific trigger that decided the tier (e.g. the step ID and its unprecedented design decision, the panel-mode trigger it matches, the competing approaches in `既存コード調査結果`, or the Conditional checks it matches). For `standard`, state that no trigger matched.
+   - Each field is one bullet item on its own line. Never write the five fields as consecutive lines without list markers: Markdown then renders them as a single run-on paragraph.
 
 7. Add or update a `### 3.2 PR 構成` subsection under §3 (or whichever section covers the implementation overview/test strategy) with a summary table:
 
@@ -105,6 +102,7 @@ Work in the following order.
 - [ ] High-risk or complex steps (recovery, concurrency, state machines) are isolated in their own PR or placed last in a PR so they do not block review of simpler changes.
 - [ ] Every PR marker's `実装モデル要件` label is consistent with its risk-isolation status — a PR containing an isolated high-risk step is not labeled `standard`.
 - [ ] Every PR marker has a `判定理由` line that names the specific trigger behind its `実装モデル要件` label (or states that none matched, for `standard`).
+- [ ] The five fields of every `### PR-N 作成ポイント` marker are bullet items on separate lines, not concatenated into a run-on paragraph.
 - [ ] The `**対象ステップ**` field in each PR marker lists exactly the steps in that group and no others.
 - [ ] The `### 3.2 PR 構成` table is present and consistent with the PR marker sections.
 - [ ] §6 checklist entries reference PRs (not phases) and are consistent with the PR markers.
