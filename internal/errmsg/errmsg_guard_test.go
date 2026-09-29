@@ -174,6 +174,36 @@ func (pf *parsedFile) isErrmsgName(expr ast.Expr, name string) bool {
 	return identitymutationguard.IsNamedType(expr, pf.imports, errmsgImportPath, name, pf.unqualified)
 }
 
+// referencesErrmsg reports whether expr references any name of errmsg: a
+// selector on its import, or, where its names are unqualified (see
+// parsedFile.unqualified), any exported identifier, since a local exported
+// name cannot be told apart from errmsg's without type checking.
+func (pf *parsedFile) referencesErrmsg(expr ast.Expr) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.SelectorExpr:
+			if pkg, ok := e.X.(*ast.Ident); ok && pf.imports[pkg.Name] == errmsgImportPath {
+				found = true
+			}
+			// Sel is a member name, never an unqualified reference.
+			ast.Inspect(e.X, func(m ast.Node) bool {
+				if id, ok := m.(*ast.Ident); ok && pf.unqualified && id.IsExported() {
+					found = true
+				}
+				return !found
+			})
+			return false
+		case *ast.Ident:
+			if pf.unqualified && e.IsExported() {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // funcKey returns "Type.Method" for a method (the receiver's pointer and type
 // parameters dropped) and the name alone for a function.
 func funcKey(fn *ast.FuncDecl) string {
@@ -618,8 +648,11 @@ type typeDecl struct {
 // declarations by name.
 type typeIndex map[string]map[string]typeDecl
 
-func newTypeIndex(files []*parsedFile) typeIndex {
-	index := typeIndex{}
+// newTypeIndex indexes the type declarations of files. It reports every type
+// name a package declares more than once: the index keeps one declaration per
+// name, so a per-build-variant type would be checked in only one variant.
+func newTypeIndex(files []*parsedFile) (index typeIndex, violations []string) {
+	index = typeIndex{}
 	for _, pf := range files {
 		for _, decl := range pf.file.Decls {
 			gen, ok := decl.(*ast.GenDecl)
@@ -631,11 +664,14 @@ func newTypeIndex(files []*parsedFile) typeIndex {
 				if index[pf.dir] == nil {
 					index[pf.dir] = map[string]typeDecl{}
 				}
+				if _, dup := index[pf.dir][ts.Name.Name]; dup {
+					violations = append(violations, fmt.Sprintf("%s: type %s is declared in more than one file; the guard does not resolve per-build-variant types", pf.position(ts), ts.Name.Name))
+				}
 				index[pf.dir][ts.Name.Name] = typeDecl{spec: ts, pf: pf}
 			}
 		}
 	}
-	return index
+	return index, violations
 }
 
 // lookup resolves a type name used in pf, qualified or not, to its
@@ -725,12 +761,14 @@ func (idx typeIndex) fieldsContainPart(pf *parsedFile, fields *ast.FieldList, vi
 // builds an errmsg.Part (including the elided []errmsg.Part{{...}} form), every
 // exported function, method or package-level variable whose type contains an
 // errmsg.Part, and every unexported one outside the in-scope positions. A
-// variable's type is its declared type or its function literal's signature.
+// variable's type is its declared type or its function literal's signature;
+// an untyped variable whose initializer references errmsg is treated as
+// holding a Part.
 // It also reports any exported
 // or embedded field of errmsg's Part struct, and returns whether that struct
 // was found.
 func checkPartConstruction(files []*parsedFile) (partFound bool, violations []string) {
-	idx := newTypeIndex(files)
+	idx, violations := newTypeIndex(files)
 	if d, ok := idx[errmsgDir]["Part"]; ok {
 		if st, ok := d.spec.Type.(*ast.StructType); ok {
 			partFound = true
@@ -794,12 +832,23 @@ func checkPartConstruction(files []*parsedFile) (partFound bool, violations []st
 						// Without type checking, only a declared type or a
 						// function literal's signature gives the type.
 						typ := sp.Type
-						if typ == nil && i < len(sp.Values) {
-							if lit, ok := sp.Values[i].(*ast.FuncLit); ok {
-								typ = lit.Type
-							}
+						var value ast.Expr
+						switch {
+						case i < len(sp.Values):
+							value = sp.Values[i]
+						case len(sp.Values) == 1:
+							// A multi-value initializer such as `var a, b = f()`.
+							value = sp.Values[0]
 						}
-						if idx.containsPart(pf, typ, map[*ast.TypeSpec]struct{}{}) {
+						lit, isFuncLit := value.(*ast.FuncLit)
+						if typ == nil && isFuncLit {
+							typ = lit.Type
+						}
+						// An untyped initializer that references errmsg may yield a
+						// Part; without type inference, treat it as one. The blank
+						// identifier cannot hand anything out.
+						untypedFromErrmsg := typ == nil && name.Name != "_" && value != nil && !isFuncLit && pf.referencesErrmsg(value)
+						if untypedFromErrmsg || idx.containsPart(pf, typ, map[*ast.TypeSpec]struct{}{}) {
 							report(name, name, "")
 						}
 					}
@@ -870,6 +919,25 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			file: guardFile{"internal/x/x.go", header + "var parts []errmsg.Part\n"},
 			want: 1,
 		},
+		{
+			name: "exported untyped variable initialized from an errmsg constructor in a whole-file position",
+			file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar Exposed = errmsg.Ident(\"x\")\n"},
+			want: 1,
+		},
+		{
+			name: "unexported untyped variable initialized from errmsg in a whole-file position",
+			file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar exposed = errmsg.Ident(\"x\")\n"},
+		},
+		{
+			name: "unexported untyped variable initialized from errmsg in a function-scoped file",
+			file: guardFile{"internal/runner/config/errors.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\nvar exposed = errmsg.Ident(\"x\")\n"},
+			want: 1,
+		},
+		{
+			name: "untyped variable initialized from a dot-imported errmsg constructor",
+			file: guardFile{"internal/x/x.go", "package x\n\nimport . \"" + errmsgImportPath + "\"\n\nvar exposed = Ident(\"x\")\n"},
+			want: 1,
+		},
 		{name: "dot-import literal", file: guardFile{"internal/x/x.go", "package x\n\nimport . \"" + errmsgImportPath + "\"\n\nvar _ = Part{}\n"}, want: 1},
 		{name: "returning errmsg.Message is not a Part", file: guardFile{"internal/x/x.go", header + "func Make() errmsg.Message { return errmsg.Message{} }\n"}},
 		{
@@ -889,6 +957,18 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
+}
+
+func TestTypeIndexRejectsDuplicateTypeNames(t *testing.T) {
+	files := parseGuardFiles(t, []guardFile{
+		{"internal/errmsg/errmsg.go", "package errmsg\n\ntype Part struct{ role int }\n"},
+		{"internal/x/x_linux.go", "//go:build linux\n\npackage x\n\ntype T struct{}\n"},
+		{"internal/x/x_other.go", "//go:build !linux\n\npackage x\n\ntype T struct{}\n"},
+		{"internal/y/y.go", "package y\n\ntype T struct{}\n"},
+	})
+	partFound, violations := checkPartConstruction(files)
+	require.True(t, partFound)
+	assert.Len(t, violations, 1, strings.Join(violations, "\n"))
 }
 
 // methodOrigin is where a type gets one method: decls when the type declares
@@ -944,7 +1024,7 @@ func (idx typeIndex) unalias(d typeDecl) typeDecl {
 // StructuredMessage but not Error. It returns the number of Error
 // declarations it accepted.
 func checkStructuredErrorRendering(files []*parsedFile) (accepted int, violations []string) {
-	idx := newTypeIndex(files)
+	idx, violations := newTypeIndex(files)
 	methods := map[typeDecl]map[string][]*ast.FuncDecl{}
 	methodFile := map[*ast.FuncDecl]*parsedFile{}
 	for _, pf := range files {
