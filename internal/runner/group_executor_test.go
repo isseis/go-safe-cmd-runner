@@ -1214,8 +1214,8 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 					expandedCmdWorkDir, err = config.ExpandString(
 						*cmdSpec.WorkDir,
 						runtimeGroup.ExpandedVars,
-						fmt.Sprintf("command[%s]", cmdSpec.Name),
-						"workdir",
+						config.CommandLevel(cmdSpec.Name),
+						config.Field{},
 					)
 					require.NoError(t, err, "Command workdir expansion should succeed")
 				}
@@ -3694,7 +3694,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				return ge, group
 			},
 			wantStage:       GroupStageGroupPreparation,
-			wantIdentifiers: []string{"test-group"},
+			wantIdentifiers: []string{"test-group", "test-group", "test-group", "UNDEFINED_VAR"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg, "failed to expand group[test-group]: "), msg)
@@ -3711,7 +3711,8 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				group.WorkDir = "/tmp/%{UNDEFINED_VAR}/path"
 				return ge, group
 			},
-			wantStage: GroupStageGroupPreparation,
+			wantStage:       GroupStageGroupPreparation,
+			wantIdentifiers: []string{"test-group", "UNDEFINED_VAR"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg, "failed to resolve work directory: "), msg)
@@ -3727,7 +3728,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			},
 			wantStage:       GroupStageCommandPreparation,
 			wantCommand:     cmdName,
-			wantIdentifiers: []string{"test-group", "test-cmd"},
+			wantIdentifiers: []string{"test-group", "test-cmd", "test-cmd", "UNDEFINED_VAR"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg, "failed to pre-expand commands for group[test-group]: command[test-cmd] (index 0): "), msg)
@@ -3743,7 +3744,7 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			},
 			wantStage:       GroupStageCommandPreparation,
 			wantCommand:     cmdName,
-			wantIdentifiers: []string{"test-group", "test-cmd"},
+			wantIdentifiers: []string{"test-group", "test-cmd", "test-cmd", "UNDEFINED_VAR"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg,

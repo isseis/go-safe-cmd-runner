@@ -631,27 +631,27 @@ func ValidateTemplateDefinition(
 	}
 
 	// Check cmd for local variable references (lowercase/underscore start)
-	if err := validateGlobalOnly(template.Cmd, name, "cmd"); err != nil {
+	if err := validateGlobalOnly(template.Cmd, name, cmdField()); err != nil {
 		return err
 	}
 
 	// Check args for local variable references
 	for i, arg := range template.Args {
-		if err := validateGlobalOnly(arg, name, fmt.Sprintf("args[%d]", i)); err != nil {
+		if err := validateGlobalOnly(arg, name, argsField(i)); err != nil {
 			return err
 		}
 	}
 
 	// Check env_vars for local variable references
 	for i, env := range template.EnvVars {
-		if err := validateGlobalOnly(env, name, fmt.Sprintf("env_vars[%d]", i)); err != nil {
+		if err := validateGlobalOnly(env, name, envVarsField(i)); err != nil {
 			return err
 		}
 	}
 
 	// Check workdir for local variable references (if non-nil)
 	if template.WorkDir != nil {
-		if err := validateGlobalOnly(*template.WorkDir, name, workDirKey); err != nil {
+		if err := validateGlobalOnly(*template.WorkDir, name, workdirField()); err != nil {
 			return err
 		}
 		// Note: Absolute path validation is deferred to expansion time in group_executor.go
@@ -663,7 +663,7 @@ func ValidateTemplateDefinition(
 // validateGlobalOnly checks that a string does not contain
 // references to local variables (lowercase or underscore start).
 // Global variable references (uppercase start) are allowed.
-func validateGlobalOnly(input, templateName, field string) error {
+func validateGlobalOnly(input, templateName string, field Field) error {
 	// Empty strings cannot contain variable references, skip validation
 	if input == "" {
 		return nil
@@ -673,7 +673,7 @@ func validateGlobalOnly(input, templateName, field string) error {
 	var refs []string
 	refCollector := func(
 		varName string,
-		_ string,
+		_ Field,
 		_ map[string]struct{},
 		_ []string,
 		_ int,
@@ -686,7 +686,7 @@ func validateGlobalOnly(input, templateName, field string) error {
 	_, err := processVarRefs(
 		input,
 		refCollector,
-		fmt.Sprintf("template[%s]", templateName),
+		templateLevel(templateName),
 		field,
 		make(map[string]struct{}),
 		make([]string, 0),
@@ -705,13 +705,13 @@ func validateGlobalOnly(input, templateName, field string) error {
 
 		scope, err := variable.DetermineScope(varName)
 		if err != nil {
-			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, field, varName, err)
+			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, field.String(), varName, err)
 		}
 
 		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        field,
+				Field:        field.String(),
 				VariableName: varName,
 			}
 		}
@@ -1034,22 +1034,21 @@ func ValidateTemplateVars(
 ) error {
 	// Check cmd field
 	if template.Cmd != "" {
-		if err := validateFieldVars(template.Cmd, templateName, "cmd", globalVars); err != nil {
+		if err := validateFieldVars(template.Cmd, templateName, cmdField(), globalVars); err != nil {
 			return err
 		}
 	}
 
 	// Check workdir field (if non-nil)
 	if template.WorkDir != nil {
-		if err := validateFieldVars(*template.WorkDir, templateName, "workdir", globalVars); err != nil {
+		if err := validateFieldVars(*template.WorkDir, templateName, workdirField(), globalVars); err != nil {
 			return err
 		}
 	}
 
 	// Check args array
 	for i, arg := range template.Args {
-		fieldName := fmt.Sprintf("args[%d]", i)
-		if err := validateFieldVars(arg, templateName, fieldName, globalVars); err != nil {
+		if err := validateFieldVars(arg, templateName, argsField(i), globalVars); err != nil {
 			return err
 		}
 	}
@@ -1064,8 +1063,7 @@ func ValidateTemplateVars(
 			continue
 		}
 
-		fieldName := fmt.Sprintf("env_vars[%d]", i)
-		if err := validateFieldVars(value, templateName, fieldName, globalVars); err != nil {
+		if err := validateFieldVars(value, templateName, envVarsField(i), globalVars); err != nil {
 			return err
 		}
 	}
@@ -1081,7 +1079,7 @@ func ValidateTemplateVars(
 func validateFieldVars(
 	input string,
 	templateName string,
-	fieldName string,
+	fieldName Field,
 	globalVars map[string]string,
 ) error {
 	// Empty strings cannot contain variable references
@@ -1098,7 +1096,7 @@ func validateFieldVars(
 	var collectedRefs []string
 	refCollector := func(
 		varName string,
-		_ string,
+		_ Field,
 		_ map[string]struct{},
 		_ []string,
 		_ int,
@@ -1114,7 +1112,7 @@ func validateFieldVars(
 	_, err := processVarRefs(
 		input,
 		refCollector,
-		fmt.Sprintf("template[%s]", templateName),
+		templateLevel(templateName),
 		fieldName,
 		make(map[string]struct{}), // empty visited set
 		make([]string, 0),         // empty expansion chain
@@ -1134,14 +1132,14 @@ func validateFieldVars(
 
 		scope, err := variable.DetermineScope(varName)
 		if err != nil {
-			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, fieldName, varName, err)
+			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, fieldName.String(), varName, err)
 		}
 
 		// Check if it's a local variable (not allowed in templates)
 		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        fieldName,
+				Field:        fieldName.String(),
 				VariableName: varName,
 			}
 		}
@@ -1150,7 +1148,7 @@ func validateFieldVars(
 		if _, exists := globalVars[varName]; !exists {
 			return &ErrUndefinedGlobalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        fieldName,
+				Field:        fieldName.String(),
 				VariableName: varName,
 			}
 		}

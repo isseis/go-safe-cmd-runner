@@ -143,13 +143,13 @@ func isControlOrFormatCharacter(r rune) bool {
 //   - nil if valid
 //   - *ErrReservedVariablePrefixDetail if the name uses a reserved prefix
 //   - *ErrInvalidVariableNameDetail for POSIX validation errors
-func validateVariableName(varName, level, field string) error {
+func validateVariableName(varName string, level Level, field Field) error {
 	// First, check POSIX compliance using the existing security package function
 	if err := security.ValidateVariableName(varName); err != nil {
 		// POSIX validation error from security.ValidateVariableName
 		return &ErrInvalidVariableNameDetail{
-			Level:        level,
-			Field:        field,
+			Level:        level.String(),
+			Field:        field.String(),
 			VariableName: varName,
 			Reason:       err.Error(),
 		}
@@ -158,8 +158,8 @@ func validateVariableName(varName, level, field string) error {
 	// Then, check for reserved prefix (additional check specific to internal variables)
 	if strings.HasPrefix(varName, reservedVariablePrefix) {
 		return &ErrReservedVariablePrefixDetail{
-			Level:        level,
-			Field:        field,
+			Level:        level.String(),
+			Field:        field.String(),
 			VariableName: varName,
 			Prefix:       reservedVariablePrefix,
 		}
@@ -168,15 +168,15 @@ func validateVariableName(varName, level, field string) error {
 	// Check variable scope based on level
 	// Global variables must start with uppercase, local variables with lowercase
 	expectedScope := variable.ScopeLocal
-	if level == "global" {
+	if level.kind == levelGlobal {
 		expectedScope = variable.ScopeGlobal
 	}
 
 	location := fmt.Sprintf("%s.%s", level, field)
 	if err := variable.ValidateVariableNameForScope(varName, expectedScope, location); err != nil {
 		return &ErrInvalidVariableScopeDetail{
-			Level:        level,
-			Field:        field,
+			Level:        level.String(),
+			Field:        field.String(),
 			VariableName: varName,
 			Err:          err,
 		}
