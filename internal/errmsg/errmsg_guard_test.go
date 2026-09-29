@@ -79,7 +79,7 @@ var pathErrorCausePositions = positions{
 
 // inScopePositions are the paths whose error wrapping is in scope for
 // structured messages. An unexported function or method outside errmsg whose
-// result contains an errmsg.Part must be one of them.
+// signature holds an errmsg.Part must be one of them.
 var inScopePositions = positions{
 	"internal/runner/group_executor.go":                  {wholeFile},
 	"internal/runner/group_stage.go":                     {wholeFile},
@@ -376,7 +376,7 @@ func receiverTypeName(fn *ast.FuncDecl) string {
 	return ""
 }
 
-// errmsgRef is one use of an errmsg package-level function.
+// errmsgRef is one use of a function the guard tracks.
 type errmsgRef struct {
 	name  string
 	ident *ast.Ident
@@ -393,8 +393,16 @@ func (r errmsgRef) fnKey() string {
 	return funcKey(r.fn)
 }
 
-// errmsgRefs returns every use in p of one of errmsg's functions in names.
+// errmsgRefs returns every use in p of one of errmsg's package-level
+// functions in names.
 func (s *guardSet) errmsgRefs(p *typedPackage, names []string) []errmsgRef {
+	return funcRefs(p, func(fn *types.Func) bool {
+		return fn.Pkg() == s.errmsg && fn.Signature().Recv() == nil && slices.Contains(names, fn.Name())
+	})
+}
+
+// funcRefs returns every use in p of a function or method that match accepts.
+func funcRefs(p *typedPackage, match func(*types.Func) bool) []errmsgRef {
 	var refs []errmsgRef
 	for _, f := range p.files {
 		for _, decl := range f.file.Decls {
@@ -417,7 +425,7 @@ func (s *guardSet) errmsgRefs(p *typedPackage, names []string) []errmsgRef {
 					return true
 				}
 				obj, ok := p.info.Uses[id].(*types.Func)
-				if ok && obj.Pkg() == s.errmsg && obj.Signature().Recv() == nil && slices.Contains(names, obj.Name()) {
+				if ok && match(obj) {
 					refs = append(refs, errmsgRef{name: obj.Name(), ident: id, call: calls[id], fn: fn, file: f})
 				}
 				return true
@@ -558,14 +566,48 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 // checked by checkExemptRoleCalls.
 var exemptRoleFuncNames = []string{"Ident", "Path", "PathErrorCause"}
 
+// errmsgRoleChoosers are, for each errmsg function that chooses a segment's
+// role or a cause's kind, the only functions of errmsg (keyed as funcKey)
+// allowed to call it. errmsg calls the functions of exemptRoleFuncNames
+// nowhere.
+var errmsgRoleChoosers = map[string][]string{
+	"rolePart":  {"Const", "Ident", "Path", "Text", "ConstSummary", "TextSummary", "Message.Freeze"},
+	"causePart": {"Cause", "PathErrorCause", "IndentedCause"},
+}
+
+// partHelperCallerPositions are the positions, besides those allowed to
+// declare an exempt role, allowed to call a helper whose signature holds an
+// errmsg.Part.
+var partHelperCallerPositions = positions{
+	// ContextString renders the context parts that ReportMessage also uses.
+	"internal/logging/execution_error.go": {"ExecutionError.ContextString"},
+}
+
+// declaresExemptRole reports whether the function keyed fn in file may
+// declare an Identifier or Path segment.
+func declaresExemptRole(file, fn string) bool {
+	return exemptRolePositions.covers(file, fn) && inScope(file, fn)
+}
+
 // checkExemptRoleCalls reports calls of errmsg.Ident and errmsg.Path outside
 // exemptRolePositions, calls of errmsg.PathErrorCause outside
-// pathErrorCausePositions, and uses of any of them that are not calls.
-// errmsg's own files are not checked: they implement the constructors.
+// pathErrorCausePositions, calls of a package's own helpers whose signature
+// holds an errmsg.Part outside those positions and partHelperCallerPositions,
+// and inside errmsg calls of the role-choosing functions outside
+// errmsgRoleChoosers. Every use of any of them that is not a call is reported.
 func checkExemptRoleCalls(s *guardSet) []string {
 	var violations []string
 	for _, p := range s.pkgs {
 		if p.dir == errmsgDir {
+			names := append(slices.Clone(exemptRoleFuncNames), slices.Collect(maps.Keys(errmsgRoleChoosers))...)
+			for _, ref := range s.errmsgRefs(p, names) {
+				switch {
+				case ref.call == nil:
+					violations = append(violations, fmt.Sprintf("%s: %s is referenced as a value inside errmsg; only its fixed callers may call it", position(ref.ident.Pos()), ref.name))
+				case !slices.Contains(errmsgRoleChoosers[ref.name], ref.fnKey()):
+					violations = append(violations, fmt.Sprintf("%s: %s is called inside errmsg outside the constructors fixed for it", position(ref.call.Pos()), ref.name))
+				}
+			}
 			continue
 		}
 		for _, ref := range s.errmsgRefs(p, exemptRoleFuncNames) {
@@ -575,13 +617,33 @@ func checkExemptRoleCalls(s *guardSet) []string {
 			}
 			switch ref.name {
 			case "Ident", "Path":
-				if !exemptRolePositions.covers(ref.file.path, ref.fnKey()) || !inScope(ref.file.path, ref.fnKey()) {
+				if !declaresExemptRole(ref.file.path, ref.fnKey()) {
 					violations = append(violations, fmt.Sprintf("%s: errmsg.%s is called outside the positions allowed to declare an exempt role", position(ref.call.Pos()), ref.name))
 				}
 			default:
 				if !pathErrorCausePositions.covers(ref.file.path, ref.fnKey()) {
 					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", position(ref.call.Pos())))
 				}
+			}
+		}
+		// A helper returning or taking Parts can carry an exempt role to a
+		// caller that may not declare one.
+		helpers := map[*types.Func]struct{}{}
+		for _, f := range p.files {
+			for _, decl := range f.file.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					if fn, ok := p.info.Defs[fd.Name].(*types.Func); ok && s.holdsPart(fn) {
+						helpers[fn] = struct{}{}
+					}
+				}
+			}
+		}
+		for _, ref := range funcRefs(p, func(fn *types.Func) bool { _, ok := helpers[fn.Origin()]; return ok }) {
+			switch {
+			case ref.call == nil:
+				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part and is referenced as a value; only a call in an allowed position may use it", position(ref.ident.Pos()), ref.name))
+			case !declaresExemptRole(ref.file.path, ref.fnKey()) && !partHelperCallerPositions.covers(ref.file.path, ref.fnKey()):
+				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part and is called outside the positions allowed to declare an exempt role", position(ref.call.Pos()), ref.name))
 			}
 		}
 	}
@@ -593,8 +655,29 @@ func checkExemptRoleCalls(s *guardSet) []string {
 // exemptRolePositions, decided by file and function, so a new caller cannot
 // exempt text from whole-value replacement without extending the table.
 func TestProductionExemptRoleCallsAreInAllowedPositions(t *testing.T) {
-	violations := checkExemptRoleCalls(productionGuardSet(t))
+	s := productionGuardSet(t)
+	violations := checkExemptRoleCalls(s)
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
+
+	// A renamed errmsg function would otherwise drop out of the table silently.
+	declared := map[string]struct{}{}
+	for _, p := range s.pkgs {
+		if p.dir != errmsgDir {
+			continue
+		}
+		for _, f := range p.files {
+			for _, decl := range f.file.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					declared[funcKey(fd)] = struct{}{}
+				}
+			}
+		}
+	}
+	for chooser, callers := range errmsgRoleChoosers {
+		for _, key := range append([]string{chooser}, callers...) {
+			assert.Containsf(t, declared, key, "errmsgRoleChoosers names %s, which errmsg does not declare", key)
+		}
+	}
 }
 
 func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
@@ -602,43 +685,83 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 	src := func(alias, body string) string { return fmt.Sprintf(header, alias) + body }
 	const executorFile = "internal/runner/base/executor/executor.go"
 	const tempdirFile = "internal/runner/base/executor/tempdir_manager.go"
+	const stageFile = "internal/runner/group_stage.go"
+	const stageSrc = "package runner\n\nimport \"" + errmsgImportPath + "\"\n\n"
+	const identHelper = "func ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"
+	const runnerFile = "internal/runner/runner.go"
+	const runnerSrc = stageSrc + "type Runner struct{}\n\n"
 	tests := []struct {
-		name string
-		file guardFile
-		want int
+		name  string
+		files []guardFile
+		want  int
 	}{
-		{name: "Ident in an allowed method", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate() { _ = errmsg.Ident("x") }`)}},
-		{name: "Path in a whole-file position", file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar _ = errmsg.Path(\"/p\")\n"}},
-		{name: "Ident in another method of the same file", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Other() { _ = errmsg.Ident("x") }`)}, want: 1},
-		{name: "allowed method name in another file", file: guardFile{"internal/logging/slack_handler.go", src("", `func (e *DefaultExecutor) Validate() { _ = errmsg.Ident("x") }`)}, want: 1},
-		{name: "allowed name as a function rather than a method", file: guardFile{executorFile, src("", `func Validate() { _ = errmsg.Path("/p") }`)}, want: 1},
-		{name: "package-level call in a function-scoped file", file: guardFile{executorFile, src("", `var _ = errmsg.Path("/p")`)}, want: 1},
-		{name: "dot-import in an allowed method", file: guardFile{executorFile, src(". ", `func (e *DefaultExecutor) executeNormal() { _ = Ident("x") }`)}},
-		{name: "function value", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate() { f := errmsg.Ident; _ = f }`)}, want: 1},
-		{name: "PathErrorCause in Create", file: guardFile{tempdirFile, src("", `func (m *DefaultTempDirManager) Create(err error) { _ = errmsg.PathErrorCause(err) }`)}},
-		{name: "PathErrorCause elsewhere", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate(err error) { _ = errmsg.PathErrorCause(err) }`)}, want: 1},
+		{name: "Ident in an allowed method", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Validate() { _ = errmsg.Ident("x") }`)}}},
+		{name: "Path in a whole-file position", files: []guardFile{{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar _ = errmsg.Path(\"/p\")\n"}}},
+		{name: "Ident in another method of the same file", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Other() { _ = errmsg.Ident("x") }`)}}, want: 1},
+		{name: "allowed method name in another file", files: []guardFile{{"internal/logging/slack_handler.go", src("", `func (e *DefaultExecutor) Validate() { _ = errmsg.Ident("x") }`)}}, want: 1},
+		{name: "allowed name as a function rather than a method", files: []guardFile{{executorFile, src("", `func Validate() { _ = errmsg.Path("/p") }`)}}, want: 1},
+		{name: "package-level call in a function-scoped file", files: []guardFile{{executorFile, src("", `var _ = errmsg.Path("/p")`)}}, want: 1},
+		{name: "dot-import in an allowed method", files: []guardFile{{executorFile, src(". ", `func (e *DefaultExecutor) executeNormal() { _ = Ident("x") }`)}}},
+		{name: "function value", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Validate() { f := errmsg.Ident; _ = f }`)}}, want: 1},
+		{name: "PathErrorCause in Create", files: []guardFile{{tempdirFile, src("", `func (m *DefaultTempDirManager) Create(err error) { _ = errmsg.PathErrorCause(err) }`)}}},
+		{name: "PathErrorCause elsewhere", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Validate(err error) { _ = errmsg.PathErrorCause(err) }`)}}, want: 1},
 		{
-			name: "Ident in the expansion file",
-			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"},
+			name:  "Ident in the expansion file",
+			files: []guardFile{{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"}},
 		},
 		{
-			name: "Ident in a function excluded from the expansion file",
-			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"},
+			name:  "Ident in a function excluded from the expansion file",
+			files: []guardFile{{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"}},
+			want:  1,
+		},
+		{name: "errmsg's own calls of its role-choosing functions", files: nil},
+		{name: "Path called inside errmsg", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc QuotedPath(s string) Part { return Path(s) }\n"}}, want: 1},
+		{name: "rolePart called outside its fixed callers", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc MakeIdent(s string) Part { return rolePart(RoleIdentifier, s) }\n"}}, want: 1},
+		{name: "causePart called outside its fixed callers", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc PathCause(err error) Part { return causePart(causePathError, err) }\n"}}, want: 1},
+		{name: "rolePart referenced as a value inside errmsg", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nvar makePart = rolePart\n"}}, want: 1},
+		{
+			name:  "Part helper called outside the scope",
+			files: []guardFile{{stageFile, stageSrc + identHelper}, {runnerFile, runnerSrc + "func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
+			want:  1,
+		},
+		{
+			name:  "Part helper called in scope but outside the exempt-role positions",
+			files: []guardFile{{stageFile, stageSrc + identHelper}, {runnerFile, runnerSrc + "func (r *Runner) Execute(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
+			want:  1,
+		},
+		{
+			name: "Part helper method of a generic type called outside the scope",
+			files: []guardFile{
+				{stageFile, stageSrc + "type box[T any] struct{}\n\nfunc (box[T]) ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"},
+				{runnerFile, runnerSrc + "func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(box[int]{}.ident(s)) }\n"},
+			},
 			want: 1,
+		},
+		{
+			name:  "Part helper called from an exempt-role position",
+			files: []guardFile{{stageFile, stageSrc + identHelper}, {"internal/runner/group_executor.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nfunc report(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
+		},
+		{name: "Part helper referenced as a value", files: []guardFile{{stageFile, stageSrc + identHelper + "\nvar f = ident\n"}}, want: 1},
+		{
+			name: "context parts rendered by ContextString",
+			files: []guardFile{{"internal/logging/execution_error.go", "package logging\n\nimport \"" + errmsgImportPath + "\"\n\ntype ExecutionError struct{}\n\n" +
+				"func (e *ExecutionError) contextParts() []errmsg.Part { return nil }\n\n" +
+				"func (e *ExecutionError) ContextString() string { return errmsg.NewMessage(e.contextParts()...).String() }\n"}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			violations := checkExemptRoleCalls(syntheticGuard(t, tt.file))
+			violations := checkExemptRoleCalls(syntheticGuard(t, tt.files...))
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
 }
 
 // containsPart reports whether t holds an errmsg.Part: directly, as an
-// element, a field, a function result, an interface method's result, a type
-// argument, a type parameter's constraint, or through a named type's
-// definition. errmsg's other types, such as Message, are opaque.
+// element, a field, a function parameter or result, an interface method's
+// parameter or result, a type argument, a type parameter's constraint, or
+// through a named type's definition. errmsg's other types, such as Message, are
+// opaque.
 func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struct{}) bool {
 	if t == nil {
 		return false
@@ -670,7 +793,9 @@ func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struc
 			}
 		}
 	case *types.Signature:
-		return s.containsPart(t.Results(), visiting)
+		// A parameter can hand a Part out as well as a result: a channel, a
+		// callback or a pointer to fill.
+		return s.containsPart(t.Params(), visiting) || s.containsPart(t.Results(), visiting)
 	case *types.Interface:
 		for method := range t.Methods() {
 			if s.containsPart(method.Type(), visiting) {
@@ -710,6 +835,11 @@ func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struc
 		return s.containsPart(t.Underlying(), visiting)
 	}
 	return false
+}
+
+// holdsPart reports whether fn's parameters or results hold an errmsg.Part.
+func (s *guardSet) holdsPart(fn *types.Func) bool {
+	return s.containsPart(fn.Signature(), map[*types.TypeName]struct{}{})
 }
 
 // checkPartConstruction reports any exported or embedded field of
@@ -761,7 +891,7 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 			for _, decl := range f.file.Decls {
 				switch d := decl.(type) {
 				case *ast.FuncDecl:
-					if fn, ok := p.info.Defs[d.Name].(*types.Func); ok && s.containsPart(fn.Signature().Results(), map[*types.TypeName]struct{}{}) {
+					if fn, ok := p.info.Defs[d.Name].(*types.Func); ok && s.holdsPart(fn) {
 						report(f, d.Name, funcKey(d))
 					}
 				case *ast.GenDecl:
@@ -848,6 +978,11 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			file: guardFile{stageFile, stageHeader + "func part(s string) errmsg.Part { return errmsg.Ident(s) }\n\nvar MakePart = part\n"},
 			want: 1,
 		},
+		{name: "exported function sending a Part on a channel parameter", file: guardFile{stageFile, stageHeader + "func Emit(s string, out chan<- errmsg.Part) { out <- errmsg.Ident(s) }\n"}, want: 1},
+		{name: "exported function passing a Part to a callback parameter", file: guardFile{stageFile, stageHeader + "func Visit(s string, emit func(errmsg.Part)) { emit(errmsg.Ident(s)) }\n"}, want: 1},
+		{name: "exported function filling a Part through a pointer parameter", file: guardFile{stageFile, stageHeader + "func Fill(s string, dst *errmsg.Part) { *dst = errmsg.Ident(s) }\n"}, want: 1},
+		{name: "exported variable of a function type taking a Part", file: guardFile{stageFile, stageHeader + "var Hook func(errmsg.Part)\n"}, want: 1},
+		{name: "unexported in-scope function taking and returning Parts", file: guardFile{stageFile, stageHeader + "func appendParts(dst []errmsg.Part) []errmsg.Part { return dst }\n"}},
 		{name: "unexported Part variable outside the scope", file: guardFile{"internal/x/x.go", header + "var parts []errmsg.Part\n"}, want: 1},
 		{name: "exported variable of inferred Part type in a whole-file position", file: guardFile{stageFile, stageHeader + "var Exposed = errmsg.Ident(\"x\")\n"}, want: 1},
 		{name: "unexported Part variable in a whole-file position", file: guardFile{stageFile, stageHeader + "var exposed = errmsg.Ident(\"x\")\n"}},
