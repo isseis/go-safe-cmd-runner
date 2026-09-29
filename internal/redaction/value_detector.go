@@ -264,6 +264,9 @@ func (d *ValueDetector) maskSteps() []maskStep {
 		{re: valueDetectorPatterns.githubToken, replaced: wholeMatch},
 		{re: valueDetectorPatterns.slackToken, replaced: wholeMatch},
 	}
+	// Mask re-runs the PEM steps. On the RedactText path they never match: the
+	// first stage has already replaced every BEGIN line, and a placeholder cannot
+	// form one. They are listed so this stays a faithful copy of Mask.
 	steps = append(steps, privateKeyBlockSteps()...)
 	steps = append(steps,
 		maskStep{re: valueDetectorPatterns.gcpSAKey, replaced: betweenGroups1And2},

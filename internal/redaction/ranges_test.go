@@ -62,6 +62,13 @@ var rangeSeeds = []string{
 	"AKIA" + testPEMBlock,
 	// A BEGIN line with no END line runs to the end of the text.
 	"key: -----BEGIN PRIVATE KEY-----\nMIIE\nrest of output",
+	// Inputs whose result depends on the order of the stages or of the steps
+	// within a stage, so a reordering in redactedRanges or maskSteps shows up.
+	"https://u:x password=secret@h/",                     // key-name stage before value-format stage
+	"eyJhbGciOiJIUzI1NiJ9.AKIAIOSFODNN7EXAMPLE.sig rest", // awsKeyID before jwt
+	"Bearer\thttps://u:p@h/x",                            // bearerToken before urlCred
+	"see https://hooks.example.com/a/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl done", // jwt before webhook host
+	"0Api_keY=\"", // reached only by the api_key rule
 	// The configured webhook host next to a placeholder.
 	"https://hooks.example.com/[REDACTED]",
 	"[REDACTED]https://hooks.example.com/x",
@@ -72,11 +79,15 @@ var rangeSeeds = []string{
 }
 
 // rangeTestConfigs returns the configurations the differential test runs every
-// input against: the default rules, and each webhook host the existing tests
-// configure plus the one rangeSeeds uses.
+// input against: the default rules, the rules without value-format detection,
+// and each webhook host the existing tests configure plus the one rangeSeeds
+// uses.
 func rangeTestConfigs(tb testing.TB) []*Config {
 	tb.Helper()
-	configs := []*Config{DefaultConfig()}
+	noValueDetector, err := NewConfig()
+	require.NoError(tb, err)
+	noValueDetector.valueDetector = nil
+	configs := []*Config{DefaultConfig(), noValueDetector}
 	for _, host := range []string{"hooks.example.com", "hooks.slack.com", "mattermost.example.com", "2001:db8::1"} {
 		c, err := NewConfig(WithWebhookHost(host))
 		require.NoError(tb, err)
@@ -85,10 +96,12 @@ func rangeTestConfigs(tb testing.TB) []*Config {
 	return configs
 }
 
-// existingRedactionTestInputs returns every string constant in the existing
-// RedactText and Mask tests, so the differential test covers all their inputs
-// without a copy that could fall behind them. Expected outputs and names come
-// along too; they are just more inputs.
+// existingRedactionTestInputs returns the string constants in the existing
+// rule-level redaction tests, so the differential test covers their literal
+// inputs without a copy that could fall behind them. Expected outputs and names
+// come along too; they are just more inputs. Inputs those tests build at run
+// time (strings.Repeat, package-level constants) are not collected; rangeSeeds
+// carries the ones that matter.
 func existingRedactionTestInputs(tb testing.TB) []string {
 	tb.Helper()
 	var inputs []string
@@ -98,14 +111,28 @@ func existingRedactionTestInputs(tb testing.TB) []string {
 		require.NoError(tb, err)
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || !strings.HasPrefix(fn.Name.Name, "TestRedactText_") && !strings.HasPrefix(fn.Name.Name, "TestValueDetector_") {
+			if !ok || !isRuleLevelTest(fn.Name.Name) {
 				continue
 			}
-			inputs = append(inputs, stringConstants(fn.Body)...)
+			found := stringConstants(fn.Body)
+			require.NotEmptyf(tb, found, "%s yields no seed", fn.Name.Name)
+			inputs = append(inputs, found...)
 		}
 	}
-	require.NotEmpty(tb, inputs, "the seed collection must find the existing test inputs")
+	// Guards against a rename quietly dropping most of the sources.
+	require.GreaterOrEqual(tb, len(inputs), 700, "the seed collection must find the existing test inputs")
 	return inputs
+}
+
+// isRuleLevelTest reports whether name is one of the tests whose inputs seed
+// the differential test.
+func isRuleLevelTest(name string) bool {
+	switch name {
+	case "TestNewConfig_WithWebhookHost", "TestPerformKeyValueRedaction",
+		"TestKeyedValueKindDominatesNextTokenKind", "TestKeyValueRules_PlaceholderWithDollar":
+		return true
+	}
+	return strings.HasPrefix(name, "TestRedactText_") || strings.HasPrefix(name, "TestValueDetector_")
 }
 
 // stringConstants returns the string literals under node and the values of the
@@ -258,42 +285,56 @@ func TestRedactedRanges_StageOverlap(t *testing.T) {
 	// No default rule matches part of a placeholder, so the remaining cases give
 	// the stages directly. The rendering must still follow the stages exactly,
 	// and the range covers the whole of the placeholder the stage touched.
+	// One placeholder: "abcdefghij" renders as "ab<P>efghij". Two: "ab<P>ef<P>ij".
+	one := []byteRange{{start: 2, end: 4}}
+	two := []byteRange{{start: 2, end: 4}, {start: 6, end: 8}}
 	partial := []struct {
 		name       string
-		second     byteRange
+		first      []byteRange
+		second     []byteRange
 		wantRender string
 		wantRanges []byteRange
 	}{
 		{
-			name: "span covering the tail of a placeholder", second: byteRange{start: 3, end: 6},
+			name: "span covering the tail of a placeholder", first: one, second: []byteRange{{start: 3, end: 6}},
 			wantRender: "ab<<P>fghij", wantRanges: []byteRange{{start: 2, end: 5}},
 		},
 		{
-			name: "span covering the head of a placeholder", second: byteRange{start: 1, end: 3},
+			name: "span covering the head of a placeholder", first: one, second: []byteRange{{start: 1, end: 3}},
 			wantRender: "a<P>P>efghij", wantRanges: []byteRange{{start: 1, end: 4}},
 		},
 		{
-			name: "insertion inside a placeholder", second: byteRange{start: 3, end: 3},
+			name: "insertion inside a placeholder", first: one, second: []byteRange{{start: 3, end: 3}},
 			wantRender: "ab<<P>P>efghij", wantRanges: []byteRange{{start: 2, end: 4}},
+		},
+		{
+			// The second span touches only the orphan the first left behind, so it
+			// stands for no original bytes: a zero-width range at the orphan.
+			name: "two spans on the same placeholder", first: one, second: []byteRange{{start: 2, end: 3}, {start: 4, end: 5}},
+			wantRender: "ab<P>P<P>efghij", wantRanges: []byteRange{{start: 2, end: 4}, {start: 4, end: 4}},
+		},
+		{
+			name: "span from inside one placeholder into another", first: two, second: []byteRange{{start: 3, end: 9}},
+			wantRender: "ab<<P>>ij", wantRanges: []byteRange{{start: 2, end: 8}},
 		},
 	}
 	for _, tt := range partial {
 		t.Run(tt.name, func(t *testing.T) {
 			const text = "abcdefghij"
-			first := byteRange{start: 2, end: 4}
 			tbl := newPieceTable(text, "<P>")
-			tbl.apply(fixedSpans(first))
-			require.Equal(t, replaceSpans(text, []byteRange{first}, "<P>"), tbl.render())
-			tbl.apply(fixedSpans(tt.second))
-			require.Equal(t, replaceSpans("ab<P>efghij", []byteRange{tt.second}, "<P>"), tbl.render())
+			tbl.apply(fixedSpans(tt.first...))
+			afterFirst := replaceSpans(text, tt.first, "<P>")
+			require.Equal(t, afterFirst, tbl.render())
+			tbl.apply(fixedSpans(tt.second...))
+			require.Equal(t, replaceSpans(afterFirst, tt.second, "<P>"), tbl.render())
 			assert.Equal(t, tt.wantRender, tbl.render())
 			assert.Equal(t, tt.wantRanges, tbl.ranges())
 		})
 	}
 }
 
-// TestRedactedRanges_OneRangePerReplacement checks that the ranges follow the
-// replacements, not the length of the text.
+// TestRedactedRanges_OneRangePerReplacement checks that a long text yields one
+// range per replacement, not fragments of one.
 func TestRedactedRanges_OneRangePerReplacement(t *testing.T) {
 	c := DefaultConfig()
 	filler := strings.Repeat("plain words ", 20000)

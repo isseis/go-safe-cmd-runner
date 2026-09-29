@@ -589,7 +589,8 @@ func TestRedactText_KeyGroupBehavior(t *testing.T) {
 }
 
 // TestKeyBoundaryGroup_Classification tests that every default key lands in the
-// intended boundary group, and that a user-added key gets the loose boundary.
+// intended boundary group, and that a key added to the defaults gets the loose
+// boundary.
 func TestKeyBoundaryGroup_Classification(t *testing.T) {
 	tests := []struct {
 		key      string

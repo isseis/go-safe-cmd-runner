@@ -456,9 +456,9 @@ const (
 // commonWordKeys holds the lower-cased keys classified as
 // boundaryGroupCommonWord. It is deliberately not a configuration item:
 // whether a word is frequent in English prose is a property of the language,
-// not of a deployment. Adding a pattern to KeyValuePatterns is instead read as a
-// declaration that the key marks a secret, which is why user-added keys default
-// to the loose boundary. Read-only after init.
+// not of the pattern set. Adding a pattern to DefaultKeyValuePatterns is instead
+// read as a declaration that the key marks a secret, which is why added keys
+// default to the loose boundary. Read-only after init.
 var commonWordKeys = map[string]struct{}{
 	"key":    {},
 	"token":  {},
