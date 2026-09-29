@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,6 +72,124 @@ func TestGroupError_IndentsTimeoutCause(t *testing.T) {
 
 	assert.True(t, strings.HasPrefix(got, "failed to execute group group-a: "), "got: %q", got)
 	assert.Contains(t, got, "\n  signal: killed", "the continuation must be indented: %q", got)
+}
+
+// TestGroupErrorStructuredRoles pins the role sequence a group failure
+// declares: fixed wording as Constant, the group name as Identifier, and the
+// cause's own text as Text, so the name is exempt from redaction while the
+// cause keeps the full protection.
+func TestGroupErrorStructuredRoles(t *testing.T) {
+	groupErr := newGroupError("token-rotate", errors.New("plain cause"))
+
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleConstant, Text: "failed to execute group "},
+		{Role: errmsg.RoleIdentifier, Text: "token-rotate"},
+		{Role: errmsg.RoleConstant, Text: ": "},
+		{Role: errmsg.RoleText, Text: "plain cause"},
+	}, groupErr.StructuredMessage().Segments())
+}
+
+// TestCommandExecutionErrorStructuredRoles pins the role sequence a command
+// failure declares: the command and group names are Identifiers, an
+// unstructured cause is one Text segment, and a structured cause keeps its own
+// roles instead of being flattened.
+func TestCommandExecutionErrorStructuredRoles(t *testing.T) {
+	const prefix = 5
+	structuredCause := errmsg.NewError(
+		errmsg.Const("failed: "),
+		errmsg.Ident("api_key"),
+		errmsg.Cause(errors.New("boom")),
+	)
+
+	tests := []struct {
+		name  string
+		cause error
+		tail  errmsg.Segments
+	}{
+		{
+			name:  "unstructured cause",
+			cause: errors.New("plain cause"),
+			tail:  errmsg.Segments{{Role: errmsg.RoleText, Text: "plain cause"}},
+		},
+		{
+			name:  "structured cause",
+			cause: structuredCause,
+			tail: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "failed: "},
+				{Role: errmsg.RoleIdentifier, Text: "api_key"},
+				{Role: errmsg.RoleText, Text: "boom"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdErr := &CommandExecutionError{
+				GroupName:   "token-rotate",
+				CommandName: "renew",
+				Err:         tt.cause,
+			}
+
+			want := errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command "},
+				{Role: errmsg.RoleIdentifier, Text: "renew"},
+				{Role: errmsg.RoleConstant, Text: " in group "},
+				{Role: errmsg.RoleIdentifier, Text: "token-rotate"},
+				{Role: errmsg.RoleConstant, Text: " failed: "},
+			}
+			assert.Len(t, want, prefix)
+			assert.Equal(t, append(want, tt.tail...), cmdErr.StructuredMessage().Segments())
+		})
+	}
+}
+
+// TestGroupErrors_MergePreservesIdentifierSegments pins that a multi-group
+// failure keeps every group's declared Identifier segments. Merging the
+// messages is what preserves them; flattening the whole report to one Text
+// would drop the roles.
+func TestGroupErrors_MergePreservesIdentifierSegments(t *testing.T) {
+	inner := errmsg.NewError(
+		errmsg.Const("failed to expand group["),
+		errmsg.Ident("api_key"),
+		errmsg.Const("]"),
+		errmsg.Cause(errors.New("plain cause")),
+	)
+	groupErrs := newGroupErrors([]*GroupError{
+		newGroupError("token-rotate", inner),
+		newGroupError("monkey-test", inner),
+	})
+
+	var identifiers []string
+	for _, segment := range groupErrs.StructuredMessage().Segments() {
+		if segment.Role == errmsg.RoleIdentifier {
+			identifiers = append(identifiers, segment.Text)
+		}
+	}
+	assert.Equal(t, []string{"token-rotate", "api_key", "monkey-test", "api_key"}, identifiers,
+		"merging must keep every group's declared Identifier segments")
+}
+
+// TestStructuredRunnerErrorZeroValuesDoNotPanic pins that a zero value never
+// panics while it is rendered.
+func TestStructuredRunnerErrorZeroValuesDoNotPanic(t *testing.T) {
+	// GroupStageError's zero value is covered by
+	// TestGroupStageErrorZeroValueDoesNotPanic.
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "GroupError", err: &GroupError{}, want: "failed to execute group : <nil>"},
+		{name: "GroupErrors", err: &GroupErrors{}, want: ""},
+		{name: "CommandExecutionError", err: &CommandExecutionError{}, want: "command  in group  failed: <nil>"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() { _ = tt.err.Error() })
+			assert.Equal(t, tt.want, tt.err.Error())
+		})
+	}
 }
 
 // TestGroupErrors_UnwrapReachesEachCause pins that errors.Is and errors.As

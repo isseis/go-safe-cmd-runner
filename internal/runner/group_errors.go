@@ -2,8 +2,8 @@ package runner
 
 import (
 	"errors"
-	"fmt"
-	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 // GroupError is one group that failed during a run. Its fields are unexported
@@ -25,12 +25,22 @@ func (e *GroupError) CommandName() string {
 	return e.command
 }
 
-// Error reports the group and its cause. The cause's continuation lines are
-// indented so they stay visually under the group's line when several groups
-// are reported one after another.
+// Error renders the structured message without redaction. The cause's
+// continuation lines are indented so they stay visually under the group's line
+// when several groups are reported one after another.
 func (e *GroupError) Error() string {
-	cause := strings.TrimRight(e.err.Error(), "\r\n")
-	return fmt.Sprintf("failed to execute group %s: %s", e.group, strings.ReplaceAll(cause, "\n", "\n  "))
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the group as an Identifier and indents the
+// cause's continuation lines.
+func (e *GroupError) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("failed to execute group "),
+		errmsg.Ident(e.group),
+		errmsg.Const(": "),
+		errmsg.IndentedCause(e.err),
+	)
 }
 
 // Unwrap returns the cause so errors.Is and errors.As reach the underlying
@@ -52,14 +62,23 @@ func (e *GroupErrors) Errors() []*GroupError {
 	return append([]*GroupError(nil), e.errs...)
 }
 
-// Error joins each group's report with a newline. For one-line causes this is
-// the same text the previous wrapping and errors.Join produced.
+// Error renders the structured message without redaction.
 func (e *GroupErrors) Error() string {
-	parts := make([]string, len(e.errs))
-	for i, err := range e.errs {
-		parts[i] = err.Error()
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage joins each group's message with a newline. It merges the
+// messages without flattening them, so every group keeps the roles its error
+// declared.
+func (e *GroupErrors) StructuredMessage() errmsg.Message {
+	msgs := make([]errmsg.Message, 0, max(0, 2*len(e.errs)-1))
+	for i, groupErr := range e.errs {
+		if i > 0 {
+			msgs = append(msgs, errmsg.NewMessage(errmsg.Const("\n")))
+		}
+		msgs = append(msgs, groupErr.StructuredMessage())
 	}
-	return strings.Join(parts, "\n")
+	return errmsg.Merge(msgs...)
 }
 
 // Unwrap returns each group's error so errors.Is and errors.As reach every

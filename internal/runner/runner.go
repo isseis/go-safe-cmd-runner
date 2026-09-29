@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
@@ -401,6 +402,36 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	return runner, nil
 }
 
+// cancelledRunError is returned when the run's context is done while a group
+// failure is being handled. Its text equals errors.Join(ctxErr, err), so the
+// report is unchanged, while the error declares the cancellation by type
+// instead of by the shape of a joined error.
+type cancelledRunError struct {
+	ctxErr error
+	err    error
+}
+
+// Error renders the structured message without redaction.
+func (e *cancelledRunError) Error() string {
+	return e.StructuredMessage().String()
+}
+
+// Unwrap returns the context error and the failing group's error, so errors.Is
+// and errors.AsType reach both the way errors.Join does.
+func (e *cancelledRunError) Unwrap() []error {
+	return []error{e.ctxErr, e.err}
+}
+
+// StructuredMessage carries the cancellation and the group failure as causes
+// separated by a newline.
+func (e *cancelledRunError) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Cause(e.ctxErr),
+		errmsg.Const("\n"),
+		errmsg.Cause(e.err),
+	)
+}
+
 // executeGroups executes the specified groups
 // This is a helper method used by ExecuteFiltered
 func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSpec) error {
@@ -449,7 +480,7 @@ func (r *Runner) executeGroups(ctx context.Context, groups []runnertypes.GroupSp
 					// collected, so only the cancellation is returned.
 					return ctxErr
 				}
-				return errors.Join(ctxErr, err)
+				return &cancelledRunError{ctxErr: ctxErr, err: err}
 			}
 
 			if isVerification {

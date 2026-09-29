@@ -134,13 +134,19 @@ func (e *GroupStageError) CommandName() string {
 	return e.command
 }
 
-// Error returns the cause's message, or a fixed line when the receiver is the
-// zero value, so a zero GroupStageError never panics while being reported.
+// Error renders the structured message without redaction.
 func (e *GroupStageError) Error() string {
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage carries the cause as is, so a wrapper that adds no wording
+// still passes the cause's declared roles through. The zero value renders a
+// fixed line instead, so it never panics while being reported.
+func (e *GroupStageError) StructuredMessage() errmsg.Message {
 	if e.err == nil {
-		return "group pre-execution failed"
+		return errmsg.NewMessage(errmsg.Const("group pre-execution failed"))
 	}
-	return e.err.Error()
+	return errmsg.NewMessage(errmsg.Cause(e.err))
 }
 
 // Unwrap returns the cause so errors.Is and errors.As can traverse the chain.

@@ -298,19 +298,19 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 5: `internal/runner` のエラー型と `cancelledRunError`
 
 **Files**: `internal/runner/group_errors.go`・`group_stage.go`・`runner.go`・`group_executor.go`（変更）、および対応するテスト
 
-- [ ] `GroupStageError`・`GroupError`・`GroupErrors`・`CommandExecutionError` に `Structured` を実装する。部分の並びは 03 §5.1 の表のとおり。`Error()` は `return e.StructuredMessage().String()` の 1 文にする。`GroupErrors` は `Merge` で平らにせずにつなぐ。
-- [ ] ゼロ値と nil の欄を持つ値の `Error()` が panic しないことを確かめる。
-- [ ] `group_executor.go` の 11 か所の `fmt.Errorf` を `errmsg` の構築に置き換える。部分の並びは 03 §5.2 の表のとおり。数値は `Text`、`%q` のパスは `strconv.Quote` した全体を `Path`、先頭の番兵は `Cause` にする。
-- [ ] `executeGroups` の `errors.Join(ctxErr, err)`（`runner.go:452`）を `cancelledRunError`（03 §5.3）に置き換える。この型を作るのは、`ctxErr` と `err` がどちらも nil でないことを確かめた後だけにする。
-- [ ] `cancelledRunError` の文言が `errors.Join(ctxErr, err)` と同じであること、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`executeGroups` が返すエラーの動的な型が `*cancelledRunError` であること（`errors.AsType`）も、Phase 8 の `TestRunner_CancelledRunErrorMessageKeepsIdentifiers` で確かめる。
-- [ ] 03 §10.5 の各エラー型のテスト（部分の並び、文言が変更前と同じであること、`cancelledRunError` の文言と到達性）を追加する。`GroupErrors` が `Merge` で各 `GroupError` の `Identifier` の断片を保つことは `TestGroupErrors_MergePreservesIdentifierSegments` で確かめる。`group_stage_test.go`・`group_errors_test.go`・`group_executor_test.go`・`runner_test.go`・`multi_group_error_integration_test.go` の既存の型・文言の確認を更新する。
+- [x] `GroupStageError`・`GroupError`・`GroupErrors`・`CommandExecutionError` に `Structured` を実装する。部分の並びは 03 §5.1 の表のとおり。`Error()` は `return e.StructuredMessage().String()` の 1 文にする。`GroupErrors` は `Merge` で平らにせずにつなぐ。
+- [x] ゼロ値と nil の欄を持つ値の `Error()` が panic しないことを確かめる。
+- [x] `group_executor.go` の 11 か所の `fmt.Errorf` を `errmsg` の構築に置き換える。部分の並びは 03 §5.2 の表のとおり。数値は `Text`、`%q` のパスは `strconv.Quote` した全体を `Path`、先頭の番兵は `Cause` にする。
+- [x] `executeGroups` の `errors.Join(ctxErr, err)`（`runner.go:452`）を `cancelledRunError`（03 §5.3）に置き換える。この型を作るのは、`ctxErr` と `err` がどちらも nil でないことを確かめた後だけにする。
+- [x] `cancelledRunError` の文言が `errors.Join(ctxErr, err)` と同じであること、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`executeGroups` が返すエラーの動的な型が `*cancelledRunError` であること（`errors.AsType`）も、Phase 8 の `TestRunner_CancelledRunErrorMessageKeepsIdentifiers` で確かめる。
+- [x] 03 §10.5 の各エラー型のテスト（部分の並び、文言が変更前と同じであること、`cancelledRunError` の文言と到達性）を追加する。`GroupErrors` が `Merge` で各 `GroupError` の `Identifier` の断片を保つことは `TestGroupErrors_MergePreservesIdentifierSegments` で確かめる。`group_stage_test.go`・`group_errors_test.go`・`group_executor_test.go`・`runner_test.go`・`multi_group_error_integration_test.go` の既存の型・文言の確認を更新する。
 
 **完了条件**: `internal/runner` のテストが green。`GroupErrors.Error()` の文言が各 `GroupError.Error()` を改行でつないだ変更前の結果と同じである。`cancelledRunError` の文言と到達性のテストが green。
 
@@ -321,6 +321,11 @@
 - **レビュー観点**: 4 型の `Error()` の文言が変更前と同じであること、`GroupErrors` が `Merge` で識別子の断片を保つこと、11 か所の役割の割り当てが 01 の方針に合うこと、`cancelledRunError` が専用の型であること（形による判定をしないこと）、`errors.Is` の到達性
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 文言の維持と構造の引き継ぎが中心で、設計は 03 で確定している。箇所数が多いが機械的である
+
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 6: `internal/runner/config` の `Level`・`Field` と `ErrUndefinedVariableDetail`
 
@@ -344,6 +349,11 @@
 - **レビュー観点**: `String()` が変更前の文言と同じであること、`parts()` が構築時に役割を宣言すること（組み立て済みの文字列を解析しないこと）、`ErrUndefinedVariableDetail` を運びうるか運びえないかの分類が 03 §6.5 のとおりであること、引数の型の変更が全関数に及んでいること、`ErrUndefinedVariableDetail` の `Unwrap()` が変わっていないこと
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
@@ -369,6 +379,11 @@
 - **レビュー観点**: 権限の昇格・子プロセスの監督の経路で `errors.Is` の到達性が落ちていないこと、`killAfterCancelError` が 2 つの原因の両方に届くこと、`privilege.Error` の `CommandName` が `Identifier` であること、`cmd/runner` の 4 か所で付け替えた原因に届くこと、一時ディレクトリの 2 つのラップの文言と `*fs.PathError` の分解、02 の対象の範囲の修正が再承認され、`base/output/path.go` の `validatePathSecurity`・`validateRelativePath` が範囲と役割の許可位置に入っていること
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 8: AC-41 のガード、例示のシナリオのテスト、文書
 
@@ -401,6 +416,11 @@
 - **レビュー観点**: AC-41 のガードの範囲が 03 §9.1 と一致し、関数やファイルの名前が消えたことを検出すること、例示のシナリオがエラーの発生元から Slack の組み立て・記録までを通すこと、日英の文書が同じ内容であること、検査スクリプトが `make verify-docs-checks` から実行されること、Slack の手動確認の結果
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: ガードの範囲の定義と、端から端までのシナリオの組み立てに設計の理解が要る。文書は内容が確定している
+
+- [ ] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ---
 

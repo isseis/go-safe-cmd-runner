@@ -17,6 +17,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
@@ -513,6 +514,21 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrCommandFailed)
 
+	// The exit-code wrap must keep its exact text and roles: the sentinel is a
+	// Text cause, the command name an Identifier and the number free Text.
+	cmdErr, ok := errors.AsType[*CommandExecutionError](err)
+	require.True(t, ok)
+	structured, ok := cmdErr.Err.(errmsg.Structured)
+	require.True(t, ok, "the exit-code wrap must be a structured error, got %T", cmdErr.Err)
+	assert.Equal(t, "command failed: command test-cmd failed with exit code 127", cmdErr.Err.Error())
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: "command failed"},
+		{Role: errmsg.RoleConstant, Text: ": command "},
+		{Role: errmsg.RoleIdentifier, Text: "test-cmd"},
+		{Role: errmsg.RoleConstant, Text: " failed with exit code "},
+		{Role: errmsg.RoleText, Text: "127"},
+	}, structured.StructuredMessage().Segments())
+
 	// Verify notification was sent with error status and correct exit code
 	require.NotNil(t, capturedNotification)
 	assert.Equal(t, GroupExecutionStatusError, capturedNotification.status)
@@ -661,6 +677,8 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 
 	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
+	assert.Equal(t, "output path validation failed: "+expectedErr.Error(), err.Error(),
+		"the wrap must keep the wording it had before it was structured")
 }
 
 // TestExecuteGroup_MultipleCommands tests execution of multiple commands in sequence
@@ -1294,6 +1312,8 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 	// Assert
 	require.ErrorIs(t, err, expectedErr)
 	assert.Nil(t, result)
+	assert.Equal(t, "resolved environment variables security validation failed: "+expectedErr.Error(), err.Error(),
+		"the wrap must keep the wording it had before it was structured")
 
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockValidator.AssertExpectations(t)
@@ -3585,12 +3605,30 @@ func TestAuditGroupDirPermissions_AbsolutePathContainingBraceIsStillChecked(t *t
 		"an absolute path containing %%{ must still be checked; it is a literal, not an unexpanded reference")
 }
 
+// assertDeclaredRoles checks the Identifier and Path segments a structured
+// error declares, in the order they are flattened.
+func assertDeclaredRoles(t *testing.T, segments errmsg.Segments, wantIdentifiers, wantPaths []string) {
+	t.Helper()
+	var identifiers, paths []string
+	for _, segment := range segments {
+		switch segment.Role {
+		case errmsg.RoleIdentifier:
+			identifiers = append(identifiers, segment.Text)
+		case errmsg.RolePath:
+			paths = append(paths, segment.Text)
+		}
+	}
+	assert.Equal(t, wantIdentifiers, identifiers, "Identifier segments")
+	assert.Equal(t, wantPaths, paths, "Path segments")
+}
+
 // TestExecuteGroup_PreExecutionStageErrors fails ExecuteGroup at each
 // pre-execution failure site and pins the stage, the group and command names,
-// and the message the returned *GroupStageError carries. Rows that feed
-// hostile text also pin the precondition the Slack builder relies on: a raw
-// template reaches the message as is (newlines included), while command paths
-// are %q-quoted so their newlines and format characters are escaped.
+// the message the returned *GroupStageError carries, and the roles the wrap
+// declares. Rows that feed hostile text also pin the precondition the Slack
+// builder relies on: a raw template reaches the message as is (newlines
+// included), while command paths are %q-quoted so their newlines and format
+// characters are escaped.
 func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 	const (
 		groupName = "test-group"
@@ -3633,11 +3671,17 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		setup       func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec)
-		wantStage   GroupStage
-		wantCommand string
-		checkErr    func(t *testing.T, err error, msg string)
+		name            string
+		setup           func(t *testing.T) (*DefaultGroupExecutor, *runnertypes.GroupSpec)
+		wantStage       GroupStage
+		wantCommand     string
+		wantIdentifiers []string
+		wantPaths       []string
+		// wantSegments, when set, pins every role and string of the wrap. The
+		// rows that use it have a cause the phase leaves unstructured, so the
+		// expectation stays valid when a later phase structures other causes.
+		wantSegments errmsg.Segments
+		checkErr     func(t *testing.T, err error, msg string)
 	}{
 		{
 			// #1: group expansion. The template is multi-line, as a TOML
@@ -3649,7 +3693,8 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				group.EnvVars = []string{"MULTI=first line\n%{UNDEFINED_VAR}\nlast line"}
 				return ge, group
 			},
-			wantStage: GroupStageGroupPreparation,
+			wantStage:       GroupStageGroupPreparation,
+			wantIdentifiers: []string{"test-group"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg, "failed to expand group[test-group]: "), msg)
@@ -3680,8 +3725,9 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				ge := executorWith(t, nil)
 				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo", Args: []string{"%{UNDEFINED_VAR}"}})
 			},
-			wantStage:   GroupStageCommandPreparation,
-			wantCommand: cmdName,
+			wantStage:       GroupStageCommandPreparation,
+			wantCommand:     cmdName,
+			wantIdentifiers: []string{"test-group", "test-cmd"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg, "failed to pre-expand commands for group[test-group]: command[test-cmd] (index 0): "), msg)
@@ -3695,8 +3741,9 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				ge := executorWith(t, nil)
 				return ge, oneCommandGroup(runnertypes.CommandSpec{Name: cmdName, Cmd: "/bin/echo", WorkDir: new("/tmp/%{UNDEFINED_VAR}/path")})
 			},
-			wantStage:   GroupStageCommandPreparation,
-			wantCommand: cmdName,
+			wantStage:       GroupStageCommandPreparation,
+			wantCommand:     cmdName,
+			wantIdentifiers: []string{"test-group", "test-cmd"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, config.ErrUndefinedVariable)
 				assert.True(t, strings.HasPrefix(msg,
@@ -3721,7 +3768,8 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 				group.VerifyFiles = []string{filepath.Join(worldWritable, "target.txt")}
 				return ge, group
 			},
-			wantStage: GroupStageDirPermissionAudit,
+			wantStage:       GroupStageDirPermissionAudit,
+			wantIdentifiers: []string{"test-group"},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, ErrDirPermViolation)
 				assert.True(t, strings.HasPrefix(msg, "directory permission audit failed for group[test-group]: "), msg)
@@ -3757,6 +3805,13 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			},
 			wantStage:   GroupStageCommandVerification,
 			wantCommand: cmdName,
+			wantPaths:   []string{fmt.Sprintf("%q", hostilePath)},
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command path resolution failed for "},
+				{Role: errmsg.RolePath, Text: fmt.Sprintf("%q", hostilePath)},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "injected cause"},
+			},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.True(t, strings.HasPrefix(msg, "command path resolution failed for "), msg)
@@ -3777,6 +3832,13 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			},
 			wantStage:   GroupStageCommandVerification,
 			wantCommand: cmdName,
+			wantPaths:   []string{fmt.Sprintf("%q", hostilePath)},
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command dependency verification failed for "},
+				{Role: errmsg.RolePath, Text: fmt.Sprintf("%q", hostilePath)},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "injected cause"},
+			},
 			checkErr: func(t *testing.T, err error, msg string) {
 				require.ErrorIs(t, err, errCause)
 				assert.Equal(t, fmt.Sprintf("command dependency verification failed for %q: %s", hostilePath, errCause), msg)
@@ -3797,6 +3859,13 @@ func TestExecuteGroup_PreExecutionStageErrors(t *testing.T) {
 			assert.Equal(t, tt.wantStage, stageErr.Stage())
 			assert.Equal(t, groupName, stageErr.GroupName())
 			assert.Equal(t, tt.wantCommand, stageErr.CommandName())
+			// The expected identifiers are only the wrap's own: the causes in
+			// this table are unstructured during this phase. A later phase that
+			// makes a cause structured adds its own Identifier segments here.
+			assertDeclaredRoles(t, stageErr.StructuredMessage().Segments(), tt.wantIdentifiers, tt.wantPaths)
+			if tt.wantSegments != nil {
+				assert.Equal(t, tt.wantSegments, stageErr.StructuredMessage().Segments())
+			}
 			tt.checkErr(t, err, stageErr.Error())
 		})
 	}
