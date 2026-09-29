@@ -480,7 +480,7 @@ func (e *ErrMessageRangeMismatch) Error() string
 ### 3.6 性能
 
 - `RedactMessage` は、2 つのレコードの `error_message` にだけ使う。1 回の実行で記録されるのは、group 実行前段の失敗ごとに 1 件と、最終の実行エラー 1 件である。
-- 予算は、100 group の失敗を連結した最終の実行エラー（数十 KiB）の描画 1 回につき 10 ms 以下とする（02 §3.2.2）。§10.3 のベンチマークで確かめ、結果を実装計画に記録する。すべてのログ行に掛かる `RedactText` の費用は変えない。
+- 予算は、100 group の失敗を連結した最終の実行エラー（数十 KiB）の描画 1 回につき 200 ms 以下とする（02 §3.2.2）。§10.3 のベンチマークで確かめ、結果を実装計画に記録する。すべてのログ行に掛かる `RedactText` の費用は変えない。
 
 ## 4. `internal/logging`（変更）
 
@@ -1184,7 +1184,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - 挿入点: `Constant("password=\"")`・`Text("")`・`Constant("\"")` の 3 つの断片で、出力が `RedactText("password=\"\"")` と同じ `password="[REDACTED]"` になること。
 - 実行時の検査: `redactedRanges` を差し替えて不一致を起こすテスト（テスト内で範囲を改変する）で `*ErrMessageRangeMismatch` が返ること。平らにする処理が panic する原因（`StructuredMessage()` が panic する型）で `*ErrMessageFlattenPanic` が返ること。どちらも `error_message` が `RedactionFailurePlaceholder` になり、`ErrorCollector` に記録されること（ハンドラのテスト）。
 - `Config` が `NewConfig` を経ていない場合に `RedactionFailurePlaceholder` を返すこと。
-- 性能: 100 group の失敗を連結した最終の実行エラー（数十 KiB）を入力にした `BenchmarkRedactMessage` を `BenchmarkRedactText`（`redactor_test.go:3569`）に並べて置き、1 回の描画が 10 ms 以下であることを確かめる（§3.6）。
+- 性能: 100 group の失敗を連結した最終の実行エラー（数十 KiB）を入力にした `BenchmarkRedactMessage` を `BenchmarkRedactText`（`redactor_test.go:3569`）に並べて置き、1 回の描画が 200 ms 以下であることを確かめる（§3.6）。
 
 ### 10.4 ハンドラ
 

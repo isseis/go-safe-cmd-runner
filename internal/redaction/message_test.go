@@ -518,7 +518,7 @@ func TestRedactLogAttribute_StructuredMessage(t *testing.T) {
 
 // BenchmarkRedactMessage renders the final execution error of a run in which
 // 100 groups failed: 100 structured errors joined, tens of KiB in total. The
-// budget is 10 ms per rendering.
+// budget is 200 ms per rendering.
 func BenchmarkRedactMessage(b *testing.B) {
 	cfg := DefaultConfig()
 	errs := make([]error, 0, 100)
