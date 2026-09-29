@@ -746,16 +746,21 @@ func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struc
 }
 
 // checkPartConstruction reports any exported or embedded field of
-// errmsg.Part and, outside errmsg, every composite literal of type
-// errmsg.Part. It returns whether the Part struct was found.
+// errmsg.Part, every composite literal of type errmsg.Part outside
+// errmsgPartBuilders, and inside errmsg every assignment to a field of Part. It
+// returns whether the Part struct was found.
 func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 	partName, _ := s.errmsg.Scope().Lookup("Part").(*types.TypeName)
 	if partName == nil {
 		return false, nil
 	}
 	part := partName.Type()
+	partFields := map[*types.Var]struct{}{}
 	if st, ok := part.Underlying().(*types.Struct); ok {
 		partFound = true
+		for field := range st.Fields() {
+			partFields[field] = struct{}{}
+		}
 		for field := range st.Fields() {
 			switch f := field; {
 			case f.Embedded():
@@ -767,19 +772,55 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 	}
 
 	for _, p := range s.pkgs {
-		if p.dir == errmsgDir {
-			continue
-		}
 		for _, f := range p.files {
-			ast.Inspect(f.file, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.CompositeLit); ok && types.Identical(p.info.Types[lit].Type, part) {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.Part is built outside errmsg; use its constructors", position(lit.Pos())))
+			for _, decl := range f.file.Decls {
+				key := ""
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					key = funcKey(fd)
 				}
-				return true
-			})
+				builder := p.dir == errmsgDir && slices.Contains(errmsgPartBuilders, key)
+				ast.Inspect(decl, func(n ast.Node) bool {
+					if lit, ok := n.(*ast.CompositeLit); ok && !builder && types.Identical(p.info.Types[lit].Type, part) {
+						violations = append(violations, fmt.Sprintf("%s: errmsg.Part is built outside errmsg's part builders; use its constructors", position(lit.Pos())))
+					}
+					// Fields are unexported, so only errmsg can write one.
+					for _, target := range writeTargets(n) {
+						if sel, ok := identitymutationguard.UnwrapParen(target).(*ast.SelectorExpr); ok {
+							if _, isPart := partFields[p.info.Uses[sel.Sel].(*types.Var)]; isPart {
+								violations = append(violations, fmt.Sprintf("%s: a field of errmsg.Part is written; a role is chosen only by errmsg's part builders", position(target.Pos())))
+							}
+						}
+					}
+					return true
+				})
+			}
 		}
 	}
 	return partFound, violations
+}
+
+// errmsgPartBuilders are the only functions of errmsg (keyed as funcKey)
+// allowed to build a Part literal; errmsgRoleChoosers fixes their callers.
+var errmsgPartBuilders = []string{"rolePart", "causePart"}
+
+// writeTargets returns the expressions n may write through: assigned,
+// incremented, ranged into, or addressed.
+func writeTargets(n ast.Node) []ast.Expr {
+	switch n := n.(type) {
+	case *ast.AssignStmt:
+		return n.Lhs
+	case *ast.IncDecStmt:
+		return []ast.Expr{n.X}
+	case *ast.RangeStmt:
+		if n.Tok == token.ASSIGN {
+			return []ast.Expr{n.Key, n.Value}
+		}
+	case *ast.UnaryExpr:
+		if n.Op == token.AND {
+			return []ast.Expr{n.X}
+		}
+	}
+	return nil
 }
 
 // TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg pins that a
@@ -807,6 +848,14 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			name: "a Part-like type of another package is not tracked",
 			file: guardFile{"internal/x/x.go", "package x\n\ntype Part struct{ Role int }\n\nvar _ = Part{Role: 1}\n\nfunc Parts() []Part { return nil }\n"},
 		},
+		{name: "Part literal in a new errmsg function", file: guardFile{errmsgDir + "/y.go", "package errmsg\n\nfunc MakeIdent(s string) Part { return Part{role: RoleIdentifier, text: s} }\n"}, want: 1},
+		{name: "Part field written through an embedding struct", file: guardFile{errmsgDir + "/y.go", "package errmsg\n\ntype w struct{ Part }\n\nfunc setRole(p *w) { p.role = RoleIdentifier }\n"}, want: 1},
+		{
+			name: "Part field incremented, addressed and ranged into",
+			file: guardFile{errmsgDir + "/y.go", "package errmsg\n\nfunc bump(p *Part) {\n\tp.role++\n\tr := &p.role\n\t*r = RoleIdentifier\n\tfor _, p.role = range []Role{RolePath} {\n\t}\n}\n"},
+			want: 3,
+		},
+		{name: "Part field written inside errmsg", file: guardFile{errmsgDir + "/y.go", "package errmsg\n\nfunc setRole(p *Part) { p.role = RoleIdentifier }\n"}, want: 1},
 		{name: "exported Part field", errmsg: "package errmsg\n\ntype Part struct {\n\tRole int\n}\n", file: guardFile{"internal/x/x.go", "package x\n"}, want: 1},
 	}
 	for _, tt := range tests {
@@ -952,6 +1001,10 @@ func (s *guardSet) movesPartsOnly(p *typedPackage, fun ast.Expr) bool {
 	case *types.Builtin:
 		return true
 	case *types.Func:
+		if obj.Pkg() == nil {
+			// A universe method, such as error's Error, knows nothing of Parts.
+			return true
+		}
 		_, mover := partMoverPackages[obj.Pkg().Path()]
 		return obj.Pkg() == s.errmsg || mover
 	default:
@@ -961,13 +1014,13 @@ func (s *guardSet) movesPartsOnly(p *typedPackage, fun ast.Expr) bool {
 
 // handsPartOut reports whether call can give its caller a Part: through a
 // result, or through a parameter that reaches the caller's memory. A Part
-// passed by value, alone or as a fresh variadic list, only goes in.
+// passed by value, alone, in a struct or array, or as a fresh variadic list,
+// only goes in.
 func (s *guardSet) handsPartOut(p *typedPackage, call *ast.CallExpr) bool {
 	sig, ok := p.info.Types[call.Fun].Type.Underlying().(*types.Signature)
 	if !ok {
 		return false
 	}
-	part := s.errmsg.Scope().Lookup("Part").Type()
 	if s.containsPart(sig.Results(), map[*types.TypeName]struct{}{}) {
 		return true
 	}
@@ -976,11 +1029,48 @@ func (s *guardSet) handsPartOut(p *typedPackage, call *ast.CallExpr) bool {
 		if sig.Variadic() && i == sig.Params().Len()-1 && !call.Ellipsis.IsValid() {
 			t = t.(*types.Slice).Elem()
 		}
-		if !types.Identical(t, part) && s.containsPart(t, map[*types.TypeName]struct{}{}) {
+		if s.reachesCaller(t, map[*types.TypeName]struct{}{}) {
 			return true
 		}
 	}
 	return false
+}
+
+// reachesCaller reports whether a parameter of type t can carry a Part back to
+// the caller: a Part is reached through a pointer, slice, map, channel,
+// function or interface, not through a copied value.
+func (s *guardSet) reachesCaller(t types.Type, visiting map[*types.TypeName]struct{}) bool {
+	if types.Identical(t, s.errmsg.Scope().Lookup("Part").Type()) {
+		return false
+	}
+	switch u := types.Unalias(t).(type) {
+	case *types.Struct:
+		for field := range u.Fields() {
+			if s.reachesCaller(field.Type(), visiting) {
+				return true
+			}
+		}
+		return false
+	case *types.Array:
+		return s.reachesCaller(u.Elem(), visiting)
+	case *types.Named:
+		if _, isStruct := u.Underlying().(*types.Struct); !isStruct {
+			if _, isArray := u.Underlying().(*types.Array); !isArray {
+				return s.containsPart(u, visiting)
+			}
+		}
+		if u.Obj().Pkg() == s.errmsg {
+			return false
+		}
+		if _, seen := visiting[u.Obj()]; seen {
+			return false
+		}
+		visiting[u.Obj()] = struct{}{}
+		defer delete(visiting, u.Obj())
+		return s.reachesCaller(u.Underlying(), visiting)
+	default:
+		return s.containsPart(t, visiting)
+	}
 }
 
 // isAllowedPartForm reports whether e is a form through which a Part may flow
@@ -1135,6 +1225,18 @@ func TestPartFlowCheckRecognizesForms(t *testing.T) {
 				runner("func (r *Runner) Other(s string) []errmsg.Message {\n\tvar parts []errmsg.Part\n\tadd := func(p errmsg.Part) { parts = append(parts, p) }\n\tadd(errmsg.Const(\"x\"))\n" +
 					"\tadd(func() errmsg.Part { return errmsg.Text(s) }())\n\treturn []errmsg.Message{errmsg.NewMessage(parts...), withPrefix(errmsg.Text(s)), joinAll(errmsg.Const(\"a\"), errmsg.Text(s))}\n}\n"),
 			},
+		},
+		{
+			name: "Parts passed by value inside a struct or array",
+			files: []guardFile{
+				stage("type pair struct{ P errmsg.Part }\n\nfunc consume(v pair, a [2]errmsg.Part) errmsg.Message { return errmsg.NewMessage(v.P, a[0]) }\n"),
+				runner("func (r *Runner) Other(s string, err error) (errmsg.Message, string) {\n\treturn consume(pair{P: errmsg.Text(s)}, [2]errmsg.Part{errmsg.Const(\"a\"), errmsg.Text(s)}), err.Error()\n}\n"),
+			},
+		},
+		{
+			name:  "Part slice inside a struct reaches the caller",
+			files: []guardFile{stage("type bag struct{ ps []errmsg.Part }\n\nfunc fillBag(b bag) { b.ps[0] = errmsg.Ident(\"x\") }\n"), runner("func (r *Runner) Other(ps []errmsg.Part) { fillBag(bag{ps: ps}) }\n")},
+			want:  1,
 		},
 		{
 			name:  "field holding a Part",
