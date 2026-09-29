@@ -200,3 +200,81 @@ func maskPrivateKeyBlocks(text, escapedPlaceholder string) string {
 func (d *ValueDetector) maskPrivateKeyBlocks(text string) string {
 	return maskPrivateKeyBlocks(text, strings.ReplaceAll(d.placeholder, "$", "$$"))
 }
+
+// maskStep is one rewriting step of Mask expressed as the part of each match it
+// replaces with the placeholder. The rest of the match is what the step's
+// replacement template re-emits, so replacing each span returned by
+// replacedSpans with the placeholder reproduces that step's ReplaceAllString.
+type maskStep struct {
+	re *regexp.Regexp
+	// replaced returns the replaced part of one match, m being one element of
+	// FindAllStringSubmatchIndex.
+	replaced func(m []int) byteRange
+}
+
+// replacedSpans returns the spans of text this step replaces, sorted and
+// non-overlapping, in text's coordinates.
+func (s maskStep) replacedSpans(text string) []byteRange {
+	matches := s.re.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	spans := make([]byteRange, len(matches))
+	for i, m := range matches {
+		spans[i] = s.replaced(m)
+	}
+	return spans
+}
+
+// The replaced part of a match for each replacement template Mask uses. Each
+// relies on the regex's kept groups sitting at the edges of the match, which is
+// how every pattern above is written.
+
+// wholeMatch is the replaced part for the template "PLACEHOLDER".
+func wholeMatch(m []int) byteRange { return byteRange{start: m[0], end: m[1]} }
+
+// afterGroup1 is the replaced part for "${1}PLACEHOLDER".
+func afterGroup1(m []int) byteRange { return byteRange{start: m[3], end: m[1]} }
+
+// betweenGroups1And2 is the replaced part for "${1}PLACEHOLDER${2}".
+func betweenGroups1And2(m []int) byteRange { return byteRange{start: m[3], end: m[4]} }
+
+// beforeGroup1 is the replaced part for "PLACEHOLDER${1}".
+func beforeGroup1(m []int) byteRange { return byteRange{start: m[0], end: m[2]} }
+
+// afterGroup1BeforeFinalAt is the replaced part for "${1}PLACEHOLDER@", used by
+// urlCred, whose match always ends with the "@" the template re-emits.
+func afterGroup1BeforeFinalAt(m []int) byteRange { return byteRange{start: m[3], end: m[1] - 1} }
+
+// privateKeyBlockSteps returns the steps of maskPrivateKeyBlocks in the order it
+// applies them.
+func privateKeyBlockSteps() []maskStep {
+	return []maskStep{
+		{re: valueDetectorPatterns.pemPrivate, replaced: wholeMatch},
+		{re: valueDetectorPatterns.pemPrivateUnterminated, replaced: wholeMatch},
+	}
+}
+
+// maskSteps returns the steps of Mask in the order Mask applies them. Mask is not
+// written in terms of this list, so the order appears twice; the differential
+// test in ranges_test.go is what keeps the two in step.
+func (d *ValueDetector) maskSteps() []maskStep {
+	steps := []maskStep{
+		{re: valueDetectorPatterns.awsKeyID, replaced: wholeMatch},
+		{re: valueDetectorPatterns.githubToken, replaced: wholeMatch},
+		{re: valueDetectorPatterns.slackToken, replaced: wholeMatch},
+	}
+	steps = append(steps, privateKeyBlockSteps()...)
+	steps = append(steps,
+		maskStep{re: valueDetectorPatterns.gcpSAKey, replaced: betweenGroups1And2},
+		maskStep{re: valueDetectorPatterns.bearerToken, replaced: afterGroup1},
+		maskStep{re: valueDetectorPatterns.urlCred, replaced: afterGroup1BeforeFinalAt},
+		maskStep{re: valueDetectorPatterns.githubPAT, replaced: wholeMatch},
+		maskStep{re: valueDetectorPatterns.slackPrefixToken, replaced: wholeMatch},
+		maskStep{re: valueDetectorPatterns.jwt, replaced: beforeGroup1},
+	)
+	if d.webhookHostURL != nil {
+		steps = append(steps, maskStep{re: d.webhookHostURL, replaced: afterGroup1})
+	}
+	return steps
+}
