@@ -14,8 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
-// DefaultPlaceholder is the text substituted for a redacted secret unless
-// WithPlaceholder overrides it.
+// DefaultPlaceholder is the text substituted for a redacted secret.
 const DefaultPlaceholder = "[REDACTED]"
 
 // Config controls how sensitive information is redacted.
@@ -77,6 +76,11 @@ type compiledPattern struct {
 	// replacement is the template handed to Regexp.ReplaceAllString, with the
 	// placeholder's "$" already escaped. Empty for the keyed-value rule.
 	replacement string
+	// keptGroups is the number of leading capture groups replacement re-emits
+	// ahead of the placeholder; the rest of the match is what gets replaced.
+	// replacement is built from it, so the two cannot disagree. Unused by the
+	// keyed-value rule.
+	keptGroups int
 	// placeholder is the raw text, used by the keyed-value rule, which writes it
 	// into a strings.Builder rather than through replacement expansion and so
 	// must not have its "$" escaped.
@@ -98,17 +102,18 @@ func compilePattern(p KeyValuePattern, placeholder string) (compiledPattern, err
 	escaped := regexp.QuoteMeta(p.Literal)
 	escapedPlaceholder := escapeReplacementDollars(placeholder)
 
-	var expr, replacement string
+	var expr string
 	keyedValue := false
+	keptGroups := 0
 	switch p.Kind {
 	case PatternKindHeaderValue:
 		// header + separator + optional auth scheme, then the value to end of line
 		expr = `(?i)(` + escaped + `)([ \t]*:[ \t]*)((?:bearer |basic )?)[^\r\n]*`
-		replacement = "${1}${2}${3}" + escapedPlaceholder
+		keptGroups = 3
 	case PatternKindNextToken:
 		// literal followed by one or more non-whitespace characters
 		expr = `(?i)(` + escaped + `)(\S+)`
-		replacement = "${1}" + escapedPlaceholder
+		keptGroups = 1
 	case PatternKindKeyedValue:
 		expr = buildKeyValueRegex(escaped, keyBoundaryGroup(p.Literal))
 		keyedValue = true
@@ -129,13 +134,25 @@ func compilePattern(p KeyValuePattern, placeholder string) (compiledPattern, err
 	cp := compiledPattern{
 		keyedValue:  keyedValue,
 		re:          re,
-		replacement: replacement,
 		placeholder: placeholder,
 	}
 	if keyedValue {
 		cp.valueGroups = keyValueValueGroups(re)
+	} else {
+		cp.keptGroups = keptGroups
+		cp.replacement = keptGroupsTemplate(keptGroups) + escapedPlaceholder
 	}
 	return cp, nil
+}
+
+// keptGroupsTemplate returns the replacement template fragment re-emitting
+// capture groups 1 through n, e.g. "${1}${2}" for 2.
+func keptGroupsTemplate(n int) string {
+	var b strings.Builder
+	for g := 1; g <= n; g++ {
+		fmt.Fprintf(&b, "${%d}", g)
+	}
+	return b.String()
 }
 
 // apply runs this rule over the text.
@@ -146,31 +163,56 @@ func (cp *compiledPattern) apply(text string) string {
 	return cp.re.ReplaceAllString(text, cp.replacement)
 }
 
+// replacedSpans returns the spans of text that apply replaces with the
+// placeholder, sorted and non-overlapping, in text's coordinates. It finds the
+// same matches apply does and keeps what apply copies through: the kept groups
+// of a template rule, and everything but the value of a keyed-value match.
+func (cp *compiledPattern) replacedSpans(text string) []byteRange {
+	matches := cp.re.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	spans := make([]byteRange, 0, len(matches))
+	for _, m := range matches {
+		if cp.keyedValue {
+			start, end, ok := matchedValueSpan(cp.valueGroups, m)
+			if !ok {
+				// replaceKeyValueMatches copies such a match verbatim.
+				continue
+			}
+			spans = append(spans, byteRange{start: start, end: end})
+			continue
+		}
+		start := m[0]
+		if cp.keptGroups > 0 {
+			start = m[2*cp.keptGroups+1]
+		}
+		spans = append(spans, byteRange{start: start, end: m[1]})
+	}
+	return spans
+}
+
+// replaceSpans returns text with each span replaced by placeholder; a
+// zero-width span inserts placeholder at its position. spans must be sorted and
+// non-overlapping, as redactedRanges returns them.
+func replaceSpans(text string, spans []byteRange, placeholder string) string {
+	if len(spans) == 0 {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(len(text) + len(spans)*len(placeholder))
+	last := 0
+	for _, sp := range spans {
+		b.WriteString(text[last:sp.start])
+		b.WriteString(placeholder)
+		last = sp.end
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
 // Option customizes the Config built by NewConfig.
 type Option func(*Config)
-
-// WithPlaceholder replaces the text substituted for a redacted secret. The
-// value-format detector is built from the same placeholder, so this applies to
-// both redaction layers.
-func WithPlaceholder(placeholder string) Option {
-	return func(c *Config) {
-		c.placeholder = placeholder
-	}
-}
-
-// WithAdditionalKeyValuePatterns appends patterns to the default key-name set.
-// This is the supported way to declare that a key name marks a secret in a
-// particular deployment; the added patterns are validated along with the
-// defaults, and they are classified into boundary groups by the same rules the
-// defaults are - so a key that happens to be an ordinary English word gets the
-// strict boundary here too, and matches less than the loose one would. Which
-// words those are is a property of the language, not of what a caller declares:
-// see commonWordKeys.
-func WithAdditionalKeyValuePatterns(patterns ...KeyValuePattern) Option {
-	return func(c *Config) {
-		c.keyValuePatterns = append(c.keyValuePatterns, patterns...)
-	}
-}
 
 // WithWebhookHost declares the hostname this deployment posts its webhook
 // notifications to, so that every URL path under that host is masked.
@@ -207,8 +249,8 @@ func NewConfig(opts ...Option) (*Config, error) {
 		opt(c)
 	}
 
-	// Built after the options so that WithPlaceholder and WithWebhookHost reach
-	// the value-format layer too.
+	// Built after the options so that WithWebhookHost reaches the value-format
+	// layer.
 	var webhookHostPattern *regexp.Regexp
 	if c.webhookHost != "" {
 		var err error
@@ -414,9 +456,9 @@ const (
 // commonWordKeys holds the lower-cased keys classified as
 // boundaryGroupCommonWord. It is deliberately not a configuration item:
 // whether a word is frequent in English prose is a property of the language,
-// not of a deployment. Adding a pattern to KeyValuePatterns is instead read as a
-// declaration that the key marks a secret, which is why user-added keys default
-// to the loose boundary. Read-only after init.
+// not of the pattern set. Adding a pattern to DefaultKeyValuePatterns is instead
+// read as a declaration that the key marks a secret, which is why added keys
+// default to the loose boundary. Read-only after init.
 var commonWordKeys = map[string]struct{}{
 	"key":    {},
 	"token":  {},

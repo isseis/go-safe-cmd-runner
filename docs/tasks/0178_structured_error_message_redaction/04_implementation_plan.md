@@ -203,22 +203,22 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 2: `internal/redaction` の置き換え範囲の関数とオプションの削除
 
 **Files**: `internal/redaction/ranges.go`（新規）、`internal/redaction/ranges_test.go`（新規）、`internal/redaction/redactor.go`・`value_detector.go`（変更）、`internal/redaction/redactor_test.go`（変更）
 
-- [ ] `redactor.go` の `compiledPattern` に、`compilePattern` が置換テンプレートから求めた「残すグループの添字」を持たせ、置き換える範囲を返す非公開のメソッドを追加する。`apply` は変えない（03 §3.1.1）。
-- [ ] `value_detector.go` に、各規則の置き換える範囲を返す非公開の関数を追加する。`valueDetectorPatterns` の正規表現と `Mask` の置換テンプレートと同じ残す範囲を使い、`Mask` は変えない（03 §3.1.1・§3.1.2）。
-- [ ] `ranges.go` に `byteRange` と `redactedRanges`（PEM → key=value → 値形式の順、ピーステーブルによる段の重なりと座標の写し、幅 0 の範囲）を実装する（03 §3.1.3・§3.1.4）。
-- [ ] `redactor.go` に `replaceSpans` を追加する（`redactedRanges` の確認と `RedactMessage` の実行時の検査で使う）。
-- [ ] `WithPlaceholder`（`redactor.go:155-159`）とそのコメントを削除する。`Config.Placeholder()` は残す。
-- [ ] `WithAdditionalKeyValuePatterns`（`redactor.go:169-173`）を削除する。`NewConfig` の検証・コンパイル失敗の分岐は残す。
-- [ ] `ranges_test.go` に 03 §10.2 の差分テストと `FuzzRedactedRangesMatchesRedactText` を置く。種には既存の `RedactText` のテストの入力をすべて含め、残す範囲の種類・段の重なり・空の引用の値・`DefaultPlaceholder` が関与しない入力・`WithWebhookHost` の入力を加える。
-- [ ] §1.3 の削除・書き換え台帳の 6 項目を 1 項目ずつ実施する。
-- [ ] `go tool cover -func` を関数ごとに比較し、`WithPlaceholder`・`WithAdditionalKeyValuePatterns` の消滅と `NewConfig` の分岐の網羅率の差をコミットメッセージに記録する。
+- [x] `redactor.go` の `compiledPattern` に「残す先頭のグループの数」（`keptGroups`）を持たせ、置き換える範囲を返す非公開のメソッド（`replacedSpans`）を追加する。`compilePattern` は置換テンプレートをこの数から組み立てる（`keptGroupsTemplate`。組み立てた文字列は変更前と同じ）ので、テンプレートと範囲の導出が同じ定義を共有する。`apply` は変えない（03 §3.1.1）。
+- [x] `value_detector.go` に、各規則の置き換える範囲を返す非公開の関数を追加する。`valueDetectorPatterns` の正規表現と `Mask` の置換テンプレートと同じ残す範囲を使い、`Mask` は変えない（03 §3.1.1・§3.1.2）。
+- [x] `ranges.go` に `byteRange` と `redactedRanges`（PEM → key=value → 値形式の順、ピーステーブルによる段の重なりと座標の写し、幅 0 の範囲）を実装する（03 §3.1.3・§3.1.4）。
+- [x] `redactor.go` に `replaceSpans` を追加する（`redactedRanges` の確認と `RedactMessage` の実行時の検査で使う）。
+- [x] `WithPlaceholder`（`redactor.go:155-159`）とそのコメントを削除する。`Config.Placeholder()` は残す。
+- [x] `WithAdditionalKeyValuePatterns`（`redactor.go:169-173`）を削除する。`NewConfig` の検証・コンパイル失敗の分岐は残す。
+- [x] `ranges_test.go` に 03 §10.2 の差分テストと `FuzzRedactedRangesMatchesRedactText` を置く。種には既存の `RedactText` のテストの入力をすべて含め、残す範囲の種類・段の重なり・空の引用の値・`DefaultPlaceholder` が関与しない入力・`WithWebhookHost` の入力を加える。
+- [x] §1.3 の削除・書き換え台帳の 6 項目を 1 項目ずつ実施する。
+- [x] `go tool cover -func` を関数ごとに比較し、`WithPlaceholder`・`WithAdditionalKeyValuePatterns` の消滅と `NewConfig` の分岐の網羅率の差をコミットメッセージに記録する。
 
 **完了条件**: `TestRedactedRanges_MatchesRedactText` と `FuzzRedactedRangesMatchesRedactText`（短時間の実行でよい）が green。既存の `RedactText` のテストが変更なしで通る。削除したテストの旧い記述が残っていない。02 §8 の手順 2 の「性能の確認」は、`redactedRanges` の呼び出し元が Phase 3 で現れるため、Phase 3 の `BenchmarkRedactMessage` で確かめる（この Phase では `redactedRanges` 単体の性能を測らない）。
 
@@ -229,6 +229,11 @@
 - **レビュー観点**: `RedactText` の挙動が変わっていないこと、規則と段の順序が写しになっていないこと、段の重なりと幅 0 の範囲の扱い、差分テストとファジングの種が残す範囲・重なり・挿入点を網羅すること、オプション削除後の網羅率の差が記録されていること
 - **実装モデル要件**: frontier-required
 - **判定理由**: 秘密の漏れに直結する範囲の導出であり、`RedactText` との一致義務をテストと実行時の検査の両方で負う。設計の正しさがそのまま安全性になる
+
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 3: `Config.RedactMessage` とハンドラの分岐
 

@@ -589,7 +589,8 @@ func TestRedactText_KeyGroupBehavior(t *testing.T) {
 }
 
 // TestKeyBoundaryGroup_Classification tests that every default key lands in the
-// intended boundary group, and that a user-added key gets the loose boundary.
+// intended boundary group, and that a key added to the defaults gets the loose
+// boundary.
 func TestKeyBoundaryGroup_Classification(t *testing.T) {
 	tests := []struct {
 		key      string
@@ -604,10 +605,10 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 		{key: "_TOKEN", expected: boundaryGroupPrefixed},
 		{key: "_KEY", expected: boundaryGroupPrefixed},
 		{key: "_SECRET", expected: boundaryGroupPrefixed},
-		// A key the user adds is treated as a declaration that the key marks a
-		// secret, so it gets the loose boundary rather than the strict one - unless
-		// it is one of the common words below, which is decided by the key string
-		// and not by who added it.
+		// A key added to the defaults is treated as a declaration that the key
+		// marks a secret, so it gets the loose boundary rather than the strict one -
+		// unless it is one of the common words below, which is decided by the key
+		// string and not by who added it.
 		{key: "passphrase", expected: boundaryGroupSpecific},
 		// Case does not affect the common-word lookup.
 		{key: "Token", expected: boundaryGroupCommonWord},
@@ -637,24 +638,11 @@ func TestKeyBoundaryGroup_Classification(t *testing.T) {
 		}
 	})
 
-	// Both cases go through WithAdditionalKeyValuePatterns rather than touching
-	// the field: that option is the extension point 3.2.4 leans on when it argues
-	// user-added keys must default to the loose boundary, so it is the thing worth
-	// pinning here.
-	t.Run("user-added key is redacted with the loose boundary", func(t *testing.T) {
-		config, err := NewConfig(WithAdditionalKeyValuePatterns(
-			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
-		require.NoError(t, err)
-		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
-	})
-
 	t.Run("zero value of PatternKind is the key kind", func(t *testing.T) {
 		// A pattern written without an explicit Kind must fall into the keyed-value rule,
 		// which is the interpretation that assumes the least about the input.
-		config, err := NewConfig(WithAdditionalKeyValuePatterns(
-			KeyValuePattern{Literal: "passphrase"}))
-		require.NoError(t, err)
-		assert.Equal(t, "passphrase: [REDACTED]", config.RedactText("passphrase: xyz"))
+		assert.Equal(t, "passphrase: [REDACTED]",
+			applyPattern(t, KeyValuePattern{Literal: "passphrase"}, DefaultPlaceholder, "passphrase: xyz"))
 	})
 }
 
@@ -1570,10 +1558,6 @@ func TestPerformKeyValueRedaction(t *testing.T) {
 
 		_, err := compilePattern(unknown, "[REDACTED]")
 		assert.ErrorIs(t, err, ErrPatternKindUnknown)
-
-		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(unknown))
-		assert.Nil(t, cfg)
-		assert.ErrorIs(t, err, ErrPatternKindUnknown)
 	})
 }
 
@@ -1701,38 +1685,6 @@ func TestRedactText_ConcurrentUse(t *testing.T) {
 	for i, got := range results {
 		assert.Equal(t, want, got, "goroutine %d must produce the single-threaded result", i)
 	}
-}
-
-// TestNewConfig_RejectsInvalidPatterns checks the constructor boundary: patterns
-// added through the supported extension point are validated exactly like the
-// defaults, so the extension point cannot be used to smuggle in a pattern that
-// redacts nothing.
-func TestNewConfig_RejectsInvalidPatterns(t *testing.T) {
-	t.Run("valid addition is accepted and applied", func(t *testing.T) {
-		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
-			KeyValuePattern{Literal: "passphrase", Kind: PatternKindKeyedValue}))
-		require.NoError(t, err)
-		assert.Equal(t, "passphrase: [REDACTED]", cfg.RedactText("passphrase: xyz"))
-		// The defaults are still in place alongside the addition.
-		assert.Equal(t, "password=[REDACTED]", cfg.RedactText("password=xyz"))
-	})
-
-	t.Run("invalid addition is rejected", func(t *testing.T) {
-		cfg, err := NewConfig(WithAdditionalKeyValuePatterns(
-			KeyValuePattern{Literal: "passphrase=", Kind: PatternKindKeyedValue}))
-		assert.Nil(t, cfg, "no Config may escape the constructor when a pattern is invalid")
-		assert.ErrorIs(t, err, ErrPatternSeparatorRedundant)
-	})
-
-	t.Run("placeholder reaches both redaction layers", func(t *testing.T) {
-		cfg, err := NewConfig(WithPlaceholder("<gone>"))
-		require.NoError(t, err)
-		assert.Equal(t, "<gone>", cfg.Placeholder())
-		// Key-name layer.
-		assert.Equal(t, "password=<gone>", cfg.RedactText("password=xyz"))
-		// Value-format layer, which is built from the same placeholder.
-		assert.Equal(t, "<gone>", cfg.RedactText("AKIAIOSFODNN7EXAMPLE"))
-	})
 }
 
 // TestConfig_ZeroValueFailsSecure covers the one construction the type system
@@ -3349,13 +3301,13 @@ func TestRedactText_BearerTokenIsCoveredByBothLayers(t *testing.T) {
 // detector, so this pins the nil guard for the in-package construction that can
 // still leave it unset.
 func TestRedactText_ValueBasedDetection_BypassWhenNil(t *testing.T) {
-	config, err := NewConfig(WithPlaceholder("[HIDDEN]"))
+	config, err := NewConfig()
 	require.NoError(t, err)
 	config.valueDetector = nil // the state under test
 
 	// Key=value pattern should still work
 	result := config.RedactText("password=secret value AKIAIOSFODNN7EXAMPLE")
-	assert.Equal(t, "password=[HIDDEN] value AKIAIOSFODNN7EXAMPLE", result,
+	assert.Equal(t, "password=[REDACTED] value AKIAIOSFODNN7EXAMPLE", result,
 		"key=value redaction should work, but value-based detection should be skipped")
 }
 
@@ -3761,12 +3713,6 @@ func TestNewConfig_WithWebhookHost(t *testing.T) {
 		c, err := NewConfig(WithWebhookHost("https://mattermost.example.com/hooks"))
 		require.ErrorIs(t, err, ErrInvalidWebhookHost)
 		assert.Nil(t, c)
-	})
-
-	t.Run("the placeholder option reaches the configured-host pattern", func(t *testing.T) {
-		c, err := NewConfig(WithWebhookHost("mattermost.example.com"), WithPlaceholder("[GONE]"))
-		require.NoError(t, err)
-		assert.Equal(t, "https://mattermost.example.com/[GONE]", c.RedactText(webhookURL))
 	})
 }
 
