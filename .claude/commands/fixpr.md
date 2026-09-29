@@ -28,10 +28,13 @@ This loop has no natural end: a push triggers a fresh review, and a review
 returns findings whenever it is asked. Stop by policy, not by exhausting
 findings.
 
-- **Round cap**: apply at most two fixpr rounds to the same PR. From the third
-  round, act on `must-fix` only and leave the rest.
+- **Round cap**: apply at most two full fixpr rounds (addressing all findings)
+  to the same PR. From the third round onward, act on `must-fix` only and
+  leave the rest.
 - **Severity floor**: once every remaining finding is `no-harm` (cosmetic or
   invalid), the review has converged — stop editing and merge.
+- The round cap and the severity floor are enforced by the "Convergence gate"
+  step between Phase 2 and Phase 3.
 - **Batch**: push once per round; a push per finding triggers a review per
   finding.
 - **Accept, don't chase**: a finding that is a mirror case of a rule already
@@ -196,11 +199,11 @@ Agent prompt (inline the fetched `threads` JSON from Phase 1):
 > <inline the full "Shared rules" section (R1–R5) verbatim here>
 >
 > For `"off-level"` threads, also set `behaviorGap`: `true` if the comment
-> reveals an observable behavior the document does not yet require at its own
-> level (e.g. "a timeout must still end the run when a descendant process
-> keeps the pipe open" behind a comment asking for `exec.Cmd.WaitDelay`);
-> `false` if it is purely about the means. Omit `behaviorGap` (or set
-> `false`) for other verdicts.
+> reveals an observable behavior that `01_requirements.md` does not yet
+> require, whichever document was commented on (e.g. "a timeout must still
+> end the run when a descendant process keeps the pipe open" behind a comment
+> asking for `exec.Cmd.WaitDelay`); `false` if it is purely about the means.
+> Set `behaviorGap` to `false` for every other verdict.
 >
 > `severity` — how much does the raised issue actually matter? (judge the
 > underlying concern on its merits, not just whether you will act on it)
@@ -239,10 +242,33 @@ Agent prompt (inline the fetched `threads` JSON from Phase 1):
 Split the returned `threads` into `valid`, `off-level`, `invalid`, `unclear`
 by `verdict`. Report the counts and cluster count before continuing.
 
+## Convergence gate (orchestrator, no agent)
+
+Enforce the Convergence policy yourself before Phase 3:
+
+1. **Round number**: count this PR's earlier fixpr rounds as the commits on
+   the branch carrying the Phase 4 commit subject:
+   `git log --oneline main..HEAD --grep='^fix: address PR #NUMBER review comments$' | wc -l`.
+   This run's round is that count + 1.
+2. **Round cap**: from round 3 on, move every `valid` or `off-level` thread
+   whose `severity` is not `must-fix` out of those sets into `deferred`, and
+   drop cluster entries whose threads are all deferred (remove deferred
+   thread IDs from the rest). Deferred threads are neither fixed nor replied
+   to; they stay unresolved and are listed under "Skipped threads" in the
+   Final report with the reason "round cap (round N): not must-fix".
+3. **Severity floor**: if every triaged thread's `severity` is `no-harm`, set
+   `floorReached`, empty `valid` and `off-level` (move them to `deferred`
+   with the reason "severity floor reached"), and skip Phase 3, Phase 4, and
+   the Phase 6 push; Phase 5 still replies to and resolves `invalid` threads.
+
+From here on, `valid` and `off-level` mean the sets after this gate. Report
+the round number, the deferred count, and whether the floor is reached
+before continuing.
+
 ## Phase 3 — Fix (model: default)
 
-Skip this phase entirely if both `valid` and `off-level` are empty (go
-straight to Phase 4 with no fixes applied).
+Skip this phase entirely if both `valid` and `off-level` are empty after the
+Convergence gate (go straight to Phase 4 with no fixes applied).
 
 Agent prompt (inline `clusters` from Phase 2, the `valid` threads, and the
 `off-level` threads with their `behaviorGap`, `path`, `line`, and comment
@@ -279,9 +305,11 @@ Agent prompt (inline `clusters` from Phase 2, the `valid` threads, and the
 >       observable obligation, and delete one that states only later-phase
 >       mechanics, leaving its ID unused (as the requirements process guide
 >       allows).
->    c. If `behaviorGap` is true, state the missing behavior at the document's
->       level (for the requirements document, an observable condition in the
->       relevant F-/AC- item, not a mechanism).
+>    c. If `behaviorGap` is true, state the missing behavior as an observable
+>       condition in the relevant F-/AC- item of `01_requirements.md`, not a
+>       mechanism — whichever document was commented on, so the plan's AC
+>       traceability covers it. This is a decision change to
+>       `01_requirements.md` (step 4).
 >    d. Record the concern in the handoff document named by R2, using the item
 >       format and dedup rule in R5. A concern raised on the implementation
 >       plan document has no later consumer: R2 sends it to no handoff, so keep
@@ -317,7 +345,7 @@ Agent prompt (inline `clusters` from Phase 2, the `valid` threads, and the
 ## Phase 4 — Build (model: haiku)
 
 Skip this phase (treat as `{success: true, commitSha: ""}`) if both `valid`
-and `off-level` were empty in Phase 2.
+and `off-level` are empty after the Convergence gate.
 
 Agent prompt:
 
@@ -343,9 +371,9 @@ do not run Phase 5 or 6.
 
 Build the candidate list yourself (not via an agent) before invoking this phase:
 
-- Take every thread where `verdict="invalid"`, plus every thread where
-  `verdict` is `"valid"` or `"off-level"` AND `applied=true` in the Phase 3
-  fixes.
+- Take every thread where `verdict="invalid"`, plus every thread in the
+  post-gate `valid` or `off-level` set with `applied=true` in the Phase 3
+  fixes. Threads in `deferred` are never candidates.
 - For each, resolve `replyBody`: use the Phase 3 fix's `replyBody` if present
   (for applied valid and off-level threads), else the Phase 2 triage
   `replyBody`.
@@ -393,6 +421,9 @@ Agent prompt:
 
 ## Phase 6 — Wrap: PR description + push (model: haiku)
 
+Skip this phase if the Convergence gate set `floorReached` (nothing was
+edited, so there is nothing to push).
+
 Agent prompt:
 
 > Verify the PR description is still accurate and push.
@@ -419,9 +450,11 @@ Agent prompt:
 After all phases complete (or a phase aborted early), report the result to
 the user with **both** of the following — bare counts alone are not enough:
 
-1. **Summary line**: PR, fixed / off-level (deferred to a handoff document) /
-   invalid / unclear counts, clusters, and commit SHA (or "no commit" / "build
-   failed" / "no PR found" / "nothing to do" if a phase stopped early).
+1. **Summary line**: PR, round number, fixed / off-level (recorded in a
+   handoff document or retained in the plan) / deferred by the Convergence
+   gate / invalid / unclear counts, clusters, and commit SHA (or "no commit" /
+   "build failed" / "no PR found" / "nothing to do" / "floor reached" if a
+   phase stopped early).
 
 2. **Bot-comment assessment**: a table built from the Phase 2 triage results
    (`topic`, `severity`, `verdict`) plus the Phase 3 `applied` flag, grouped by
@@ -437,12 +470,15 @@ the user with **both** of the following — bare counts alone are not enough:
    (for unresolved/unclear ones) the `url`. Then give a one-line overall read:
    was this round substantive or recurring churn, is the severity floor
    reached (Convergence policy), and is it safe to merge rather than run
-   again. If most threads were off-level, say so: the document is converging
-   and the remaining concerns now wait in the handoff document. Name every
-   process document Phase 3 returned from `approved` to `draft` (edited
-   documents and the later-phase documents reset with them), so the user knows
+   again. If most threads were off-level, say so: the document is converging;
+   handoff-routed concerns now wait in the handoff document, and plan-level
+   concerns are retained in their plan section or task. Name every process
+   document Phase 3 returned from `approved` to `draft` (edited documents,
+   `01_requirements.md` when a `behaviorGap` was stated there, and the
+   later-phase documents reset with them), so the user knows
    it needs re-approval before the next phase proceeds.
 
 3. **Skipped threads**: list every thread left out of Phase 5 (unclear
-   verdict, valid- or off-level-but-unapplied, missing `databaseId`, or empty
-   `replyBody`) with its URL so the user can resolve it manually.
+   verdict, deferred by the Convergence gate with its reason, valid- or
+   off-level-but-unapplied, missing `databaseId`, or empty `replyBody`) with
+   its URL so the user can resolve it manually.
