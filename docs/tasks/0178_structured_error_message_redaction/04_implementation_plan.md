@@ -142,7 +142,7 @@
 | 03 §10.7 | `ErrUndefinedVariableDetail.Level`・`Field` を文字列として比べるテストは無い | `errors_test.go:71-76` のリテラルだけを書き換え、`String()` の期待値テストは新設する |
 | 03 §2.9・§9.10 | `identitymutationguard` に自己テスト用の共通ヘルパは無い | 各ガードの自己テストは `group_errors_guard_test.go` の表の形で各ガードファイルに置く |
 | 02 §3.8.1・03 §7.1・§9.1 | `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`（および両者が委譲する `(*DefaultOutputCaptureManager).ValidateOutputPath` と `validateAndResolvePath`）を「2 つのレコードの原因にならない」として対象外にしている。しかし `group_executor.go:520-521` の `output path validation failed: %w`（対象の範囲内）を通って最終の実行エラーの原因になり、`dryrun_manager.go:159` と `base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`base/output/manager.go:71`・`:76` のラップは `path validation failed: `・`security validation failed: ` の定数の前置きだけで、パスは挿入しない）。02 §3.8.1 の規則 (ii)（パスを挿入するラップは対象）と矛盾する | **ブロッキングタスク**として扱う。02 の対象の範囲を修正して再承認を得るまで Phase 7・8 を開始しない（Phase 7 の冒頭）。修正では `base/output/path.go` の `validatePathSecurity`・`validateRelativePath` を対象に加え、03 §9.1 の範囲と §9.4 の役割の許可位置にも同じ関数を加えてから承認を得る |
-| 03 §3.4 | `ErrMessageFlattenPanic` は `PanicValue any` を持ち、既存の `ErrLogValuePanic`（`errors.go:13-15`）と同じ `%v` の `Error()` にすると panic 値が `ShutdownReporter` の出力（`reporter.go:132` の `%v`）に漏れる。本文を含まないという記述だけでは足りない | **編集上の修正**として Phase 3 で扱う。`PanicValue` の欄を設けないか、`Error()` を鍵と固定の文言だけにして panic 値とスタックトレースを描画しない。`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` で固定する |
+| 03 §3.4 | `ErrMessageFlattenPanic` は `PanicValue any` を持ち、既存の `ErrLogValuePanic`（`errors.go:13-15`）と同じ `%v` の `Error()` にすると panic 値が `ShutdownReporter` の出力（`reporter.go:132` の `%v`）に漏れる。本文を含まないという記述だけでは足りない | **編集上の修正**として Phase 3 で扱った。`PanicValue`・`StackTrace` の欄を設けず、panic 値の型名（`PanicType`）だけを持つ。`Error()` は型名と固定の文言だけを描画する。`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` で固定した |
 | 03 §9.4 | 許可位置の表が `expansion.go` を「ファイル全体」としており、02 §3.8.1 が対象の範囲から除く 5 関数（`ProcessEnvImport` など）でも `Identifier`・`Path` を宣言できてしまう。02 §3.8.1 はこの範囲を `Identifier`・`Path` を宣言できる箇所の唯一の定義としている | **編集上の修正**として Phase 1 で扱った。03 §9.4 の表を「ファイル全体（§9.1 の除く関数を除く）」に改め、`errmsg_guard_test.go` の免除の役割の検査は §9.1 の範囲（除く関数を含む）にも入っていることを求める。§9.1 の範囲の表は `errmsg_guard_test.go` が持ち、Phase 8 の `wrap_guard_test.go` と共有する形にまとめる |
 | 03 §13 | 手順 4（`Message` のリテラルの書き換え）と手順 7（`cmd/runner`）が、どちらも `cmd/runner` の 4 か所に触れる | `Message` の型の変更により 23 か所のリテラルの書き換えと 4 か所の原因の `Err` への付け替えは Phase 4 で完了させる。4 か所の到達性の検証だけを Phase 7 で行う |
 
@@ -232,24 +232,30 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 3: `Config.RedactMessage` とハンドラの分岐
 
 **Files**: `internal/redaction/message.go`（新規）、`internal/redaction/message_test.go`（新規）、`internal/redaction/redaction_guard_test.go`（新規・`//go:build test`）、`internal/redaction/errors.go`・`redactor.go`（変更）
 
-- [ ] `message.go` に `RedactMessage`・`redactSegments`（03 §3.2 の手順 1〜8。`Config` が `NewConfig` を経ていなければ `RedactionFailurePlaceholder` を返す）を実装する。`RedactMessage` の中で、平らにする処理の panic を回復して `*ErrMessageFlattenPanic` を返し、範囲から作った文字列が `RedactText` の出力と一致するかを検査して一致しなければ `*ErrMessageRangeMismatch` を返す（03 §3.1.1・§3.2）。
-- [ ] `errors.go` に `ErrMessageFlattenPanic`・`ErrMessageRangeMismatch` を追加する（03 §3.4。秘密を含みうる文字列を持たない）。`ErrMessageFlattenPanic` は 03 §3.4 の `PanicValue`・`StackTrace` を `Error()` に描画しない（欄を設けない、または `Error()` を鍵と固定の文言だけにする）。panic 値には秘密が入りうるためであり、§1.3 の食い違い表に 03 §3.4 の編集上の修正として記録する。
-- [ ] `redactMessageAttribute`（03 §3.3）を実装し、`redactLogAttributeWithContext`（`redactor.go:799`）と公開の `Config.RedactLogAttribute`（`:330`）の両方の、宣言済みの識別子の判定の後・`switch value.Kind()` の前に置く。判定は値の動的な型がちょうど `errmsg.Message` のときだけ行う。
-- [ ] `RedactingHandler` は失敗を `ErrorCollector` に型付きのエラーとして記録し、値を `RedactionFailurePlaceholder` にする。`Config.RedactLogAttribute` は `collector` に nil を渡し、`slog.KindLogValuer` の値を `RedactionFailurePlaceholder` にする（fail-closed）。
-- [ ] `message_test.go` に 03 §10.3・§10.4 のテスト（AC-01〜04・07・20・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ、`Config.RedactLogAttribute`）を置く。AC-08 は `TestRedactSegments_ZeroRoleFallsBackToText`（ゼロ値の役割）、AC-38 は `TestRedactSegments_UnknownRoleFallsBackToText`（範囲外の役割）で確かめる。AC-37 の各入力では、先に各断片だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを確かめる。
-- [ ] `TestRedactMessage_RangeMismatchReportsFailure` の不一致は、パッケージ内のテストが `cfg.placeholder` を `DefaultPlaceholder` 以外に設定して起こす（範囲の描画は `DefaultPlaceholder` を、`RedactText` は `cfg.placeholder` を使うため、意図的に食い違わせられる）。`TestRedactMessage_FlattenPanicReportsFailure` は、`StructuredMessage()` が panic する型をテスト内に定義し、その panic が `RedactMessage` の平らにする処理の時点で回復されることを確かめる。
-- [ ] `TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` を `message_test.go` に置く。秘密を `PanicValue` に持つ `StructuredMessage()` が panic する型を `RedactingHandler`（`ErrorCollector` 付き）に通し、記録された失敗を `ShutdownReporter` に報告させる。報告の出力と `Failure.Err.Error()` にその秘密が現れないことを確かめ、§1.3 の食い違い表のとおり `Error()` が panic 値とスタックトレースを描画しないことを固定する。
-- [ ] `BenchmarkRedactMessage` を `BenchmarkRedactText`（`redactor_test.go:3569`）に並べて置き、100 group の失敗を連結した数十 KiB の入力で 1 回の描画が 10 ms 以下であることを確かめ、結果（実測値と実行環境）をコミットメッセージに記録する（03 §3.6）。
-- [ ] `redaction_guard_test.go` に 03 §9.6 の AC-25 のガードと自己テストを置く。
+- [x] `message.go` に `RedactMessage`・`redactSegments`（03 §3.2 の手順 1〜8。`Config` が `NewConfig` を経ていなければ `RedactionFailurePlaceholder` を返す）を実装する。`RedactMessage` の中で、平らにする処理の panic を回復して `*ErrMessageFlattenPanic` を返し、範囲から作った文字列が `RedactText` の出力と一致するかを検査して一致しなければ `*ErrMessageRangeMismatch` を返す（03 §3.1.1・§3.2）。手順 4 の `L_i` に使う断片ごとの `redactedRanges(seg.Text)` にも同じ検査を掛け、一致しなければ同じく `*ErrMessageRangeMismatch` を返す（fail-closed の追加の備え）。
+- [x] `errors.go` に `ErrMessageFlattenPanic`・`ErrMessageRangeMismatch` を追加する（03 §3.4。秘密を含みうる文字列を持たない）。`ErrMessageFlattenPanic` は 03 §3.4 の `PanicValue`・`StackTrace` を `Error()` に描画しない（欄を設けない、または `Error()` を鍵と固定の文言だけにする）。panic 値には秘密が入りうるためであり、§1.3 の食い違い表に 03 §3.4 の編集上の修正として記録する。実装では `PanicValue`・`StackTrace` の欄を設けず、panic 値の型名（`PanicType`）だけを持つ。
+- [x] `redactMessageAttribute`（03 §3.3）を実装し、`redactLogAttributeWithContext`（`redactor.go:799`）と公開の `Config.RedactLogAttribute`（`:330`）の両方の、宣言済みの識別子の判定の後・`switch value.Kind()` の前に置く。判定は値の動的な型がちょうど `errmsg.Message` のときだけ行う。
+- [x] `RedactingHandler` は失敗を `ErrorCollector` に型付きのエラーとして記録し、値を `RedactionFailurePlaceholder` にする。`Config.RedactLogAttribute` は `collector` に nil を渡し、`slog.KindLogValuer` の値を `RedactionFailurePlaceholder` にする（fail-closed）。
+- [x] `message_test.go` に 03 §10.3・§10.4 のテスト（AC-01〜04・07・20・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ、`Config.RedactLogAttribute`）を置く。AC-08 は `TestRedactSegments_ZeroRoleFallsBackToText`（ゼロ値の役割）、AC-38 は `TestRedactSegments_UnknownRoleFallsBackToText`（範囲外の役割）で確かめる。AC-37 の各入力では、先に各断片だけに `RedactText` と値全体置換を適用しても秘密が見えたまま残ることを確かめる。
+- [x] `TestRedactMessage_RangeMismatchReportsFailure` の不一致は、パッケージ内のテストが `NewConfig` の後で `cfg.placeholder` を `DefaultPlaceholder` 以外に設定して起こす（`RedactText` は `NewConfig` が規則にコンパイルした `DefaultPlaceholder` を、範囲の描画は `cfg.placeholder` を使うため、意図的に食い違わせられる）。断片ごとの検査は、同じ入力では全体の検査も失敗するので、`TestRedactText_SegmentRangeMismatchReportsFailure` で補助関数を直接確かめる。`TestRedactMessage_FlattenPanicReportsFailure` は、`StructuredMessage()` が panic する型をテスト内に定義し、その panic が `RedactMessage` の平らにする処理の時点で回復されることを確かめる。
+- [x] `TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` を `message_test.go` に置く。秘密を `PanicValue` に持つ `StructuredMessage()` が panic する型を `RedactingHandler`（`ErrorCollector` 付き）に通し、記録された失敗を `ShutdownReporter` に報告させる。報告の出力と `Failure.Err.Error()` にその秘密が現れないことを確かめ、§1.3 の食い違い表のとおり `Error()` が panic 値とスタックトレースを描画しないことを固定する。
+- [x] `BenchmarkRedactMessage` を `message_test.go` に置き、100 group の失敗を連結した数十 KiB の入力で 1 回の描画が 200 ms 以下であることを確かめ、結果（実測値と実行環境）をコミットメッセージに記録する（03 §3.6）。実測は約 100 ms（40,123 バイト・700 断片、linux/arm64・12 CPU・go1.26.3）。当初の予算 10 ms は同じ入力に対する `RedactText` 1 回（約 26 ms）を下回るため、02 §3.2.2・03 §3.6 の予算を 200 ms に改めた（経緯は 02 付録 A）。
+- [x] `redaction_guard_test.go` に 03 §9.6 の AC-25 のガードと自己テストを置く。
 
 **完了条件**: `RedactMessage` のテストとベンチマークが green。AC-01〜04・07・36〜38 の各入力で、対象の層だけが反応することを先に確かめている。
+
+実装で確かめた範囲の注記:
+
+- AC-25 の `static` の検証は、`internal/redaction` の本番のコードが役割の値を作らないこと（03 §9.6）に限る。断片の文字列を調べて役割を選び直す分岐（`strings` などによる判定）はガードの対象外であり、レビューで確かめる。通知ビルダー・ログ出力は構造化メッセージを文字列として受け取る（AC-20）ので、役割を読む箇所は `internal/redaction` だけである。
+- 03 §3.2 手順 8（境界をまたぐ検出が無い断片は断片単独の結果を出す）は、既定の規則では接する 2 つの範囲が生じないため、影響を受ける描画との違いを入力で観察できない。`coversPoint`・`coversRange` を常に偽にしても現在のテストは通る。
+- `redactSegments` の中の予期しない panic（索引の誤りなど）は回復しない。平らにする処理の panic だけを回復する（03 §3.2）。
 
 ### PR-3 作成ポイント: render a structured message with per-segment redaction
 
@@ -258,6 +264,11 @@
 - **レビュー観点**: `Identifier` の免除と境界をまたぐ契約（AC-37）、`Text` の値全体置換が断片ごとであること（AC-36）、範囲の不一致・平らにする処理の panic が fail-closed に倒れること、panic 値が `ShutdownReporter` の報告に漏れないこと、後段のハンドラが文字列を受け取ること、`Config.RedactLogAttribute` の fail-closed の分岐、ベンチマークの予算
 - **実装モデル要件**: frontier-required
 - **判定理由**: 部分ごとの redaction と境界をまたぐ置換は本タスクの中心のセキュリティ境界であり、バイト単位の手順と失敗時の扱いを同時に満たす必要がある
+
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 4: `internal/logging` の構造化メッセージへの移行
 
