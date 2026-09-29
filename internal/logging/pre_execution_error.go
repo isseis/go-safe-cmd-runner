@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 // Environment variable names
@@ -61,7 +62,7 @@ const (
 // PreExecutionError represents an error that occurs before command execution
 type PreExecutionError struct {
 	Type      ErrorType
-	Message   string
+	Message   errmsg.Summary
 	Component string
 	RunID     string
 	// NotificationContext declares where the failure originated so the
@@ -86,15 +87,20 @@ func (e *PreExecutionError) Error() string {
 	return fmt.Sprintf("%s: %s (component: %s, run_id: %s)", e.Type, e.Message, e.Component, e.RunID)
 }
 
-// Detail returns the user-facing description of the failure: Message followed by
-// the cause carried in Err. Reporting paths that render a single string (stderr,
-// the structured log, the Slack alert) must use this rather than Message alone,
-// or the cause - a TOML syntax error, a hash mismatch - never reaches the user.
-func (e *PreExecutionError) Detail() string {
+// DetailMessage returns Message followed by the cause carried in Err, as a
+// structured message. Reporting paths that render a single string (stderr, the
+// structured log, the Slack alert) must use this rather than Message alone, or
+// the cause - a TOML syntax error, a hash mismatch - never reaches the user.
+func (e *PreExecutionError) DetailMessage() errmsg.Message {
 	if e.Err == nil {
-		return e.Message
+		return errmsg.NewMessage(e.Message.Part())
 	}
-	return fmt.Sprintf("%s: %s", e.Message, e.Err.Error())
+	return errmsg.NewMessage(e.Message.Part(), errmsg.Const(": "), errmsg.Cause(e.Err))
+}
+
+// Detail returns DetailMessage rendered without redaction.
+func (e *PreExecutionError) Detail() string {
+	return e.DetailMessage().String()
 }
 
 // Is implements error wrapping for errors.Is
@@ -122,7 +128,7 @@ func (e *PreExecutionError) Unwrap() error {
 // has no RUN_SUMMARY status to carry.
 type errorRecordParams struct {
 	errorType   ErrorType
-	errorMsg    string
+	errorMsg    errmsg.Message
 	component   string
 	runID       string
 	slogMessage string
@@ -155,7 +161,7 @@ func handleErrorCommon(params errorHandlingParams) {
 	}
 	// Continuation lines of a multi-line message are aligned under the first
 	// so they stay visibly inside the Details field.
-	msg := strings.TrimRight(record.errorMsg, "\r\n")
+	msg := strings.TrimRight(record.errorMsg.String(), "\r\n")
 	fmt.Fprintf(&stderrBuilder, "%s%s\n", stderrDetailsPrefix,
 		strings.ReplaceAll(msg, "\n", "\n"+stderrDetailsIndent))
 	if record.runID != "" {
@@ -184,7 +190,7 @@ func writeErrorLogRecord(params errorRecordParams) {
 	}
 	attrs := []slog.Attr{
 		slog.String(common.PreExecErrorAttrs.ErrorType, string(params.errorType)),
-		slog.String(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
+		slog.Any(common.PreExecErrorAttrs.ErrorMessage, params.errorMsg),
 		slog.String(common.PreExecErrorAttrs.Component, params.component),
 		slog.String("run_id", params.runID),
 	}
@@ -212,7 +218,7 @@ func preExecutionNotificationAttrs(preExecErr *PreExecutionError) []slog.Attr {
 func preExecutionRecordParams(preExecErr *PreExecutionError, slogMessage string) errorRecordParams {
 	return errorRecordParams{
 		errorType:         preExecErr.Type,
-		errorMsg:          preExecErr.Detail(),
+		errorMsg:          preExecErr.DetailMessage().Freeze(),
 		component:         preExecErr.Component,
 		runID:             preExecErr.RunID,
 		slogMessage:       slogMessage,
@@ -241,28 +247,14 @@ func NotifyPreExecutionError(preExecErr *PreExecutionError) {
 // HandleExecutionError handles execution errors (errors that occur during command execution)
 // by logging and outputting appropriate summary information
 func HandleExecutionError(execErr *ExecutionError) {
-	// The cause is reported as its own Error() text, with no substitution of a
-	// friendlier string, so a wrapped group failure keeps its group and command
-	// names. Only the surrounding "Message: cause" assembly is repeated,
-	// because the two report paths report different error types; see
-	// issue #1156.
-	message := execErr.Message
-
-	// The context (group and command names) goes right after Message, before
-	// the cause: a cause may span several lines (e.g. an errors.Join of group
-	// errors), and a suffix would read as belonging to its last line only.
-	if contextStr := execErr.ContextString(); contextStr != "" {
-		message = fmt.Sprintf("%s (%s)", message, contextStr)
-	}
-
-	if execErr.Err != nil {
-		message = fmt.Sprintf("%s: %s", message, execErr.Err.Error())
-	}
-
+	// The whole body is built once as a structured message: Message, the
+	// group/command context, and the cause. Both the stderr Details line and
+	// the structured log record come from that single frozen rendering, so the
+	// cause's Error() is evaluated once per report.
 	handleErrorCommon(errorHandlingParams{
 		record: errorRecordParams{
 			errorType:   ErrorTypeSystemError,
-			errorMsg:    message,
+			errorMsg:    execErr.ReportMessage().Freeze(),
 			component:   execErr.Component,
 			runID:       execErr.RunID,
 			slogMessage: "Execution error occurred",

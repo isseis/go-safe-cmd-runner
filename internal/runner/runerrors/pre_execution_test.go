@@ -121,7 +121,7 @@ func TestNewVerificationPreExecutionError(t *testing.T) {
 
 			require.NotNil(t, got)
 			assert.Equal(t, tt.errType, got.Type)
-			assert.Equal(t, tt.wantMessage, got.Message)
+			assert.Equal(t, tt.wantMessage, got.Message.String())
 			assert.Equal(t, tt.wantPaths, got.FailedFilePaths)
 			assert.Equal(t, string(resource.ComponentVerification), got.Component)
 			assert.Equal(t, tt.scope, got.NotificationContext)

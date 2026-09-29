@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
@@ -103,7 +104,7 @@ func runForTestWithTempHashDir(t *testing.T, runID string) error {
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   "Verification manager initialization failed",
+			Message:   errmsg.ConstSummary("Verification manager initialization failed"),
 			Component: string(resource.ComponentVerification),
 			RunID:     runID,
 		}
@@ -727,7 +728,9 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 	assert.Equal(t, logging.ErrorTypeFileAccess, preExec.Type)
 	assert.Equal(t, string(resource.ComponentVerification), preExec.Component)
 	assert.Equal(t, "test-run", preExec.RunID)
-	assert.Contains(t, preExec.Message, errCheckerUnavailable.Error())
+	assert.ErrorIs(t, err, errCheckerUnavailable,
+		"the cause must be reachable through Unwrap now that it travels in Err")
+	assert.Equal(t, "directory permission checker initialisation failed: "+errCheckerUnavailable.Error(), preExec.Detail())
 }
 
 // TestNewDryRunFormatter_UnknownFormatReturnsError verifies the fail-secure

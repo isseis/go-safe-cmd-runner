@@ -14,6 +14,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
@@ -133,7 +134,7 @@ func dropStartupPrivileges(targetUID, targetGID int) error {
 func reportStartupPrivilegeFailure(err error) int {
 	logging.HandlePreExecutionError(&logging.PreExecutionError{
 		Type:                logging.ErrorTypePrivilegeDrop,
-		Message:             fmt.Sprintf("Failed to drop startup privileges: %v", err),
+		Message:             errmsg.TextSummary(fmt.Sprintf("Failed to drop startup privileges: %v", err)),
 		Component:           string(resource.ComponentMain),
 		RunID:               logging.GenerateRunID(),
 		NotificationContext: common.GlobalScope(),
@@ -183,7 +184,7 @@ func main() {
 		// on the very output paths this validation protects.
 		logging.HandlePreExecutionError(&logging.PreExecutionError{
 			Type:                logging.ErrorTypeInvalidRunID,
-			Message:             fmt.Sprintf("Invalid run ID passed to --run-id: %v (accepted format: %s)", err, logging.RunIDFormatDescription()),
+			Message:             errmsg.TextSummary(fmt.Sprintf("Invalid run ID passed to --run-id: %v (accepted format: %s)", err, logging.RunIDFormatDescription())),
 			Component:           string(resource.ComponentMain),
 			RunID:               bootstrapID,
 			NotificationContext: common.GlobalScope(),
@@ -196,7 +197,7 @@ func main() {
 	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
 		logging.HandlePreExecutionError(&logging.PreExecutionError{
 			Type:                logging.ErrorTypeBuildConfig,
-			Message:             fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory),
+			Message:             errmsg.TextSummary(fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory)),
 			Component:           string(resource.ComponentMain),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -240,7 +241,7 @@ func mainWithExitCode(runID string) int {
 		default:
 			logging.HandlePreExecutionError(&logging.PreExecutionError{
 				Type:                logging.ErrorTypeSystemError,
-				Message:             err.Error(),
+				Message:             errmsg.TextSummary(err.Error()),
 				Component:           string(resource.ComponentMain),
 				RunID:               runID,
 				NotificationContext: common.GlobalScope(),
@@ -258,7 +259,7 @@ func parseLogLevel(logLevelStr string, runID string) (slog.Level, error) {
 	if err := level.UnmarshalText([]byte(logLevelStr)); err != nil {
 		return level, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             fmt.Sprintf("Invalid log level %q: %v", logLevelStr, err),
+			Message:             errmsg.TextSummary(fmt.Sprintf("Invalid log level %q: %v", logLevelStr, err)),
 			Component:           string(resource.ComponentMain),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -294,7 +295,7 @@ func run(runID string) error {
 		// reason to restore the direct print.
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             err.Error(),
+			Message:             errmsg.TextSummary(err.Error()),
 			Component:           string(resource.ComponentLogging),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -323,7 +324,7 @@ func run(runID string) error {
 	if configPath == "" {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeRequiredArgumentMissing,
-			Message:             "Config file path is required",
+			Message:             errmsg.ConstSummary("Config file path is required"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -340,7 +341,7 @@ func run(runID string) error {
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
-			Message:             fmt.Sprintf("Verification manager initialization failed: %v", err),
+			Message:             errmsg.TextSummary(fmt.Sprintf("Verification manager initialization failed: %v", err)),
 			Component:           string(resource.ComponentVerification),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -371,10 +372,11 @@ func run(runID string) error {
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             fmt.Sprintf("Failed to expand global configuration: %v", err),
+			Message:             errmsg.ConstSummary("Failed to expand global configuration"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 
@@ -382,10 +384,11 @@ func run(runID string) error {
 	if err := config.ValidateAllTemplates(cfg.CommandTemplates, runtimeGlobal.ExpandedVars); err != nil {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             fmt.Sprintf("Template validation failed: %v", err),
+			Message:             errmsg.ConstSummary("Template validation failed"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 
@@ -403,7 +406,7 @@ func run(runID string) error {
 		}
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
-			Message:             err.Error(),
+			Message:             errmsg.TextSummary(err.Error()),
 			Component:           string(resource.ComponentVerification),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -499,7 +502,7 @@ func auditConfiguredDirPermissions(cfg *runnertypes.ConfigSpec, runtimeGlobal *r
 			// as nothing and silently audited or silently dropped. Refuse to start.
 			return nil, &logging.PreExecutionError{
 				Type:                logging.ErrorTypeFileAccess,
-				Message:             fmt.Sprintf("unhandled check skip reason %d for path %s", reason, c.path),
+				Message:             errmsg.TextSummary(fmt.Sprintf("unhandled check skip reason %d for path %s", reason, c.path)),
 				Component:           string(resource.ComponentVerification),
 				RunID:               runID,
 				NotificationContext: common.GlobalScope(),
@@ -511,10 +514,11 @@ func auditConfiguredDirPermissions(cfg *runnertypes.ConfigSpec, runtimeGlobal *r
 	if secErr != nil {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
-			Message:             fmt.Sprintf("directory permission checker initialisation failed: %v", secErr),
+			Message:             errmsg.ConstSummary("directory permission checker initialisation failed"),
 			Component:           string(resource.ComponentVerification),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
+			Err:                 secErr,
 		}
 	}
 
@@ -546,7 +550,7 @@ func auditConfiguredDirPermissions(cfg *runnertypes.ConfigSpec, runtimeGlobal *r
 	if len(result.Violations) > 0 {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
-			Message:             fmt.Sprintf("directory permission audit failed: %d directory violation(s) detected; review directory permissions", len(result.Violations)),
+			Message:             errmsg.TextSummary(fmt.Sprintf("directory permission audit failed: %d directory violation(s) detected; review directory permissions", len(result.Violations))),
 			Component:           string(resource.ComponentVerification),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -639,10 +643,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             fmt.Sprintf("Invalid groups specified: %v", err),
+			Message:             errmsg.ConstSummary("Invalid groups specified"),
 			Component:           string(resource.ComponentRunner),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
+			Err:                 err,
 		}
 	}
 
@@ -693,7 +698,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		groupName, commandName := executionErrorContext(execErr)
 
 		return &logging.ExecutionError{
-			Message:     "error running commands",
+			Message:     errmsg.ConstSummary("error running commands"),
 			Component:   string(resource.ComponentRunner),
 			RunID:       runID,
 			GroupName:   groupName,

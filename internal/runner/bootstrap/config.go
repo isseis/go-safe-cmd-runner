@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -60,7 +61,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeRequiredArgumentMissing,
-			Message:             "Config file path is required",
+			Message:             errmsg.ConstSummary("Config file path is required"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -73,7 +74,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeFileAccess,
-			Message:             "Failed to verify and read the configuration file",
+			Message:             errmsg.ConstSummary("Failed to verify and read the configuration file"),
 			Component:           string(resource.ComponentVerification),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -93,7 +94,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             "Failed to load the configuration",
+			Message:             errmsg.ConstSummary("Failed to load the configuration"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),
@@ -105,7 +106,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             "Invalid slack_allowed_host",
+			Message:             errmsg.ConstSummary("Invalid slack_allowed_host"),
 			Component:           string(resource.ComponentConfig),
 			RunID:               runID,
 			NotificationContext: common.GlobalScope(),

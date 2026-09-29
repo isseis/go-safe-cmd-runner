@@ -30,7 +30,7 @@ func TestGroupStageTableHasARowForEveryStage(t *testing.T) {
 		def, ok := groupStageDefinitionFor(stage)
 		require.True(t, ok, "the lookup must accept the declared stage %s", stage)
 		assert.NotEmpty(t, def.errorType, "stage %s has no error_type", stage)
-		assert.NotEmpty(t, def.message, "stage %s has no summary", stage)
+		assert.NotEmpty(t, def.summary.String(), "stage %s has no summary", stage)
 		if stage != GroupStageUnknown {
 			assert.NotEqual(t, generic, def, "stage %s must not reuse the generic row", stage)
 		}
@@ -123,7 +123,7 @@ func TestGroupStagePreExecutionErrorMapping(t *testing.T) {
 			got := groupStagePreExecutionError(stageErr, "run-mapping")
 
 			assert.Equal(t, tt.errorType, got.Type)
-			assert.Equal(t, tt.message, got.Message)
+			assert.Equal(t, tt.message, got.Message.String())
 			assert.Equal(t, string(resource.ComponentRunner), got.Component)
 			assert.Equal(t, "run-mapping", got.RunID)
 			assert.Equal(t, tt.ctx, got.NotificationContext)
@@ -161,7 +161,7 @@ func TestGroupStageUnknownAndOutOfRangeUseGenericRow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := groupStagePreExecutionError(tt.stageErr, "run-fallback")
 			assert.Equal(t, generic.errorType, got.Type)
-			assert.Equal(t, generic.message, got.Message)
+			assert.Equal(t, generic.summary.String(), got.Message.String())
 			assert.Equal(t, common.GroupScope("backup"), got.NotificationContext)
 		})
 	}
@@ -180,7 +180,7 @@ func TestGroupStageErrorZeroValueDoesNotPanic(t *testing.T) {
 
 	preExecErr := groupStagePreExecutionError(&zero, "run-zero")
 	assert.Equal(t, generic.errorType, preExecErr.Type)
-	assert.Equal(t, generic.message, preExecErr.Message)
+	assert.Equal(t, generic.summary.String(), preExecErr.Message.String())
 	// The zero value has no group name, so the scope is a group scope with an
 	// empty name; the display boundary reports that as an invalid scope.
 	assert.Equal(t, common.GroupScope(""), preExecErr.NotificationContext)
@@ -196,7 +196,7 @@ func TestGroupStagePreExecutionErrorUsesDeclaredStageNotReasonText(t *testing.T)
 
 	assert.Equal(t, logging.ErrorTypeGroupPreparation, got.Type,
 		"the declared stage must decide the error_type, not the cause text")
-	assert.Equal(t, "Group preparation failed", got.Message)
+	assert.Equal(t, "Group preparation failed", got.Message.String())
 	assert.Equal(t, common.GroupScope("backup"), got.NotificationContext)
 }
 

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -36,7 +37,7 @@ func NewVerificationPreExecutionError(
 
 	return &logging.PreExecutionError{
 		Type:                errType,
-		Message:             message,
+		Message:             errmsg.TextSummary(message),
 		Component:           string(resource.ComponentVerification),
 		RunID:               runID,
 		NotificationContext: scope,

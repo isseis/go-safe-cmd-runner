@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
@@ -58,7 +59,7 @@ func (s GroupStage) String() string {
 type groupStageDefinition struct {
 	errorType logging.ErrorType
 	scope     common.NotificationScope
-	message   string
+	summary   errmsg.Summary
 }
 
 // groupStageDefinitions is the single source of the per-stage notification
@@ -68,32 +69,32 @@ var groupStageDefinitions = [groupStageCount]groupStageDefinition{
 	GroupStageUnknown: {
 		errorType: logging.ErrorTypeGroupPreExecution,
 		scope:     common.ScopeGroup,
-		message:   "Group pre-execution failed",
+		summary:   errmsg.ConstSummary("Group pre-execution failed"),
 	},
 	GroupStageGroupPreparation: {
 		errorType: logging.ErrorTypeGroupPreparation,
 		scope:     common.ScopeGroup,
-		message:   "Group preparation failed",
+		summary:   errmsg.ConstSummary("Group preparation failed"),
 	},
 	GroupStageCommandPreparation: {
 		errorType: logging.ErrorTypeGroupPreparation,
 		scope:     common.ScopeCommand,
-		message:   "Command preparation failed",
+		summary:   errmsg.ConstSummary("Command preparation failed"),
 	},
 	GroupStageDirPermissionAudit: {
 		errorType: logging.ErrorTypeGroupDirPermissionViolation,
 		scope:     common.ScopeGroup,
-		message:   "Group directory permission audit failed",
+		summary:   errmsg.ConstSummary("Group directory permission audit failed"),
 	},
 	GroupStageFileVerification: {
 		errorType: logging.ErrorTypeGroupFileVerification,
 		scope:     common.ScopeGroup,
-		message:   "Group file verification failed",
+		summary:   errmsg.ConstSummary("Group file verification failed"),
 	},
 	GroupStageCommandVerification: {
 		errorType: logging.ErrorTypeCommandVerification,
 		scope:     common.ScopeCommand,
-		message:   "Command verification failed",
+		summary:   errmsg.ConstSummary("Command verification failed"),
 	},
 }
 
@@ -203,7 +204,7 @@ func groupStagePreExecutionError(stageErr *GroupStageError, runID string) *loggi
 	}
 	return &logging.PreExecutionError{
 		Type:                def.errorType,
-		Message:             def.message,
+		Message:             def.summary,
 		Component:           string(resource.ComponentRunner),
 		RunID:               runID,
 		NotificationContext: groupStageNotificationContext(def.scope, stageErr.group, stageErr.command),
