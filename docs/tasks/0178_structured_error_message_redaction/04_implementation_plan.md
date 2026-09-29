@@ -191,6 +191,11 @@
 - **実装モデル要件**: frontier-required
 - **判定理由**: 本タスク全体の土台であり、バイト単位の整形と AST ガードの判定は後続のすべての Phase の正しさを決める。設計判断の密度が高く、誤ると広範囲に波及する
 
+- [x] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
+
 ### Phase 2: `internal/redaction` の置き換え範囲の関数とオプションの削除
 
 **Files**: `internal/redaction/ranges.go`（新規）、`internal/redaction/ranges_test.go`（新規）、`internal/redaction/redactor.go`・`value_detector.go`（変更）、`internal/redaction/redactor_test.go`（変更）
