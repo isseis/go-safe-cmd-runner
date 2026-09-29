@@ -201,6 +201,54 @@ func TestRedactMessage_CrossBoundaryDetection(t *testing.T) {
 	})
 }
 
+// TestRedactMessage_BoundaryRules pins the parts of the cross-boundary rules
+// the detection-kind table does not reach: constants are not exempt from a
+// crossing detection, and insertions follow the attachment rule.
+func TestRedactMessage_BoundaryRules(t *testing.T) {
+	cfg := DefaultConfig()
+	tests := []struct {
+		name  string
+		parts []errmsg.Part
+		want  string
+	}{
+		{
+			name: "a detection keyed by an identifier replaces the next constant word",
+			parts: []errmsg.Part{
+				errmsg.Const("failed to execute group "), errmsg.Ident("password"), errmsg.Const(": "),
+				errmsg.Const("command "), errmsg.Ident("backup"), errmsg.Const(" failed"),
+			},
+			want: "failed to execute group password: [REDACTED] backup failed",
+		},
+		{
+			name:  "an insertion strictly inside an identifier is dropped",
+			parts: []errmsg.Part{errmsg.Ident(`password=""`)},
+			want:  `password=""`,
+		},
+		{
+			name:  "an insertion strictly inside a constant stays in it",
+			parts: []errmsg.Part{errmsg.Const(`password=""`), errmsg.Text("x")},
+			want:  `password="[REDACTED]"x`,
+		},
+		{
+			name:  "an insertion before an identifier goes to the previous segment",
+			parts: []errmsg.Part{errmsg.Const(`password="`), errmsg.Ident(`"`)},
+			want:  `password="[REDACTED]"`,
+		},
+		{
+			// The text alone would also get a placeholder between its empty
+			// quotes; the whole rendering does not, and neither does the result.
+			name:  "a segment's own insertion is not added when it is affected",
+			parts: []errmsg.Part{errmsg.Const("password="), errmsg.Text(`"password":""`)},
+			want:  `password="[REDACTED]":""`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, mustRedactMessage(t, cfg, errmsg.NewMessage(tt.parts...)))
+		})
+	}
+}
+
 func TestRedactMessage_InsertionAtEmptySegment(t *testing.T) {
 	cfg := DefaultConfig()
 	const whole = `password=""`
@@ -299,7 +347,7 @@ func TestRedactMessage_RangeMismatchReportsFailure(t *testing.T) {
 // detection crosses its boundary, so they are checked like the whole
 // rendering's. Through RedactMessage the whole-rendering check fails on the same
 // input as well, so the segment check is exercised directly.
-func TestRedactText_SegmentRangeMismatchReportsFailure(t *testing.T) {
+func TestRedactSegmentText_RangeMismatchReportsFailure(t *testing.T) {
 	cfg := placeholderMismatchConfig(t)
 
 	_, _, err := cfg.redactText("password=hunter2")
@@ -438,6 +486,14 @@ func TestRedactLogAttribute_StructuredMessage(t *testing.T) {
 		assert.Equal(t, slog.KindString, got.Value.Kind())
 		// Neither the unredacted text nor the whole-value placeholder.
 		assert.Equal(t, "group monkey: open x: token=[REDACTED]", got.Value.String())
+	})
+
+	t.Run("sensitive key replaces the message", func(t *testing.T) {
+		plain := errmsg.NewMessage(errmsg.Const("group "), errmsg.Ident("backup"), errmsg.Const(" failed"))
+		require.Equal(t, plain.String(), cfg.RedactLogAttribute(slog.Any("error_message", plain)).Value.String())
+
+		got := cfg.RedactLogAttribute(slog.Any("password", plain))
+		assert.Equal(t, DefaultPlaceholder, got.Value.String())
 	})
 
 	t.Run("failure suppresses the value", func(t *testing.T) {

@@ -79,28 +79,47 @@ func isErrmsgType(t types.Type, name string) bool {
 	return obj.Pkg() != nil && obj.Pkg().Path() == errmsgPath && obj.Name() == name
 }
 
+// isRoleField reports whether e selects the Role field of errmsg.Segment,
+// directly or through an embedding struct. The field is identified by its
+// object, not by the name of the receiver type.
+func isRoleField(info *types.Info, e ast.Expr) bool {
+	sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	s, ok := info.Selections[sel]
+	if !ok || s.Kind() != types.FieldVal {
+		return false
+	}
+	v, ok := s.Obj().(*types.Var)
+	return ok && v.IsField() && v.Pkg() != nil && v.Pkg().Path() == errmsgPath && v.Name() == "Role"
+}
+
+// isRoleTyped reports whether e has type errmsg.Role.
+func isRoleTyped(info *types.Info, e ast.Expr) bool {
+	tv, ok := info.Types[e]
+	return ok && tv.Type != nil && isErrmsgType(tv.Type, "Role")
+}
+
 // checkRoleConstruction reports every place in files that chooses an
-// errmsg.Role value rather than reading one: a conversion to errmsg.Role, a
-// Role constant used anywhere but a case clause or an ==/!= comparison, an
-// assignment to Segment.Role, and a Segment composite literal setting Role.
-// reads counts the Role constants accepted as reads, so a caller can tell the
-// scan saw them.
+// errmsg.Role value rather than reading one:
+//   - a constant of type errmsg.Role (a Role constant, or an untyped constant
+//     converted to Role) anywhere but a case clause or an ==/!= operand;
+//   - a conversion to errmsg.Role or errmsg.Segment;
+//   - arithmetic, ++ or -- on a Role value;
+//   - an assignment to Segment.Role, taking its address, or a Segment literal
+//     setting Role.
+//
+// reads counts the Role constants accepted in read positions, so a caller can
+// tell the scan saw them.
 func checkRoleConstruction(fset *token.FileSet, files []*ast.File, info *types.Info) (reads int, violations []string) {
 	report := func(n ast.Node, what string) {
 		violations = append(violations, fmt.Sprintf("%s: %s", fset.Position(n.Pos()), what))
 	}
-	isRoleField := func(e ast.Expr) bool {
-		sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
-		if !ok {
-			return false
-		}
-		s, ok := info.Selections[sel]
-		return ok && s.Kind() == types.FieldVal && sel.Sel.Name == "Role" && isErrmsgType(derefType(s.Recv()), "Segment")
-	}
 
 	for _, f := range files {
-		// allowed holds the constant references in read positions.
-		allowed := map[ast.Node]struct{}{}
+		// allowed holds the operands in read positions.
+		allowed := map[ast.Expr]struct{}{}
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.CaseClause:
@@ -117,20 +136,44 @@ func checkRoleConstruction(fset *token.FileSet, files []*ast.File, info *types.I
 		})
 
 		ast.Inspect(f, func(n ast.Node) bool {
+			if e, ok := n.(ast.Expr); ok {
+				if tv, typed := info.Types[e]; typed && tv.Value != nil && isRoleTyped(info, e) {
+					if _, read := allowed[ast.Unparen(e)]; read {
+						reads++
+					} else {
+						report(e, "constant errmsg.Role value outside a case clause or comparison")
+					}
+					// One report per constant expression, not one per operand.
+					return false
+				}
+			}
 			switch n := n.(type) {
 			case *ast.CallExpr:
-				if tv, ok := info.Types[n.Fun]; ok && tv.IsType() && isErrmsgType(tv.Type, "Role") {
-					report(n, "conversion to errmsg.Role")
+				if tv, ok := info.Types[n.Fun]; ok && tv.IsType() {
+					switch {
+					case isErrmsgType(tv.Type, "Role"):
+						report(n, "conversion to errmsg.Role")
+					case isErrmsgType(tv.Type, "Segment"):
+						report(n, "conversion to errmsg.Segment")
+					}
+				}
+			case *ast.BinaryExpr:
+				if n.Op != token.EQL && n.Op != token.NEQ && isRoleTyped(info, n) {
+					report(n, "arithmetic on errmsg.Role")
+				}
+			case *ast.UnaryExpr:
+				if n.Op == token.AND && isRoleField(info, n.X) {
+					report(n, "address of errmsg.Segment.Role")
 				}
 			case *ast.AssignStmt:
 				for _, lhs := range n.Lhs {
-					if isRoleField(lhs) {
+					if isRoleField(info, lhs) {
 						report(lhs, "assignment to errmsg.Segment.Role")
 					}
 				}
 			case *ast.IncDecStmt:
-				if isRoleField(n.X) {
-					report(n, "assignment to errmsg.Segment.Role")
+				if isRoleTyped(info, n.X) {
+					report(n, "increment or decrement of errmsg.Role")
 				}
 			case *ast.CompositeLit:
 				if tv, ok := info.Types[n]; ok && isErrmsgType(tv.Type, "Segment") {
@@ -145,39 +188,11 @@ func checkRoleConstruction(fset *token.FileSet, files []*ast.File, info *types.I
 						}
 					}
 				}
-			case *ast.SelectorExpr, *ast.Ident:
-				id := identOfRef(n)
-				c, ok := info.Uses[id].(*types.Const)
-				if !ok || !isErrmsgType(c.Type(), "Role") {
-					return true
-				}
-				if _, read := allowed[n]; read {
-					reads++
-				} else {
-					report(n, "use of errmsg."+c.Name()+" outside a case clause or comparison")
-				}
-				// Do not visit the selector's identifier again.
-				return false
 			}
 			return true
 		})
 	}
 	return reads, violations
-}
-
-// identOfRef returns the identifier naming the object a reference refers to.
-func identOfRef(n ast.Node) *ast.Ident {
-	if sel, ok := n.(*ast.SelectorExpr); ok {
-		return sel.Sel
-	}
-	return n.(*ast.Ident)
-}
-
-func derefType(t types.Type) types.Type {
-	if p, ok := t.(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return t
 }
 
 // TestProductionRedactionDoesNotConstructRoles fixes that redaction only reads
@@ -250,6 +265,41 @@ func TestRoleConstructionCheckRecognizesForms(t *testing.T) {
 			name:      "a comparison reads the role",
 			src:       header + "func f(s errmsg.Segment) bool { return s.Role == errmsg.RoleIdentifier || errmsg.RoleText != s.Role }\n",
 			wantReads: 2,
+		},
+		{
+			name:     "assignment through an embedding struct is reported",
+			src:      header + "type w struct{ errmsg.Segment }\n\nfunc f(x *w, r errmsg.Role) { x.Role = r }\n",
+			wantViol: 1,
+		},
+		{
+			name:     "taking the address of Segment.Role is reported",
+			src:      header + "func f(s *errmsg.Segment) *errmsg.Role { return &s.Role }\n",
+			wantViol: 1,
+		},
+		{
+			name:     "an untyped constant given type Role is reported",
+			src:      header + "var r errmsg.Role = 2\n\nfunc f() errmsg.Role { return 3 }\n",
+			wantViol: 2,
+		},
+		{
+			name:     "arithmetic on a role is reported",
+			src:      header + "func f(s errmsg.Segment) errmsg.Role { return s.Role + s.Role }\n",
+			wantViol: 1,
+		},
+		{
+			name:     "incrementing a role is reported",
+			src:      header + "func f(r errmsg.Role) errmsg.Role { r++; return r }\n",
+			wantViol: 1,
+		},
+		{
+			name:     "conversion to Segment is reported",
+			src:      header + "type seg struct {\n\tRole errmsg.Role\n\tText string\n}\n\nfunc f(s seg) errmsg.Segment { return errmsg.Segment(s) }\n",
+			wantViol: 1,
+		},
+		{
+			name:      "an untyped constant compared with a role is a read",
+			src:       header + "func f(s errmsg.Segment) bool { return s.Role == 3 }\n",
+			wantReads: 1,
 		},
 		{
 			name: "a Segment literal without Role is not reported",

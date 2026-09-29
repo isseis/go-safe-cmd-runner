@@ -161,7 +161,14 @@ func (l *segmentLayout) hideCrossBoundary(ranges []byteRange) {
 	for i := range n {
 		if l.affected[i] {
 			hidden = append(hidden, touched[i]...)
-			hidden = append(hidden, l.own[i]...)
+			// Only the bytes of the segment's own redaction: an insertion it
+			// made on its own hides nothing, and one the whole rendering also
+			// makes is already in touched.
+			for _, r := range l.own[i] {
+				if r.start < r.end {
+					hidden = append(hidden, r)
+				}
+			}
 		}
 	}
 	l.hidden = mergeRanges(hidden)
@@ -334,6 +341,11 @@ func mergeRanges(rs []byteRange) []byteRange {
 // the attribute carries RedactionFailurePlaceholder and collector, when
 // non-nil, records the error.
 func (c *Config) redactMessageAttribute(key string, value slog.Value, collector ErrorCollector) (attr slog.Attr, handled bool) {
+	// An errmsg.Message always arrives as a LogValuer; checking the kind first
+	// spares every other attribute the allocation of Any().
+	if value.Kind() != slog.KindLogValuer {
+		return slog.Attr{}, false
+	}
 	m, ok := value.Any().(errmsg.Message)
 	if !ok {
 		return slog.Attr{}, false

@@ -400,6 +400,7 @@ func (c *Config) redactSegments(segs errmsg.Segments) (string, error)
 2. 各断片の `out_i` を求める。
    - `RoleIdentifier`・`RoleConstant`: `out_i = seg.Text`。
    - `RolePath`: `out_i = c.RedactText(seg.Text)`。
+   - `RolePath` と次の `default` で `RedactText` の結果が変わったときは、手順 4 の `L_i` に使う `c.redactedRanges(seg.Text)` を手順 3 と同じく検査し、置換文字列で置き換えた結果が `out_i` と一致しなければ `*ErrMessageRangeMismatch` を返す。
    - `default`（`RoleText` と、どの役割にも当たらない値）: `r := c.RedactText(seg.Text)` とし、`r == seg.Text` かつ `c.patterns.IsSensitiveValue(seg.Text)` なら `out_i = c.placeholder`、そうでなければ `out_i = r`。値全体置換は断片ごとに判定する（AC-36）。
 3. `ranges := c.redactedRanges(S)` を求め、実行時の検査を行う。`ranges` の各範囲を順に 1 つの置換文字列で置き換えた結果（挿入点はその位置に置換文字列を挿入する）が `c.RedactText(S)` と一致しなければ、失敗として `*ErrMessageRangeMismatch`（§3.4）を返す。失敗のときは途中の描画を出さない。
 4. 境界の影響を受ける断片を決める。`Identifier` の断片は常に受けない。それ以外の断片 `i` について、`L_i` を手順 2 でその断片が置き換えたバイトの集合とする（値全体置換なら全バイト、`RedactText` の結果が変わったなら `c.redactedRanges(seg.Text)` の範囲のバイト、変わらなければ空。断片の座標から `S` の座標に写して持つ）。断片 `i` が受けるのは、次のいずれかのときである。
@@ -408,7 +409,7 @@ func (c *Config) redactSegments(segs errmsg.Segments) (string, error)
 5. 境界の影響を受けない断片は、`out_i` をそのまま出す。
 6. 境界の影響を受ける断片では、次のバイトを「隠すバイト」とする。
    - `ranges` に含まれるバイト（幅のある範囲のバイトと、付与規則でその断片に付いた挿入点）。
-   - `L_i` のバイト。`RolePath`・`RoleText`・範囲外の役割の断片にだけ起こりうる。
+   - `L_i` のバイト。`RolePath`・`RoleText`・範囲外の役割の断片にだけ起こりうる。`L_i` の挿入点（幅 0 の範囲）は含めない。挿入点はバイトを隠さず、全体の描画にも現れる挿入点は前の項目で付く。
    - `Identifier` の断片のバイトは隠さない（AC-37）。
    隠すバイトの連続する区間は、極大の区間ごとに 1 つの置換文字列にする。区間は隣り合う境界の影響を受ける断片をまたいでよい（`[a, b)` と `[b, c)` は `[a, c)` にまとめる）。挿入点は、隣接する隠すバイトがあればそれと合わせて 1 つの極大の区間にし、無ければ幅 0 の区間として 1 つの置換文字列を出す。同じ位置の複数の挿入点は 1 つにまとめる。
 7. 描画は、断片と極大区間を位置の順にたどって行う。手順 5 の断片は `out_i` を出す。手順 6 の断片は `seg.Text` のうち隠さないバイトをそのまま出し、極大区間の開始位置で 1 つの置換文字列を出して区間のバイトを飛ばす。区間が断片の境界をまたぐときは、開始位置を含む断片でだけ置換文字列を出し、続く断片では区間の残りを飛ばす。両隣とも `Identifier` の断片の間に付いた挿入点は、その境界（次の断片の直前、末尾なら文字列の最後）に置換文字列を出す。`Identifier` の断片のバイトは常にそのまま出す。
@@ -450,9 +451,9 @@ func (c *Config) redactMessageAttribute(key string, value slog.Value, collector 
 
 ```go
 // ErrMessageFlattenPanic reports that flattening an errmsg.Message panicked.
+// It carries only the panic value's type.
 type ErrMessageFlattenPanic struct {
-    PanicValue any
-    StackTrace string
+    PanicType string
 }
 
 func (e *ErrMessageFlattenPanic) Error() string
@@ -467,7 +468,7 @@ type ErrMessageRangeMismatch struct {
 func (e *ErrMessageRangeMismatch) Error() string
 ```
 
-どちらも秘密を含みうる文字列を持たない。記録する側（`ErrorCollector`）と終了時の報告の文言に、本文や範囲の内容を出さないためである。
+どちらも秘密を含みうる文字列を持たない。記録する側（`ErrorCollector`）と終了時の報告の文言に、本文や範囲の内容を出さないためである。panic 値は本文から作られうるので、`ErrMessageFlattenPanic` は panic 値とスタックトレースを持たず、panic 値の型名だけを持つ。
 
 ### 3.5 オプションの削除
 
