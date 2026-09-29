@@ -2271,8 +2271,8 @@ func redactedStructuredPreExecutionErrorField(t *testing.T, message errmsg.Messa
 // length to the builder, so the quoted row carries markup. Each body is checked
 // to survive redaction, so the properties are not met merely by a placeholder.
 // The structured row builds the body the way the production record does, from
-// PreExecutionError.DetailMessage, so it also covers RedactMessage rendering a
-// summary whose cause runs past the limit.
+// PreExecutionError.DetailMessage, so the recorded shape and the builder's
+// 500-byte truncation are exercised together.
 func TestBuildPreExecutionError_InterpolationContract(t *testing.T) {
 	tests := []struct {
 		name       string

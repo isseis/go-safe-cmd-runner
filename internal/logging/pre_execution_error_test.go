@@ -100,6 +100,47 @@ func TestPreExecutionError_Detail(t *testing.T) {
 	}
 }
 
+// TestPreExecutionError_DetailMessage pins the structured body: Message's part
+// keeps the role the summary declared, the cause is appended after a constant
+// separator, and Detail() is its unredacted rendering (AC-18, AC-35).
+func TestPreExecutionError_DetailMessage(t *testing.T) {
+	cause := errors.New("cause of the failure")
+
+	tests := []struct {
+		name       string
+		message    errmsg.Summary
+		err        error
+		want       errmsg.Segments
+		wantDetail string
+	}{
+		{
+			name:       "constant summary without a cause",
+			message:    errmsg.ConstSummary("Config file path is required"),
+			want:       errmsg.Segments{{Role: errmsg.RoleConstant, Text: "Config file path is required"}},
+			wantDetail: "Config file path is required",
+		},
+		{
+			name:    "text summary keeps its role and appends the cause",
+			message: errmsg.TextSummary("Total: 3, Verified: 2"),
+			err:     cause,
+			want: errmsg.Segments{
+				{Role: errmsg.RoleText, Text: "Total: 3, Verified: 2"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause of the failure"},
+			},
+			wantDetail: "Total: 3, Verified: 2: cause of the failure",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preExecErr := &PreExecutionError{Message: tt.message, Err: tt.err}
+			assert.Equal(t, tt.want, preExecErr.DetailMessage().Segments())
+			assert.Equal(t, tt.wantDetail, preExecErr.Detail())
+		})
+	}
+}
+
 func TestPreExecutionError_Is(t *testing.T) {
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
@@ -842,6 +883,122 @@ func TestExecutionError_ContextString(t *testing.T) {
 				"ContextString() should return the correct formatted string")
 		})
 	}
+}
+
+// TestExecutionError_ReportMessage pins the structured body the record path
+// builds: Message, the group/command context with each name as an Identifier,
+// and the cause, for every context combination. ContextString and Error() are
+// the same fields rendered, now that Message is an errmsg.Summary (AC-18).
+func TestExecutionError_ReportMessage(t *testing.T) {
+	cause := errors.New("cause")
+
+	tests := []struct {
+		name         string
+		group        string
+		command      string
+		err          error
+		wantSegments errmsg.Segments
+		wantContext  string
+		wantString   string
+	}{
+		{
+			name:         "no context and no cause",
+			wantSegments: errmsg.Segments{{Role: errmsg.RoleConstant, Text: "error running commands"}},
+			wantString:   "error running commands",
+		},
+		{
+			name:  "group only",
+			group: "backup",
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "group: "},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+			},
+			wantContext: "group: backup",
+			wantString:  "error running commands (group: backup)",
+		},
+		{
+			name:    "command only with a cause",
+			command: "dump",
+			err:     cause,
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "command: "},
+				{Role: errmsg.RoleIdentifier, Text: "dump"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause"},
+			},
+			wantContext: "command: dump",
+			wantString:  "error running commands (command: dump): cause",
+		},
+		{
+			name:    "group and command with a cause",
+			group:   "backup",
+			command: "dump",
+			err:     cause,
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "group: "},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: ", "},
+				{Role: errmsg.RoleConstant, Text: "command: "},
+				{Role: errmsg.RoleIdentifier, Text: "dump"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause"},
+			},
+			wantContext: "group: backup, command: dump",
+			wantString:  "error running commands (group: backup, command: dump): cause",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execErr := &ExecutionError{
+				Message:     errmsg.ConstSummary("error running commands"),
+				Component:   "runner",
+				RunID:       "run-1",
+				GroupName:   tt.group,
+				CommandName: tt.command,
+				Err:         tt.err,
+			}
+			assert.Equal(t, tt.wantSegments, execErr.ReportMessage().Segments())
+			assert.Equal(t, tt.wantContext, execErr.ContextString())
+			assert.Equal(t, tt.wantString, execErr.ReportMessage().String())
+		})
+	}
+}
+
+// TestExecutionError_ErrorMessage pins Error()'s format now that Message is an
+// errmsg.Summary, so a receiver change in Summary.String() cannot silently
+// produce a "%!s" verb.
+func TestExecutionError_ErrorMessage(t *testing.T) {
+	cause := errors.New("exit status 1")
+	withCause := &ExecutionError{
+		Message:     errmsg.TextSummary("error running commands"),
+		Component:   "runner",
+		RunID:       "run-1",
+		GroupName:   "backup",
+		CommandName: "dump",
+		Err:         cause,
+	}
+	assert.Equal(t,
+		"execution error: error running commands: exit status 1 (group: backup, command: dump, component: runner, run_id: run-1)",
+		withCause.Error())
+
+	noContext := &ExecutionError{
+		Message:   errmsg.ConstSummary("error running commands"),
+		Component: "runner",
+		RunID:     "run-1",
+	}
+	assert.Equal(t,
+		"execution error: error running commands (component: runner, run_id: run-1)",
+		noContext.Error())
 }
 
 func TestExecutionError_Unwrap(t *testing.T) {
