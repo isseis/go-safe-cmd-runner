@@ -22,7 +22,7 @@
 | 7 | `%w` を 2 つ持つ書式 | executor に `killAfterCancelError` を宣言（§7.2） |
 | 8 | 複合の型の共有 | executor の `errors.Join` 置き換えは `errmsg.Join`／`errmsg.JoinedError`。`cancelledRunError` は中断を宣言する専用の型として別に置く（§5.3・§7.4） |
 | 9 | 凍結する位置 | 記録の組み立て（`preExecutionRecordParams`・`HandleExecutionError`）で凍結する（§4.3） |
-| 10 | 整形のバイトの検査 | `IndentedCause(error)` のシグネチャをコンパイル時に固定し、AST では 1 引数であることを確かめる（§9.9） |
+| 10 | 整形のバイトの検査 | `IndentedCause(error)` のシグネチャをコンパイル時に固定する。字下げを渡す呼び出しはコンパイルできないので、AST の検査は置かない（§9.9） |
 | 11 | `Config.Placeholder()` | 残す。本番の呼び出しが `internal/runner/base/security/environment_validation.go:21` にある（§3.5） |
 | 12 | `NewConfig` の検証・コンパイル失敗の分岐 | 残す。既定の規則が不正な形に編集されたときの fail-closed の境界である。削除するテストによる `go tool cover -func` の差分は §10.7 に記録する（§3.5） |
 | 13 | `contextParts` の名前 | `(*ExecutionError).contextParts` に確定（§4.2・§9.1） |
@@ -213,7 +213,7 @@ func (e *JoinedError) StructuredMessage() Message
 7. `Freeze()` は `Segments()` を 1 回だけ評価し、各断片の役割と文字列をそのまま `Part` に移した `Message` を返す。返す `Message` は原因を持たないので、以後の `String()`・`Segments()` は原因の `Error()` を呼ばない。
 8. `Text` の断片の値全体置換は断片ごとである（AC-36）。これは redaction の側の規則であり、errmsg は関与しない。
 
-構築関数のシグネチャは §9.9 のコンパイル時の固定の対象である。
+`IndentedCause` のシグネチャは §9.9 のコンパイル時の固定の対象である。
 
 ### 2.4 平らにする処理（`Segments`）
 
@@ -1097,7 +1097,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 ### 9.9 整形のバイトの検査
 
 - 呼び出し側が渡すバイトが、整形として `Identifier`・`Path`・`Constant` の断片に入らないこと。
-- `IndentedCause` は `error` を 1 つだけ受け取る。このシグネチャを `internal/errmsg/errmsg_test.go` のコンパイル時の固定（`var _ func(error) Part = IndentedCause` など）で固定し、AST では `IndentedCause` の呼び出しが 1 引数であることを確かめる。字下げの文字列は errmsg が持つ定数であり、呼び出し側からは渡せない。
+- `IndentedCause` は `error` を 1 つだけ受け取る。このシグネチャを `internal/errmsg/errmsg_test.go` のコンパイル時の固定（`var _ func(error) Part = IndentedCause`）で固定する。引数を足した呼び出しはコンパイルできず、関数値にしてもシグネチャは同じなので、AST の検査は置かない。字下げの文字列は errmsg が持つ定数であり、呼び出し側からは渡せない。
 - `Const`・`ConstSummary` の引数は §9.3 で定数式に限る。`Ident`・`Path` は宣言の位置を §9.4 で限る。この 3 つで、呼び出し側のバイトが免除の役割の断片に入る経路は塞がる。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
 

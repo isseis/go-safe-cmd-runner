@@ -178,8 +178,8 @@
 - [x] 03 §2.5〜§2.7 の `Freeze`・`Merge`・`Join` を実装する。`NewError` は原因の部分がちょうど 1 つで nil でないことを要求する（03 §2.8）。
 - [x] 03 §10.1 のテストを `errmsg_test.go` に置く。深い連鎖、`IndentedCause` の末尾の除去が断片をまたぐ場合、`Freeze` が原因の `Error()` を 1 回だけ評価すること、nil・ゼロ値、`String()` と `Error()` の一致、AC-21 を含める。
 - [x] 03 §9.3（`Const` の定数式）・§9.4（免除の役割の位置）・§9.5（文言と構造の一致）・§9.8（`Part` の非公開と部分を返す関数）・§9.9（整形のバイト）のガードを `errmsg_guard_test.go` に実装する。§9.4 の許可位置の表は 03 §9.4 をそのまま使う。
-- [x] 各ガードに 03 §9.10 の自己テストを付ける（`Const` の式、別名・ドット import、`Part` の複合リテラル、`Error()` の本体の形、`IndentedCause` の引数）。
-- [x] `IndentedCause` のシグネチャをコンパイル時に固定する（`var _ func(error) Part = IndentedCause` など）。
+- [x] 各ガードに 03 §9.10 の自己テストを付ける（`Const` の式、別名・ドット import、`Part` の複合リテラル、`Error()` の本体の形）。
+- [x] `IndentedCause` のシグネチャをコンパイル時に固定する（`var _ func(error) Part = IndentedCause`）。
 
 **完了条件**: `internal/errmsg` の単体・ガードテストが green。`go test -tags test ./internal/errmsg/...` が通る。`errmsg` の本番ファイルが標準ライブラリだけを import する。
 

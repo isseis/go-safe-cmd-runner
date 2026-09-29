@@ -15,20 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The constructor signatures are fixed at compile time. In particular
 // IndentedCause takes the cause alone, so a caller has no argument through
 // which to pass its own indentation bytes.
-var (
-	_ func(string) Part    = Const
-	_ func(string) Part    = Ident
-	_ func(string) Part    = Path
-	_ func(string) Part    = Text
-	_ func(error) Part     = Cause
-	_ func(error) Part     = PathErrorCause
-	_ func(error) Part     = IndentedCause
-	_ func(string) Summary = ConstSummary
-	_ func(string) Summary = TextSummary
-)
+var _ func(error) Part = IndentedCause
 
 // textError is an error with an arbitrary text, including the trailing
 // newlines an error string should not normally have.

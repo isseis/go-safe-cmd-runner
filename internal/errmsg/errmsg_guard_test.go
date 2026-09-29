@@ -541,13 +541,12 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 
 // exemptRoleFuncNames are the errmsg functions whose call positions are
 // checked by checkExemptRoleCalls.
-var exemptRoleFuncNames = []string{"Ident", "Path", "PathErrorCause", "IndentedCause"}
+var exemptRoleFuncNames = []string{"Ident", "Path", "PathErrorCause"}
 
 // checkExemptRoleCalls reports calls of errmsg.Ident and errmsg.Path outside
 // exemptRolePositions, calls of errmsg.PathErrorCause outside
-// pathErrorCausePositions, calls of errmsg.IndentedCause with other than one
-// argument, and references to any of them that are not calls. errmsg's own
-// files are not checked: they implement the constructors.
+// pathErrorCausePositions, and references to any of them that are not calls.
+// errmsg's own files are not checked: they implement the constructors.
 func checkExemptRoleCalls(files []*parsedFile) []string {
 	var violations []string
 	for _, pf := range files {
@@ -564,13 +563,9 @@ func checkExemptRoleCalls(files []*parsedFile) []string {
 				if !exemptRolePositions.covers(pf.path, ref.fnKey()) || !inScope(pf.path, ref.fnKey()) {
 					violations = append(violations, fmt.Sprintf("%s: errmsg.%s is called outside the positions allowed to declare an exempt role", pf.position(ref.call), ref.name))
 				}
-			case "PathErrorCause":
+			default:
 				if !pathErrorCausePositions.covers(pf.path, ref.fnKey()) {
 					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", pf.position(ref.call)))
-				}
-			default:
-				if len(ref.call.Args) != 1 {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.IndentedCause takes the cause alone", pf.position(ref.call)))
 				}
 			}
 		}
@@ -607,8 +602,6 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 		{name: "function value", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate() { f := errmsg.Ident; _ = f }`)}, want: 1},
 		{name: "PathErrorCause in Create", file: guardFile{tempdirFile, src("", `func (m *DefaultTempDirManager) Create(err error) { _ = errmsg.PathErrorCause(err) }`)}},
 		{name: "PathErrorCause elsewhere", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate(err error) { _ = errmsg.PathErrorCause(err) }`)}, want: 1},
-		{name: "IndentedCause with one argument", file: guardFile{"internal/x/x.go", src("", `func f(err error) { _ = errmsg.IndentedCause(err) }`)}},
-		{name: "IndentedCause with two arguments", file: guardFile{"internal/x/x.go", src("", `func f(err error) { _ = errmsg.IndentedCause(err, "  ") }`)}, want: 1},
 		{
 			name: "Ident in the expansion file",
 			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"},
@@ -618,7 +611,6 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"},
 			want: 1,
 		},
-		{name: "IndentedCause as a function value", file: guardFile{"internal/x/x.go", src("", `var f = errmsg.IndentedCause`)}, want: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
