@@ -230,6 +230,11 @@
 - **実装モデル要件**: frontier-required
 - **判定理由**: 秘密の漏れに直結する範囲の導出であり、`RedactText` との一致義務をテストと実行時の検査の両方で負う。設計の正しさがそのまま安全性になる
 
+- [x] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
+
 ### Phase 3: `Config.RedactMessage` とハンドラの分岐
 
 **Files**: `internal/redaction/message.go`（新規）、`internal/redaction/message_test.go`（新規）、`internal/redaction/redaction_guard_test.go`（新規・`//go:build test`）、`internal/redaction/errors.go`・`redactor.go`（変更）
