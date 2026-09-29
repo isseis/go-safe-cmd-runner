@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -32,8 +34,22 @@ type CommandExecutionError struct {
 	Err         error
 }
 
+// Error renders the structured message without redaction.
 func (e *CommandExecutionError) Error() string {
-	return fmt.Sprintf("command %s in group %s failed: %v", e.CommandName, e.GroupName, e.Err)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the command and group names as Identifiers and
+// carries the cause.
+func (e *CommandExecutionError) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("command "),
+		errmsg.Ident(e.CommandName),
+		errmsg.Const(" in group "),
+		errmsg.Ident(e.GroupName),
+		errmsg.Const(" failed: "),
+		errmsg.Cause(e.Err),
+	)
 }
 
 func (e *CommandExecutionError) Unwrap() error {
@@ -166,7 +182,12 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	if err != nil {
 		return newGroupStageError(GroupStageGroupPreparation, groupSpec.Name,
-			fmt.Errorf("failed to expand group[%s]: %w", groupSpec.Name, err))
+			errmsg.NewError(
+				errmsg.Const("failed to expand group["),
+				errmsg.Ident(groupSpec.Name),
+				errmsg.Const("]: "),
+				errmsg.Cause(err),
+			))
 	}
 
 	if ge.isDryRun {
@@ -183,7 +204,10 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
 	if err != nil {
 		return newGroupStageError(GroupStageGroupPreparation, groupSpec.Name,
-			fmt.Errorf("failed to resolve work directory: %w", err))
+			errmsg.NewError(
+				errmsg.Const("failed to resolve work directory: "),
+				errmsg.Cause(err),
+			))
 	}
 
 	if tempDirMgr != nil && !ge.keepTempDirs {
@@ -314,7 +338,16 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 		cmdSpec := &groupSpec.Commands[i]
 		stageErr := func(cause error) error {
 			return newCommandStageError(GroupStageCommandPreparation, groupSpec.Name, cmdSpec.Name,
-				fmt.Errorf("failed to pre-expand commands for group[%s]: command[%s] (index %d): %w", groupSpec.Name, cmdSpec.Name, i, cause))
+				errmsg.NewError(
+					errmsg.Const("failed to pre-expand commands for group["),
+					errmsg.Ident(groupSpec.Name),
+					errmsg.Const("]: command["),
+					errmsg.Ident(cmdSpec.Name),
+					errmsg.Const("] (index "),
+					errmsg.Text(strconv.Itoa(i)),
+					errmsg.Const("): "),
+					errmsg.Cause(cause),
+				))
 		}
 
 		runtimeCmd, err := config.ExpandCommand(
@@ -331,7 +364,10 @@ func (ge *DefaultGroupExecutor) preExpandCommands(
 
 		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
 		if err != nil {
-			return stageErr(fmt.Errorf("failed to resolve workdir: %w", err))
+			return stageErr(errmsg.NewError(
+				errmsg.Const("failed to resolve workdir: "),
+				errmsg.Cause(err),
+			))
 		}
 		runtimeCmd.EffectiveWorkDir = workDir
 
@@ -371,7 +407,13 @@ func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertyp
 		default:
 			// See errUnhandledCheckSkipReason.
 			return newGroupStageError(GroupStageDirPermissionAudit, runnertypes.ExtractGroupName(runtimeGroup),
-				fmt.Errorf("%w: %d for path %s", errUnhandledCheckSkipReason, reason, p))
+				errmsg.NewError(
+					errmsg.Cause(errUnhandledCheckSkipReason),
+					errmsg.Const(": "),
+					errmsg.Text(strconv.Itoa(int(reason))),
+					errmsg.Const(" for path "),
+					errmsg.Path(p),
+				))
 		}
 	}
 
@@ -385,8 +427,14 @@ func (ge *DefaultGroupExecutor) auditGroupDirPermissions(runtimeGroup *runnertyp
 	if len(violations) > 0 {
 		groupName := runnertypes.ExtractGroupName(runtimeGroup)
 		return newGroupStageError(GroupStageDirPermissionAudit, groupName,
-			fmt.Errorf("%w for group[%s]: %d directory violation(s) detected; review directory permissions",
-				ErrDirPermViolation, groupName, len(violations)))
+			errmsg.NewError(
+				errmsg.Cause(ErrDirPermViolation),
+				errmsg.Const(" for group["),
+				errmsg.Ident(groupName),
+				errmsg.Const("]: "),
+				errmsg.Text(strconv.Itoa(len(violations))),
+				errmsg.Const(" directory violation(s) detected; review directory permissions"),
+			))
 	}
 	return nil
 }
@@ -432,7 +480,12 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 		resolvedPath, resolveErr := ge.verificationManager.ResolvePath(cmd.ExpandedCmd)
 		if resolveErr != nil {
 			return newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(),
-				fmt.Errorf("command path resolution failed for %q: %w", cmd.ExpandedCmd, resolveErr))
+				errmsg.NewError(
+					errmsg.Const("command path resolution failed for "),
+					errmsg.Path(strconv.Quote(cmd.ExpandedCmd)),
+					errmsg.Const(": "),
+					errmsg.Cause(resolveErr),
+				))
 		}
 
 		// Pinned once, here: the risk evaluator binds this exact path and inode for
@@ -453,7 +506,12 @@ func (ge *DefaultGroupExecutor) verifyGroupFiles(runtimeGroup *runnertypes.Runti
 			// The cause may name only a library or an interpreter, so the
 			// command path is added for the report to say which command failed.
 			return newCommandStageError(GroupStageCommandVerification, groupName, cmd.Name(),
-				fmt.Errorf("command dependency verification failed for %q: %w", resolvedPath, depErr))
+				errmsg.NewError(
+					errmsg.Const("command dependency verification failed for "),
+					errmsg.Path(strconv.Quote(resolvedPath)),
+					errmsg.Const(": "),
+					errmsg.Cause(depErr),
+				))
 		}
 	}
 
@@ -508,7 +566,10 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	envVars := executor.EnvVarValues(envMap)
 
 	if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {
-		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
+		return nil, errmsg.NewError(
+			errmsg.Const("resolved environment variables security validation failed: "),
+			errmsg.Cause(err),
+		)
 	}
 
 	// cmd.ExpandedCmd is deliberately not re-resolved here; see verifyGroupFiles.
@@ -518,7 +579,10 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	if cmd.Output() != "" {
 		if err := ge.resourceManager.ValidateOutputPath(cmd.Output(), cmd.EffectiveWorkDir); err != nil {
-			return nil, fmt.Errorf("output path validation failed: %w", err)
+			return nil, errmsg.NewError(
+				errmsg.Const("output path validation failed: "),
+				errmsg.Cause(err),
+			)
 		}
 	}
 
@@ -668,7 +732,13 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 		return output, result.Stderr, result.ExitCode, &CommandExecutionError{
 			GroupName:   groupSpec.Name,
 			CommandName: cmd.Name(),
-			Err:         fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name(), result.ExitCode),
+			Err: errmsg.NewError(
+				errmsg.Cause(ErrCommandFailed),
+				errmsg.Const(": command "),
+				errmsg.Ident(cmd.Name()),
+				errmsg.Const(" failed with exit code "),
+				errmsg.Text(strconv.Itoa(result.ExitCode)),
+			),
 		}
 	}
 

@@ -3199,6 +3199,21 @@ func TestRunner_ExecuteGroupsCanceledChildFailureIncludesContextCanceled(t *test
 	assert.Same(t, signalled, cmdErr)
 }
 
+// TestCancelledRunError_TextAndReachability pins that the dedicated
+// cancellation error renders exactly the text errors.Join produced and keeps
+// both causes reachable, so declaring the cancellation by type does not change
+// the report or the errors.Is / errors.AsType contract.
+func TestCancelledRunError_TextAndReachability(t *testing.T) {
+	groupErr := &CommandExecutionError{GroupName: "group-a", CommandName: "dump", Err: ErrExecutionFailed}
+	got := &cancelledRunError{ctxErr: context.Canceled, err: groupErr}
+
+	assert.Equal(t, errors.Join(context.Canceled, groupErr).Error(), got.Error())
+	assert.ErrorIs(t, got, context.Canceled)
+	assert.ErrorIs(t, got, ErrExecutionFailed)
+	_, ok := errors.AsType[*CommandExecutionError](got)
+	require.True(t, ok, "the failing group's error must be reachable")
+}
+
 // TestRunner_CommandExecutionFailureSkipsStageNotification fixes that a failure
 // after commands started is left to the existing group summary.
 func TestRunner_CommandExecutionFailureSkipsStageNotification(t *testing.T) {
