@@ -20,6 +20,7 @@ Work in the following order.
 4. Read the remaining required input documents.
 - `docs/dev/developer_guide/requirements_process.md`
 - `docs/dev/developer_guide/mermaid_reference.md`
+- `design_handoff.md` in the target task directory, if it exists (review concerns on the requirements document deferred to design; see `_context.md`)
 
 5. Read conditional guidance only when relevant.
 - Read the conditional guide (path in `_context.md`, Domain-specific) if the conditional-guide trigger applies (trigger also in `_context.md`, Domain-specific).
@@ -40,6 +41,7 @@ Work in the following order.
 - Set the document status to `draft`.
 - Include all required sections defined in `docs/dev/developer_guide/requirements_process.md`.
 - Reflect all functional requirements and acceptance criteria from `01_requirements.md`.
+- If `design_handoff.md` exists, record for every `H-NN` item in it the approach the design takes or why the item does not apply, so no deferred concern is silently dropped.
 - For any flag, mode, or option that changes which side effects occur (e.g. `--dry-run`, `--force`, read-only mode), define explicitly which external side effects (writes, deletes, network sends) it suppresses or permits. An under-specified side-effect contract leads to inconsistent implementations.
 - Use Mermaid diagrams for the concept model, system structure, key processing flows, and a threat model when applicable.
 - Restrict code examples to high-level interfaces, type definitions, and error type definitions only.
@@ -54,7 +56,7 @@ Work in the following order.
      - **Reviewer A — software architect.** Mandate (go deep here): conceptual integrity and component decomposition; abstraction boundaries, coupling/cohesion; interface and type/signature quality (verify against the Go source); responsibility OVERLAP with existing packages / DRY / re-implementation; YAGNI; naming and terminology consistency; Mermaid diagram correctness and conventions; AC↔design traceability completeness; extensibility. Out-of-scope (defer to Reviewer B — at most one-line "OUT-OF-LANE FLAGS"): runtime failure modes, fail-closed/open, TOCTOU/races, production security posture and evasion, observability/audit, rollout/migration/backward-compat, performance, determinism.
      - **Reviewer B — senior SRE.** Mandate (go deep here, and apply it EVEN WHERE THE CHECKLISTS ARE SILENT — these dimensions are mostly not enumerated below and are exactly where this reviewer adds value): failure modes and fail-closed vs fail-open correctness; TOCTOU / race windows between risk evaluation and actual use; production security posture, blast radius, and evasion/bypass paths; auditability/observability for on-call (can a denial be explained from the logs?); rollout/migration safety and backward compatibility (what breaks on upgrade; is a staged/shadow rollout needed?); performance/latency and pathological inputs; determinism/reproducibility (environment-dependent results, dry-run vs runtime); debuggability and safe override. Out-of-scope (defer to Reviewer A — at most one-line "OUT-OF-LANE FLAGS"): interface/type design, package boundaries/DRY, naming/terminology, Mermaid conventions, abstraction structure, AC-traceability bookkeeping.
      - Each reviewer must look hard for real problems and not rubber-stamp, and must stay in its lane (the partition is what makes the panel worth its ~2× cost). If a lane is genuinely clean, it says so explicitly rather than inventing findings.
-   - **FILES**: the architecture document, the requirements document, the requirements process guide, and the Mermaid reference guide (paths in `_context.md`), as resolved absolute-path strings. If the conditional-guide trigger applies (`_context.md`, Domain-specific), also include the conditional guide. Pass the same FILES to both reviewers.
+   - **FILES**: the architecture document, the requirements document, the requirements process guide, the Mermaid reference guide, and the design handoff document if it exists (paths in `_context.md`), as resolved absolute-path strings. If the conditional-guide trigger applies (`_context.md`, Domain-specific), also include the conditional guide. Pass the same FILES to both reviewers.
    - **CRITERIA**: give BOTH reviewers every item from the Technical correctness checklist and the Readability and consistency checklist below, copied verbatim, as the shared floor — but each reviewer reports only items within its mandate, raising an out-of-mandate item ONLY as a one-line OUT-OF-LANE FLAG when it actually spots a potential issue there (it does not enumerate clean out-of-mandate items). Reviewer B additionally applies its operational mandate above beyond the checklists.
    - **Synthesis**: after the parallel panel returns, YOU (not a subagent) merge the two outputs per the Panel-mode "Synthesize" step in `.claude/commands/_lib/review-subagent-pattern.md` — dedup overlapping findings, reconcile conflicting severities to the higher, and reconstruct any cross-cutting issue sitting in the seam between the two mandates (a structural choice with an operational consequence). Then run the fix / re-review loop on the merged findings.
 
@@ -67,6 +69,7 @@ Work in the following order.
 - [ ] `02_architecture.md` is written in Japanese and its status is `draft`.
 - [ ] All required sections from the requirements process guide are present.
 - [ ] All functional requirements and acceptance criteria in `01_requirements.md` are reflected in the design.
+- [ ] If `design_handoff.md` exists, every `H-NN` item in it is recorded in the design with the approach taken or the reason it does not apply.
 - [ ] For each acceptance criterion that applies to an existing code pattern (e.g., "log slog.Warn when X fails"), the design accounts for ALL instances of that pattern in the codebase, not only the most prominent ones. Verify by searching the codebase for the pattern.
 - [ ] Class diagrams: each method signature and field type shown matches the actual Go source (verify by reading the corresponding `.go` file). Pay special attention to return types, including error returns, and fully-qualified package prefixes on types.
 - [ ] If the design introduces an exception to a policy established in another architecture document under `docs/tasks/`, the exception is stated inline (not only in an appendix) with: the original policy and its location, the reason for the exception, and which existing tests assert the old behavior and will need updating.

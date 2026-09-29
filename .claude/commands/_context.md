@@ -39,6 +39,8 @@ what changes under which condition:
 | Requirements document | `01_requirements.md` |
 | Architecture document | `02_architecture.md` |
 | Implementation plan document | `03_implementation_plan.md` |
+| Design handoff document | `design_handoff.md` — design-level review concerns raised on the requirements document; the architecture document records how each item is handled (written by `fixpr.md`) |
+| Implementation handoff document | `implementation_handoff.md` — implementation-level review concerns raised on the requirements or architecture document; the implementation plan records how each item is handled (written by `fixpr.md`) |
 | Document status values | `draft` → `approved` |
 | Document language | Japanese |
 | Translation glossary | `docs/translation_glossary.md` |
