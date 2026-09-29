@@ -390,6 +390,20 @@ func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 		return slog.Attr{Key: key, Value: slog.StringValue(id.Name())}
 	}
 
+	// A structured message is rendered with per-segment redaction. There is no
+	// collector here, so a failure only suppresses the value.
+	if redacted, ok := c.redactMessageAttribute(key, value, nil); ok {
+		return redacted
+	}
+
+	// Any other LogValuer is suppressed: this function has neither the panic
+	// recovery nor the depth tracking needed to resolve LogValue() safely, and
+	// passing the value on unresolved would hand the next handler text that was
+	// never redacted.
+	if value.Kind() == slog.KindLogValuer {
+		return slog.Attr{Key: key, Value: slog.StringValue(RedactionFailurePlaceholder)}
+	}
+
 	// Redact string values that match sensitive patterns
 	if value.Kind() == slog.KindString {
 		strValue := value.String()
@@ -853,6 +867,14 @@ func (r *RedactingHandler) redactLogAttributeWithContext(attr slog.Attr, ctx red
 	// identifier placed under it (fail-closed).
 	if id, ok := declaredIdentifier(value); ok {
 		return slog.Attr{Key: key, Value: slog.StringValue(id.Name())}
+	}
+
+	// A structured message is rendered with per-segment redaction and reaches
+	// the next handler as a string. Only exactly errmsg.Message takes this path;
+	// any other LogValuer, *errmsg.Message included, is resolved below and
+	// redacted as a whole.
+	if redacted, ok := r.config.redactMessageAttribute(key, value, r.errorCollector); ok {
+		return redacted
 	}
 
 	// Process based on value kind
