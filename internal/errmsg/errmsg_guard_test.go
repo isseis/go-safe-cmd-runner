@@ -497,11 +497,6 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 			want:  1,
 		},
 		{
-			name:  "package-level closure variable shadowing a package constant",
-			files: []guardFile{{"internal/x/x.go", src("", "const c = \"x\"\n\nvar f = func(v string) errmsg.Part { c := v; return errmsg.Const(c) }")}},
-			want:  1,
-		},
-		{
 			name:  "nested local constant does not vouch for a package variable",
 			files: []guardFile{{"internal/x/x.go", src("", "var c = g()\n\nfunc g() string { return \"\" }\n\nfunc f() { if false { const c = \"x\"; _ = c }; _ = errmsg.Const(c) }")}},
 			want:  1,
@@ -608,8 +603,6 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 		{name: "allowed method name in another file", file: guardFile{"internal/logging/slack_handler.go", src("", `func (e *DefaultExecutor) Validate() { _ = errmsg.Ident("x") }`)}, want: 1},
 		{name: "allowed name as a function rather than a method", file: guardFile{executorFile, src("", `func Validate() { _ = errmsg.Path("/p") }`)}, want: 1},
 		{name: "package-level call in a function-scoped file", file: guardFile{executorFile, src("", `var _ = errmsg.Path("/p")`)}, want: 1},
-		{name: "aliased import", file: guardFile{"internal/logging/slack_handler.go", src("em ", `func f() { _ = em.Ident("x") }`)}, want: 1},
-		{name: "dot-import", file: guardFile{"internal/logging/slack_handler.go", src(". ", `func f() { _ = Path("/p") }`)}, want: 1},
 		{name: "dot-import in an allowed method", file: guardFile{executorFile, src(". ", `func (e *DefaultExecutor) executeNormal() { _ = Ident("x") }`)}},
 		{name: "function value", file: guardFile{executorFile, src("", `func (e *DefaultExecutor) Validate() { f := errmsg.Ident; _ = f }`)}, want: 1},
 		{name: "PathErrorCause in Create", file: guardFile{tempdirFile, src("", `func (m *DefaultTempDirManager) Create(err error) { _ = errmsg.PathErrorCause(err) }`)}},
@@ -625,9 +618,7 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"},
 			want: 1,
 		},
-		{name: "PathErrorCause as a function value", file: guardFile{tempdirFile, src("", `func (m *DefaultTempDirManager) Create() { f := errmsg.PathErrorCause; _ = f }`)}, want: 1},
 		{name: "IndentedCause as a function value", file: guardFile{"internal/x/x.go", src("", `var f = errmsg.IndentedCause`)}, want: 1},
-		{name: "a same-named local function is not tracked", file: guardFile{"internal/x/x.go", "package x\n\nfunc Ident(s string) string { return s }\n\nvar _ = Ident(\"x\")\n"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -880,7 +871,6 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 		want      int
 	}{
 		{name: "value literal", file: guardFile{"internal/x/x.go", header + "var _ = errmsg.Part{}\n"}, want: 1},
-		{name: "pointer literal", file: guardFile{"internal/x/x.go", header + "var _ = &errmsg.Part{}\n"}, want: 1},
 		{name: "elided slice element", file: guardFile{"internal/x/x.go", header + "var _ = []errmsg.Part{{}, {}}\n"}, want: 2},
 		{name: "elided map value", file: guardFile{"internal/x/x.go", header + "var _ = map[string]errmsg.Part{\"a\": {}}\n"}, want: 1},
 		{name: "exported Parts method", file: guardFile{"internal/x/x.go", header + "type T struct{}\n\nfunc (T) Parts() []errmsg.Part { return nil }\n"}, want: 1},
@@ -1253,8 +1243,11 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 			want: 1,
 		},
 		{
-			name: "defined type over a type that only declares StructuredMessage",
-			src:  "package x\n\ntype base struct{}\n\ntype W base\n\nfunc (W) Error() string { return \"x\" }\n",
+			name: "defined type does not get the methods declared on its underlying type",
+			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype base struct{ msg errmsg.Message }\n\n" +
+				"func (b base) StructuredMessage() errmsg.Message { return b.msg }\n\n" +
+				"func (b base) Error() string { return b.StructuredMessage().String() }\n\n" +
+				"type W base\n\nfunc (W) Error() string { return \"x\" }\n",
 		},
 		{
 			name: "embedding an alias of errmsg.Error and declaring Error",

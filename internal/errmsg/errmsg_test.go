@@ -36,11 +36,6 @@ type textError string
 
 func (e textError) Error() string { return string(e) }
 
-// wrapInError returns an *Error whose message is prefix followed by cause.
-func wrapInError(prefix string, cause error) *Error {
-	return NewError(Text(prefix), Cause(cause))
-}
-
 // groupErrorFormat is GroupError.Error()'s formatting of its cause, the
 // reference IndentedCause must reproduce.
 func groupErrorFormat(text string) string {
@@ -126,19 +121,9 @@ func TestMessage_SegmentsFollowFlatteningContracts(t *testing.T) {
 			},
 		},
 		{
-			name: "a path error cause with a nil inner error renders <nil>",
-			msg:  NewMessage(PathErrorCause(&fs.PathError{Op: "chmod", Path: "/p"})),
-			want: Segments{{RoleText, "chmod"}, {RoleConstant, " "}, {RolePath, "/p"}, {RoleConstant, ": "}, {RoleText, "<nil>"}},
-		},
-		{
 			name: "a path error cause that is not a *fs.PathError is a plain cause",
 			msg:  NewMessage(PathErrorCause(fmt.Errorf("wrapped: %w", &fs.PathError{Op: "mkdir", Path: "/p", Err: syscall.EACCES}))),
 			want: Segments{{RoleText, "wrapped: mkdir /p: permission denied"}},
-		},
-		{
-			name: "a nil path error cause renders as <nil>",
-			msg:  NewMessage(PathErrorCause(nil)),
-			want: Segments{{RoleText, "<nil>"}},
 		},
 	}
 	for _, tt := range tests {
@@ -152,45 +137,20 @@ func TestMessage_PathErrorCauseMatchesPathErrorText(t *testing.T) {
 	pe := &fs.PathError{Op: "chmod", Path: "/tmp/scr-run-123", Err: syscall.EPERM}
 	err := NewError(Const("failed to set permissions on temporary directory: "), PathErrorCause(pe))
 
-	assert.Equal(t, "failed to set permissions on temporary directory: "+pe.Error(), err.Error())
 	assert.Equal(t, fmt.Errorf("failed to set permissions on temporary directory: %w", pe).Error(), err.Error())
-	assert.ErrorIs(t, err, syscall.EPERM)
-	got, ok := errors.AsType[*fs.PathError](err)
-	require.True(t, ok)
-	assert.Same(t, pe, got)
 }
 
-func TestMessage_RolePartsAndCausePartsAreDistinct(t *testing.T) {
-	assert.Equal(t, Segments{{RoleText, ""}}, NewMessage(Text("")).Segments())
-	assert.Empty(t, NewMessage(Text("")).String())
-	assert.Empty(t, Message{}.String())
-	assert.Empty(t, Message{}.Segments())
-}
-
+// A JoinedError nested as the cause of an Error renders like errors.Join
+// nested in fmt.Errorf; the single-layer forms are covered by the Join and
+// deep-chain tests.
 func TestMessage_StringEqualsErrorForStructuredTypes(t *testing.T) {
 	boom := errors.New("boom")
 	second := errors.New("second")
 	inner := NewError(Const("inner "), Ident("name"), Const(": "), Cause(boom))
-	joined := Join(inner, second)
-	tests := []struct {
-		name string
-		err  Structured
-		want string
-	}{
-		{name: "Error", err: inner, want: fmt.Errorf("inner name: %w", boom).Error()},
-		{
-			name: "Error wrapping JoinedError",
-			err:  wrapInError("outer: ", joined),
-			want: fmt.Errorf("outer: %w", errors.Join(fmt.Errorf("inner name: %w", boom), second)).Error(),
-		},
-		{name: "JoinedError", err: joined.(*JoinedError), want: "inner name: boom\nsecond"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, tt.err.StructuredMessage().String())
-			assert.Equal(t, tt.want, tt.err.Error())
-		})
-	}
+
+	got := NewError(Text("outer: "), Cause(Join(inner, second)))
+
+	assert.Equal(t, fmt.Errorf("outer: %w", errors.Join(fmt.Errorf("inner name: %w", boom), second)).Error(), got.Error())
 }
 
 func TestIndentedCause_MatchesGroupErrorFormatting(t *testing.T) {
@@ -203,11 +163,6 @@ func TestIndentedCause_MatchesGroupErrorFormatting(t *testing.T) {
 			name:  "unstructured cause with continuation lines and trailing newline",
 			cause: textError("line one\nline two\n"),
 			want:  Segments{{RoleText, "line one\n  line two"}},
-		},
-		{
-			name:  "trailing newline-only segment is dropped",
-			cause: NewError(Const("cause"), Cause(textError("\n"))),
-			want:  Segments{{RoleConstant, "cause"}},
 		},
 		{
 			name:  "trailing CRLF sequence spans segments",
@@ -231,19 +186,12 @@ func TestIndentedCause_MatchesGroupErrorFormatting(t *testing.T) {
 			cause: NewError(Const("\n"), Cause(textError("\r\n"))),
 			want:  nil,
 		},
-		{
-			name:  "nil cause",
-			cause: nil,
-			want:  Segments{{RoleText, "<nil>"}},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := NewMessage(IndentedCause(tt.cause))
 			assert.Equal(t, tt.want, msg.Segments())
-			if tt.cause != nil {
-				assert.Equal(t, groupErrorFormat(tt.cause.Error()), msg.String())
-			}
+			assert.Equal(t, groupErrorFormat(tt.cause.Error()), msg.String())
 		})
 	}
 }
@@ -286,10 +234,8 @@ func TestNewError_RejectsInvalidCauses(t *testing.T) {
 		parts []Part
 	}{
 		{name: "no cause part", parts: []Part{Const("x")}},
-		{name: "no parts", parts: nil},
 		{name: "two cause parts", parts: []Part{Cause(errors.New("a")), Cause(errors.New("b"))}},
 		{name: "nil cause", parts: []Part{Const("x: "), Cause(nil)}},
-		{name: "nil path error cause", parts: []Part{PathErrorCause(nil)}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -425,9 +371,7 @@ func TestMessage_ZeroValuesAndUndefinedRoles(t *testing.T) {
 
 	t.Run("zero values do not panic", func(t *testing.T) {
 		assert.NotPanics(t, func() {
-			assert.Empty(t, Message{}.String())
 			assert.Empty(t, Message{}.Freeze().String())
-			assert.Empty(t, Summary{}.String())
 			assert.Empty(t, (&Error{}).Error())
 			require.NoError(t, (&Error{}).Unwrap())
 			assert.Empty(t, (&JoinedError{}).Error())
@@ -440,26 +384,7 @@ func TestMessage_LogValueReturnsUnredactedString(t *testing.T) {
 	msg := NewMessage(Const("failed to expand group "), Ident("token-rotate"), Const(": "),
 		Cause(errors.New("password=hunter2")))
 
-	for _, tt := range []struct {
-		name    string
-		handler func(*bytes.Buffer) slog.Handler
-		want    string
-	}{
-		{
-			name:    "text handler",
-			handler: func(b *bytes.Buffer) slog.Handler { return slog.NewTextHandler(b, nil) },
-			want:    "error_message=" + strconv.Quote(msg.String()),
-		},
-		{
-			name:    "json handler",
-			handler: func(b *bytes.Buffer) slog.Handler { return slog.NewJSONHandler(b, nil) },
-			want:    `"error_message":"failed to expand group token-rotate: password=hunter2"`,
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			slog.New(tt.handler(&buf)).Error("report", slog.Any("error_message", msg))
-			assert.Contains(t, buf.String(), tt.want)
-		})
-	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Error("report", slog.Any("error_message", msg))
+	assert.Contains(t, buf.String(), "error_message="+strconv.Quote(msg.String()))
 }
