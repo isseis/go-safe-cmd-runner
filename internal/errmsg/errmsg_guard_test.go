@@ -942,6 +942,15 @@ func checkPartFlow(s *guardSet) []string {
 				}
 				return false
 			}
+			if sel, ok := e.(*ast.SelectorExpr); ok {
+				// A method value keeps its receiver's address, so the method can
+				// write a Part into the caller's variable later.
+				if fn, ok := p.info.Uses[sel.Sel].(*types.Func); ok && fn.Signature().Recv() != nil &&
+					s.reachesCaller(fn.Signature().Recv().Type(), map[*types.TypeName]struct{}{}) {
+					violations = append(violations, fmt.Sprintf("%s: a method value whose receiver can hold an errmsg.Part may not be taken here", position(sel.Pos())))
+					return false
+				}
+			}
 			if !holdsPart(e) || isAllowedPartForm(p, e) {
 				return true
 			}
@@ -1013,7 +1022,7 @@ func (s *guardSet) movesPartsOnly(p *typedPackage, fun ast.Expr) bool {
 }
 
 // handsPartOut reports whether call can give its caller a Part: through a
-// result, or through a parameter that reaches the caller's memory. A Part
+// result, or through a receiver or parameter that reaches the caller's memory. A Part
 // passed by value, alone, in a struct or array, or as a fresh variadic list,
 // only goes in.
 func (s *guardSet) handsPartOut(p *typedPackage, call *ast.CallExpr) bool {
@@ -1024,9 +1033,21 @@ func (s *guardSet) handsPartOut(p *typedPackage, call *ast.CallExpr) bool {
 	if s.containsPart(sig.Results(), map[*types.TypeName]struct{}{}) {
 		return true
 	}
+	// A method value's signature omits the receiver, which a pointer
+	// receiver lets the method write through.
+	if sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr); ok {
+		if fn, ok := p.info.Uses[sel.Sel].(*types.Func); ok && fn.Signature().Recv() != nil &&
+			s.reachesCaller(fn.Signature().Recv().Type(), map[*types.TypeName]struct{}{}) {
+			return true
+		}
+	}
 	for i, param := range slices.Collect(sig.Params().Variables()) {
 		t := param.Type()
 		if sig.Variadic() && i == sig.Params().Len()-1 && !call.Ellipsis.IsValid() {
+			if len(call.Args) < sig.Params().Len() {
+				// No variadic argument: the callee gets an empty list.
+				continue
+			}
 			t = t.(*types.Slice).Elem()
 		}
 		if s.reachesCaller(t, map[*types.TypeName]struct{}{}) {
@@ -1076,12 +1097,15 @@ func (s *guardSet) reachesCaller(t types.Type, visiting map[*types.TypeName]stru
 // isAllowedPartForm reports whether e is a form through which a Part may flow
 // outside the positions that may declare an exempt role: a composite or
 // function literal, a variable or parameter declared inside a function, or a
-// parenthesized, indexed, sliced, dereferenced, addressed or received
-// expression, whose operand is checked on its own.
+// parenthesized, indexed, sliced, dereferenced or received expression, whose
+// operand is checked on its own. Taking an address is not allowed: the pointer
+// would let code elsewhere write a Part into the caller's variable.
 func isAllowedPartForm(p *typedPackage, e ast.Expr) bool {
 	switch e := e.(type) {
-	case *ast.CompositeLit, *ast.FuncLit, *ast.ParenExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.StarExpr, *ast.UnaryExpr:
+	case *ast.CompositeLit, *ast.FuncLit, *ast.ParenExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.StarExpr:
 		return true
+	case *ast.UnaryExpr:
+		return e.Op != token.AND
 	case *ast.Ident:
 		v, ok := p.info.Uses[e].(*types.Var)
 		// Compare with the variable's own package: a dot-import makes another
@@ -1239,6 +1263,42 @@ func TestPartFlowCheckRecognizesForms(t *testing.T) {
 			want:  1,
 		},
 		{
+			name: "method filling a Part through a pointer receiver",
+			files: []guardFile{
+				stage("type slot [1]errmsg.Part\n\nfunc (s *slot) fill(v string) { s[0] = errmsg.Ident(v) }\n"),
+				runner("func (r *Runner) Other(v string) errmsg.Message { var s slot; s.fill(v); return errmsg.NewMessage(s[0]) }\n"),
+			},
+			want: 1,
+		},
+		{
+			name: "method value keeping a pointer to a Part-holding variable",
+			files: []guardFile{
+				stage("type slot [1]errmsg.Part\n\nfunc (s *slot) fill(v string) { s[0] = errmsg.Ident(v) }\n"),
+				runner("func (r *Runner) Other(v string) errmsg.Message { var s slot; f := s.fill; f(v); return errmsg.NewMessage(s[0]) }\n"),
+			},
+			want: 1,
+		},
+		{
+			name: "address of a Part-holding variable converted to an interface",
+			files: []guardFile{
+				stage("type slot [1]errmsg.Part\n\nfunc (s *slot) Fill(v string) { s[0] = errmsg.Ident(v) }\n"),
+				runner("func (r *Runner) Other(v string) errmsg.Message {\n\tvar s slot\n\tvar f interface{ Fill(string) } = &s\n\tf.Fill(v)\n\treturn errmsg.NewMessage(s[0])\n}\n"),
+			},
+			want: 1,
+		},
+		{
+			name: "method with a value receiver and a variadic helper given no arguments",
+			files: []guardFile{
+				stage("type slot [1]errmsg.Part\n\nfunc (s slot) show() errmsg.Message { return errmsg.NewMessage(s[0]) }\n\nfunc fillAll(dsts ...*errmsg.Part) {}\n"),
+				runner("func (r *Runner) Other() errmsg.Message { fillAll(); return slot{errmsg.Const(\"x\")}.show() }\n"),
+			},
+		},
+		{
+			name:  "variadic helper given a pointer to fill",
+			files: []guardFile{stage("func fillAll(dsts ...*errmsg.Part) {}\n"), runner("func (r *Runner) Other() { var p errmsg.Part; fillAll(&p) }\n")},
+			want:  1,
+		},
+		{
 			name:  "field holding a Part",
 			files: []guardFile{runner("type holder struct{ p errmsg.Part }\n\nfunc (r *Runner) Other(h holder) errmsg.Message { return errmsg.NewMessage(h.p) }\n")},
 			want:  1,
@@ -1296,11 +1356,16 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 				}
 			}
 		}
-		for _, name := range p.pkg.Scope().Names() {
-			tn, ok := p.pkg.Scope().Lookup(name).(*types.TypeName)
-			if !ok {
-				continue
+		// Every type the package declares, including those inside functions.
+		var typeNames []*types.TypeName
+		for _, obj := range p.info.Defs {
+			if tn, ok := obj.(*types.TypeName); ok && tn.Parent() != nil {
+				typeNames = append(typeNames, tn)
 			}
+		}
+		slices.SortFunc(typeNames, func(a, b *types.TypeName) int { return int(a.Pos() - b.Pos()) })
+		for _, tn := range typeNames {
+			name := tn.Name()
 			if _, named := types.Unalias(tn.Type()).(*types.Named); tn.IsAlias() && named {
 				// Checked as the named type it denotes.
 				continue
@@ -1366,7 +1431,7 @@ func rendersFromStructuredMessage(fn *ast.FuncDecl) bool {
 	if !ok || len(ret.Results) != 1 {
 		return false
 	}
-	stringCall, ok := ret.Results[0].(*ast.CallExpr)
+	stringCall, ok := identitymutationguard.UnwrapParen(ret.Results[0]).(*ast.CallExpr)
 	if !ok || len(stringCall.Args) != 0 {
 		return false
 	}
@@ -1404,6 +1469,7 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 		want int
 	}{
 		{name: "the one-statement form", src: header + "func (t *T) Error() string { return t.StructuredMessage().String() }\n"},
+		{name: "the one-statement form in parentheses", src: header + "func (t *T) Error() string { return (t.StructuredMessage().String()) }\n"},
 		{name: "two statements", src: header + "func (t *T) Error() string { s := t.StructuredMessage().String(); return s }\n", want: 1},
 		{name: "a different expression", src: header + "func (t *T) Error() string { return t.msg.String() }\n", want: 1},
 		{name: "a literal", src: header + "func (t *T) Error() string { return \"failed\" }\n", want: 1},
@@ -1476,6 +1542,12 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 			name: "an alias of an unnamed struct getting its methods through different fields",
 			src: imp + "type sm interface{ StructuredMessage() errmsg.Message }\n\n" +
 				"type badError struct{}\n\nfunc (badError) Error() string { return \"x\" }\n\ntype W = struct {\n\tsm\n\tbadError\n}\n",
+			want: 1,
+		},
+		{
+			name: "a type declared inside a function getting its methods through different fields",
+			src: imp + "type messageOnly interface{ StructuredMessage() errmsg.Message }\n\n" +
+				"func f(m messageOnly, err error) error {\n\ttype combined struct {\n\t\tmessageOnly\n\t\terror\n\t}\n\treturn combined{m, err}\n}\n",
 			want: 1,
 		},
 		{
