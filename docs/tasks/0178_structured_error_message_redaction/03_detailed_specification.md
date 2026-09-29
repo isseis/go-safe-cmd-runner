@@ -1043,7 +1043,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 ### 9.3 `Const` の検査（AC-24）
 
 - 本番のコードの `errmsg.Const`・`errmsg.ConstSummary` の呼び出しの引数が、文字列リテラル、同じパッケージの `const` 宣言に解決できる名前、またはそれらを `+` でつないだ式であること。
-- 名前が同じパッケージの `const` 宣言に解決できなければ拒否する（fail-closed）。定数の名前の解決は、パッケージのファイルをまたいでよい（同じパッケージの `const` 宣言を集める）。
+- 名前が同じパッケージの `const` 宣言に解決できなければ拒否する（fail-closed）。定数の名前の解決は、パッケージのファイルをまたいでよい（同じパッケージの `const` 宣言を集める）。ビルド制約で切り替わるファイルのどれかが同じ名前を定数以外として宣言していれば、その名前は定数として扱わない。
 - 関数の呼び出し以外の使い方（`f := errmsg.Const` など）は拒否する。
 - errmsg 自身の `Const` 呼び出し（`PathErrorCause` の区切り、`Const` を使う構築関数の内部）は、文字列リテラルだけなのでそのまま通る。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
@@ -1069,9 +1069,10 @@ func (e *Error) StructuredMessage() errmsg.Message {
 
 ### 9.5 文言と構造の一致（1.1 節）
 
-- 本番のコードで `StructuredMessage` を宣言する型の `Error()` の本体が、`return <受け手>.StructuredMessage().String()` の 1 文だけであること。`errmsg.Error` もこの形で書く。
-- `*errmsg.Error` を埋め込んだ型が `Error()` を宣言することも拒否する。
-- `StructuredMessage` という名前のメソッドを持つ型と、その型の埋め込みをたどって調べるので、型の一覧は保守しない。
+- 各型のメソッドの集合を、各メソッドの出どころ（その型の宣言か、それを昇格させる埋め込みの欄か）とともに求める。型の別名は別名が指す型として扱い、定義型は元の型の宣言したメソッドを引き継がず、元の型の欄から昇格するメソッドだけを持つ。
+- メソッドの集合に `StructuredMessage` を持つ型の `Error()` は、その型が宣言するもので本体が `return <受け手>.StructuredMessage().String()` の 1 文だけであるか、`StructuredMessage` と同じ埋め込みの欄から昇格したものであること。ビルド制約で切り替わるファイルごとの宣言はすべて調べる。`errmsg.Error` もこの形で書く。
+- `StructuredMessage` を宣言する型は `Error()` も宣言すること。
+- 型の一覧は保守しない。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
 
 ### 9.6 役割を選ぶ処理の禁止（AC-25）
@@ -1088,6 +1089,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 
 - `errmsg.Part` の欄がすべて非公開であり、`errmsg` の外で `Part` の複合リテラル（`errmsg.Part{...}` と、`[]errmsg.Part{{...}}` のような省略形）を作っていないこと。
 - `errmsg` の外に、結果の型が `errmsg.Part` を含む（`[]errmsg.Part` や、`Part` を欄に持つ型などの複合も含む）公開の関数・メソッドが無いこと。結果に `errmsg.Part` を含む非公開の関数・メソッドは §9.1 の範囲の中にあること。
+- パッケージレベルの変数も同じ規則に従う。変数の型は、宣言された型か、初期値の関数リテラルのシグネチャで判定する。非公開の変数は、§9.1 の範囲のうちファイル全体を対象とする位置にあること。
 - 自己テストには、公開の `Parts()` メソッドを持つ型を与えて検出されることを確かめる。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
 
