@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
@@ -2595,8 +2596,9 @@ func TestRunner_VerificationErrorCarriesGroupScopeAndCleanMessage(t *testing.T) 
 		"error_type":   string(logging.ErrorTypeGroupFileVerification),
 	})
 
-	message, ok := record.Attrs["error_message"].(string)
-	require.True(t, ok, "the record must carry the rendered error message")
+	structured, ok := record.Attrs["error_message"].(errmsg.Message)
+	require.True(t, ok, "the record must carry the structured error message: %T", record.Attrs["error_message"])
+	message := structured.String()
 	assert.Contains(t, message, "Total: 3, Verified: 2, Failed: 1")
 	assert.NotContains(t, message, "Group: backup", "the group name belongs to the scope only")
 	assert.NotContains(t, message, "backup", "the group name must appear exactly once, in the notification context")
@@ -2921,12 +2923,14 @@ func TestRunner_PreExecutionStageNotifications(t *testing.T) {
 			record := recorder.RequireRecord(t, slog.LevelError, preExecutionNotifiedMessage)
 			record.AssertNotificationContext(t, tt.wantScope)
 			record.AssertAttrs(t, map[string]any{
-				"message_type":                        logging.NotificationMessageType(logging.PreExecutionErrorNotification()),
-				common.PreExecErrorAttrs.ErrorType:    string(tt.wantType),
-				common.PreExecErrorAttrs.ErrorMessage: tt.wantMessage,
-				common.PreExecErrorAttrs.Component:    string(resource.ComponentRunner),
-				"run_id":                              "test-pre-execution-stage",
+				"message_type":                     logging.NotificationMessageType(logging.PreExecutionErrorNotification()),
+				common.PreExecErrorAttrs.ErrorType: string(tt.wantType),
+				common.PreExecErrorAttrs.Component: string(resource.ComponentRunner),
+				"run_id":                           "test-pre-execution-stage",
 			})
+			structured, ok := record.Attrs[common.PreExecErrorAttrs.ErrorMessage].(errmsg.Message)
+			require.True(t, ok, "the record must carry the structured error message: %T", record.Attrs[common.PreExecErrorAttrs.ErrorMessage])
+			assert.Equal(t, tt.wantMessage, structured.String())
 			assert.Empty(t, recorder.FindRecords(slog.LevelError, preExecutionOccurredMessage),
 				"the record-only path must not also take the reporting path")
 		})

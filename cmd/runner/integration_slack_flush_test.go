@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,7 @@ func TestIntegration_RunnerFlushesSlackOnNormalExit(t *testing.T) {
 	// The last thing a failing run does before returning to main.
 	logging.HandlePreExecutionError(&logging.PreExecutionError{
 		Type:                logging.ErrorTypeSystemError,
-		Message:             "run failed",
+		Message:             errmsg.ConstSummary("run failed"),
 		Component:           "main",
 		RunID:               "test-flush-on-exit-001",
 		NotificationContext: common.GlobalScope(),

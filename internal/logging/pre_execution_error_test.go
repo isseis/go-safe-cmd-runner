@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ var (
 func TestPreExecutionError_ErrorMessage(t *testing.T) {
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
-		Message:   "test message",
+		Message:   errmsg.ConstSummary("test message"),
 		Component: "test component",
 		RunID:     "test-run-id",
 	}
@@ -89,7 +90,7 @@ func TestPreExecutionError_Detail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			preExecErr := &PreExecutionError{
 				Type:      ErrorTypeConfigParsing,
-				Message:   "Failed to load the configuration",
+				Message:   errmsg.ConstSummary("Failed to load the configuration"),
 				Component: "config",
 				RunID:     "test-run-id",
 				Err:       tt.err,
@@ -99,10 +100,51 @@ func TestPreExecutionError_Detail(t *testing.T) {
 	}
 }
 
+// TestPreExecutionError_DetailMessage pins the structured body: Message's part
+// keeps the role the summary declared, the cause is appended after a constant
+// separator, and Detail() is its unredacted rendering (AC-18, AC-35).
+func TestPreExecutionError_DetailMessage(t *testing.T) {
+	cause := errors.New("cause of the failure")
+
+	tests := []struct {
+		name       string
+		message    errmsg.Summary
+		err        error
+		want       errmsg.Segments
+		wantDetail string
+	}{
+		{
+			name:       "constant summary without a cause",
+			message:    errmsg.ConstSummary("Config file path is required"),
+			want:       errmsg.Segments{{Role: errmsg.RoleConstant, Text: "Config file path is required"}},
+			wantDetail: "Config file path is required",
+		},
+		{
+			name:    "text summary keeps its role and appends the cause",
+			message: errmsg.TextSummary("Total: 3, Verified: 2"),
+			err:     cause,
+			want: errmsg.Segments{
+				{Role: errmsg.RoleText, Text: "Total: 3, Verified: 2"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause of the failure"},
+			},
+			wantDetail: "Total: 3, Verified: 2: cause of the failure",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preExecErr := &PreExecutionError{Message: tt.message, Err: tt.err}
+			assert.Equal(t, tt.want, preExecErr.DetailMessage().Segments())
+			assert.Equal(t, tt.wantDetail, preExecErr.Detail())
+		})
+	}
+}
+
 func TestPreExecutionError_Is(t *testing.T) {
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
-		Message:   "test message",
+		Message:   errmsg.ConstSummary("test message"),
 		Component: "test component",
 		RunID:     "test-run-id",
 	}
@@ -118,7 +160,7 @@ func TestPreExecutionError_Is(t *testing.T) {
 func TestPreExecutionError_As_Success(t *testing.T) {
 	originalErr := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
-		Message:   "test message",
+		Message:   errmsg.ConstSummary("test message"),
 		Component: "test component",
 		RunID:     "test-run-id",
 	}
@@ -137,7 +179,7 @@ func TestPreExecutionError_As_Success(t *testing.T) {
 func TestPreExecutionError_As_WrappedError(t *testing.T) {
 	originalErr := &PreExecutionError{
 		Type:      ErrorTypeLogFileOpen,
-		Message:   "cannot open log file",
+		Message:   errmsg.ConstSummary("cannot open log file"),
 		Component: "logging",
 		RunID:     "wrapped-test-id",
 	}
@@ -159,7 +201,7 @@ func TestPreExecutionError_As_WrappedError(t *testing.T) {
 func TestPreExecutionError_As_MultipleWrapping(t *testing.T) {
 	originalErr := &PreExecutionError{
 		Type:      ErrorTypePrivilegeDrop,
-		Message:   "failed to drop privileges",
+		Message:   errmsg.ConstSummary("failed to drop privileges"),
 		Component: "security",
 		RunID:     "multi-wrap-test",
 	}
@@ -213,7 +255,7 @@ func TestPreExecutionError_As_False_Cases(t *testing.T) {
 func TestPreExecutionError_As_WrongTargetType(t *testing.T) {
 	err := &PreExecutionError{
 		Type:      ErrorTypeFileAccess,
-		Message:   "file access error",
+		Message:   errmsg.ConstSummary("file access error"),
 		Component: "file",
 		RunID:     "wrong-type-test",
 	}
@@ -229,7 +271,7 @@ func TestPreExecutionError_As_Integration(t *testing.T) {
 	createError := func() error {
 		return &PreExecutionError{
 			Type:      ErrorTypeConfigParsing,
-			Message:   "integration test error",
+			Message:   errmsg.ConstSummary("integration test error"),
 			Component: "integration",
 			RunID:     "integration-test-id",
 		}
@@ -246,7 +288,7 @@ func TestPreExecutionError_As_Integration(t *testing.T) {
 
 	// Verify all fields are correctly extracted
 	assert.Equal(t, ErrorTypeConfigParsing, preExecErr.Type)
-	assert.Equal(t, "integration test error", preExecErr.Message)
+	assert.Equal(t, "integration test error", preExecErr.Message.String())
 	assert.Equal(t, "integration", preExecErr.Component)
 	assert.Equal(t, "integration-test-id", preExecErr.RunID)
 }
@@ -261,7 +303,7 @@ func TestPreExecutionError_As_EdgeCases(t *testing.T) {
 		{
 			name: "deeply nested error chain",
 			errorChain: func() error {
-				base := &PreExecutionError{Type: ErrorTypeLogFileOpen, Message: "deep", Component: "test", RunID: "deep-test"}
+				base := &PreExecutionError{Type: ErrorTypeLogFileOpen, Message: errmsg.ConstSummary("deep"), Component: "test", RunID: "deep-test"}
 				level1 := fmt.Errorf("level1: %w", base)
 				level2 := fmt.Errorf("level2: %w", level1)
 				level3 := fmt.Errorf("level3: %w", level2)
@@ -274,7 +316,7 @@ func TestPreExecutionError_As_EdgeCases(t *testing.T) {
 		{
 			name: "mixed error types in chain",
 			errorChain: func() error {
-				preExecErr := &PreExecutionError{Type: ErrorTypePrivilegeDrop, Message: "mixed", Component: "test", RunID: "mixed-test"}
+				preExecErr := &PreExecutionError{Type: ErrorTypePrivilegeDrop, Message: errmsg.ConstSummary("mixed"), Component: "test", RunID: "mixed-test"}
 				mixedLevel2 := fmt.Errorf("mixed2: %w", preExecErr)
 				return fmt.Errorf("final: %w", mixedLevel2)
 			},
@@ -409,7 +451,7 @@ func TestHandlePreExecutionError_AllTypes(t *testing.T) {
 			stdout, stderr := captureErrorOutput(t, func() {
 				HandlePreExecutionError(&PreExecutionError{
 					Type:                tt.errorType,
-					Message:             tt.message,
+					Message:             errmsg.TextSummary(tt.message),
 					Component:           tt.component,
 					RunID:               tt.runID,
 					NotificationContext: tt.ctx,
@@ -475,7 +517,7 @@ func TestPreExecutionError_Unwrap(t *testing.T) {
 	innerErr := errors.New("inner error")
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
-		Message:   "test message",
+		Message:   errmsg.ConstSummary("test message"),
 		Component: "test component",
 		RunID:     "test-run-id",
 		Err:       innerErr,
@@ -489,7 +531,7 @@ func TestPreExecutionError_ErrorWithWrappedError(t *testing.T) {
 	innerErr := errors.New("inner error")
 	err := &PreExecutionError{
 		Type:      ErrorTypeConfigParsing,
-		Message:   "test message",
+		Message:   errmsg.ConstSummary("test message"),
 		Component: "test component",
 		RunID:     "test-run-id",
 		Err:       innerErr,
@@ -543,7 +585,7 @@ func TestHandleExecutionError(t *testing.T) {
 			// but we can at least verify it doesn't panic
 			assert.NotPanics(t, func() {
 				execErr := &ExecutionError{
-					Message:   tt.message,
+					Message:   errmsg.TextSummary(tt.message),
 					Component: tt.component,
 					RunID:     tt.runID,
 				}
@@ -567,7 +609,7 @@ func TestHandleExecutionError_DoesNotNotifySlack(t *testing.T) {
 
 	_, _ = captureErrorOutput(t, func() {
 		HandleExecutionError(&ExecutionError{
-			Message:   "error running commands",
+			Message:   errmsg.ConstSummary("error running commands"),
 			Component: "runner",
 			RunID:     "test-run-exec",
 		})
@@ -645,7 +687,7 @@ func TestHandleExecutionError_CauseFormatting(t *testing.T) {
 
 			_, stderr := captureErrorOutput(t, func() {
 				HandleExecutionError(&ExecutionError{
-					Message:   "error running commands",
+					Message:   errmsg.ConstSummary("error running commands"),
 					Component: "runner",
 					RunID:     "test-run-exec",
 					Err:       tt.err,
@@ -667,6 +709,55 @@ func TestHandleExecutionError_CauseFormatting(t *testing.T) {
 			assert.Contains(t, stderr, "  Details: "+wantDetails+"\n")
 		})
 	}
+}
+
+// countingError changes its text on every Error() call, so a report that
+// evaluates the cause more than once cannot produce one consistent string.
+type countingError struct{ calls int }
+
+func (e *countingError) Error() string {
+	e.calls++
+	return fmt.Sprintf("cause call %d", e.calls)
+}
+
+// TestHandleExecutionError_EvaluatesCauseOnce pins that a single report freezes
+// the structured message once: the stderr Details line and the recorded
+// error_message come from the same rendering, and the cause's Error() is called
+// exactly once. Without the freeze the two paths would render the cause
+// separately and disagree.
+func TestHandleExecutionError_EvaluatesCauseOnce(t *testing.T) {
+	cause := &countingError{}
+
+	var captured []slog.Record
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	slog.SetDefault(slog.New(tu.NewCallbackHandler(func(r slog.Record) {
+		captured = append(captured, r)
+	})))
+
+	_, stderr := captureErrorOutput(t, func() {
+		HandleExecutionError(&ExecutionError{
+			Message:   errmsg.ConstSummary("error running commands"),
+			Component: "runner",
+			RunID:     "test-run-once",
+			Err:       cause,
+		})
+	})
+
+	require.Equal(t, 1, cause.calls,
+		"the cause's Error() must be evaluated once for the whole report")
+
+	require.Len(t, captured, 1)
+	var errorMsg string
+	captured[0].Attrs(func(a slog.Attr) bool {
+		if a.Key == common.PreExecErrorAttrs.ErrorMessage {
+			errorMsg = a.Value.String()
+		}
+		return true
+	})
+	const want = "error running commands: cause call 1"
+	assert.Equal(t, want, errorMsg)
+	assert.Contains(t, stderr, "  Details: "+want+"\n")
 }
 
 func TestHandleExecutionError_WithWrappedError(t *testing.T) {
@@ -726,7 +817,7 @@ func TestHandleExecutionError_WithWrappedError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr := captureErrorOutput(t, func() {
 				HandleExecutionError(&ExecutionError{
-					Message:     tt.message,
+					Message:     errmsg.TextSummary(tt.message),
 					Component:   "runner",
 					RunID:       "test-run-123",
 					GroupName:   tt.groupName,
@@ -780,7 +871,7 @@ func TestExecutionError_ContextString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			execErr := &ExecutionError{
-				Message:     "test message",
+				Message:     errmsg.ConstSummary("test message"),
 				Component:   "test",
 				RunID:       "test-123",
 				GroupName:   tt.groupName,
@@ -792,6 +883,122 @@ func TestExecutionError_ContextString(t *testing.T) {
 				"ContextString() should return the correct formatted string")
 		})
 	}
+}
+
+// TestExecutionError_ReportMessage pins the structured body the record path
+// builds: Message, the group/command context with each name as an Identifier,
+// and the cause, for every context combination. ContextString and Error() are
+// the same fields rendered, now that Message is an errmsg.Summary (AC-18).
+func TestExecutionError_ReportMessage(t *testing.T) {
+	cause := errors.New("cause")
+
+	tests := []struct {
+		name         string
+		group        string
+		command      string
+		err          error
+		wantSegments errmsg.Segments
+		wantContext  string
+		wantString   string
+	}{
+		{
+			name:         "no context and no cause",
+			wantSegments: errmsg.Segments{{Role: errmsg.RoleConstant, Text: "error running commands"}},
+			wantString:   "error running commands",
+		},
+		{
+			name:  "group only",
+			group: "backup",
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "group: "},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+			},
+			wantContext: "group: backup",
+			wantString:  "error running commands (group: backup)",
+		},
+		{
+			name:    "command only with a cause",
+			command: "dump",
+			err:     cause,
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "command: "},
+				{Role: errmsg.RoleIdentifier, Text: "dump"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause"},
+			},
+			wantContext: "command: dump",
+			wantString:  "error running commands (command: dump): cause",
+		},
+		{
+			name:    "group and command with a cause",
+			group:   "backup",
+			command: "dump",
+			err:     cause,
+			wantSegments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "error running commands"},
+				{Role: errmsg.RoleConstant, Text: " ("},
+				{Role: errmsg.RoleConstant, Text: "group: "},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: ", "},
+				{Role: errmsg.RoleConstant, Text: "command: "},
+				{Role: errmsg.RoleIdentifier, Text: "dump"},
+				{Role: errmsg.RoleConstant, Text: ")"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: "cause"},
+			},
+			wantContext: "group: backup, command: dump",
+			wantString:  "error running commands (group: backup, command: dump): cause",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execErr := &ExecutionError{
+				Message:     errmsg.ConstSummary("error running commands"),
+				Component:   "runner",
+				RunID:       "run-1",
+				GroupName:   tt.group,
+				CommandName: tt.command,
+				Err:         tt.err,
+			}
+			assert.Equal(t, tt.wantSegments, execErr.ReportMessage().Segments())
+			assert.Equal(t, tt.wantContext, execErr.ContextString())
+			assert.Equal(t, tt.wantString, execErr.ReportMessage().String())
+		})
+	}
+}
+
+// TestExecutionError_ErrorMessage pins Error()'s format now that Message is an
+// errmsg.Summary, so a receiver change in Summary.String() cannot silently
+// produce a "%!s" verb.
+func TestExecutionError_ErrorMessage(t *testing.T) {
+	cause := errors.New("exit status 1")
+	withCause := &ExecutionError{
+		Message:     errmsg.TextSummary("error running commands"),
+		Component:   "runner",
+		RunID:       "run-1",
+		GroupName:   "backup",
+		CommandName: "dump",
+		Err:         cause,
+	}
+	assert.Equal(t,
+		"execution error: error running commands: exit status 1 (group: backup, command: dump, component: runner, run_id: run-1)",
+		withCause.Error())
+
+	noContext := &ExecutionError{
+		Message:   errmsg.ConstSummary("error running commands"),
+		Component: "runner",
+		RunID:     "run-1",
+	}
+	assert.Equal(t,
+		"execution error: error running commands (component: runner, run_id: run-1)",
+		noContext.Error())
 }
 
 func TestExecutionError_Unwrap(t *testing.T) {
@@ -820,7 +1027,7 @@ func TestExecutionError_Unwrap(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			execErr := &ExecutionError{
-				Message:   "test message",
+				Message:   errmsg.ConstSummary("test message"),
 				Component: "test",
 				RunID:     "test-123",
 				Err:       tt.err,
@@ -885,7 +1092,7 @@ func TestExecutionError_ErrorsIs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			execErr := &ExecutionError{
-				Message:   "test message",
+				Message:   errmsg.ConstSummary("test message"),
 				Component: "test",
 				RunID:     "test-123",
 				Err:       tt.wrappedIn,
@@ -964,7 +1171,7 @@ func TestHandlePreExecutionError_SlackNotification(t *testing.T) {
 			// Call HandlePreExecutionError
 			HandlePreExecutionError(&PreExecutionError{
 				Type:                tt.errorType,
-				Message:             tt.message,
+				Message:             errmsg.TextSummary(tt.message),
 				Component:           tt.component,
 				RunID:               tt.runID,
 				NotificationContext: tt.ctx,
@@ -1039,7 +1246,7 @@ func TestHandlePreExecutionError_FailedFilePaths(t *testing.T) {
 		stdout, stderr := captureErrorOutput(t, func() {
 			HandlePreExecutionError(&PreExecutionError{
 				Type:                ErrorTypeGroupFileVerification,
-				Message:             message,
+				Message:             errmsg.TextSummary(message),
 				Component:           "verification",
 				RunID:               "test-run-files",
 				NotificationContext: common.GroupScope("backup"),
@@ -1109,7 +1316,7 @@ func TestNotifyPreExecutionError_RecordsWithoutReport(t *testing.T) {
 	newError := func(paths []string) *PreExecutionError {
 		return &PreExecutionError{
 			Type:                ErrorTypeGroupPreparation,
-			Message:             summary,
+			Message:             errmsg.ConstSummary(summary),
 			Component:           component,
 			RunID:               runID,
 			NotificationContext: ctx,
@@ -1140,13 +1347,15 @@ func TestNotifyPreExecutionError_RecordsWithoutReport(t *testing.T) {
 		assert.Empty(t, stdout, "the record-only path must not write the RUN_SUMMARY line")
 		assert.Empty(t, stderr, "the record-only path must not write the stderr report")
 		record.AssertAttrs(t, map[string]any{
-			common.PreExecErrorAttrs.ErrorType:    string(ErrorTypeGroupPreparation),
-			common.PreExecErrorAttrs.ErrorMessage: wantDetail,
-			common.PreExecErrorAttrs.Component:    component,
-			"run_id":                              runID,
-			slackNotifyAttrKey:                    true,
-			msgTypeAttrKey:                        PreExecutionErrorNotification().typeName(),
+			common.PreExecErrorAttrs.ErrorType: string(ErrorTypeGroupPreparation),
+			common.PreExecErrorAttrs.Component: component,
+			"run_id":                           runID,
+			slackNotifyAttrKey:                 true,
+			msgTypeAttrKey:                     PreExecutionErrorNotification().typeName(),
 		})
+		structured, ok := record.Attrs[common.PreExecErrorAttrs.ErrorMessage].(errmsg.Message)
+		require.True(t, ok, "the record must carry the structured error message: %T", record.Attrs[common.PreExecErrorAttrs.ErrorMessage])
+		assert.Equal(t, wantDetail, structured.String())
 		record.AssertNotificationContext(t, ctx)
 	})
 

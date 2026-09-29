@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -102,7 +103,7 @@ func SetupLogging(opts SetupLoggingOptions) error {
 	if err := SetupLoggerWithConfig(loggerConfig, opts.ForceInteractive, opts.ForceQuiet); err != nil {
 		return &logging.PreExecutionError{
 			Type:                logging.ErrorTypeLogFileOpen,
-			Message:             fmt.Sprintf("Failed to setup logger: %v", err),
+			Message:             errmsg.TextSummary(fmt.Sprintf("Failed to setup logger: %v", err)),
 			Component:           string(resource.ComponentLogging),
 			RunID:               opts.RunID,
 			NotificationContext: common.GlobalScope(),
@@ -141,7 +142,7 @@ func SetupSlackLogging(slackConfig *SlackWebhookConfig, opts SetupLoggingOptions
 		// is written to stderr/slog by HandlePreExecutionError.
 		return nil, &logging.PreExecutionError{
 			Type:                logging.ErrorTypeConfigParsing,
-			Message:             "Slack webhook URL validation failed",
+			Message:             errmsg.ConstSummary("Slack webhook URL validation failed"),
 			Component:           string(resource.ComponentLogging),
 			RunID:               opts.RunID,
 			NotificationContext: common.GlobalScope(),

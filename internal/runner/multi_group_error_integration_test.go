@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -135,7 +136,7 @@ func captureExecutionErrorReport(t *testing.T, execErr error, groupName, command
 
 	_, stderr = captureStdStreams(t, func() {
 		logging.HandleExecutionError(&logging.ExecutionError{
-			Message:     "error running commands",
+			Message:     errmsg.ConstSummary("error running commands"),
 			Component:   string(resource.ComponentRunner),
 			RunID:       "test-run-attribution",
 			GroupName:   groupName,

@@ -2,13 +2,14 @@ package logging
 
 import (
 	"fmt"
-	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 // ExecutionError represents an error that occurs during command execution
 // (as opposed to pre-execution errors like configuration parsing or file access)
 type ExecutionError struct {
-	Message     string
+	Message     errmsg.Summary
 	Component   string
 	RunID       string
 	GroupName   string // Optional: name of the group where error occurred
@@ -16,20 +17,41 @@ type ExecutionError struct {
 	Err         error  // Wrapped error for better error context preservation
 }
 
+// contextParts returns the group and command names as parts. It is the single
+// place that builds the context; ReportMessage and ContextString both use it.
+func (e *ExecutionError) contextParts() []errmsg.Part {
+	var parts []errmsg.Part
+	if e.GroupName != "" {
+		parts = append(parts, errmsg.Const("group: "), errmsg.Ident(e.GroupName))
+	}
+	if e.CommandName != "" {
+		if len(parts) > 0 {
+			parts = append(parts, errmsg.Const(", "))
+		}
+		parts = append(parts, errmsg.Const("command: "), errmsg.Ident(e.CommandName))
+	}
+	return parts
+}
+
 // ContextString returns the context information (group and command names) as a formatted string
 // Returns empty string if no context is available
 func (e *ExecutionError) ContextString() string {
-	var parts []string
-	if e.GroupName != "" {
-		parts = append(parts, fmt.Sprintf("group: %s", e.GroupName))
+	return errmsg.NewMessage(e.contextParts()...).String()
+}
+
+// ReportMessage returns the message HandleExecutionError reports: Message, the
+// group/command context, and the cause, as a structured message.
+func (e *ExecutionError) ReportMessage() errmsg.Message {
+	parts := []errmsg.Part{e.Message.Part()}
+	if context := e.contextParts(); len(context) > 0 {
+		parts = append(parts, errmsg.Const(" ("))
+		parts = append(parts, context...)
+		parts = append(parts, errmsg.Const(")"))
 	}
-	if e.CommandName != "" {
-		parts = append(parts, fmt.Sprintf("command: %s", e.CommandName))
+	if e.Err != nil {
+		parts = append(parts, errmsg.Const(": "), errmsg.Cause(e.Err))
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, ", ")
+	return errmsg.NewMessage(parts...)
 }
 
 // Error implements the error interface

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -2230,6 +2231,37 @@ func redactedPreExecutionErrorField(t *testing.T, errorMessage string, failedPat
 	return ""
 }
 
+// redactedStructuredPreExecutionErrorField is redactedPreExecutionErrorField
+// for an error_message carried as a structured errmsg.Message, the shape the
+// production record path uses. It passes the value as slog.Any so the
+// RedactingHandler renders it through RedactMessage.
+func redactedStructuredPreExecutionErrorField(t *testing.T, message errmsg.Message) string {
+	t.Helper()
+
+	record := slog.NewRecord(time.Now(), slog.LevelError, "Pre-execution error occurred", 0)
+	record.AddAttrs(NotificationAttrs(PreExecutionErrorNotification(), common.GroupScope("backup"))...)
+	record.AddAttrs(
+		slog.String(common.PreExecErrorAttrs.ErrorType, string(ErrorTypeGroupPreparation)),
+		slog.Any(common.PreExecErrorAttrs.ErrorMessage, message),
+		slog.String(common.PreExecErrorAttrs.Component, "runner"),
+	)
+
+	var redacted slog.Record
+	handler := redaction.NewRedactingHandler(tu.NewCallbackHandler(func(r slog.Record) {
+		redacted = r
+	}), nil, nil)
+	require.NoError(t, handler.Handle(context.Background(), record))
+
+	details := buildPreExecutionError(redacted)
+	for _, field := range details.fields {
+		if field.Title == "Error Message" {
+			return field.Value
+		}
+	}
+	t.Fatalf("no Error Message field: %v", details.fields)
+	return ""
+}
+
 // TestBuildPreExecutionError_InterpolationContract fixes that a free-text
 // error_message of the shape the group pre-execution notification carries --
 // a summary line, then a cause that may hold raw newlines, control and
@@ -2238,11 +2270,15 @@ func redactedPreExecutionErrorField(t *testing.T, errorMessage string, failedPat
 // %q escapes newlines and control characters but leaves Slack markup and the
 // length to the builder, so the quoted row carries markup. Each body is checked
 // to survive redaction, so the properties are not met merely by a placeholder.
+// The structured row builds the body the way the production record does, from
+// PreExecutionError.DetailMessage, so the recorded shape and the builder's
+// 500-byte truncation are exercised together.
 func TestBuildPreExecutionError_InterpolationContract(t *testing.T) {
 	tests := []struct {
-		name     string
-		message  string
-		survives string
+		name       string
+		message    string
+		survives   string
+		structured bool
 	}{
 		{
 			name:     "raw newlines and control characters in the cause",
@@ -2260,11 +2296,27 @@ func TestBuildPreExecutionError_InterpolationContract(t *testing.T) {
 			message:  "Group preparation failed: " + strings.Repeat("x", 600),
 			survives: "Group preparation failed: ",
 		},
+		{
+			name:       "a structured detail over the shared limit keeps its stage summary",
+			message:    "Group preparation failed: " + strings.Repeat("x", 600),
+			survives:   "Group preparation failed: ",
+			structured: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := redactedPreExecutionErrorField(t, tt.message, nil)
+			var got string
+			if tt.structured {
+				preExecErr := &PreExecutionError{
+					Type:    ErrorTypeGroupPreparation,
+					Message: errmsg.ConstSummary("Group preparation failed"),
+					Err:     errors.New(strings.Repeat("x", 600)),
+				}
+				got = redactedStructuredPreExecutionErrorField(t, preExecErr.DetailMessage().Freeze())
+			} else {
+				got = redactedPreExecutionErrorField(t, tt.message, nil)
+			}
 			assert.Contains(t, got, tt.survives, "the body must survive redaction, or its properties prove nothing")
 			assert.True(t, strings.HasPrefix(got, strings.SplitN(tt.message, ":", 2)[0]+":"),
 				"the summary must stay at the head of the body: %q", got)

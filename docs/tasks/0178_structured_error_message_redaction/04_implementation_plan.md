@@ -267,24 +267,24 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 4: `internal/logging` の構造化メッセージへの移行
 
-**Files**: `internal/logging/pre_execution_error.go`・`execution_error.go`、`internal/runner/group_stage.go`（段階の定義表）、`cmd/runner/main.go`・`internal/runner/bootstrap/config.go`・`environment.go`・`internal/runner/runerrors/pre_execution.go`（`Message` のリテラル）、および対応するテスト。`internal/logging/slack_handler.go` は変えない（通知ビルダーは描画済みの文字列を受け取る）
+**Files**: `internal/logging/pre_execution_error.go`・`execution_error.go`、`internal/runner/group_stage.go`（段階の定義表）、`cmd/runner/main.go`・`internal/runner/bootstrap/config.go`・`environment.go`・`internal/runner/runerrors/pre_execution.go`（`Message` のリテラル）、`.golangci.yml`（`main` の depguard に `internal/errmsg` を追加）、および対応するテスト。`internal/logging/slack_handler.go` は変えない（通知ビルダーは描画済みの文字列を受け取る）
 
-- [ ] `PreExecutionError.Message` を `errmsg.Summary` にし、`DetailMessage`・`Detail` を 03 §4.1 のとおりに実装する。`Is`・`As`・`Unwrap` と `Error()` の書式は変えない。
-- [ ] `ExecutionError.Message` を `errmsg.Summary` にし、`ReportMessage`・`contextParts` を実装する。context の文言は `contextParts` の 1 か所で作り、`ReportMessage` と `ContextString` の両方が使う（03 §4.2）。
-- [ ] `errorRecordParams.errorMsg` を `errmsg.Message` にし、`writeErrorLogRecord` を `slog.Any` にする。`preExecutionRecordParams` は `DetailMessage().Freeze()`、`HandleExecutionError` は `ReportMessage().Freeze()` を渡し、平らにするのは報告ごとに 1 回にする（03 §4.3）。
-- [ ] `handleErrorCommon` の stderr の `Details:` は凍結した `Message` の `String()` を使い、文言と redaction なしの挙動を変えない（AC-19）。
-- [ ] `internal/runner/group_stage.go` の段階の定義表の `message` の型を `errmsg.Summary` にし、各行を `ConstSummary` にする。`groupStagePreExecutionError` は `Message: def.summary` にする（03 §4.4 #23）。
-- [ ] 03 §4.4 の 23 か所の `Message` のリテラルを機械的に書き換える。定数式は `ConstSummary`、値を含むものは `TextSummary`。`#9`・`#10`・`#13`・`#15` は原因を `Err` に移し、`Message` を固定の文言にする（03 §8 の表）。
-- [ ] `ExecutionError` の唯一の設定箇所（`cmd/runner/main.go:695`）の `Message` を `errmsg.ConstSummary("error running commands")` にする。
-- [ ] §1.3「更新が必要な既存テスト」の項目を実施する。`cmd/runner/main_test.go` の `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` は `errors.Is(err, errCheckerUnavailable)` と `Detail()` の確認に変える。
-- [ ] 記録を `attr.Value.String()` で読む既存テストを実行し、読み出す文字列が変わらないことを確かめる。変化があれば機械的に合わせる。
-- [ ] 呼ぶたびに文言が変わる原因を持つ構造化メッセージで `HandleExecutionError` に報告し、stderr の `Details:` と記録された `error_message` が同じ 1 回の結果から来ること（原因の `Error()` が 1 回だけ呼ばれること）を `TestHandleExecutionError_EvaluatesCauseOnce` で確かめる。
-- [ ] `TestBuildPreExecutionError_InterpolationContract`（`slack_handler_test.go:2241`、AC-22）に、`PreExecutionError.DetailMessage()` の本文を `RedactingHandler` に通した行を追加し、500 byte を超える本文でも先頭の段階の要約文が残ることを確かめる。
+- [x] `PreExecutionError.Message` を `errmsg.Summary` にし、`DetailMessage`・`Detail` を 03 §4.1 のとおりに実装する。`Is`・`As`・`Unwrap` と `Error()` の書式は変えない。
+- [x] `ExecutionError.Message` を `errmsg.Summary` にし、`ReportMessage`・`contextParts` を実装する。context の文言は `contextParts` の 1 か所で作り、`ReportMessage` と `ContextString` の両方が使う（03 §4.2）。
+- [x] `errorRecordParams.errorMsg` を `errmsg.Message` にし、`writeErrorLogRecord` を `slog.Any` にする。`preExecutionRecordParams` は `DetailMessage().Freeze()`、`HandleExecutionError` は `ReportMessage().Freeze()` を渡し、平らにするのは報告ごとに 1 回にする（03 §4.3）。
+- [x] `handleErrorCommon` の stderr の `Details:` は凍結した `Message` の `String()` を使い、文言と redaction なしの挙動を変えない（AC-19）。
+- [x] `internal/runner/group_stage.go` の段階の定義表の `message` の型を `errmsg.Summary` にし、各行を `ConstSummary` にする。`groupStagePreExecutionError` は `Message: def.summary` にする（03 §4.4 #23）。
+- [x] 03 §4.4 の 23 か所の `Message` のリテラルを機械的に書き換える。定数式は `ConstSummary`、値を含むものは `TextSummary`。`#9`・`#10`・`#13`・`#15` は原因を `Err` に移し、`Message` を固定の文言にする（03 §8 の表）。
+- [x] `ExecutionError` の唯一の設定箇所（`cmd/runner/main.go:695`）の `Message` を `errmsg.ConstSummary("error running commands")` にする。
+- [x] §1.3「更新が必要な既存テスト」の項目を実施する。`cmd/runner/main_test.go` の `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` は `errors.Is(err, errCheckerUnavailable)` と `Detail()` の確認に変える。
+- [x] 記録を `attr.Value.String()` で読む既存テストを実行し、読み出す文字列が変わらないことを確かめる。変化があれば機械的に合わせる。
+- [x] 呼ぶたびに文言が変わる原因を持つ構造化メッセージで `HandleExecutionError` に報告し、stderr の `Details:` と記録された `error_message` が同じ 1 回の結果から来ること（原因の `Error()` が 1 回だけ呼ばれること）を `TestHandleExecutionError_EvaluatesCauseOnce` で確かめる。
+- [x] `TestBuildPreExecutionError_InterpolationContract`（`slack_handler_test.go:2241`、AC-22）に、`PreExecutionError.DetailMessage()` の本文を `RedactingHandler` に通した行を追加し、500 byte を超える本文でも先頭の段階の要約文が残ることを確かめる。
 
 **完了条件**: `internal/logging`・`cmd/runner` のテストが green。この Phase の完了時点で、2 つのレコードの `error_message` が構造化メッセージとして記録され、`RedactMessage` を通る。
 
@@ -295,6 +295,11 @@
 - **レビュー観点**: `Detail()`・`Error()`・stderr の文言が変わっていないこと、原因の `Error()` の評価が報告ごとに 1 回であること、`PreExecutionError.Message` が `Constant` か `Text` のどちらかに限られていること、`cmd/runner` の 4 か所で原因が `Err` に移っても報告の種別と終了コードが変わらないこと、既存テストの書き換えが機械的であること
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 型の変更は機械的だが、凍結の位置と原因の到達性、`Message` の分類の網羅が正しさを決める。範囲は広いが設計は確定している
+
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
 
 ### Phase 5: `internal/runner` のエラー型と `cancelledRunError`
 
