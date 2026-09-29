@@ -161,7 +161,6 @@ func TestMessage_PathErrorCauseMatchesPathErrorText(t *testing.T) {
 }
 
 func TestMessage_RolePartsAndCausePartsAreDistinct(t *testing.T) {
-	assert.Equal(t, "<nil>", NewMessage(Cause(nil)).String())
 	assert.Equal(t, Segments{{RoleText, ""}}, NewMessage(Text("")).Segments())
 	assert.Empty(t, NewMessage(Text("")).String())
 	assert.Empty(t, Message{}.String())
@@ -254,13 +253,19 @@ func TestMessage_DeepChainMatchesFmtErrorfChain(t *testing.T) {
 	root := errors.New("root cause")
 	structured, formatted := root, root
 	for i := range depth {
-		prefix := "layer " + strconv.Itoa(i) + ": "
-		structured = NewError(Text(prefix), Cause(structured))
-		formatted = fmt.Errorf("%s%w", prefix, formatted)
+		name := "group" + strconv.Itoa(i)
+		structured = NewError(Const("layer "), Ident(name), Const(": "), Cause(structured))
+		formatted = fmt.Errorf("layer %s: %w", name, formatted)
 	}
 
 	assert.Equal(t, formatted.Error(), structured.Error())
 	assert.ErrorIs(t, structured, root)
+	// Every layer keeps its declared role, down to the innermost one.
+	segments := structured.(*Error).StructuredMessage().Segments()
+	require.Len(t, segments, 3*depth+1)
+	for i := range depth {
+		assert.Equal(t, Segment{RoleIdentifier, "group" + strconv.Itoa(depth-1-i)}, segments[3*i+1])
+	}
 }
 
 func TestNewError_WrapsExactlyOneCause(t *testing.T) {

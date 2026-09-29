@@ -1059,7 +1059,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 | ファイル | 関数・メソッド |
 |---|---|
 | `internal/runner/group_executor.go`・`group_stage.go`・`group_errors.go` | ファイル全体 |
-| `internal/runner/config/expansion.go` | ファイル全体 |
+| `internal/runner/config/expansion.go` | ファイル全体（§9.1 の除く関数を除く） |
 | `internal/runner/config/errors.go` | `(*ErrUndefinedVariableDetail).StructuredMessage`・`(Level).parts`・`(Field).parts` |
 | `internal/logging/pre_execution_error.go`・`execution_error.go` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`(*ExecutionError).contextParts` |
 | `internal/runner/base/privilege/errors.go` | `(*Error).StructuredMessage` |
