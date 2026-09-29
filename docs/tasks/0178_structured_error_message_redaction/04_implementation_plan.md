@@ -296,6 +296,11 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 型の変更は機械的だが、凍結の位置と原因の到達性、`Message` の分類の網羅が正しさを決める。範囲は広いが設計は確定している
 
+- [x] `make test && make lint` が green であることを確認した
+- [ ] PR を作成した
+- [ ] PR がマージされた
+- [ ] 次のブランチへ切り替えた
+
 ### Phase 5: `internal/runner` のエラー型と `cancelledRunError`
 
 **Files**: `internal/runner/group_errors.go`・`group_stage.go`・`runner.go`・`group_executor.go`（変更）、および対応するテスト
