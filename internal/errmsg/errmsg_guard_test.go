@@ -5,16 +5,29 @@ package errmsg
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/importer"
+	"go/parser"
 	"go/token"
+	"go/types"
+	"io"
+	"maps"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/testutil/identitymutationguard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The guards type-check the packages they read with go/types and take names,
+// constants, types and method selections from the type checker rather than
+// inferring them from syntax. They look for mistakes in ordinary code; code
+// written to evade them is out of scope (03 §9.0).
 
 const (
 	// modulePath is the module prefix of every in-repository import path.
@@ -102,106 +115,235 @@ func inScope(file, fn string) bool {
 	return inScopePositions.covers(file, fn)
 }
 
-// guardFile is one Go source file given to a guard check.
+// supportedBuilds are the builds the project ships (release.yml) and tests
+// (ci.yml runs with cgo on and off). A file whose selection differs among them
+// is a build variant (03 §9.0).
+var supportedBuilds = func() []build.Context {
+	var ctxs []build.Context
+	for _, target := range [][2]string{{"linux", "amd64"}, {"linux", "arm64"}, {"darwin", "arm64"}} {
+		for _, cgo := range []bool{false, true} {
+			ctx := build.Default
+			ctx.GOOS, ctx.GOARCH, ctx.CgoEnabled = target[0], target[1], cgo
+			ctxs = append(ctxs, ctx)
+		}
+	}
+	return ctxs
+}()
+
+// guardFset holds every position the checks report. It is shared with
+// sourceImporter so the standard library is type-checked once per test binary.
+var guardFset = token.NewFileSet()
+
+// sourceImporter loads, from source, every package a check does not type-check
+// itself.
+var sourceImporter = sync.OnceValue(func() types.ImporterFrom {
+	return importer.ForCompiler(guardFset, "source", nil).(types.ImporterFrom)
+})
+
+// guardFile is one Go source file given to the checks.
 type guardFile struct {
 	path string // slash-separated, relative to the repository root
 	src  string
 }
 
-// parsedFile is a parsed guardFile with its imports resolved.
-type parsedFile struct {
-	path    string
-	dir     string
-	fset    *token.FileSet
-	file    *ast.File
-	imports map[string]string // local package name -> import path
-	// unqualified reports whether errmsg's exported names are reachable
-	// without a qualifier: in errmsg itself, or through a dot-import.
-	unqualified bool
+// sourceFile is a parsed guardFile.
+type sourceFile struct {
+	guardFile
+	file *ast.File
+	// variant reports whether the file's selection differs among
+	// supportedBuilds.
+	variant bool
 }
 
-// productionGuardFiles returns every production Go file of the repository.
+// typedPackage is one package type-checked from the files the current build
+// selects.
+type typedPackage struct {
+	dir   string
+	pkg   *types.Package
+	info  *types.Info
+	files []*sourceFile
+}
+
+// guardSet is what the checks read.
+type guardSet struct {
+	files    []*sourceFile   // every given file, of every build
+	pkgs     []*typedPackage // sorted by directory
+	errmsg   *types.Package
+	variants map[string]struct{} // paths of the build-variant files
+}
+
+// loadGuard parses files, marks the build variants among them and
+// type-checks, per directory, the files the current build selects.
+func loadGuard(t *testing.T, files []guardFile) *guardSet {
+	t.Helper()
+	set := &guardSet{variants: map[string]struct{}{}}
+	groups := map[string][]*sourceFile{}
+	for _, f := range files {
+		file, err := parser.ParseFile(guardFset, f.path, f.src, parser.SkipObjectResolution)
+		require.NoErrorf(t, err, "failed to parse %s", f.path)
+		sf := &sourceFile{guardFile: f, file: file}
+		selected := map[bool]struct{}{}
+		for _, ctx := range supportedBuilds {
+			selected[selectedBy(t, ctx, sf)] = struct{}{}
+		}
+		if len(selected) > 1 {
+			sf.variant = true
+			set.variants[f.path] = struct{}{}
+		}
+		set.files = append(set.files, sf)
+		if selectedBy(t, build.Default, sf) {
+			importPath := modulePath + "/" + path.Dir(f.path)
+			groups[importPath] = append(groups[importPath], sf)
+		}
+	}
+	im := &guardImporter{t: t, groups: groups, checked: map[string]*typedPackage{}}
+	for _, importPath := range slices.Sorted(maps.Keys(groups)) {
+		set.pkgs = append(set.pkgs, im.check(importPath))
+	}
+	errmsgPkg, err := im.Import(errmsgImportPath)
+	require.NoError(t, err)
+	set.errmsg = errmsgPkg
+	return set
+}
+
+// selectedBy reports whether ctx builds f.
+func selectedBy(t *testing.T, ctx build.Context, f *sourceFile) bool {
+	t.Helper()
+	ctx.OpenFile = func(string) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(f.src)), nil }
+	ok, err := ctx.MatchFile(path.Dir(f.path), path.Base(f.path))
+	require.NoErrorf(t, err, "failed to match the build constraints of %s", f.path)
+	// MatchFile does not read imports, and a file importing "C" is built only
+	// with cgo.
+	return ok && (ctx.CgoEnabled || !slices.ContainsFunc(f.file.Imports, func(imp *ast.ImportSpec) bool {
+		return imp.Path.Value == `"C"`
+	}))
+}
+
+// guardImporter type-checks the given packages from their files, so they share
+// one errmsg package, and loads every other import from source.
+type guardImporter struct {
+	t       *testing.T
+	groups  map[string][]*sourceFile
+	checked map[string]*typedPackage
+}
+
+func (im *guardImporter) Import(importPath string) (*types.Package, error) {
+	return im.ImportFrom(importPath, "", 0)
+}
+
+func (im *guardImporter) ImportFrom(importPath, _ string, mode types.ImportMode) (*types.Package, error) {
+	if _, ok := im.groups[importPath]; ok {
+		return im.check(importPath).pkg, nil
+	}
+	// The file positions are repository-relative, so resolve from the root.
+	return sourceImporter().ImportFrom(importPath, identitymutationguard.RepositoryRoot(im.t), mode)
+}
+
+func (im *guardImporter) check(importPath string) *typedPackage {
+	if p, ok := im.checked[importPath]; ok {
+		return p
+	}
+	files := im.groups[importPath]
+	asts := make([]*ast.File, len(files))
+	for i, f := range files {
+		asts[i] = f.file
+	}
+	info := &types.Info{
+		Defs:  map[*ast.Ident]types.Object{},
+		Uses:  map[*ast.Ident]types.Object{},
+		Types: map[ast.Expr]types.TypeAndValue{},
+	}
+	conf := types.Config{Importer: im, FakeImportC: true}
+	pkg, err := conf.Check(importPath, guardFset, asts, info)
+	require.NoErrorf(im.t, err, "failed to type-check %s; the guards take names and types from the type checker", importPath)
+	p := &typedPackage{dir: strings.TrimPrefix(importPath, modulePath+"/"), pkg: pkg, info: info, files: files}
+	im.checked[importPath] = p
+	return p
+}
+
+// productionGuardFiles returns the production files, of every build, of errmsg
+// and of every package whose imports reach it (03 §9.0).
 func productionGuardFiles(t *testing.T) []guardFile {
 	t.Helper()
-	paths := identitymutationguard.ProductionGoFilesInRepo(t)
-	files := make([]guardFile, 0, len(paths))
-	for _, p := range paths {
-		files = append(files, guardFile{path: p, src: identitymutationguard.ReadProductionSource(t, p)})
+	byDir := map[string][]guardFile{}
+	imports := map[string]map[string]struct{}{}
+	for _, p := range identitymutationguard.ProductionGoFilesInRepo(t) {
+		src := identitymutationguard.ReadProductionSource(t, p)
+		dir := path.Dir(p)
+		byDir[dir] = append(byDir[dir], guardFile{path: p, src: src})
+		file, err := parser.ParseFile(token.NewFileSet(), p, src, parser.ImportsOnly)
+		require.NoErrorf(t, err, "failed to parse the imports of %s", p)
+		if imports[dir] == nil {
+			imports[dir] = map[string]struct{}{}
+		}
+		for _, imp := range file.Imports {
+			importPath, err := strconv.Unquote(imp.Path.Value)
+			require.NoError(t, err)
+			if dep, ok := strings.CutPrefix(importPath, modulePath+"/"); ok {
+				imports[dir][dep] = struct{}{}
+			}
+		}
+	}
+	reach := map[string]struct{}{errmsgDir: {}}
+	for changed := true; changed; {
+		changed = false
+		for dir, deps := range imports {
+			if _, done := reach[dir]; done {
+				continue
+			}
+			for dep := range deps {
+				if _, ok := reach[dep]; ok {
+					reach[dir] = struct{}{}
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	var files []guardFile
+	for _, dir := range slices.Sorted(maps.Keys(reach)) {
+		files = append(files, byDir[dir]...)
 	}
 	return files
 }
 
-// parseGuardFiles parses files. A dot-import of errmsg is resolved rather than
-// rejected: the file's unqualified names are then matched as errmsg's.
-func parseGuardFiles(t *testing.T, files []guardFile) []*parsedFile {
+var (
+	productionGuardOnce sync.Once
+	productionGuard     *guardSet
+)
+
+// productionGuardSet loads the production files once for every production
+// check.
+func productionGuardSet(t *testing.T) *guardSet {
 	t.Helper()
-	noDotImportRejected := func(string) bool { return false }
-	parsed := make([]*parsedFile, 0, len(files))
-	for _, f := range files {
-		fset, file := identitymutationguard.ParseSource(t, f.path, f.src)
-		dir := path.Dir(f.path)
-		pf := &parsedFile{
-			path:        f.path,
-			dir:         dir,
-			fset:        fset,
-			file:        file,
-			imports:     identitymutationguard.ResolveLocalImports(t, f.path, file, noDotImportRejected),
-			unqualified: dir == errmsgDir,
+	productionGuardOnce.Do(func() { productionGuard = loadGuard(t, productionGuardFiles(t)) })
+	require.NotNil(t, productionGuard, "loading the production packages failed in an earlier test")
+	return productionGuard
+}
+
+// syntheticGuard loads files for a self-test, together with errmsg's own
+// production files unless files replace errmsg.go.
+func syntheticGuard(t *testing.T, files ...guardFile) *guardSet {
+	t.Helper()
+	const errmsgFile = errmsgDir + "/errmsg.go"
+	if !slices.ContainsFunc(files, func(f guardFile) bool { return f.path == errmsgFile }) {
+		for _, p := range identitymutationguard.ProductionGoFiles(t, ".") {
+			rel := errmsgDir + "/" + path.Base(p)
+			files = append(files, guardFile{path: rel, src: identitymutationguard.ReadProductionSource(t, rel)})
 		}
-		for _, imp := range file.Imports {
-			if imp.Name != nil && imp.Name.Name == "." && strings.Trim(imp.Path.Value, `"`) == errmsgImportPath {
-				pf.unqualified = true
-			}
-		}
-		parsed = append(parsed, pf)
 	}
-	return parsed
+	return loadGuard(t, files)
 }
 
-// dirOfImportPath returns the repository-relative directory of an
-// in-repository import path.
-func dirOfImportPath(importPath string) (string, bool) {
-	return strings.CutPrefix(importPath, modulePath+"/")
+func position(pos token.Pos) string {
+	p := guardFset.Position(pos)
+	return fmt.Sprintf("%s:%d", p.Filename, p.Line)
 }
 
-func (pf *parsedFile) position(node ast.Node) string {
-	pos := pf.fset.Position(node.Pos())
-	return fmt.Sprintf("%s:%d", pf.path, pos.Line)
-}
-
-// isErrmsgName reports whether expr names errmsg's exported identifier name.
-func (pf *parsedFile) isErrmsgName(expr ast.Expr, name string) bool {
-	return identitymutationguard.IsNamedType(expr, pf.imports, errmsgImportPath, name, pf.unqualified)
-}
-
-// referencesErrmsg reports whether expr references any name of errmsg: a
-// selector on its import, or, where its names are unqualified (see
-// parsedFile.unqualified), any exported identifier, since a local exported
-// name cannot be told apart from errmsg's without type checking.
-func (pf *parsedFile) referencesErrmsg(expr ast.Expr) bool {
-	found := false
-	ast.Inspect(expr, func(n ast.Node) bool {
-		switch e := n.(type) {
-		case *ast.SelectorExpr:
-			if pkg, ok := e.X.(*ast.Ident); ok && pf.imports[pkg.Name] == errmsgImportPath {
-				found = true
-			}
-			// Sel is a member name, never an unqualified reference.
-			ast.Inspect(e.X, func(m ast.Node) bool {
-				if id, ok := m.(*ast.Ident); ok && pf.unqualified && id.IsExported() {
-					found = true
-				}
-				return !found
-			})
-			return false
-		case *ast.Ident:
-			if pf.unqualified && e.IsExported() {
-				found = true
-			}
-		}
-		return !found
-	})
-	return found
+// inVariantFile reports whether pos is in a build-variant file.
+func (s *guardSet) inVariantFile(pos token.Pos) bool {
+	_, ok := s.variants[guardFset.Position(pos).Filename]
+	return ok
 }
 
 // funcKey returns "Type.Method" for a method (the receiver's pointer and type
@@ -234,13 +376,13 @@ func receiverTypeName(fn *ast.FuncDecl) string {
 	return ""
 }
 
-// errmsgRef is one reference to an errmsg function.
+// errmsgRef is one use of an errmsg package-level function.
 type errmsgRef struct {
-	name string
-	node ast.Node
-	call *ast.CallExpr // nil when the function is referenced as a value
-	fn   *ast.FuncDecl // enclosing function, nil at package level
-	decl ast.Decl      // enclosing top-level declaration
+	name  string
+	ident *ast.Ident
+	call  *ast.CallExpr // nil when the function is used as a value
+	fn    *ast.FuncDecl // enclosing function, nil at package level
+	file  *sourceFile
 }
 
 // fnKey returns the enclosing function's key, or "" at package level.
@@ -251,57 +393,36 @@ func (r errmsgRef) fnKey() string {
 	return funcKey(r.fn)
 }
 
-// findErrmsgRefs returns every reference in pf to one of errmsg's functions
-// in names. A qualified reference is resolved through the file's imports, so
-// an aliased import is followed; unqualified names are matched only where
-// they resolve to errmsg (see parsedFile.unqualified).
-func findErrmsgRefs(pf *parsedFile, names []string) []errmsgRef {
+// errmsgRefs returns every use in p of one of errmsg's functions in names.
+func (s *guardSet) errmsgRefs(p *typedPackage, names []string) []errmsgRef {
 	var refs []errmsgRef
-	for _, decl := range pf.file.Decls {
-		fn, _ := decl.(*ast.FuncDecl)
-		callees := map[ast.Expr]*ast.CallExpr{}
-		// Identifiers that are not references: selector members, keys of
-		// composite literal elements and the declared function's own name.
-		notRefs := map[*ast.Ident]struct{}{}
-		if fn != nil {
-			notRefs[fn.Name] = struct{}{}
-		}
-		ast.Inspect(decl, func(n ast.Node) bool {
-			switch e := n.(type) {
-			case *ast.CallExpr:
-				callees[identitymutationguard.UnwrapParen(e.Fun)] = e
-			case *ast.SelectorExpr:
-				notRefs[e.Sel] = struct{}{}
-			case *ast.KeyValueExpr:
-				if key, ok := e.Key.(*ast.Ident); ok {
-					notRefs[key] = struct{}{}
+	for _, f := range p.files {
+		for _, decl := range f.file.Decls {
+			fn, _ := decl.(*ast.FuncDecl)
+			calls := map[*ast.Ident]*ast.CallExpr{}
+			ast.Inspect(decl, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
+					switch fun := identitymutationguard.UnwrapParen(call.Fun).(type) {
+					case *ast.Ident:
+						calls[fun] = call
+					case *ast.SelectorExpr:
+						calls[fun.Sel] = call
+					}
 				}
-			}
-			return true
-		})
-		ast.Inspect(decl, func(n ast.Node) bool {
-			var name string
-			switch e := n.(type) {
-			case *ast.SelectorExpr:
-				pkg, ok := e.X.(*ast.Ident)
-				if !ok || pf.imports[pkg.Name] != errmsgImportPath {
-					return true
-				}
-				name = e.Sel.Name
-			case *ast.Ident:
-				if _, skip := notRefs[e]; skip || !pf.unqualified {
-					return true
-				}
-				name = e.Name
-			default:
 				return true
-			}
-			if slices.Contains(names, name) {
-				expr, _ := n.(ast.Expr)
-				refs = append(refs, errmsgRef{name: name, node: n, call: callees[expr], fn: fn, decl: decl})
-			}
-			return true
-		})
+			})
+			ast.Inspect(decl, func(n ast.Node) bool {
+				id, ok := n.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				obj, ok := p.info.Uses[id].(*types.Func)
+				if ok && obj.Pkg() == s.errmsg && obj.Signature().Recv() == nil && slices.Contains(names, obj.Name()) {
+					refs = append(refs, errmsgRef{name: obj.Name(), ident: id, call: calls[id], fn: fn, file: f})
+				}
+				return true
+			})
+		}
 	}
 	return refs
 }
@@ -310,148 +431,40 @@ func findErrmsgRefs(pf *parsedFile, names []string) []errmsgRef {
 var constFuncNames = []string{"Const", "ConstSummary"}
 
 // checkConstCalls reports every call of errmsg.Const or errmsg.ConstSummary
-// whose argument is not a constant expression, and every reference to them
-// that is not a call. It returns the number of calls it checked.
-func checkConstCalls(files []*parsedFile) (checked int, violations []string) {
-	packageNames := map[string]map[string]declarationKind{}
-	for _, pf := range files {
-		names := packageNames[pf.dir]
-		if names == nil {
-			names = map[string]declarationKind{}
-			packageNames[pf.dir] = names
-		}
-		// Build variants may declare a name differently; any non-constant
-		// declaration wins, so the merge fails closed.
-		declare := func(name string, kind declarationKind) {
-			if names[name] != declaredOther {
-				names[name] = kind
-			}
-		}
-		for _, decl := range pf.file.Decls {
-			switch d := decl.(type) {
-			case *ast.FuncDecl:
-				if d.Recv == nil {
-					declare(d.Name.Name, declaredOther)
-				}
-			case *ast.GenDecl:
-				for _, spec := range d.Specs {
-					switch sp := spec.(type) {
-					case *ast.ValueSpec:
-						kind := declaredOther
-						if d.Tok == token.CONST {
-							kind = declaredConst
-						}
-						for _, name := range sp.Names {
-							declare(name.Name, kind)
-						}
-					case *ast.TypeSpec:
-						declare(sp.Name.Name, declaredOther)
-					}
-				}
-			}
-		}
-	}
-
-	for _, pf := range files {
-		for _, ref := range findErrmsgRefs(pf, constFuncNames) {
+// whose argument is not a constant expression, and every use of them that is
+// not a call. It returns the number of calls it checked.
+func checkConstCalls(s *guardSet) (checked int, violations []string) {
+	for _, p := range s.pkgs {
+		for _, ref := range s.errmsgRefs(p, constFuncNames) {
 			if ref.call == nil {
-				violations = append(violations, fmt.Sprintf("%s: errmsg.%s is referenced as a value; call it with a constant expression", pf.position(ref.node), ref.name))
+				violations = append(violations, fmt.Sprintf("%s: errmsg.%s is referenced as a value; call it with a constant expression", position(ref.ident.Pos()), ref.name))
 				continue
 			}
 			checked++
-			if len(ref.call.Args) != 1 || !isConstantStringExpr(ref.call.Args[0], ref.decl, packageNames[pf.dir]) {
-				violations = append(violations, fmt.Sprintf("%s: errmsg.%s takes a string literal, a constant of the same package, or a + of them", pf.position(ref.call), ref.name))
+			if len(ref.call.Args) != 1 || !s.isConstantStringExpr(p, ref.call.Args[0]) {
+				violations = append(violations, fmt.Sprintf("%s: errmsg.%s takes a string literal, a constant of the same package, or a + of them", position(ref.call.Pos()), ref.name))
 			}
 		}
 	}
 	return checked, violations
 }
 
-// isConstantStringExpr reports whether expr is a string literal, a name that
-// resolves to a constant, or a + of such expressions. The check does not
-// resolve scopes, so a name is accepted only when every declaration of it that
-// could be in scope is a constant: none other in the enclosing top-level
-// declaration decl, and none other at package level in the same package. Any
-// other name is rejected.
-func isConstantStringExpr(expr ast.Expr, decl ast.Decl, packageNames map[string]declarationKind) bool {
+// isConstantStringExpr reports whether expr is a string literal, a name the
+// type checker resolves to a constant of p declared outside the build-variant
+// files, or a + of such expressions.
+func (s *guardSet) isConstantStringExpr(p *typedPackage, expr ast.Expr) bool {
 	switch e := identitymutationguard.UnwrapParen(expr).(type) {
 	case *ast.BasicLit:
 		return e.Kind == token.STRING
 	case *ast.BinaryExpr:
-		return e.Op == token.ADD &&
-			isConstantStringExpr(e.X, decl, packageNames) && isConstantStringExpr(e.Y, decl, packageNames)
+		return e.Op == token.ADD && s.isConstantStringExpr(p, e.X) && s.isConstantStringExpr(p, e.Y)
 	case *ast.Ident:
-		atPackage := packageNames[e.Name]
-		switch localDeclaration(decl, e.Name) {
-		case declaredConst:
-			return atPackage != declaredOther
-		case declaredOther:
-			return false
-		default:
-			return atPackage == declaredConst
-		}
+		c, ok := p.info.Uses[e].(*types.Const)
+		// A variant file may declare the name differently in another build.
+		return ok && c.Pkg() == p.pkg && !s.inVariantFile(c.Pos())
 	default:
 		return false
 	}
-}
-
-// declarationKind classifies how a name is declared.
-type declarationKind int
-
-const (
-	notDeclared declarationKind = iota
-	declaredConst
-	declaredOther
-)
-
-// localDeclaration reports how name is declared anywhere inside decl: a
-// function's receiver, signature and body, or a package-level declaration's
-// initializers including the function literals in them. A name declared both
-// as a constant and as anything else (in different scopes) is reported as
-// declaredOther.
-func localDeclaration(decl ast.Decl, name string) declarationKind {
-	kind := notDeclared
-	mark := func(ident ast.Expr, k declarationKind) {
-		if id, ok := ident.(*ast.Ident); ok && id.Name == name && kind != declaredOther {
-			kind = k
-		}
-	}
-	ast.Inspect(decl, func(n ast.Node) bool {
-		switch e := n.(type) {
-		case *ast.Field:
-			for _, id := range e.Names {
-				mark(id, declaredOther)
-			}
-		case *ast.AssignStmt:
-			if e.Tok == token.DEFINE {
-				for _, lhs := range e.Lhs {
-					mark(lhs, declaredOther)
-				}
-			}
-		case *ast.RangeStmt:
-			if e.Tok == token.DEFINE {
-				mark(e.Key, declaredOther)
-				mark(e.Value, declaredOther)
-			}
-		case *ast.GenDecl:
-			k := declaredOther
-			if e.Tok == token.CONST {
-				k = declaredConst
-			}
-			for _, spec := range e.Specs {
-				switch sp := spec.(type) {
-				case *ast.ValueSpec:
-					for _, id := range sp.Names {
-						mark(id, k)
-					}
-				case *ast.TypeSpec:
-					mark(sp.Name, declaredOther)
-				}
-			}
-		}
-		return true
-	})
-	return kind
 }
 
 // TestProductionConstCallsUseConstantExpressions pins that a RoleConstant
@@ -459,7 +472,7 @@ func localDeclaration(decl ast.Decl, name string) declarationKind {
 // the configuration or the environment can never escape the Text redaction by
 // being passed as a constant.
 func TestProductionConstCallsUseConstantExpressions(t *testing.T) {
-	checked, violations := checkConstCalls(parseGuardFiles(t, productionGuardFiles(t)))
+	checked, violations := checkConstCalls(productionGuardSet(t))
 	require.Positive(t, checked, "no errmsg.Const call was found; the scan is broken")
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
 }
@@ -482,14 +495,16 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 			},
 		},
 		{name: "local constant", files: []guardFile{{"internal/x/x.go", src("", "func f() { const c = \"x\"; _ = errmsg.Const(c) }")}}},
+		{
+			name:  "a struct field named like a package constant does not shadow it",
+			files: []guardFile{{"internal/x/x.go", src("", "const prefix = \"p\"\n\nfunc f() { _ = struct{ prefix string }{}; _ = errmsg.Const(prefix) }")}},
+		},
 		{name: "aliased import is followed", files: []guardFile{{"internal/x/x.go", src("em ", "func f(s string) { _ = em.Const(s) }")}}, want: 1},
 		{name: "parameter", files: []guardFile{{"internal/x/x.go", src("", "func f(s string) { _ = errmsg.Const(s) }")}}, want: 1},
 		{
-			name: "local variable shadowing a package constant",
-			files: []guardFile{
-				{"internal/x/x.go", src("", "const c = \"x\"\n\nfunc f(v string) { c := v; _ = errmsg.Const(c) }")},
-			},
-			want: 1,
+			name:  "local variable shadowing a package constant",
+			files: []guardFile{{"internal/x/x.go", src("", "const c = \"x\"\n\nfunc f(v string) { c := v; _ = errmsg.Const(c) }")}},
+			want:  1,
 		},
 		{
 			name:  "package-level closure parameter shadowing a package constant",
@@ -502,16 +517,16 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 			want:  1,
 		},
 		{
-			name: "a name declared as a variable in one file and a constant in a later one",
+			// Whichever variant the current build selects, the name is rejected.
+			name: "a constant declared in a build-variant file",
 			files: []guardFile{
 				{"internal/x/x.go", src("", "func f() { _ = errmsg.Const(prefix) }")},
-				{"internal/x/prefix_linux.go", "package x\n\nvar prefix = g()\n\nfunc g() string { return \"\" }\n"},
-				{"internal/x/prefix_windows.go", "package x\n\nconst prefix = \"failed\"\n"},
+				{"internal/x/prefix_linux.go", "package x\n\nconst prefix = \"failed\"\n"},
+				{"internal/x/prefix_other.go", "//go:build !linux\n\npackage x\n\nvar prefix = g()\n\nfunc g() string { return \"\" }\n"},
 			},
 			want: 1,
 		},
 		{name: "package variable", files: []guardFile{{"internal/x/x.go", src("", "var c = \"x\"\n\nfunc f() { _ = errmsg.Const(c) }")}}, want: 1},
-		{name: "unresolved name", files: []guardFile{{"internal/x/x.go", src("", "func f() { _ = errmsg.Const(unknown) }")}}, want: 1},
 		{
 			name:  "constant of another package",
 			files: []guardFile{{"internal/x/x.go", src("", "import \"os\"\n\nfunc f() { _ = errmsg.Const(os.DevNull) }")}},
@@ -533,7 +548,7 @@ func TestConstCallCheckRecognizesForms(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, violations := checkConstCalls(parseGuardFiles(t, tt.files))
+			_, violations := checkConstCalls(syntheticGuard(t, tt.files...))
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
@@ -545,27 +560,27 @@ var exemptRoleFuncNames = []string{"Ident", "Path", "PathErrorCause"}
 
 // checkExemptRoleCalls reports calls of errmsg.Ident and errmsg.Path outside
 // exemptRolePositions, calls of errmsg.PathErrorCause outside
-// pathErrorCausePositions, and references to any of them that are not calls.
+// pathErrorCausePositions, and uses of any of them that are not calls.
 // errmsg's own files are not checked: they implement the constructors.
-func checkExemptRoleCalls(files []*parsedFile) []string {
+func checkExemptRoleCalls(s *guardSet) []string {
 	var violations []string
-	for _, pf := range files {
-		if pf.dir == errmsgDir {
+	for _, p := range s.pkgs {
+		if p.dir == errmsgDir {
 			continue
 		}
-		for _, ref := range findErrmsgRefs(pf, exemptRoleFuncNames) {
+		for _, ref := range s.errmsgRefs(p, exemptRoleFuncNames) {
 			if ref.call == nil {
-				violations = append(violations, fmt.Sprintf("%s: errmsg.%s is referenced as a value; only a call in an allowed position may declare a role", pf.position(ref.node), ref.name))
+				violations = append(violations, fmt.Sprintf("%s: errmsg.%s is referenced as a value; only a call in an allowed position may declare a role", position(ref.ident.Pos()), ref.name))
 				continue
 			}
 			switch ref.name {
 			case "Ident", "Path":
-				if !exemptRolePositions.covers(pf.path, ref.fnKey()) || !inScope(pf.path, ref.fnKey()) {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.%s is called outside the positions allowed to declare an exempt role", pf.position(ref.call), ref.name))
+				if !exemptRolePositions.covers(ref.file.path, ref.fnKey()) || !inScope(ref.file.path, ref.fnKey()) {
+					violations = append(violations, fmt.Sprintf("%s: errmsg.%s is called outside the positions allowed to declare an exempt role", position(ref.call.Pos()), ref.name))
 				}
 			default:
-				if !pathErrorCausePositions.covers(pf.path, ref.fnKey()) {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", pf.position(ref.call)))
+				if !pathErrorCausePositions.covers(ref.file.path, ref.fnKey()) {
+					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", position(ref.call.Pos())))
 				}
 			}
 		}
@@ -578,7 +593,7 @@ func checkExemptRoleCalls(files []*parsedFile) []string {
 // exemptRolePositions, decided by file and function, so a new caller cannot
 // exempt text from whole-value replacement without extending the table.
 func TestProductionExemptRoleCallsAreInAllowedPositions(t *testing.T) {
-	violations := checkExemptRoleCalls(parseGuardFiles(t, productionGuardFiles(t)))
+	violations := checkExemptRoleCalls(productionGuardSet(t))
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
 }
 
@@ -614,225 +629,151 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			violations := checkExemptRoleCalls(parseGuardFiles(t, []guardFile{tt.file}))
+			violations := checkExemptRoleCalls(syntheticGuard(t, tt.file))
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
 }
 
-// typeDecl is one type declaration with the file it appears in, so names in
-// its definition resolve through that file's imports.
-type typeDecl struct {
-	spec *ast.TypeSpec
-	pf   *parsedFile
-}
-
-// typeIndex maps a repository-relative package directory to its type
-// declarations by name.
-type typeIndex map[string]map[string]typeDecl
-
-// newTypeIndex indexes the type declarations of files. It reports every type
-// name a package declares more than once: the index keeps one declaration per
-// name, so a per-build-variant type would be checked in only one variant.
-func newTypeIndex(files []*parsedFile) (index typeIndex, violations []string) {
-	index = typeIndex{}
-	for _, pf := range files {
-		for _, decl := range pf.file.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				ts := spec.(*ast.TypeSpec)
-				if index[pf.dir] == nil {
-					index[pf.dir] = map[string]typeDecl{}
-				}
-				if _, dup := index[pf.dir][ts.Name.Name]; dup {
-					violations = append(violations, fmt.Sprintf("%s: type %s is declared in more than one file; the guard does not resolve per-build-variant types", pf.position(ts), ts.Name.Name))
-				}
-				index[pf.dir][ts.Name.Name] = typeDecl{spec: ts, pf: pf}
-			}
-		}
-	}
-	return index, violations
-}
-
-// lookup resolves a type name used in pf, qualified or not, to its
-// declaration when the declaration is among the indexed files.
-func (idx typeIndex) lookup(pf *parsedFile, expr ast.Expr) (typeDecl, bool) {
-	switch e := identitymutationguard.UnwrapParen(expr).(type) {
-	case *ast.Ident:
-		d, ok := idx[pf.dir][e.Name]
-		return d, ok
-	case *ast.SelectorExpr:
-		pkg, ok := e.X.(*ast.Ident)
-		if !ok {
-			return typeDecl{}, false
-		}
-		dir, ok := dirOfImportPath(pf.imports[pkg.Name])
-		if !ok {
-			return typeDecl{}, false
-		}
-		d, ok := idx[dir][e.Sel.Name]
-		return d, ok
-	default:
-		return typeDecl{}, false
-	}
-}
-
-// containsPart reports whether the type expr, used in pf, holds an
-// errmsg.Part: directly, as an element, a field, a function result, a type
-// argument, or through the definition of a named type.
-func (idx typeIndex) containsPart(pf *parsedFile, expr ast.Expr, visiting map[*ast.TypeSpec]struct{}) bool {
-	if expr == nil {
+// containsPart reports whether t holds an errmsg.Part: directly, as an
+// element, a field, a function result, an interface method's result, a type
+// argument, a type parameter's constraint, or through a named type's
+// definition. errmsg's other types, such as Message, are opaque.
+func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struct{}) bool {
+	if t == nil {
 		return false
 	}
-	if pf.dir != errmsgDir && pf.isErrmsgName(expr, "Part") {
+	if types.Identical(t, s.errmsg.Scope().Lookup("Part").Type()) {
 		return true
 	}
-	switch e := identitymutationguard.UnwrapParen(expr).(type) {
-	case *ast.StarExpr:
-		return idx.containsPart(pf, e.X, visiting)
-	case *ast.ArrayType:
-		return idx.containsPart(pf, e.Elt, visiting)
-	case *ast.Ellipsis:
-		return idx.containsPart(pf, e.Elt, visiting)
-	case *ast.MapType:
-		return idx.containsPart(pf, e.Key, visiting) || idx.containsPart(pf, e.Value, visiting)
-	case *ast.ChanType:
-		return idx.containsPart(pf, e.Value, visiting)
-	case *ast.StructType:
-		return idx.fieldsContainPart(pf, e.Fields, visiting)
-	case *ast.FuncType:
-		return idx.fieldsContainPart(pf, e.Results, visiting)
-	case *ast.InterfaceType:
-		// Method results and embedded interfaces.
-		return idx.fieldsContainPart(pf, e.Methods, visiting)
-	case *ast.IndexExpr:
-		return idx.containsPart(pf, e.X, visiting) || idx.containsPart(pf, e.Index, visiting)
-	case *ast.IndexListExpr:
-		return idx.containsPart(pf, e.X, visiting) || slices.ContainsFunc(e.Indices, func(i ast.Expr) bool {
-			return idx.containsPart(pf, i, visiting)
-		})
-	case *ast.Ident, *ast.SelectorExpr:
-		d, ok := idx.lookup(pf, e)
-		if !ok || d.pf.dir == errmsgDir {
-			// errmsg's own types, such as Message, are opaque outside it.
-			return false
-		}
-		if _, seen := visiting[d.spec]; seen {
-			return false
-		}
-		visiting[d.spec] = struct{}{}
-		defer delete(visiting, d.spec)
-		return idx.containsPart(d.pf, d.spec.Type, visiting)
-	default:
-		return false
-	}
-}
-
-func (idx typeIndex) fieldsContainPart(pf *parsedFile, fields *ast.FieldList, visiting map[*ast.TypeSpec]struct{}) bool {
-	if fields == nil {
-		return false
-	}
-	return slices.ContainsFunc(fields.List, func(f *ast.Field) bool {
-		return idx.containsPart(pf, f.Type, visiting)
-	})
-}
-
-// checkPartConstruction reports, outside errmsg, every composite literal that
-// builds an errmsg.Part (including the elided []errmsg.Part{{...}} form), every
-// exported function, method or package-level variable whose type contains an
-// errmsg.Part, and every unexported one outside the in-scope positions. A
-// variable's type is its declared type or its function literal's signature;
-// an untyped variable whose initializer references errmsg is treated as
-// holding a Part.
-// It also reports any exported
-// or embedded field of errmsg's Part struct, and returns whether that struct
-// was found.
-func checkPartConstruction(files []*parsedFile) (partFound bool, violations []string) {
-	idx, violations := newTypeIndex(files)
-	if d, ok := idx[errmsgDir]["Part"]; ok {
-		if st, ok := d.spec.Type.(*ast.StructType); ok {
-			partFound = true
-			for _, field := range st.Fields.List {
-				if len(field.Names) == 0 {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.Part must not embed a field", d.pf.position(field)))
-				}
-				for _, name := range field.Names {
-					if name.IsExported() {
-						violations = append(violations, fmt.Sprintf("%s: errmsg.Part field %s must be unexported", d.pf.position(name), name.Name))
-					}
-				}
-			}
-		}
-	}
-
-	for _, pf := range files {
-		if pf.dir == errmsgDir {
-			continue
-		}
-		isPart := func(expr ast.Expr) bool { return pf.isErrmsgName(expr, "Part") }
-		ast.Inspect(pf.file, func(n ast.Node) bool {
-			lit, ok := n.(*ast.CompositeLit)
-			if !ok {
+	switch t := types.Unalias(t).(type) {
+	case *types.Pointer:
+		return s.containsPart(t.Elem(), visiting)
+	case *types.Slice:
+		return s.containsPart(t.Elem(), visiting)
+	case *types.Array:
+		return s.containsPart(t.Elem(), visiting)
+	case *types.Chan:
+		return s.containsPart(t.Elem(), visiting)
+	case *types.Map:
+		return s.containsPart(t.Key(), visiting) || s.containsPart(t.Elem(), visiting)
+	case *types.Struct:
+		for field := range t.Fields() {
+			if s.containsPart(field.Type(), visiting) {
 				return true
 			}
-			if lit.Type != nil && isPart(lit.Type) {
-				violations = append(violations, fmt.Sprintf("%s: errmsg.Part is built outside errmsg; use its constructors", pf.position(lit)))
-			}
-			for _, inner := range identitymutationguard.ElidedCompositeLiterals(lit, isPart) {
-				violations = append(violations, fmt.Sprintf("%s: errmsg.Part is built outside errmsg through an elided literal", pf.position(inner)))
-			}
-			return true
-		})
-
-		// report applies to a declared name whose type holds a Part the rule
-		// that only in-scope unexported code may hand a Part out.
-		// scopeKey is the key inScope checks: the function's, or "" for a
-		// package-level variable, which is outside every function.
-		report := func(node ast.Node, name *ast.Ident, scopeKey string) {
-			switch {
-			case name.IsExported():
-				violations = append(violations, fmt.Sprintf("%s: exported %s holds an errmsg.Part; only in-scope unexported code may", pf.position(node), name.Name))
-			case !inScope(pf.path, scopeKey):
-				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part outside the in-scope positions", pf.position(node), name.Name))
+		}
+	case *types.Tuple:
+		for v := range t.Variables() {
+			if s.containsPart(v.Type(), visiting) {
+				return true
 			}
 		}
-		for _, decl := range pf.file.Decls {
-			switch d := decl.(type) {
-			case *ast.FuncDecl:
-				if idx.fieldsContainPart(pf, d.Type.Results, map[*ast.TypeSpec]struct{}{}) {
-					report(d, d.Name, funcKey(d))
+	case *types.Signature:
+		return s.containsPart(t.Results(), visiting)
+	case *types.Interface:
+		for method := range t.Methods() {
+			if s.containsPart(method.Type(), visiting) {
+				return true
+			}
+		}
+		for etyp := range t.EmbeddedTypes() {
+			if s.containsPart(etyp, visiting) {
+				return true
+			}
+		}
+	case *types.Union:
+		for term := range t.Terms() {
+			if s.containsPart(term.Type(), visiting) {
+				return true
+			}
+		}
+	case *types.TypeParam:
+		return s.containsPart(t.Constraint(), visiting)
+	case *types.Named:
+		obj := t.Obj()
+		if obj.Pkg() == s.errmsg {
+			return false
+		}
+		if _, seen := visiting[obj]; seen {
+			return false
+		}
+		visiting[obj] = struct{}{}
+		defer delete(visiting, obj)
+		if args := t.TypeArgs(); args != nil {
+			for t := range args.Types() {
+				if s.containsPart(t, visiting) {
+					return true
 				}
-			case *ast.GenDecl:
-				if d.Tok != token.VAR {
-					continue
+			}
+		}
+		return s.containsPart(t.Underlying(), visiting)
+	}
+	return false
+}
+
+// checkPartConstruction reports any exported or embedded field of
+// errmsg.Part, and, outside errmsg, every composite literal of type
+// errmsg.Part, every exported function, method or package-level variable whose
+// type holds an errmsg.Part, and every unexported one outside the in-scope
+// positions. It returns whether the Part struct was found.
+func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
+	partName, _ := s.errmsg.Scope().Lookup("Part").(*types.TypeName)
+	if partName == nil {
+		return false, nil
+	}
+	part := partName.Type()
+	if st, ok := part.Underlying().(*types.Struct); ok {
+		partFound = true
+		for field := range st.Fields() {
+			switch f := field; {
+			case f.Embedded():
+				violations = append(violations, fmt.Sprintf("%s: errmsg.Part must not embed a field", position(f.Pos())))
+			case f.Exported():
+				violations = append(violations, fmt.Sprintf("%s: errmsg.Part field %s must be unexported", position(f.Pos()), f.Name()))
+			}
+		}
+	}
+
+	for _, p := range s.pkgs {
+		if p.dir == errmsgDir {
+			continue
+		}
+		// report applies to a declared name whose type holds a Part the rule
+		// that only in-scope unexported code may hand a Part out. scopeKey is
+		// the key inScope checks: the function's, or "" for a package-level
+		// variable.
+		report := func(file *sourceFile, name *ast.Ident, scopeKey string) {
+			switch {
+			case name.IsExported():
+				violations = append(violations, fmt.Sprintf("%s: exported %s holds an errmsg.Part; only in-scope unexported code may", position(name.Pos()), name.Name))
+			case !inScope(file.path, scopeKey):
+				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part outside the in-scope positions", position(name.Pos()), name.Name))
+			}
+		}
+		for _, f := range p.files {
+			ast.Inspect(f.file, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.CompositeLit); ok && types.Identical(p.info.Types[lit].Type, part) {
+					violations = append(violations, fmt.Sprintf("%s: errmsg.Part is built outside errmsg; use its constructors", position(lit.Pos())))
 				}
-				for _, spec := range d.Specs {
-					sp := spec.(*ast.ValueSpec)
-					for i, name := range sp.Names {
-						// Without type checking, only a declared type or a
-						// function literal's signature gives the type.
-						typ := sp.Type
-						var value ast.Expr
-						switch {
-						case i < len(sp.Values):
-							value = sp.Values[i]
-						case len(sp.Values) == 1:
-							// A multi-value initializer such as `var a, b = f()`.
-							value = sp.Values[0]
-						}
-						lit, isFuncLit := value.(*ast.FuncLit)
-						if typ == nil && isFuncLit {
-							typ = lit.Type
-						}
-						// An untyped initializer that references errmsg may yield a
-						// Part; without type inference, treat it as one. The blank
-						// identifier cannot hand anything out.
-						untypedFromErrmsg := typ == nil && name.Name != "_" && value != nil && !isFuncLit && pf.referencesErrmsg(value)
-						if untypedFromErrmsg || idx.containsPart(pf, typ, map[*ast.TypeSpec]struct{}{}) {
-							report(name, name, "")
+				return true
+			})
+			for _, decl := range f.file.Decls {
+				switch d := decl.(type) {
+				case *ast.FuncDecl:
+					if fn, ok := p.info.Defs[d.Name].(*types.Func); ok && s.containsPart(fn.Signature().Results(), map[*types.TypeName]struct{}{}) {
+						report(f, d.Name, funcKey(d))
+					}
+				case *ast.GenDecl:
+					if d.Tok != token.VAR {
+						continue
+					}
+					for _, spec := range d.Specs {
+						for _, name := range spec.(*ast.ValueSpec).Names {
+							// The blank identifier cannot hand anything out.
+							if v, ok := p.info.Defs[name].(*types.Var); ok && name.Name != "_" && s.containsPart(v.Type(), map[*types.TypeName]struct{}{}) {
+								report(f, name, "")
+							}
 						}
 					}
 				}
@@ -847,20 +788,20 @@ func checkPartConstruction(files []*parsedFile) (partFound bool, violations []st
 // unexported, no code outside errmsg builds a Part literal, and a Part can only
 // be handed out by unexported in-scope code.
 func TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg(t *testing.T) {
-	partFound, violations := checkPartConstruction(parseGuardFiles(t, productionGuardFiles(t)))
+	partFound, violations := checkPartConstruction(productionGuardSet(t))
 	require.True(t, partFound, "the errmsg.Part struct was not found; the scan is broken")
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
 }
 
 func TestPartCheckRecognizesForms(t *testing.T) {
-	const errmsgFile = "internal/errmsg/errmsg.go"
-	const errmsgSrc = "package errmsg\n\ntype Part struct {\n\trole int\n\ttext string\n}\n"
 	const header = "package x\n\nimport \"" + errmsgImportPath + "\"\n\n"
+	const stageHeader = "package runner\n\nimport \"" + errmsgImportPath + "\"\n\n"
+	const stageFile = "internal/runner/group_stage.go"
 	tests := []struct {
-		name      string
-		errmsgSrc string
-		file      guardFile
-		want      int
+		name   string
+		errmsg string // replaces errmsg.go when set
+		file   guardFile
+		want   int
 	}{
 		{name: "value literal", file: guardFile{"internal/x/x.go", header + "var _ = errmsg.Part{}\n"}, want: 1},
 		{name: "elided slice element", file: guardFile{"internal/x/x.go", header + "var _ = []errmsg.Part{{}, {}}\n"}, want: 2},
@@ -871,6 +812,7 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			file: guardFile{"internal/x/x.go", header + "type holder struct{ p errmsg.Part }\n\nfunc Make() *holder { return nil }\n"},
 			want: 1,
 		},
+		{name: "exported function returning an alias of a Part slice", file: guardFile{"internal/x/x.go", header + "type parts = []errmsg.Part\n\nfunc Make() parts { return nil }\n"}, want: 1},
 		{name: "unexported function outside the scope", file: guardFile{"internal/x/x.go", header + "func parts() []errmsg.Part { return nil }\n"}, want: 1},
 		{
 			name: "unexported method in scope",
@@ -892,32 +834,26 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			want: 1,
 		},
 		{
-			name: "exported package-level function variable returning a Part in a whole-file position",
-			file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar MakeIdentifier = func(s string) errmsg.Part { return errmsg.Ident(s) }\n"},
+			name: "result type parameter constrained to a Part",
+			file: guardFile{stageFile, stageHeader + "func Make[T interface{ errmsg.Part }](s string) T { return any(errmsg.Ident(s)).(T) }\n"},
 			want: 1,
 		},
 		{
-			name: "unexported package-level Part variable outside the scope",
-			file: guardFile{"internal/x/x.go", header + "var parts []errmsg.Part\n"},
+			name: "exported function variable returning a Part in a whole-file position",
+			file: guardFile{stageFile, stageHeader + "var MakeIdentifier = func(s string) errmsg.Part { return errmsg.Ident(s) }\n"},
 			want: 1,
 		},
 		{
-			name: "exported untyped variable initialized from an errmsg constructor in a whole-file position",
-			file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar Exposed = errmsg.Ident(\"x\")\n"},
+			name: "exported variable holding an in-scope helper that returns a Part",
+			file: guardFile{stageFile, stageHeader + "func part(s string) errmsg.Part { return errmsg.Ident(s) }\n\nvar MakePart = part\n"},
 			want: 1,
 		},
+		{name: "unexported Part variable outside the scope", file: guardFile{"internal/x/x.go", header + "var parts []errmsg.Part\n"}, want: 1},
+		{name: "exported variable of inferred Part type in a whole-file position", file: guardFile{stageFile, stageHeader + "var Exposed = errmsg.Ident(\"x\")\n"}, want: 1},
+		{name: "unexported Part variable in a whole-file position", file: guardFile{stageFile, stageHeader + "var exposed = errmsg.Ident(\"x\")\n"}},
 		{
-			name: "unexported untyped variable initialized from errmsg in a whole-file position",
-			file: guardFile{"internal/runner/group_stage.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nvar exposed = errmsg.Ident(\"x\")\n"},
-		},
-		{
-			name: "unexported untyped variable initialized from errmsg in a function-scoped file",
+			name: "unexported Part variable in a function-scoped file",
 			file: guardFile{"internal/runner/config/errors.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\nvar exposed = errmsg.Ident(\"x\")\n"},
-			want: 1,
-		},
-		{
-			name: "untyped variable initialized from a dot-imported errmsg constructor",
-			file: guardFile{"internal/x/x.go", "package x\n\nimport . \"" + errmsgImportPath + "\"\n\nvar exposed = Ident(\"x\")\n"},
 			want: 1,
 		},
 		{name: "dot-import literal", file: guardFile{"internal/x/x.go", "package x\n\nimport . \"" + errmsgImportPath + "\"\n\nvar _ = Part{}\n"}, want: 1},
@@ -926,211 +862,74 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 			name: "a Part-like type of another package is not tracked",
 			file: guardFile{"internal/x/x.go", "package x\n\ntype Part struct{ Role int }\n\nvar _ = Part{Role: 1}\n\nfunc Parts() []Part { return nil }\n"},
 		},
-		{name: "exported Part field", errmsgSrc: "package errmsg\n\ntype Part struct {\n\tRole int\n}\n", file: guardFile{"internal/x/x.go", "package x\n"}, want: 1},
+		{name: "exported Part field", errmsg: "package errmsg\n\ntype Part struct {\n\tRole int\n}\n", file: guardFile{"internal/x/x.go", "package x\n"}, want: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			src := errmsgSrc
-			if tt.errmsgSrc != "" {
-				src = tt.errmsgSrc
+			files := []guardFile{tt.file}
+			if tt.errmsg != "" {
+				files = append(files, guardFile{errmsgDir + "/errmsg.go", tt.errmsg})
 			}
-			partFound, violations := checkPartConstruction(parseGuardFiles(t, []guardFile{{errmsgFile, src}, tt.file}))
+			partFound, violations := checkPartConstruction(syntheticGuard(t, files...))
 			require.True(t, partFound)
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
 }
 
-func TestTypeIndexRejectsDuplicateTypeNames(t *testing.T) {
-	files := parseGuardFiles(t, []guardFile{
-		{"internal/errmsg/errmsg.go", "package errmsg\n\ntype Part struct{ role int }\n"},
-		{"internal/x/x_linux.go", "//go:build linux\n\npackage x\n\ntype T struct{}\n"},
-		{"internal/x/x_other.go", "//go:build !linux\n\npackage x\n\ntype T struct{}\n"},
-		{"internal/y/y.go", "package y\n\ntype T struct{}\n"},
-	})
-	partFound, violations := checkPartConstruction(files)
-	require.True(t, partFound)
-	assert.Len(t, violations, 1, strings.Join(violations, "\n"))
-}
-
-// methodOrigin is where a type gets one method: decls when the type declares
-// it (every build variant), field when an embedded struct field promotes it,
-// and neither when it is in an interface's method set.
-type methodOrigin struct {
-	decls []*ast.FuncDecl
-	field *ast.Field
-}
-
-// methodSet maps a method name to every origin a type gets it from.
-type methodSet map[string][]methodOrigin
-
-// namedTypeExpr strips the pointer, parentheses and type arguments from an
-// embedded field or alias target, leaving the type name.
-func namedTypeExpr(expr ast.Expr) ast.Expr {
-	expr = identitymutationguard.UnwrapParen(expr)
-	if star, ok := expr.(*ast.StarExpr); ok {
-		expr = identitymutationguard.UnwrapParen(star.X)
-	}
-	switch e := expr.(type) {
-	case *ast.IndexExpr:
-		return e.X
-	case *ast.IndexListExpr:
-		return e.X
-	}
-	return expr
-}
-
-// unalias follows d through alias declarations to the indexed type it
-// denotes, where methods declared through an alias receiver belong.
-func (idx typeIndex) unalias(d typeDecl) typeDecl {
-	seen := map[*ast.TypeSpec]struct{}{}
-	for d.spec.Assign.IsValid() {
-		if _, ok := seen[d.spec]; ok {
-			break
-		}
-		seen[d.spec] = struct{}{}
-		target, ok := idx.lookup(d.pf, namedTypeExpr(d.spec.Type))
-		if !ok {
-			break
-		}
-		d = target
-	}
-	return d
-}
-
-// checkStructuredErrorRendering resolves the method set of every type, with
-// the origin of each method, and reports every type with StructuredMessage
-// whose Error is neither declared as exactly
-// `return <receiver>.StructuredMessage().String()` nor promoted through the
-// same embedded field as StructuredMessage, and every type that declares
-// StructuredMessage but not Error. It returns the number of Error
+// checkStructuredErrorRendering reports every type of the checked packages
+// that has a StructuredMessage returning errmsg.Message, declared or promoted,
+// and whose Error is neither declared on the type as exactly
+// `return <receiver>.StructuredMessage().String()` nor selected through the
+// same embedding path as StructuredMessage. It returns the number of Error
 // declarations it accepted.
-func checkStructuredErrorRendering(files []*parsedFile) (accepted int, violations []string) {
-	idx, violations := newTypeIndex(files)
-	methods := map[typeDecl]map[string][]*ast.FuncDecl{}
-	methodFile := map[*ast.FuncDecl]*parsedFile{}
-	for _, pf := range files {
-		for _, decl := range pf.file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil {
-				continue
-			}
-			d, ok := idx[pf.dir][receiverTypeName(fn)]
-			if !ok {
-				continue
-			}
-			d = idx.unalias(d)
-			if methods[d] == nil {
-				methods[d] = map[string][]*ast.FuncDecl{}
-			}
-			methods[d][fn.Name.Name] = append(methods[d][fn.Name.Name], fn)
-			methodFile[fn] = pf
-		}
-	}
-
-	// resolve returns d's method set; named returns the method set of a type
-	// name used as an embedded field or alias target; promoted returns what a
-	// type literal, or the underlying type of a defined type, provides without
-	// the named type's declared methods.
-	var resolve func(d typeDecl, visiting map[*ast.TypeSpec]struct{}) methodSet
-	var named, promoted func(pf *parsedFile, expr ast.Expr, visiting map[*ast.TypeSpec]struct{}) methodSet
-	resolve = func(d typeDecl, visiting map[*ast.TypeSpec]struct{}) methodSet {
-		if _, seen := visiting[d.spec]; seen {
-			return methodSet{}
-		}
-		visiting[d.spec] = struct{}{}
-		defer delete(visiting, d.spec)
-		if d.spec.Assign.IsValid() {
-			return named(d.pf, d.spec.Type, visiting)
-		}
-		set := promoted(d.pf, d.spec.Type, visiting)
-		for name, decls := range methods[d] {
-			// A declared method shadows every promoted one.
-			set[name] = []methodOrigin{{decls: decls}}
-		}
-		return set
-	}
-	named = func(pf *parsedFile, expr ast.Expr, visiting map[*ast.TypeSpec]struct{}) methodSet {
-		expr = namedTypeExpr(expr)
-		if d, ok := idx.lookup(pf, expr); ok {
-			return resolve(d, visiting)
-		}
-		// Interfaces that may be outside the indexed files.
-		if pf.isErrmsgName(expr, "Structured") {
-			return methodSet{"StructuredMessage": {{}}, "Error": {{}}}
-		}
-		if ident, ok := expr.(*ast.Ident); ok && ident.Name == "error" {
-			return methodSet{"Error": {{}}}
-		}
-		return methodSet{}
-	}
-	promoted = func(pf *parsedFile, expr ast.Expr, visiting map[*ast.TypeSpec]struct{}) methodSet {
-		set := methodSet{}
-		switch e := identitymutationguard.UnwrapParen(expr).(type) {
-		case *ast.StructType:
-			for _, f := range e.Fields.List {
-				if len(f.Names) > 0 {
-					continue
-				}
-				for name := range named(pf, f.Type, visiting) {
-					set[name] = append(set[name], methodOrigin{field: f})
-				}
-			}
-		case *ast.InterfaceType:
-			for _, f := range e.Methods.List {
-				for _, n := range f.Names {
-					set[n.Name] = []methodOrigin{{}}
-				}
-				if len(f.Names) == 0 {
-					for name := range named(pf, f.Type, visiting) {
-						set[name] = []methodOrigin{{}}
+func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []string) {
+	message := s.errmsg.Scope().Lookup("Message").Type()
+	for _, p := range s.pkgs {
+		decls := map[*types.Func]*ast.FuncDecl{}
+		for _, f := range p.files {
+			for _, decl := range f.file.Decls {
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					if fn, ok := p.info.Defs[fd.Name].(*types.Func); ok {
+						decls[fn] = fd
 					}
 				}
 			}
-		default:
-			d, ok := idx.lookup(pf, namedTypeExpr(e))
-			if !ok {
-				return named(pf, e, visiting)
-			}
-			d = idx.unalias(d)
-			if _, seen := visiting[d.spec]; seen {
-				return set
-			}
-			visiting[d.spec] = struct{}{}
-			defer delete(visiting, d.spec)
-			return promoted(d.pf, d.spec.Type, visiting)
 		}
-		return set
-	}
-
-	for _, decls := range idx {
-		for _, d := range decls {
-			if d.spec.Assign.IsValid() {
-				// Checked as the type it denotes.
+		for _, name := range p.pkg.Scope().Names() {
+			tn, ok := p.pkg.Scope().Lookup(name).(*types.TypeName)
+			if !ok || tn.IsAlias() {
 				continue
 			}
-			set := resolve(d, map[*ast.TypeSpec]struct{}{})
-			structured := set["StructuredMessage"]
-			if len(structured) == 0 {
+			switch tn.Type().Underlying().(type) {
+			case *types.Interface, *types.Pointer:
+				// An interface has no implementation to check, and a defined
+				// pointer type has no methods.
 				continue
 			}
-			errorOrigins := set["Error"]
-			if structured[0].decls != nil && (len(errorOrigins) == 0 || errorOrigins[0].decls == nil) {
-				violations = append(violations, fmt.Sprintf("%s: %s declares StructuredMessage but not Error; Error must render StructuredMessage", d.pf.position(d.spec), d.spec.Name.Name))
+			recv := types.NewPointer(tn.Type())
+			smObj, smPath, _ := types.LookupFieldOrMethod(recv, false, p.pkg, "StructuredMessage")
+			sm, ok := smObj.(*types.Func)
+			if !ok || sm.Signature().Results().Len() != 1 || !types.Identical(sm.Signature().Results().At(0).Type(), message) {
 				continue
 			}
-			for _, o := range errorOrigins {
-				for _, fn := range o.decls {
-					if rendersFromStructuredMessage(fn) {
-						accepted++
-					} else {
-						violations = append(violations, fmt.Sprintf("%s: %s.Error must be exactly `return <receiver>.StructuredMessage().String()`", methodFile[fn].position(fn), d.spec.Name.Name))
-					}
+			errObj, errPath, _ := types.LookupFieldOrMethod(recv, false, p.pkg, "Error")
+			errFn, _ := errObj.(*types.Func)
+			switch {
+			case errFn != nil && len(errPath) == 1:
+				if fd := decls[errFn.Origin()]; fd != nil && rendersFromStructuredMessage(fd) {
+					accepted++
+				} else {
+					violations = append(violations, fmt.Sprintf("%s: %s.Error must be exactly `return <receiver>.StructuredMessage().String()`", position(errFn.Pos()), name))
 				}
-				sameField := func(s methodOrigin) bool { return s.decls == nil && s.field == o.field }
-				if o.decls == nil && !slices.ContainsFunc(structured, sameField) {
-					violations = append(violations, fmt.Sprintf("%s: %s gets Error from an embedded field that does not supply its StructuredMessage", d.pf.position(d.spec), d.spec.Name.Name))
-				}
+			case errFn != nil && slices.Equal(errPath[:len(errPath)-1], smPath[:len(smPath)-1]):
+				// Both methods come from the same embedded value.
+			case errFn == nil && len(smPath) == 1:
+				violations = append(violations, fmt.Sprintf("%s: %s declares StructuredMessage but not Error; Error must render StructuredMessage", position(tn.Pos()), name))
+			case errFn == nil:
+				// A promoted StructuredMessage without Error is not an error.
+			default:
+				violations = append(violations, fmt.Sprintf("%s: %s gets Error through another embedding path than its StructuredMessage", position(tn.Pos()), name))
 			}
 		}
 	}
@@ -1176,23 +975,18 @@ func rendersFromStructuredMessage(fn *ast.FuncDecl) bool {
 // a structured message builds its Error() text from that message, so the
 // unredacted rendering and Error() can never drift apart.
 func TestProductionStructuredErrorsRenderFromTheirMessage(t *testing.T) {
-	accepted, violations := checkStructuredErrorRendering(parseGuardFiles(t, productionGuardFiles(t)))
+	accepted, violations := checkStructuredErrorRendering(productionGuardSet(t))
 	require.GreaterOrEqual(t, accepted, 2, "errmsg.Error and errmsg.JoinedError were not both found; the scan is broken")
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
 }
 
 func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
-	const errmsgFile = "internal/errmsg/errmsg.go"
-	const errmsgSrc = "package errmsg\n\ntype Message struct{}\n\nfunc (Message) String() string { return \"\" }\n\n" +
-		"type Error struct{ msg Message }\n\nfunc (e *Error) Error() string { return e.StructuredMessage().String() }\n\n" +
-		"func (e *Error) StructuredMessage() Message { return e.msg }\n"
-	const header = "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype T struct{ msg errmsg.Message }\n\n" +
-		"func (t *T) StructuredMessage() errmsg.Message { return t.msg }\n\n"
+	const imp = "package x\n\nimport \"" + errmsgImportPath + "\"\n\n"
+	const header = imp + "type T struct{ msg errmsg.Message }\n\nfunc (t *T) StructuredMessage() errmsg.Message { return t.msg }\n\n"
 	tests := []struct {
-		name  string
-		src   string
-		extra []guardFile
-		want  int
+		name string
+		src  string
+		want int
 	}{
 		{name: "the one-statement form", src: header + "func (t *T) Error() string { return t.StructuredMessage().String() }\n"},
 		{name: "two statements", src: header + "func (t *T) Error() string { s := t.StructuredMessage().String(); return s }\n", want: 1},
@@ -1201,81 +995,168 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 		{name: "another value's message", src: header + "var other T\n\nfunc (t *T) Error() string { return other.StructuredMessage().String() }\n", want: 1},
 		{name: "StructuredMessage without Error", src: header, want: 1},
 		{
-			name: "embedding *errmsg.Error and declaring Error",
-			src:  "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype W struct{ *errmsg.Error }\n\nfunc (w W) Error() string { return \"x\" }\n",
+			name: "embedding *errmsg.Error through a local type and declaring Error",
+			src:  imp + "type inner struct{ *errmsg.Error }\n\ntype W struct{ inner }\n\nfunc (w *W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
-			name: "embedding through a local type",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype inner struct{ errmsg.Error }\n\n" +
-				"type W struct{ inner }\n\nfunc (w *W) Error() string { return \"x\" }\n",
+			name: "embedding *errmsg.Error through a dot-import",
+			src:  "package x\n\nimport . \"" + errmsgImportPath + "\"\n\ntype inner struct{ *Error }\n\ntype W struct{ inner }\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "embedding errmsg.Structured and declaring Error",
-			src:  "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype W struct{ errmsg.Structured }\n\nfunc (W) Error() string { return \"x\" }\n",
+			src:  imp + "type W struct{ errmsg.Structured }\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "embedding a local interface that declares StructuredMessage",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype sm interface{ StructuredMessage() errmsg.Message }\n\n" +
-				"type W struct{ sm }\n\nfunc (W) Error() string { return \"x\" }\n",
+			src:  imp + "type sm interface{ StructuredMessage() errmsg.Message }\n\ntype W struct{ sm }\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "embedding a generic type that embeds *errmsg.Error",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype inner[T any] struct{ *errmsg.Error }\n\n" +
-				"type W struct{ inner[int] }\n\nfunc (W) Error() string { return \"x\" }\n",
+			src:  imp + "type inner[T any] struct{ *errmsg.Error }\n\ntype W struct{ inner[int] }\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "defined type over a struct embedding *errmsg.Error",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype base struct{ *errmsg.Error }\n\n" +
-				"type W base\n\nfunc (W) Error() string { return \"x\" }\n",
+			src:  imp + "type inner struct{ *errmsg.Error }\n\ntype base struct{ inner }\n\ntype W base\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "defined type does not get the methods declared on its underlying type",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype base struct{ msg errmsg.Message }\n\n" +
+			src: imp + "type base struct{ msg errmsg.Message }\n\n" +
 				"func (b base) StructuredMessage() errmsg.Message { return b.msg }\n\n" +
 				"func (b base) Error() string { return b.StructuredMessage().String() }\n\n" +
 				"type W base\n\nfunc (W) Error() string { return \"x\" }\n",
 		},
 		{
 			name: "embedding an alias of errmsg.Error and declaring Error",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype inner = errmsg.Error\n\n" +
-				"type W struct{ *inner }\n\nfunc (w W) Error() string { return \"x\" }\n",
+			src:  imp + "type inner = errmsg.Error\n\ntype W struct{ *inner }\n\nfunc (w W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
-			name: "a build variant of Error sorted before a valid one",
-			src:  header,
-			extra: []guardFile{
-				{"internal/x/error_linux.go", "package x\n\nfunc (t *T) Error() string { return \"x\" }\n"},
-				{"internal/x/error_windows.go", "package x\n\nfunc (t *T) Error() string { return t.StructuredMessage().String() }\n"},
-			},
+			name: "embedding an alias of an unnamed struct and declaring Error",
+			src:  imp + "type inner = struct{ *errmsg.Error }\n\ntype W struct{ inner }\n\nfunc (W) Error() string { return \"x\" }\n",
 			want: 1,
 		},
 		{
 			name: "StructuredMessage and Error promoted through different fields",
-			src: "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype sm interface{ StructuredMessage() errmsg.Message }\n\n" +
+			src: imp + "type sm interface{ StructuredMessage() errmsg.Message }\n\n" +
 				"type badError struct{}\n\nfunc (badError) Error() string { return \"x\" }\n\ntype W struct {\n\tsm\n\tbadError\n}\n",
 			want: 1,
 		},
 		{
-			name: "an embedded structured error promoting both methods",
-			src:  "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype W struct{ *errmsg.Error }\n",
+			// The shallower StructuredMessage of A shadows G's, while Error
+			// still comes from G.
+			name: "a shallower StructuredMessage shadows the one paired with Error",
+			src: imp + "type A interface{ StructuredMessage() errmsg.Message }\n\n" +
+				"type G struct{ msg errmsg.Message }\n\nfunc (g G) StructuredMessage() errmsg.Message { return g.msg }\n\n" +
+				"func (g G) Error() string { return g.StructuredMessage().String() }\n\n" +
+				"type B struct{ G }\n\ntype W struct {\n\tA\n\tB\n}\n",
+			want: 1,
 		},
+		{name: "an embedded structured error promoting both methods", src: imp + "type W struct{ *errmsg.Error }\n"},
 		{
 			name: "an interface embedding error and listing StructuredMessage",
-			src:  "package x\n\nimport \"" + errmsgImportPath + "\"\n\ntype S interface {\n\terror\n\tStructuredMessage() errmsg.Message\n}\n",
+			src:  imp + "type S interface {\n\terror\n\tStructuredMessage() errmsg.Message\n}\n",
 		},
 		{name: "an unrelated error type", src: "package x\n\ntype E struct{}\n\nfunc (E) Error() string { return \"x\" }\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			accepted, violations := checkStructuredErrorRendering(parseGuardFiles(t, append([]guardFile{{errmsgFile, errmsgSrc}, {"internal/x/x.go", tt.src}}, tt.extra...)))
-			assert.Positive(t, accepted, "the synthetic errmsg.Error must be accepted")
+			accepted, violations := checkStructuredErrorRendering(syntheticGuard(t, guardFile{"internal/x/x.go", tt.src}))
+			assert.Positive(t, accepted, "errmsg's own Error must be accepted")
+			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
+		})
+	}
+}
+
+// checkBuildVariants reports every build-variant file that imports errmsg,
+// declares a type, or declares a method named Error or StructuredMessage: the
+// other checks type-check one build, so these must be the same in every
+// supported build (03 §9.0).
+func checkBuildVariants(s *guardSet) []string {
+	var violations []string
+	for _, f := range s.files {
+		if !f.variant {
+			continue
+		}
+		for _, imp := range f.file.Imports {
+			if imp.Path.Value == strconv.Quote(errmsgImportPath) {
+				violations = append(violations, fmt.Sprintf("%s: a build-variant file must not import errmsg", position(imp.Pos())))
+			}
+		}
+		for _, decl := range f.file.Decls {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if d.Tok != token.TYPE {
+					continue
+				}
+				for _, spec := range d.Specs {
+					ts := spec.(*ast.TypeSpec)
+					violations = append(violations, fmt.Sprintf("%s: a build-variant file must not declare type %s", position(ts.Pos()), ts.Name.Name))
+				}
+			case *ast.FuncDecl:
+				if d.Recv != nil && (d.Name.Name == "Error" || d.Name.Name == "StructuredMessage") {
+					violations = append(violations, fmt.Sprintf("%s: a build-variant file must not declare %s", position(d.Pos()), funcKey(d)))
+				}
+			}
+		}
+	}
+	return violations
+}
+
+// TestProductionBuildVariantFilesDoNotDeclareStructure pins that the files the
+// other checks may not see in the current build declare nothing those checks
+// read.
+func TestProductionBuildVariantFilesDoNotDeclareStructure(t *testing.T) {
+	violations := checkBuildVariants(productionGuardSet(t))
+	assert.Empty(t, violations, strings.Join(violations, "\n"))
+}
+
+func TestBuildVariantCheckRecognizesForms(t *testing.T) {
+	const imp = "import \"" + errmsgImportPath + "\"\n\n"
+	const common = "package x\n\ntype T struct{}\n"
+	tests := []struct {
+		name  string
+		files []guardFile
+		want  int
+	}{
+		{
+			name:  "a variant file importing errmsg",
+			files: []guardFile{{"internal/x/f_linux.go", "package x\n\n" + imp + "var _ = errmsg.Text(\"x\")\n"}, {"internal/x/f_other.go", "//go:build !linux\n\npackage x\n"}},
+			want:  1,
+		},
+		{
+			name:  "a variant file declaring a type",
+			files: []guardFile{{"internal/x/t_darwin.go", "package x\n\ntype T struct{}\n"}},
+			want:  1,
+		},
+		{
+			name: "a variant file declaring Error",
+			files: []guardFile{
+				{"internal/x/x.go", common},
+				{"internal/x/e_linux.go", "package x\n\nfunc (T) Error() string { return \"\" }\n"},
+				{"internal/x/e_other.go", "//go:build !linux\n\npackage x\n\nfunc (T) Error() string { return \"\" }\n"},
+			},
+			want: 2,
+		},
+		{
+			name:  "a cgo variant declaring a type",
+			files: []guardFile{{"internal/x/c.go", "//go:build cgo\n\npackage x\n\ntype C struct{}\n"}},
+			want:  1,
+		},
+		{
+			name: "a file in every supported build is not a variant",
+			files: []guardFile{{"internal/x/x.go", "//go:build !windows\n\npackage x\n\n" + imp + "type T struct{ msg errmsg.Message }\n\n" +
+				"func (t T) StructuredMessage() errmsg.Message { return t.msg }\n\nfunc (t T) Error() string { return t.StructuredMessage().String() }\n"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			violations := checkBuildVariants(syntheticGuard(t, tt.files...))
 			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
 		})
 	}
