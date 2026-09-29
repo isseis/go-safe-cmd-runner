@@ -54,9 +54,8 @@ func (p positions) covers(file, fn string) bool {
 
 // exemptRolePositions are the only positions allowed to declare an
 // Identifier or Path segment through errmsg.Ident or errmsg.Path. A position
-// is a file and a function in it, never a function name alone. The positions
-// must also be in scope (see inScope), which removes the functions excluded
-// from the expansion file.
+// is a file and a function in it, never a function name alone.
+// inScopeExpansionExclusions are removed from the expansion file.
 var exemptRolePositions = positions{
 	"internal/runner/group_executor.go":          {wholeFile},
 	"internal/runner/group_stage.go":             {wholeFile},
@@ -77,42 +76,14 @@ var pathErrorCausePositions = positions{
 	"internal/runner/base/executor/tempdir_manager.go": {"DefaultTempDirManager.Create"},
 }
 
-// inScopePositions are the paths whose error wrapping is in scope for
-// structured messages. An unexported function or method outside errmsg whose
-// signature holds an errmsg.Part must be one of them.
-var inScopePositions = positions{
-	"internal/runner/group_executor.go":                  {wholeFile},
-	"internal/runner/group_stage.go":                     {wholeFile},
-	"internal/runner/group_errors.go":                    {wholeFile},
-	"internal/runner/runner.go":                          {"Runner.Execute", "Runner.ExecuteGroup", "Runner.executeGroups"},
-	"internal/runner/config/errors.go":                   {"ErrUndefinedVariableDetail.StructuredMessage", "Level.parts", "Field.parts"},
-	"internal/runner/resource/normal_manager.go":         {"NormalResourceManager.ExecuteCommand", "NormalResourceManager.executeCommandWithOutput"},
-	"internal/runner/resource/dryrun_manager.go":         {"DryRunResourceManager.ExecuteCommand", "DryRunResourceManager.evaluateCommandRisk"},
-	"internal/runner/base/executor/tempdir_manager.go":   {"DefaultTempDirManager.Create"},
-	"internal/runner/base/executor/executor.go":          {"DefaultExecutor.Validate", "DefaultExecutor.validatePrivilegedCommand", "DefaultExecutor.executeNormal", "DefaultExecutor.executeWithUserGroup"},
-	"internal/runner/base/executor/command_lifecycle.go": {"DefaultExecutor.runCommand", "DefaultExecutor.reportStartFailure", "DefaultExecutor.superviseCommand", "DefaultExecutor.killChild", "killOutcome"},
-	"internal/runner/base/privilege/errors.go":           {"Error.StructuredMessage"},
-	"internal/runner/base/privilege/unix.go":             {"UnixPrivilegeManager.performElevation"},
-	"internal/logging/pre_execution_error.go":            {"PreExecutionError.DetailMessage"},
-	"internal/logging/execution_error.go":                {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
-}
-
-// inScopeExpansionFile is covered as a whole file except for the functions in
-// inScopeExpansionExclusions.
+// inScopeExpansionFile is an exempt-role position as a whole file except for
+// the functions in inScopeExpansionExclusions.
 const inScopeExpansionFile = "internal/runner/config/expansion.go"
 
 // inScopeExpansionExclusions are the functions of inScopeExpansionFile that
 // build errors outside the scope of structured messages.
 var inScopeExpansionExclusions = []string{
 	"ProcessEnvImport", "ProcessEnv", "resolveAndPrepareCommandSpec", "ApplyTemplateInheritance", "expandTemplateToSpec",
-}
-
-// inScope reports whether the function keyed fn in file is in scope.
-func inScope(file, fn string) bool {
-	if file == inScopeExpansionFile {
-		return !slices.Contains(inScopeExpansionExclusions, fn)
-	}
-	return inScopePositions.covers(file, fn)
 }
 
 // supportedBuilds are the builds the project ships (release.yml) and tests
@@ -575,26 +546,17 @@ var errmsgRoleChoosers = map[string][]string{
 	"causePart": {"Cause", "PathErrorCause", "IndentedCause"},
 }
 
-// partHelperCallerPositions are the positions, besides those allowed to
-// declare an exempt role, allowed to call a helper whose signature holds an
-// errmsg.Part.
-var partHelperCallerPositions = positions{
-	// ContextString renders the context parts that ReportMessage also uses.
-	"internal/logging/execution_error.go": {"ExecutionError.ContextString"},
-}
-
 // declaresExemptRole reports whether the function keyed fn in file may
 // declare an Identifier or Path segment.
 func declaresExemptRole(file, fn string) bool {
-	return exemptRolePositions.covers(file, fn) && inScope(file, fn)
+	return exemptRolePositions.covers(file, fn) && (file != inScopeExpansionFile || !slices.Contains(inScopeExpansionExclusions, fn))
 }
 
 // checkExemptRoleCalls reports calls of errmsg.Ident and errmsg.Path outside
 // exemptRolePositions, calls of errmsg.PathErrorCause outside
-// pathErrorCausePositions, calls of a package's own helpers whose signature
-// holds an errmsg.Part outside those positions and partHelperCallerPositions,
-// and inside errmsg calls of the role-choosing functions outside
-// errmsgRoleChoosers. Every use of any of them that is not a call is reported.
+// pathErrorCausePositions, and inside errmsg calls of the role-choosing
+// functions outside errmsgRoleChoosers. Every use of any of them that is not a
+// call is reported.
 func checkExemptRoleCalls(s *guardSet) []string {
 	var violations []string
 	for _, p := range s.pkgs {
@@ -624,26 +586,6 @@ func checkExemptRoleCalls(s *guardSet) []string {
 				if !pathErrorCausePositions.covers(ref.file.path, ref.fnKey()) {
 					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", position(ref.call.Pos())))
 				}
-			}
-		}
-		// A helper returning or taking Parts can carry an exempt role to a
-		// caller that may not declare one.
-		helpers := map[*types.Func]struct{}{}
-		for _, f := range p.files {
-			for _, decl := range f.file.Decls {
-				if fd, ok := decl.(*ast.FuncDecl); ok {
-					if fn, ok := p.info.Defs[fd.Name].(*types.Func); ok && s.holdsPart(fn) {
-						helpers[fn] = struct{}{}
-					}
-				}
-			}
-		}
-		for _, ref := range funcRefs(p, func(fn *types.Func) bool { _, ok := helpers[fn.Origin()]; return ok }) {
-			switch {
-			case ref.call == nil:
-				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part and is referenced as a value; only a call in an allowed position may use it", position(ref.ident.Pos()), ref.name))
-			case !declaresExemptRole(ref.file.path, ref.fnKey()) && !partHelperCallerPositions.covers(ref.file.path, ref.fnKey()):
-				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part and is called outside the positions allowed to declare an exempt role", position(ref.call.Pos()), ref.name))
 			}
 		}
 	}
@@ -685,11 +627,6 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 	src := func(alias, body string) string { return fmt.Sprintf(header, alias) + body }
 	const executorFile = "internal/runner/base/executor/executor.go"
 	const tempdirFile = "internal/runner/base/executor/tempdir_manager.go"
-	const stageFile = "internal/runner/group_stage.go"
-	const stageSrc = "package runner\n\nimport \"" + errmsgImportPath + "\"\n\n"
-	const identHelper = "func ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"
-	const runnerFile = "internal/runner/runner.go"
-	const runnerSrc = stageSrc + "type Runner struct{}\n\n"
 	tests := []struct {
 		name  string
 		files []guardFile
@@ -719,35 +656,6 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 		{name: "rolePart called outside its fixed callers", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc MakeIdent(s string) Part { return rolePart(RoleIdentifier, s) }\n"}}, want: 1},
 		{name: "causePart called outside its fixed callers", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc PathCause(err error) Part { return causePart(causePathError, err) }\n"}}, want: 1},
 		{name: "rolePart referenced as a value inside errmsg", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nvar makePart = rolePart\n"}}, want: 1},
-		{
-			name:  "Part helper called outside the scope",
-			files: []guardFile{{stageFile, stageSrc + identHelper}, {runnerFile, runnerSrc + "func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
-			want:  1,
-		},
-		{
-			name:  "Part helper called in scope but outside the exempt-role positions",
-			files: []guardFile{{stageFile, stageSrc + identHelper}, {runnerFile, runnerSrc + "func (r *Runner) Execute(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
-			want:  1,
-		},
-		{
-			name: "Part helper method of a generic type called outside the scope",
-			files: []guardFile{
-				{stageFile, stageSrc + "type box[T any] struct{}\n\nfunc (box[T]) ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"},
-				{runnerFile, runnerSrc + "func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(box[int]{}.ident(s)) }\n"},
-			},
-			want: 1,
-		},
-		{
-			name:  "Part helper called from an exempt-role position",
-			files: []guardFile{{stageFile, stageSrc + identHelper}, {"internal/runner/group_executor.go", "package runner\n\nimport \"" + errmsgImportPath + "\"\n\nfunc report(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n"}},
-		},
-		{name: "Part helper referenced as a value", files: []guardFile{{stageFile, stageSrc + identHelper + "\nvar f = ident\n"}}, want: 1},
-		{
-			name: "context parts rendered by ContextString",
-			files: []guardFile{{"internal/logging/execution_error.go", "package logging\n\nimport \"" + errmsgImportPath + "\"\n\ntype ExecutionError struct{}\n\n" +
-				"func (e *ExecutionError) contextParts() []errmsg.Part { return nil }\n\n" +
-				"func (e *ExecutionError) ContextString() string { return errmsg.NewMessage(e.contextParts()...).String() }\n"}},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -837,16 +745,9 @@ func (s *guardSet) containsPart(t types.Type, visiting map[*types.TypeName]struc
 	return false
 }
 
-// holdsPart reports whether fn's parameters or results hold an errmsg.Part.
-func (s *guardSet) holdsPart(fn *types.Func) bool {
-	return s.containsPart(fn.Signature(), map[*types.TypeName]struct{}{})
-}
-
 // checkPartConstruction reports any exported or embedded field of
-// errmsg.Part, and, outside errmsg, every composite literal of type
-// errmsg.Part, every exported function, method or package-level variable whose
-// type holds an errmsg.Part, and every unexported one outside the in-scope
-// positions. It returns whether the Part struct was found.
+// errmsg.Part and, outside errmsg, every composite literal of type
+// errmsg.Part. It returns whether the Part struct was found.
 func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 	partName, _ := s.errmsg.Scope().Lookup("Part").(*types.TypeName)
 	if partName == nil {
@@ -869,18 +770,6 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 		if p.dir == errmsgDir {
 			continue
 		}
-		// report applies to a declared name whose type holds a Part the rule
-		// that only in-scope unexported code may hand a Part out. scopeKey is
-		// the key inScope checks: the function's, or "" for a package-level
-		// variable.
-		report := func(file *sourceFile, name *ast.Ident, scopeKey string) {
-			switch {
-			case name.IsExported():
-				violations = append(violations, fmt.Sprintf("%s: exported %s holds an errmsg.Part; only in-scope unexported code may", position(name.Pos()), name.Name))
-			case !inScope(file.path, scopeKey):
-				violations = append(violations, fmt.Sprintf("%s: %s holds an errmsg.Part outside the in-scope positions", position(name.Pos()), name.Name))
-			}
-		}
 		for _, f := range p.files {
 			ast.Inspect(f.file, func(n ast.Node) bool {
 				if lit, ok := n.(*ast.CompositeLit); ok && types.Identical(p.info.Types[lit].Type, part) {
@@ -888,26 +777,6 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 				}
 				return true
 			})
-			for _, decl := range f.file.Decls {
-				switch d := decl.(type) {
-				case *ast.FuncDecl:
-					if fn, ok := p.info.Defs[d.Name].(*types.Func); ok && s.holdsPart(fn) {
-						report(f, d.Name, funcKey(d))
-					}
-				case *ast.GenDecl:
-					if d.Tok != token.VAR {
-						continue
-					}
-					for _, spec := range d.Specs {
-						for _, name := range spec.(*ast.ValueSpec).Names {
-							// The blank identifier cannot hand anything out.
-							if v, ok := p.info.Defs[name].(*types.Var); ok && name.Name != "_" && s.containsPart(v.Type(), map[*types.TypeName]struct{}{}) {
-								report(f, name, "")
-							}
-						}
-					}
-				}
-			}
 		}
 	}
 	return partFound, violations
@@ -915,8 +784,7 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 
 // TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg pins that a
 // role is only ever chosen by errmsg's constructors: Part's fields are
-// unexported, no code outside errmsg builds a Part literal, and a Part can only
-// be handed out by unexported in-scope code.
+// unexported and no code outside errmsg builds a Part literal.
 func TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg(t *testing.T) {
 	partFound, violations := checkPartConstruction(productionGuardSet(t))
 	require.True(t, partFound, "the errmsg.Part struct was not found; the scan is broken")
@@ -925,8 +793,6 @@ func TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg(t *testing.T) 
 
 func TestPartCheckRecognizesForms(t *testing.T) {
 	const header = "package x\n\nimport \"" + errmsgImportPath + "\"\n\n"
-	const stageHeader = "package runner\n\nimport \"" + errmsgImportPath + "\"\n\n"
-	const stageFile = "internal/runner/group_stage.go"
 	tests := []struct {
 		name   string
 		errmsg string // replaces errmsg.go when set
@@ -936,63 +802,7 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 		{name: "value literal", file: guardFile{"internal/x/x.go", header + "var _ = errmsg.Part{}\n"}, want: 1},
 		{name: "elided slice element", file: guardFile{"internal/x/x.go", header + "var _ = []errmsg.Part{{}, {}}\n"}, want: 2},
 		{name: "elided map value", file: guardFile{"internal/x/x.go", header + "var _ = map[string]errmsg.Part{\"a\": {}}\n"}, want: 1},
-		{name: "exported Parts method", file: guardFile{"internal/x/x.go", header + "type T struct{}\n\nfunc (T) Parts() []errmsg.Part { return nil }\n"}, want: 1},
-		{
-			name: "exported function returning a struct holding a Part",
-			file: guardFile{"internal/x/x.go", header + "type holder struct{ p errmsg.Part }\n\nfunc Make() *holder { return nil }\n"},
-			want: 1,
-		},
-		{name: "exported function returning an alias of a Part slice", file: guardFile{"internal/x/x.go", header + "type parts = []errmsg.Part\n\nfunc Make() parts { return nil }\n"}, want: 1},
-		{name: "unexported function outside the scope", file: guardFile{"internal/x/x.go", header + "func parts() []errmsg.Part { return nil }\n"}, want: 1},
-		{
-			name: "unexported method in scope",
-			file: guardFile{"internal/runner/config/errors.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\ntype Level struct{}\n\nfunc (l Level) parts() []errmsg.Part { return nil }\n"},
-		},
-		{
-			name: "unexported function of the expansion file in scope",
-			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandParts() (p []errmsg.Part) { return }\n"},
-		},
-		{
-			name: "function excluded from the expansion file",
-			file: guardFile{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc resolveAndPrepareCommandSpec() (p []errmsg.Part) { return }\n"},
-			want: 1,
-		},
-		{name: "interface result with a Part method", file: guardFile{"internal/x/x.go", header + "func Make() interface{ Parts() []errmsg.Part } { return nil }\n"}, want: 1},
-		{
-			name: "named interface result embedding a Part method",
-			file: guardFile{"internal/x/x.go", header + "type p interface{ Parts() []errmsg.Part }\n\ntype P interface{ p }\n\nfunc Make() P { return nil }\n"},
-			want: 1,
-		},
-		{
-			name: "result type parameter constrained to a Part",
-			file: guardFile{stageFile, stageHeader + "func Make[T interface{ errmsg.Part }](s string) T { return any(errmsg.Ident(s)).(T) }\n"},
-			want: 1,
-		},
-		{
-			name: "exported function variable returning a Part in a whole-file position",
-			file: guardFile{stageFile, stageHeader + "var MakeIdentifier = func(s string) errmsg.Part { return errmsg.Ident(s) }\n"},
-			want: 1,
-		},
-		{
-			name: "exported variable holding an in-scope helper that returns a Part",
-			file: guardFile{stageFile, stageHeader + "func part(s string) errmsg.Part { return errmsg.Ident(s) }\n\nvar MakePart = part\n"},
-			want: 1,
-		},
-		{name: "exported function sending a Part on a channel parameter", file: guardFile{stageFile, stageHeader + "func Emit(s string, out chan<- errmsg.Part) { out <- errmsg.Ident(s) }\n"}, want: 1},
-		{name: "exported function passing a Part to a callback parameter", file: guardFile{stageFile, stageHeader + "func Visit(s string, emit func(errmsg.Part)) { emit(errmsg.Ident(s)) }\n"}, want: 1},
-		{name: "exported function filling a Part through a pointer parameter", file: guardFile{stageFile, stageHeader + "func Fill(s string, dst *errmsg.Part) { *dst = errmsg.Ident(s) }\n"}, want: 1},
-		{name: "exported variable of a function type taking a Part", file: guardFile{stageFile, stageHeader + "var Hook func(errmsg.Part)\n"}, want: 1},
-		{name: "unexported in-scope function taking and returning Parts", file: guardFile{stageFile, stageHeader + "func appendParts(dst []errmsg.Part) []errmsg.Part { return dst }\n"}},
-		{name: "unexported Part variable outside the scope", file: guardFile{"internal/x/x.go", header + "var parts []errmsg.Part\n"}, want: 1},
-		{name: "exported variable of inferred Part type in a whole-file position", file: guardFile{stageFile, stageHeader + "var Exposed = errmsg.Ident(\"x\")\n"}, want: 1},
-		{name: "unexported Part variable in a whole-file position", file: guardFile{stageFile, stageHeader + "var exposed = errmsg.Ident(\"x\")\n"}},
-		{
-			name: "unexported Part variable in a function-scoped file",
-			file: guardFile{"internal/runner/config/errors.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\nvar exposed = errmsg.Ident(\"x\")\n"},
-			want: 1,
-		},
 		{name: "dot-import literal", file: guardFile{"internal/x/x.go", "package x\n\nimport . \"" + errmsgImportPath + "\"\n\nvar _ = Part{}\n"}, want: 1},
-		{name: "returning errmsg.Message is not a Part", file: guardFile{"internal/x/x.go", header + "func Make() errmsg.Message { return errmsg.Message{} }\n"}},
 		{
 			name: "a Part-like type of another package is not tracked",
 			file: guardFile{"internal/x/x.go", "package x\n\ntype Part struct{ Role int }\n\nvar _ = Part{Role: 1}\n\nfunc Parts() []Part { return nil }\n"},
@@ -1012,9 +822,362 @@ func TestPartCheckRecognizesForms(t *testing.T) {
 	}
 }
 
-// checkStructuredErrorRendering reports every type of the checked packages
-// that has a StructuredMessage returning errmsg.Message, declared or promoted,
-// and whose Error is neither declared on the type as exactly
+// partUsePositions are the positions, besides those allowed to declare an
+// exempt role, where Parts may flow in any form. They still cannot call
+// errmsg.Ident or errmsg.Path.
+var partUsePositions = positions{
+	// ContextString renders the context parts that ReportMessage also uses.
+	"internal/logging/execution_error.go": {"ExecutionError.ContextString"},
+}
+
+// checkPartFlow reports, outside errmsg and outside the positions that may
+// declare an exempt role or are in partUsePositions, every expression whose
+// type holds an errmsg.Part and is not one of the listed forms (03 §9.8). The
+// forms are an allowlist, so a form not listed is rejected: a Part can then
+// only come from errmsg's constructors or be moved around locally, never be
+// obtained from code that could have given it an exempt role.
+func checkPartFlow(s *guardSet) []string {
+	var violations []string
+	for _, p := range s.pkgs {
+		if p.dir == errmsgDir {
+			continue
+		}
+		holdsPart := func(e ast.Expr) bool {
+			tv, ok := p.info.Types[e]
+			return ok && !tv.IsType() && s.containsPart(tv.Type, map[*types.TypeName]struct{}{})
+		}
+		var visit func(n ast.Node) bool
+		// visitCallee checks what a call's callee expression evaluates besides
+		// the named function itself: a method's receiver, or a function literal
+		// or call producing the function.
+		var visitCallee func(fun ast.Expr)
+		visitCallee = func(fun ast.Expr) {
+			switch f := identitymutationguard.UnwrapParen(fun).(type) {
+			case *ast.Ident:
+			case *ast.IndexExpr:
+				visitCallee(f.X)
+				// A map or slice index; type arguments are types and hold nothing.
+				ast.Inspect(f.Index, visit)
+			case *ast.IndexListExpr:
+				visitCallee(f.X)
+			case *ast.SelectorExpr:
+				if _, isPkg := p.info.Uses[identOf(f.X)].(*types.PkgName); !isPkg {
+					ast.Inspect(f.X, visit)
+				}
+			default:
+				ast.Inspect(f, visit)
+			}
+		}
+		visit = func(n ast.Node) bool {
+			if cc, ok := n.(*ast.CaseClause); ok {
+				// A type switch case naming a Part takes it out of an interface.
+				for _, e := range cc.List {
+					if tv := p.info.Types[e]; tv.IsType() && s.containsPart(tv.Type, map[*types.TypeName]struct{}{}) {
+						violations = append(violations, fmt.Sprintf("%s: a type switch may not take an errmsg.Part out of an interface here", position(e.Pos())))
+					}
+				}
+				return true
+			}
+			e, ok := n.(ast.Expr)
+			if !ok {
+				return true
+			}
+			if call, ok := e.(*ast.CallExpr); ok && !p.info.Types[call.Fun].IsType() {
+				if !s.movesPartsOnly(p, call.Fun) && s.handsPartOut(p, call) {
+					violations = append(violations, fmt.Sprintf("%s: this call can hand an errmsg.Part back from a function that is not errmsg's, a Part mover's or a builtin", position(call.Pos())))
+					return false
+				}
+				visitCallee(call.Fun)
+				for _, arg := range call.Args {
+					ast.Inspect(arg, visit)
+				}
+				return false
+			}
+			if !holdsPart(e) || isAllowedPartForm(p, e) {
+				return true
+			}
+			violations = append(violations, fmt.Sprintf("%s: an errmsg.Part may not be taken from %T here; build it with errmsg's constructors or keep it in a local variable", position(e.Pos()), e))
+			return false
+		}
+		for _, f := range p.files {
+			for _, decl := range f.file.Decls {
+				key := ""
+				if fd, ok := decl.(*ast.FuncDecl); ok {
+					key = funcKey(fd)
+				}
+				if declaresExemptRole(f.path, key) || partUsePositions.covers(f.path, key) {
+					continue
+				}
+				ast.Inspect(decl, visit)
+			}
+		}
+	}
+	return violations
+}
+
+// identOf returns expr as an identifier, or nil.
+func identOf(expr ast.Expr) *ast.Ident {
+	id, _ := identitymutationguard.UnwrapParen(expr).(*ast.Ident)
+	return id
+}
+
+// partMoverPackages are the packages, besides errmsg, whose functions may take
+// and return Parts anywhere: they only move the values their caller gives
+// them.
+var partMoverPackages = map[string]struct{}{"slices": {}, "maps": {}}
+
+// movesPartsOnly reports whether the callee fun cannot give a Part an exempt
+// role on the caller's behalf: a builtin, a function or method of errmsg or of
+// partMoverPackages, or a function literal, whose body is checked in place.
+// errmsg's exempt-role constructors are held to their positions by
+// checkExemptRoleCalls.
+func (s *guardSet) movesPartsOnly(p *typedPackage, fun ast.Expr) bool {
+	fun = identitymutationguard.UnwrapParen(fun)
+	switch f := fun.(type) {
+	case *ast.IndexExpr:
+		fun = f.X
+	case *ast.IndexListExpr:
+		fun = f.X
+	}
+	var id *ast.Ident
+	switch f := identitymutationguard.UnwrapParen(fun).(type) {
+	case *ast.FuncLit:
+		return true
+	case *ast.Ident:
+		id = f
+	case *ast.SelectorExpr:
+		id = f.Sel
+	}
+	switch obj := p.info.Uses[id].(type) {
+	case *types.Builtin:
+		return true
+	case *types.Func:
+		_, mover := partMoverPackages[obj.Pkg().Path()]
+		return obj.Pkg() == s.errmsg || mover
+	default:
+		return false
+	}
+}
+
+// handsPartOut reports whether call can give its caller a Part: through a
+// result, or through a parameter that reaches the caller's memory. A Part
+// passed by value, alone or as a fresh variadic list, only goes in.
+func (s *guardSet) handsPartOut(p *typedPackage, call *ast.CallExpr) bool {
+	sig, ok := p.info.Types[call.Fun].Type.Underlying().(*types.Signature)
+	if !ok {
+		return false
+	}
+	part := s.errmsg.Scope().Lookup("Part").Type()
+	if s.containsPart(sig.Results(), map[*types.TypeName]struct{}{}) {
+		return true
+	}
+	for i, param := range slices.Collect(sig.Params().Variables()) {
+		t := param.Type()
+		if sig.Variadic() && i == sig.Params().Len()-1 && !call.Ellipsis.IsValid() {
+			t = t.(*types.Slice).Elem()
+		}
+		if !types.Identical(t, part) && s.containsPart(t, map[*types.TypeName]struct{}{}) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAllowedPartForm reports whether e is a form through which a Part may flow
+// outside the positions that may declare an exempt role: a composite or
+// function literal, a variable or parameter declared inside a function, or a
+// parenthesized, indexed, sliced, dereferenced, addressed or received
+// expression, whose operand is checked on its own.
+func isAllowedPartForm(p *typedPackage, e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.CompositeLit, *ast.FuncLit, *ast.ParenExpr, *ast.IndexExpr, *ast.IndexListExpr, *ast.SliceExpr, *ast.StarExpr, *ast.UnaryExpr:
+		return true
+	case *ast.Ident:
+		v, ok := p.info.Uses[e].(*types.Var)
+		// Compare with the variable's own package: a dot-import makes another
+		// package's variables unqualified.
+		return ok && !v.IsField() && v.Parent() != v.Pkg().Scope()
+	default:
+		return false
+	}
+}
+
+// TestProductionPartsFlowOnlyInAllowedForms pins that code which may not
+// declare an exempt role cannot obtain a Part from code that may.
+func TestProductionPartsFlowOnlyInAllowedForms(t *testing.T) {
+	violations := checkPartFlow(productionGuardSet(t))
+	assert.Empty(t, violations, strings.Join(violations, "\n"))
+}
+
+func TestPartFlowCheckRecognizesForms(t *testing.T) {
+	const imp = "import \"" + errmsgImportPath + "\"\n\n"
+	const stageFile = "internal/runner/group_stage.go"
+	const stageSrc = "package runner\n\n" + imp
+	const identHelper = "func ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"
+	const runnerFile = "internal/runner/runner.go"
+	const runnerSrc = stageSrc + "type Runner struct{}\n\n"
+	stage := func(body string) guardFile { return guardFile{stageFile, stageSrc + body} }
+	runner := func(body string) guardFile { return guardFile{runnerFile, runnerSrc + body} }
+	tests := []struct {
+		name  string
+		files []guardFile
+		want  int
+	}{
+		{
+			name:  "Part helper called outside the scope",
+			files: []guardFile{stage(identHelper), runner("func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n")},
+			want:  1,
+		},
+		{
+			name:  "Part helper called in scope but outside the exempt-role positions",
+			files: []guardFile{stage(identHelper), runner("func (r *Runner) Execute(s string) errmsg.Message { return errmsg.NewMessage(ident(s)) }\n")},
+			want:  1,
+		},
+		{
+			name: "Part helper method of a generic type called outside the scope",
+			files: []guardFile{
+				stage("type box[T any] struct{}\n\nfunc (box[T]) ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"),
+				runner("func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(box[int]{}.ident(s)) }\n"),
+			},
+			want: 1,
+		},
+		{
+			name: "explicitly instantiated Part helper called outside the scope",
+			files: []guardFile{
+				stage("func part[T ~string](s T) errmsg.Part { return errmsg.Ident(string(s)) }\n"),
+				runner("func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(part[string](s)) }\n"),
+			},
+			want: 1,
+		},
+		{
+			name: "exported Part helper of another package",
+			files: []guardFile{
+				stage("func IdentPart(s string) errmsg.Part { return errmsg.Ident(s) }\n"),
+				{"internal/x/x.go", "package x\n\nimport (\n\t\"" + errmsgImportPath + "\"\n\t\"" + modulePath + "/internal/runner\"\n)\n\n" +
+					"func F(s string) errmsg.Message { return errmsg.NewMessage(runner.IdentPart(s)) }\n"},
+			},
+			want: 1,
+		},
+		{
+			name:  "Part helper called inside the receiver of a method call",
+			files: []guardFile{stage(identHelper), runner("func (r *Runner) Other(s string) string { return errmsg.NewMessage(ident(s)).String() }\n")},
+			want:  1,
+		},
+		{
+			name:  "Part helper called inside an immediately invoked function literal",
+			files: []guardFile{stage(identHelper), runner("func (r *Runner) Other(s string) string { return func() string { return errmsg.NewMessage(ident(s)).String() }() }\n")},
+			want:  1,
+		},
+		{
+			name:  "dot-imported errmsg constructors",
+			files: []guardFile{{runnerFile, "package runner\n\nimport . \"" + errmsgImportPath + "\"\n\nfunc Other(s string) Message { return NewMessage(Const(\"a \"), Text(s)) }\n"}},
+		},
+		{
+			name:  "function variable holding a Part helper",
+			files: []guardFile{stage("var identPart = func(s string) errmsg.Part { return errmsg.Ident(s) }\n"), runner("func (r *Runner) Other(s string) errmsg.Message { return errmsg.NewMessage(identPart(s)) }\n")},
+			want:  1,
+		},
+		{
+			name:  "callback parameter returning a Part",
+			files: []guardFile{runner("func (r *Runner) Other(f func(string) errmsg.Part, s string) errmsg.Message { return errmsg.NewMessage(f(s)) }\n")},
+			want:  1,
+		},
+		{
+			name: "helper filling a Part through a pointer",
+			files: []guardFile{
+				stage("func fill(dst *errmsg.Part, s string) { *dst = errmsg.Ident(s) }\n"),
+				runner("func (r *Runner) Other(s string) errmsg.Message { var p errmsg.Part; fill(&p, s); return errmsg.NewMessage(p) }\n"),
+			},
+			want: 1,
+		},
+		{
+			name:  "package variable holding a Part",
+			files: []guardFile{stage("var exposed = errmsg.Ident(\"x\")\n"), runner("func (r *Runner) Other() errmsg.Message { return errmsg.NewMessage(exposed) }\n")},
+			want:  1,
+		},
+		{
+			name:  "Part taken back from an interface",
+			files: []guardFile{stage("var Exposed any = errmsg.Ident(\"x\")\n"), runner("func (r *Runner) Other() errmsg.Message { return errmsg.NewMessage(Exposed.(errmsg.Part)) }\n")},
+			want:  1,
+		},
+		{
+			name:  "Part taken back from an interface by a type switch",
+			files: []guardFile{stage("var Exposed any = errmsg.Ident(\"x\")\n"), runner("func (r *Runner) Other() errmsg.Message {\n\tswitch v := Exposed.(type) {\n\tcase errmsg.Part:\n\t\treturn errmsg.NewMessage(v)\n\t}\n\treturn errmsg.Message{}\n}\n")},
+			want:  1,
+		},
+		{
+			name: "package variable of another package reached through a dot-import",
+			files: []guardFile{
+				stage("var Exposed = errmsg.Ident(\"x\")\n"),
+				{"internal/x/x.go", "package x\n\nimport (\n\t\"" + errmsgImportPath + "\"\n\t. \"" + modulePath + "/internal/runner\"\n)\n\nfunc F() errmsg.Message { return errmsg.NewMessage(Exposed) }\n"},
+			},
+			want: 1,
+		},
+		{
+			name:  "Part helper called inside the index of a callee",
+			files: []guardFile{stage(identHelper), runner("func (r *Runner) Other(s string, hs map[string]func()) { hs[errmsg.NewMessage(ident(s)).String()]() }\n")},
+			want:  1,
+		},
+		{
+			name:  "variadic Part helper given the caller's slice",
+			files: []guardFile{stage("func fillAll(ps ...errmsg.Part) {}\n"), runner("func (r *Runner) Other(ps []errmsg.Part) { fillAll(ps...) }\n")},
+			want:  1,
+		},
+		{
+			name:  "generic identity helper returning a Part",
+			files: []guardFile{stage("func pick[T any](v T) T { return v }\n\nvar _ errmsg.Message\n"), runner("func (r *Runner) Other() errmsg.Message { return errmsg.NewMessage(pick(errmsg.Const(\"x\"))) }\n")},
+			want:  1,
+		},
+		{
+			name: "Parts passed into closures and helpers by value",
+			files: []guardFile{
+				stage("func withPrefix(p errmsg.Part) errmsg.Message { return errmsg.NewMessage(errmsg.Const(\"x: \"), p) }\n\nfunc joinAll(ps ...errmsg.Part) errmsg.Message { return errmsg.NewMessage(ps...) }\n"),
+				runner("func (r *Runner) Other(s string) []errmsg.Message {\n\tvar parts []errmsg.Part\n\tadd := func(p errmsg.Part) { parts = append(parts, p) }\n\tadd(errmsg.Const(\"x\"))\n" +
+					"\tadd(func() errmsg.Part { return errmsg.Text(s) }())\n\treturn []errmsg.Message{errmsg.NewMessage(parts...), withPrefix(errmsg.Text(s)), joinAll(errmsg.Const(\"a\"), errmsg.Text(s))}\n}\n"),
+			},
+		},
+		{
+			name:  "field holding a Part",
+			files: []guardFile{runner("type holder struct{ p errmsg.Part }\n\nfunc (r *Runner) Other(h holder) errmsg.Message { return errmsg.NewMessage(h.p) }\n")},
+			want:  1,
+		},
+		{
+			name:  "method value returning a Part",
+			files: []guardFile{stage("type box struct{}\n\nfunc (box) ident(s string) errmsg.Part { return errmsg.Ident(s) }\n"), runner("func (r *Runner) Other() func(string) errmsg.Part { return box{}.ident }\n")},
+			want:  1,
+		},
+		{
+			name: "parts built from errmsg constructors, builtins and the standard library",
+			files: []guardFile{{runnerFile, "package runner\n\nimport (\n\t\"slices\"\n\n\t\"" + errmsgImportPath + "\"\n)\n\n" +
+				"func Other(s string, err error) error {\n" +
+				"\tparts := []errmsg.Part{errmsg.Const(\"a \"), errmsg.Text(s), errmsg.ConstSummary(\"b\").Part()}\n" +
+				"\tparts = append(parts, errmsg.Const(\": \"), errmsg.Cause(err))\n" +
+				"\tfor i, p := range parts {\n\t\tparts[i] = p\n\t}\n" +
+				"\treturn errmsg.NewError(slices.Concat[[]errmsg.Part](parts[:1], parts[1:])...)\n}\n"}},
+		},
+		{
+			name:  "Part helper called from an exempt-role position",
+			files: []guardFile{stage(identHelper), {"internal/runner/group_executor.go", "package runner\n\n" + imp + "func report(s string) errmsg.Message { return errmsg.NewMessage(ident(s), part[string](s)) }\n\nfunc part[T ~string](s T) errmsg.Part { return errmsg.Ident(string(s)) }\n"}},
+		},
+		{
+			name: "context parts rendered by ContextString",
+			files: []guardFile{{"internal/logging/execution_error.go", "package logging\n\n" + imp + "type ExecutionError struct{}\n\n" +
+				"func (e *ExecutionError) contextParts() []errmsg.Part { return nil }\n\n" +
+				"func (e *ExecutionError) ContextString() string { return errmsg.NewMessage(e.contextParts()...).String() }\n"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			violations := checkPartFlow(syntheticGuard(t, tt.files...))
+			assert.Len(t, violations, tt.want, strings.Join(violations, "\n"))
+		})
+	}
+}
+
+// checkStructuredErrorRendering reports every type of the checked packages,
+// including an alias of an unnamed struct, that has a `StructuredMessage()
+// errmsg.Message`, declared or promoted, and whose `Error() string` is neither
+// declared on the type as exactly
 // `return <receiver>.StructuredMessage().String()` nor selected through the
 // same embedding path as StructuredMessage. It returns the number of Error
 // declarations it accepted.
@@ -1033,7 +1196,11 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 		}
 		for _, name := range p.pkg.Scope().Names() {
 			tn, ok := p.pkg.Scope().Lookup(name).(*types.TypeName)
-			if !ok || tn.IsAlias() {
+			if !ok {
+				continue
+			}
+			if _, named := types.Unalias(tn.Type()).(*types.Named); tn.IsAlias() && named {
+				// Checked as the named type it denotes.
 				continue
 			}
 			switch tn.Type().Underlying().(type) {
@@ -1045,11 +1212,15 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 			recv := types.NewPointer(tn.Type())
 			smObj, smPath, _ := types.LookupFieldOrMethod(recv, false, p.pkg, "StructuredMessage")
 			sm, ok := smObj.(*types.Func)
-			if !ok || sm.Signature().Results().Len() != 1 || !types.Identical(sm.Signature().Results().At(0).Type(), message) {
+			if !ok || !hasSignature(sm, message) {
 				continue
 			}
 			errObj, errPath, _ := types.LookupFieldOrMethod(recv, false, p.pkg, "Error")
 			errFn, _ := errObj.(*types.Func)
+			if errFn != nil && !hasSignature(errFn, types.Typ[types.String]) {
+				// Not the error interface's method.
+				errFn = nil
+			}
 			switch {
 			case errFn != nil && len(errPath) == 1:
 				if fd := decls[errFn.Origin()]; fd != nil && rendersFromStructuredMessage(fd) {
@@ -1070,6 +1241,13 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 	}
 	slices.Sort(violations)
 	return accepted, violations
+}
+
+// hasSignature reports whether fn takes no parameters and returns exactly one
+// value of type result.
+func hasSignature(fn *types.Func, result types.Type) bool {
+	sig := fn.Signature()
+	return sig.Params().Len() == 0 && sig.Results().Len() == 1 && types.Identical(sig.Results().At(0).Type(), result)
 }
 
 // rendersFromStructuredMessage reports whether fn's body is exactly
@@ -1192,6 +1370,17 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 				"type B struct{ G }\n\ntype W struct {\n\tA\n\tB\n}\n",
 			want: 1,
 		},
+		{
+			name: "an alias of an unnamed struct getting its methods through different fields",
+			src: imp + "type sm interface{ StructuredMessage() errmsg.Message }\n\n" +
+				"type badError struct{}\n\nfunc (badError) Error() string { return \"x\" }\n\ntype W = struct {\n\tsm\n\tbadError\n}\n",
+			want: 1,
+		},
+		{
+			name: "a StructuredMessage taking a parameter is not the structured contract",
+			src:  imp + "type T struct{}\n\nfunc (T) StructuredMessage(int) errmsg.Message { return errmsg.Message{} }\n\nfunc (T) Error() string { return \"x\" }\n",
+		},
+		{name: "an Error taking a parameter is not Error", src: header + "func (t *T) Error(int) string { return t.StructuredMessage().String() }\n", want: 1},
 		{name: "an embedded structured error promoting both methods", src: imp + "type W struct{ *errmsg.Error }\n"},
 		{
 			name: "an interface embedding error and listing StructuredMessage",

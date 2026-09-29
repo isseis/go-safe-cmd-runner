@@ -33,7 +33,7 @@
 |---|---|---|
 | `internal/errmsg/errmsg.go` | 新規 | 役割・部分・構造化メッセージ・断片・要約文・`Structured`・`Error`・`JoinedError`・平らにする処理・字下げの再現 |
 | `internal/errmsg/errmsg_test.go` | 新規 | 平らにする契約、シグネチャの固定、`String()` と `Error()` の一致、nil・ゼロ値 |
-| `internal/errmsg/errmsg_guard_test.go` | 新規 | `Const`、免除の役割の位置、`Part` の非公開、部分を返す関数、文言と構造の一致（`//go:build test`） |
+| `internal/errmsg/errmsg_guard_test.go` | 新規 | `Const`、免除の役割の位置、`Part` の非公開と部分の流れ、文言と構造の一致（`//go:build test`） |
 | `internal/redaction/ranges.go` | 新規 | `byteRange`、`redactedRanges`、段ごとの置き換え範囲の導出 |
 | `internal/redaction/message.go` | 新規 | `RedactMessage`、`redactSegments`、`redactMessageAttribute` |
 | `internal/redaction/ranges_test.go` | 新規 | 差分テスト（種とファジング）、幅 0 の範囲、段の重なり |
@@ -310,7 +310,7 @@ func (e *JoinedError) StructuredMessage() Message {
 
 ### 2.9 errmsg のガード
 
-`internal/errmsg/errmsg_guard_test.go`（`//go:build test`）に、§9.2〜§9.9 のガードのうち errmsg に関するものを置く。免除の役割の許可位置は §9.4 の表、`Const` は §9.3、`Part` の非公開と部分を返す関数は §9.8、文言と構造の一致は §9.5、整形は §9.9 である。自己テストは §9.10 に従う。
+`internal/errmsg/errmsg_guard_test.go`（`//go:build test`）に、§9.2〜§9.9 のガードのうち errmsg に関するものを置く。免除の役割の許可位置は §9.4 の表、`Const` は §9.3、`Part` の非公開と部分の流れは §9.8、文言と構造の一致は §9.5、整形は §9.9 である。自己テストは §9.10 に従う。
 
 ## 3. `internal/redaction`（変更）
 
@@ -1011,8 +1011,9 @@ func (e *Error) StructuredMessage() errmsg.Message {
 §9.3〜§9.5・§9.8 のガード（`internal/errmsg/errmsg_guard_test.go`）に共通する前提を定める。
 
 - 目的: このリポジトリで開発する人と AI エージェントが通常のコードを書くときに、誤って免除の役割を宣言したり、`Error()` の文言と構造化メッセージをずらしたりすることを検出する。
-- 対象外: ガードを避けるために書かれたコード。例として、`Part` を `any` などのインターフェースの値に入れて外へ渡し、型アサーションで取り出すこと、`reflect`・`unsafe` で欄を書き換えることがある。これらはコードレビューで扱う。ガードの不足をこの種の書き方で指摘されたときは、この節を根拠に対象外とする。
+- 対象外: ガードを避けるために書かれたコード。例として、規則を迂回するためだけに型の別名を置くこと、`reflect`・`unsafe` で欄を書き換えることがある。これらはコードレビューで扱う。ガードの不足をこの種の書き方で指摘されたときは、この節を根拠に対象外とする。
 - 解析の方法: ガードは対象のパッケージを `go/types` で型検査し、名前の解決・定数かどうか・式と宣言の型・メソッドの集合（埋め込み・別名・昇格の深さを含む）を型検査の結果から得る。構文から型やスコープを推測しない。
+- 規則の書き方: 禁止する書き方を並べるのではなく、許す書き方を並べ、それ以外を拒否する。並べていない新しい書き方は拒否の側に倒れる。正しいコードが拒否されたときは、表や許す形に書き足す。
 - 対象のパッケージ: errmsg と、本番のファイルの import をたどって errmsg に届くパッケージである。import はどのビルドのファイルのものも数える。
 - ビルドの変種: 型検査は、テストを実行する環境のビルド（GOOS と cgo の設定）が選ぶファイルで行う。サポートするビルド（linux/amd64・linux/arm64・darwin/arm64 のそれぞれで cgo の有無）の間で採否が変わるファイルを、変種のファイルと呼ぶ。どのビルドでも検査の結果が同じになるように、対象のパッケージの変種のファイルは次のことをしてはならない。
   - errmsg を import する。
@@ -1067,7 +1068,6 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - `errmsg.Ident`・`errmsg.Path` の呼び出しは、§9.1 の範囲の中の位置でだけ行う。位置は「ファイルと関数」で決め、関数やメソッドの名前の一致では決めない。呼び出し以外の使い方（関数値としての参照）は拒否する。
 - `errmsg` パッケージの中では、`Ident`・`Path`・`PathErrorCause` をどこからも呼ばない。役割を選ぶ非公開の関数 `rolePart` は `Const`・`Ident`・`Path`・`Text`・`ConstSummary`・`TextSummary`・`(Message).Freeze` の中だけで、原因の種類を選ぶ `causePart` は `Cause`・`PathErrorCause`・`IndentedCause` の中だけで呼ぶ。この呼び出し元の表はガードが持ち、表の関数がすべて `errmsg` に実在することも確かめる。呼び出し以外の使い方は拒否する。
 - `errmsg.PathErrorCause` の呼び出しは `(*DefaultTempDirManager).Create` の中だけで行う。
-- `errmsg` の外のパッケージで、引数か結果の型が `errmsg.Part` を含む関数・メソッド（§9.8）は、同じパッケージの中の呼び出しに次の規則を課す。呼び出しは、`errmsg.Ident`・`errmsg.Path` を呼べる位置（下の表の位置で、かつ §9.1 の範囲の中）か、下の「部分を作る関数だけを呼べる位置」の表の位置で行う。呼び出し以外の使い方（関数値としての参照）は拒否する。部分を作る関数を経由して、`Ident`・`Path` を呼べない位置が免除の役割を宣言することを防ぐためである。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置き、`errmsg` の関数は名前ではなく型検査で解決する（別名 import・ドット import も同じに扱う）。
 - 許可位置の表:
 
@@ -1082,16 +1082,11 @@ func (e *Error) StructuredMessage() errmsg.Message {
 | `internal/runner/resource/normal_manager.go` | `(*NormalResourceManager).ExecuteCommand` |
 | `internal/runner/resource/dryrun_manager.go` | `evaluateCommandRisk` |
 
-- 部分を作る関数だけを呼べる位置の表（ここから `errmsg.Ident`・`errmsg.Path` は呼べない）:
-
-| ファイル | 関数・メソッド | 理由 |
-|---|---|---|
-| `internal/logging/execution_error.go` | `(*ExecutionError).ContextString` | `contextParts()` の部分を文字列にする（§4.2） |
-
 ### 9.5 文言と構造の一致（1.1 節）
 
-- 対象のパッケージで宣言されたインターフェース以外の型のうち、`errmsg.Message` を返す `StructuredMessage` を持つもの（宣言か、埋め込みによる昇格）を調べる。`Error` と `StructuredMessage` がどのメソッドに解決されるかは、型検査のメソッドの選択（埋め込みの経路）で求める。
+- 対象のパッケージで宣言されたインターフェース以外の型のうち、引数を取らず `errmsg.Message` を返す `StructuredMessage` を持つもの（宣言か、埋め込みによる昇格）を調べる。名前の無い struct 型を指す別名も、その struct 型として調べる。名前のある型を指す別名は、指す先の型として調べる。`Error` と `StructuredMessage` がどのメソッドに解決されるかは、型検査のメソッドの選択（埋め込みの経路）で求める。
 - その型の `Error()` は、その型が宣言するもので本体が `return <受け手>.StructuredMessage().String()` の 1 文だけであるか、`StructuredMessage` と同じ埋め込みの経路から選ばれるものであること。`errmsg.Error` もこの形で書く。
+- `Error` は引数を取らず `string` を返すものだけを数える。それ以外のシグネチャの `Error` は、`Error` が無いものとして扱う。
 - `StructuredMessage` を宣言する型は `Error()` も宣言すること。
 - 型の一覧は保守しない。
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
@@ -1106,14 +1101,24 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - 既存の `TestProductionCodeDoesNotProbeMultiErrorShape`（`internal/runner/group_errors_guard_test.go:335`）が、`internal/errmsg` と `internal/redaction` を含む本番のコード全体を調べている。新しい `JoinedError`・`cancelledRunError`・`killAfterCancelError` が `Unwrap() []error` を宣言することは許され、それを形で判定する分岐を書くことが拒否される。
 - ガードは既存のファイルを変えずにそのまま使う。`internal/errmsg`・`internal/redaction` の新しいファイルは `ProductionGoFilesInRepo` の走査対象に自動で入る。
 
-### 9.8 `Part` の非公開と部分を返す関数（02 §3.1.1 の契約 8）
+### 9.8 `Part` の非公開と部分の流れ（02 §3.1.1 の契約 8）
 
 - `errmsg.Part` の欄がすべて非公開であり、`errmsg` の外で `Part` の複合リテラル（`errmsg.Part{...}` と、`[]errmsg.Part{{...}}` のような省略形）を作っていないこと。
-- `errmsg` の外に、引数か結果の型が `errmsg.Part` を含む（`[]errmsg.Part`・`chan<- errmsg.Part`・`func(errmsg.Part)`・`*errmsg.Part` や、`Part` を欄に持つ型などの複合も含む）公開の関数・メソッドが無いこと。引数か結果に `errmsg.Part` を含む非公開の関数・メソッドは §9.1 の範囲の中にあること。関数型の変数・欄・インターフェースのメソッドも、その引数か結果で判定する。
-- パッケージレベルの変数も同じ規則に従う。変数の型は型検査で得る。非公開の変数は、§9.1 の範囲のうちファイル全体を対象とする位置にあること。
-- 結果の型が型引数であれば、その制約が許す型に `errmsg.Part` を含むかで判定する。
-- 宣言の型が `Part` を含まないインターフェースである値に `Part` を入れて渡すことは、§9.0 の対象外である。
-- 自己テストには、公開の `Parts()` メソッドを持つ型を与えて検出されることを確かめる。
+- 部分の流れ: 免除の役割を宣言できる位置（§9.4 の許可位置で、かつ §9.1 の範囲の中）と、下の表の位置を除き、`errmsg` の外で型が `errmsg.Part` を含む式は、次の形に限る（§9.0 の「許す書き方を並べる」）。
+  - 部分を運ぶだけの関数の呼び出し: `errmsg` と `slices`・`maps` の関数とメソッド、組み込み関数、関数リテラル（本体はその場で調べる）。`errmsg.Ident`・`errmsg.Path`・`errmsg.PathErrorCause` の位置は §9.4 で別に調べる。
+  - 部分を返しえない呼び出し: 結果の型が `errmsg.Part` を含まず、引数も `errmsg.Part` の値そのもの（新しく並べる可変長引数を含む）でなければ、呼び出し元のメモリに届く形（ポインタ・スライス・チャネル・関数など）で `errmsg.Part` を含まない呼び出し。部分は入るだけで、呼び出し元に戻らない。
+  - 複合リテラル・関数リテラル。
+  - 関数の中で宣言した変数と引数。
+  - これらの括弧・添字・スライス・参照外し・アドレス・チャネルからの受信。
+- 上に無い形はすべて拒否する。たとえば、このリポジトリの関数・メソッドや関数を持つ変数の呼び出しで部分を返しうるもの（部分を作る関数、部分を書き込むポインタや呼び出し元のスライスを受け取る関数、部分を返すコールバック）、パッケージの変数（ドット import した別のパッケージのものを含む）、欄の読み出し、メソッド値、型アサーション、`errmsg.Part` を含む型を挙げる型 switch の case、変換である。免除の役割を宣言できない位置が、部分を作る関数や変数を経由して免除の役割を得ることを防ぐ。`Part` をインターフェースの値に入れても、取り出す型アサーションや型 switch の位置で拒否される。
+- 免除の役割を宣言できる位置は、受け取った文字列に役割を付けることも含めて、§9.4 の許可位置の表で位置ごとに許可する。その位置の関数が部分ではなく `errmsg.Message` やエラーを返すなら、呼び出しは制限しない。制限するのは、部分そのものを受け取ることである。
+- 型が `errmsg.Part` を含むかは、要素・欄・関数の引数と結果・インターフェースのメソッド・型引数・型引数の制約・名前のある型の定義・別名をたどって判定する。`errmsg.Message` など errmsg の他の型は、中を見ない。
+- 部分を使うだけの位置の表（ここでは部分の流れを調べないが、`errmsg.Ident`・`errmsg.Path` は呼べない）:
+
+| ファイル | 関数・メソッド | 理由 |
+|---|---|---|
+| `internal/logging/execution_error.go` | `(*ExecutionError).ContextString` | `contextParts()` の部分を文字列にする（§4.2） |
+
 - ガードは `internal/errmsg/errmsg_guard_test.go` に置く。
 
 ### 9.9 整形のバイトの検査
@@ -1128,9 +1133,10 @@ func (e *Error) StructuredMessage() errmsg.Message {
 各ガードに、検出すべき形を与えて検出されることを確かめる自己テストを付ける（既存の `TestMultiErrorShapeProbeCheckRecognizesForms` と同じ形）。ガードが何も見ない状態のまま通ることを防ぐためである。
 
 - `Const` の検査: リテラル・定数名・`+` の式・解決できない名前・非呼び出しの参照を並べる。
-- 免除の役割の検査: 範囲内の呼び出し・範囲外の呼び出し・別名 import・ドット import・関数値としての参照を並べる。`errmsg` の中では、`Path` の呼び出し・表にない関数からの `rolePart`・`causePart` の呼び出し・`rolePart` の関数値としての参照を検出し、`errmsg` の実際のファイルだけでは何も検出しないことを確かめる。部分を作る関数については、範囲外からの呼び出し・範囲内だが `Ident` を呼べない位置からの呼び出し・型引数を持つ型のメソッドの呼び出し・関数値としての参照を検出し、`Ident` を呼べる位置と `ContextString` からの呼び出しを検出しないことを確かめる。
-- `Part` の検査: `errmsg.Part{}`・`[]errmsg.Part{{}}`・公開の `Parts()` メソッドを持つ型・別パッケージの `Part` 風の型を並べる。`Part` を送るチャネル・`Part` を受け取るコールバック・`*errmsg.Part` を引数に取る公開の関数と、`Part` を引数に取る関数型の公開の変数を検出し、範囲内の非公開の関数が `Part` を引数に取ることは検出しないことを確かめる。
-- 文言と構造の一致: `Error()` が 2 文の型・違う式を返す型・`*errmsg.Error` を埋め込んで `Error()` を宣言する型を並べる。
+- 免除の役割の検査: 範囲内の呼び出し・範囲外の呼び出し・別名 import・ドット import・関数値としての参照を並べる。`errmsg` の中では、`Path` の呼び出し・表にない関数からの `rolePart`・`causePart` の呼び出し・`rolePart` の関数値としての参照を検出し、`errmsg` の実際のファイルだけでは何も検出しないことを確かめる。
+- `Part` の検査: `errmsg.Part{}`・`[]errmsg.Part{{}}`・ドット import・欄の公開・別パッケージの `Part` 風の型を並べる。
+- 部分の流れ: 免除の役割を宣言できない位置からの、部分を作る関数（範囲外・範囲内・型引数を明示した呼び出し・型引数を持つ型のメソッド・別パッケージの公開の関数・メソッド呼び出しの受け手や呼び出し先の添字や即時に呼ぶ関数リテラルの中の呼び出し）・関数を持つ変数・コールバックの引数・部分を書き込むポインタの引数・呼び出し元のスライスを渡す可変長引数・部分を返す型引数の関数の呼び出し、パッケージの変数（ドット import 経由を含む）・欄の読み出し・型アサーション・型 switch・メソッド値を検出する。`Const`・`Text`・`Cause` と `append`・`slices.Concat`・複合リテラル・関数の中の変数で部分を組み立てる形、部分を値で受け取る関数・クロージャ・新しく並べる可変長引数、即時に呼ぶ関数リテラル、ドット import した errmsg の構築関数、免除の役割を宣言できる位置での明示の型引数の呼び出し、`ContextString` を検出しないことを確かめる。
+- 文言と構造の一致: `Error()` が 2 文の型・違う式を返す型・`*errmsg.Error` を埋め込んで `Error()` を宣言する型・名前の無い struct 型を指す別名を並べる。引数を取る `StructuredMessage` を対象にしないこと、引数を取る `Error` を `Error` と数えないことも確かめる。
 - 変種のファイルの検査（§9.0）: 変種のファイルでの errmsg の import・型の宣言・`Error` の宣言と、変種のファイルの定数を `Const` に渡す形を並べる。サポートするすべてのビルドに含まれるファイル（`//go:build !windows`）を変種のファイルとして扱わないことも確かめる。
 - ラップの検査: 範囲内の `fmt.Errorf`・`errors.Join`・非定数 `errors.New`・範囲外の `fmt.Errorf` を並べる。範囲の関数名と除外関数名がコードに見つかることも確かめる。型の検査では、明示の一覧の型が `StructuredMessage` を欠く形を検出し、例外の型（`PreExecutionError`・`ExecutionError`・config の `*Detail` 型）を検出しないことを確かめる。
 - AC-25: `errmsg.Role(99)` の変換・`errmsg.RoleText` の参照・`Segment.Role` への代入・`case errmsg.RolePath` を並べる。

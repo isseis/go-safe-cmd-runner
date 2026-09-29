@@ -177,10 +177,11 @@
 - [x] 03 §2.4 の平らにする処理（`Structured` の直接の型による展開、構造を持たない原因の `Text`、nil の `<nil>`、`*fs.PathError` の分解、深さの上限なし）と、03 §2.4.1 の字下げの再現を実装する。
 - [x] 03 §2.5〜§2.7 の `Freeze`・`Merge`・`Join` を実装する。`NewError` は原因の部分がちょうど 1 つで nil でないことを要求する（03 §2.8）。
 - [x] 03 §10.1 のテストを `errmsg_test.go` に置く。深い連鎖、`IndentedCause` の末尾の除去が断片をまたぐ場合、`Freeze` が原因の `Error()` を 1 回だけ評価すること、nil・ゼロ値、`String()` と `Error()` の一致、AC-21 を含める。
-- [x] 03 §9.3（`Const` の定数式）・§9.4（免除の役割の位置）・§9.5（文言と構造の一致）・§9.8（`Part` の非公開と部分を返す関数）・§9.9（整形のバイト）のガードを `errmsg_guard_test.go` に実装する。§9.4 の許可位置の表は 03 §9.4 をそのまま使う。
+- [x] 03 §9.3（`Const` の定数式）・§9.4（免除の役割の位置）・§9.5（文言と構造の一致）・§9.8（`Part` の非公開と部分の流れ）・§9.9（整形のバイト）のガードを `errmsg_guard_test.go` に実装する。§9.4 の許可位置の表は 03 §9.4 をそのまま使う。
 - [x] 各ガードに 03 §9.10 の自己テストを付ける（`Const` の式、別名・ドット import、`Part` の複合リテラル、`Error()` の本体の形）。
 - [x] `IndentedCause` のシグネチャをコンパイル時に固定する（`var _ func(error) Part = IndentedCause`）。
 - [x] errmsg のガードを 03 §9.0 の前提に合わせる。対象のパッケージを `go/types` で型検査して名前・定数・型・メソッドの選択を型検査の結果から得、変種のファイルの検査を加える。
+- [x] 部分の流れの検査を、許す形を並べる規則に置き換える（03 §9.8）。`Error`・`StructuredMessage` はシグネチャまで照合し、名前の無い struct 型を指す別名も調べる（03 §9.5）。
 
 **完了条件**: `internal/errmsg` の単体・ガードテストが green。`go test -tags test ./internal/errmsg/...` が通る。`errmsg` の本番ファイルが標準ライブラリだけを import する。
 
@@ -191,6 +192,14 @@
 - **レビュー観点**: 平らにする契約（直接の型でだけ `Structured` を展開すること、構造を持たない原因が `Text` になること、`*fs.PathError` の分解が `(*fs.PathError).Error()` と一致すること）、`IndentedCause` が `GroupError.Error()` の整形と一致すること、`Const`・免除の役割・`Part` の非公開のガードが自己テストで実際に検出すること、ゼロ値と nil が panic しないこと
 - **実装モデル要件**: frontier-required
 - **判定理由**: 本タスク全体の土台であり、バイト単位の整形と AST ガードの判定は後続のすべての Phase の正しさを決める。設計判断の密度が高く、誤ると広範囲に波及する
+
+- **マージの条件**（レビューの往復を止めるため）:
+  - must-fix の指摘が残っていない。
+  - 03 §9.0 の対象（通常のコードの誤り）に入る worth-fixing の指摘を直してある。
+  - 対象外の指摘には、03 §9.0 を根拠に返信してある。
+  - これ以後に出た P2 の指摘のうち、どの Phase も書く予定の無い仮想のコードについてのものは、フォローアップの issue にまとめ、マージを止めない。
+- ガードに新しい規則を足したときは、push の前に、その規則の誤検出（正しいコードを拒否する形）と見落としを自分でレビューする。自己テストには、正しいコードが通る行を必ず入れる。
+- 自動レビューの方針は `AGENTS.md` の Review guidelines に置く。
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
@@ -412,7 +421,7 @@
 [03_detailed_specification.md](03_detailed_specification.md) §10.1〜§10.5 の各項目を、次のテストファイルで実装する。検証内容・入力・期待値は 03 を参照する（本書では重複しない）。
 
 - `internal/errmsg/errmsg_test.go`: 平らにする契約、`String()` と `Error()` の一致、`IndentedCause`、深い連鎖、`Freeze`、`Join`、`errmsg.Error` の構築と到達性、nil・ゼロ値、AC-08、AC-21（03 §10.1）。
-- `internal/errmsg/errmsg_guard_test.go`: AC-24（03 §9.3）、免除の役割の位置（§9.4）、文言と構造の一致（§9.5）、`Part` の非公開と部分を返す関数（§9.8）、整形のバイト（§9.9）と、それぞれの自己テスト（§9.10）。
+- `internal/errmsg/errmsg_guard_test.go`: AC-24（03 §9.3）、免除の役割の位置（§9.4）、文言と構造の一致（§9.5）、`Part` の非公開と部分の流れ（§9.8）、整形のバイト（§9.9）と、それぞれの自己テスト（§9.10）。
 - `internal/redaction/ranges_test.go`: `redactedRanges` の差分テスト（既存の `RedactText` のテストの入力をすべて種にする）と `FuzzRedactedRangesMatchesRedactText`、幅 0 の範囲、段の重なり（03 §10.2）。
 - `internal/redaction/message_test.go`: AC-01〜04・07・36〜38、挿入点、実行時の検査、`Config` 未検証、ハンドラ（AC-20）、`Config.RedactLogAttribute`、`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport`（失敗の報告に panic 値が現れないこと）、`BenchmarkRedactMessage`（03 §10.3・§10.4）。
 - `internal/redaction/redaction_guard_test.go`: AC-25（03 §9.6）と自己テスト。
