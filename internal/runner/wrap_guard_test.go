@@ -5,9 +5,17 @@ package runner
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/importer"
+	"go/parser"
 	"go/token"
+	"go/types"
+	"io"
+	"maps"
 	"path"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/testutil/identitymutationguard"
@@ -108,28 +116,181 @@ var unwrapWithoutStructuredExceptions = []typeRef{
 	{"internal/logging/execution_error.go", "ExecutionError"},
 }
 
-// wrapScope is the scan's scope: whole-file units (with per-file excluded
-// function keys), function-unit entries, and the package-wide index of every
-// directory that holds an in-scope file.
-type wrapScope struct {
-	wholeFiles map[string]map[string]bool
-	functions  map[string]map[string]bool
-	packages   map[string]*packageIndex
+// wrapGuardModulePath and wrapGuardErrmsgImport identify the errmsg package by
+// import path, so the checks recognize errmsg.Message through the type checker
+// without importing the package themselves.
+const (
+	wrapGuardModulePath   = "github.com/isseis/go-safe-cmd-runner"
+	wrapGuardErrmsgImport = wrapGuardModulePath + "/internal/errmsg"
+)
+
+// wrapGuardFile is one Go source file given to the wrap guard's type checker.
+type wrapGuardFile struct {
+	path string
+	src  string
 }
 
-// packageIndex is the package-wide view of one directory: the top-level
-// constant names and the receiver method set collected from every file of the
-// package. A constant declared in a sibling file or a method split into
-// another file is therefore visible to the per-file checks instead of only
-// the file currently being parsed.
-type packageIndex struct {
-	consts  map[string]bool
-	methods map[string]map[string]bool
+// wrapSourceFile is a parsed wrapGuardFile.
+type wrapSourceFile struct {
+	wrapGuardFile
+	file *ast.File
+}
+
+// wrapTypedPackage is one package type-checked from the files the current build
+// selects.
+type wrapTypedPackage struct {
+	dir   string
+	pkg   *types.Package
+	info  *types.Info
+	files []*wrapSourceFile
+}
+
+// file returns the parsed file at filePath, or nil when the package does not
+// hold it in the current build.
+func (p *wrapTypedPackage) file(filePath string) *ast.File {
+	for _, f := range p.files {
+		if f.path == filePath {
+			return f.file
+		}
+	}
+	return nil
+}
+
+// wrapGuardSet is the type-checked view the wrap guard reads: every relevant
+// package, keyed by its repository-relative directory.
+type wrapGuardSet struct {
+	pkgs map[string]*wrapTypedPackage
+}
+
+// packageForFile returns the package holding the repository-relative file path.
+func (s *wrapGuardSet) packageForFile(filePath string) *wrapTypedPackage {
+	return s.pkgs[path.Dir(filePath)]
+}
+
+// wrapGuardFset and wrapSourceImporter are shared with the importer so the
+// standard library is type-checked once per test binary.
+var (
+	wrapGuardFset      = token.NewFileSet()
+	wrapSourceImporter = sync.OnceValue(func() types.ImporterFrom {
+		return importer.ForCompiler(wrapGuardFset, "source", nil).(types.ImporterFrom)
+	})
+)
+
+// wrapSelectedBy reports whether the current build selects f, applying its
+// //go:build constraints and skipping a file that imports "C" without cgo.
+func wrapSelectedBy(t *testing.T, f *wrapSourceFile) bool {
+	t.Helper()
+	ctx := build.Default
+	ctx.OpenFile = func(string) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(f.src)), nil }
+	ok, err := ctx.MatchFile(path.Dir(f.path), path.Base(f.path))
+	require.NoErrorf(t, err, "failed to match the build constraints of %s", f.path)
+	// MatchFile does not read imports, and a file importing "C" is built only
+	// with cgo.
+	return ok && (ctx.CgoEnabled || !slices.ContainsFunc(f.file.Imports, func(imp *ast.ImportSpec) bool {
+		return imp.Path.Value == `"C"`
+	}))
+}
+
+// wrapImporter type-checks the requested in-repo packages from their files, so
+// they share one errmsg package, and loads every other import from source.
+type wrapImporter struct {
+	t       *testing.T
+	groups  map[string][]*wrapSourceFile
+	checked map[string]*wrapTypedPackage
+}
+
+func (im *wrapImporter) Import(importPath string) (*types.Package, error) {
+	return im.ImportFrom(importPath, "", 0)
+}
+
+func (im *wrapImporter) ImportFrom(importPath, _ string, mode types.ImportMode) (*types.Package, error) {
+	if _, ok := im.groups[importPath]; ok {
+		return im.check(importPath).pkg, nil
+	}
+	// The file positions are repository-relative, so resolve from the root.
+	return wrapSourceImporter().ImportFrom(importPath, identitymutationguard.RepositoryRoot(im.t), mode)
+}
+
+func (im *wrapImporter) check(importPath string) *wrapTypedPackage {
+	if p, ok := im.checked[importPath]; ok {
+		return p
+	}
+	files := im.groups[importPath]
+	asts := make([]*ast.File, len(files))
+	for i, f := range files {
+		asts[i] = f.file
+	}
+	info := &types.Info{
+		Defs:  map[*ast.Ident]types.Object{},
+		Uses:  map[*ast.Ident]types.Object{},
+		Types: map[ast.Expr]types.TypeAndValue{},
+	}
+	conf := types.Config{Importer: im, FakeImportC: true}
+	pkg, err := conf.Check(importPath, wrapGuardFset, asts, info)
+	require.NoErrorf(im.t, err, "failed to type-check %s; the wrap guard resolves names and types with the type checker", importPath)
+	p := &wrapTypedPackage{dir: strings.TrimPrefix(importPath, wrapGuardModulePath+"/"), pkg: pkg, info: info, files: files}
+	im.checked[importPath] = p
+	return p
+}
+
+// loadWrapGuard parses files, type-checks the packages the current build
+// selects, and returns the ones named by wantDirs (all of them when wantDirs is
+// nil). An in-repo import is type-checked from the given files; every other
+// import is loaded from source.
+func loadWrapGuard(t *testing.T, files []wrapGuardFile, wantDirs map[string]bool) *wrapGuardSet {
+	t.Helper()
+	groups := map[string][]*wrapSourceFile{}
+	for _, f := range files {
+		file, err := parser.ParseFile(wrapGuardFset, f.path, f.src, parser.SkipObjectResolution)
+		require.NoErrorf(t, err, "failed to parse %s", f.path)
+		sf := &wrapSourceFile{wrapGuardFile: f, file: file}
+		if !wrapSelectedBy(t, sf) {
+			continue
+		}
+		importPath := wrapGuardModulePath + "/" + path.Dir(f.path)
+		groups[importPath] = append(groups[importPath], sf)
+	}
+	im := &wrapImporter{t: t, groups: groups, checked: map[string]*wrapTypedPackage{}}
+	set := &wrapGuardSet{pkgs: map[string]*wrapTypedPackage{}}
+	for _, importPath := range slices.Sorted(maps.Keys(groups)) {
+		dir := strings.TrimPrefix(importPath, wrapGuardModulePath+"/")
+		if wantDirs != nil && !wantDirs[dir] {
+			continue
+		}
+		set.pkgs[dir] = im.check(importPath)
+	}
+	return set
+}
+
+// loadWrapGuardFromMap is loadWrapGuard for a set of synthetic files.
+func loadWrapGuardFromMap(t *testing.T, srcs map[string]string) *wrapGuardSet {
+	t.Helper()
+	files := make([]wrapGuardFile, 0, len(srcs))
+	for p, src := range srcs {
+		files = append(files, wrapGuardFile{path: p, src: src})
+	}
+	return loadWrapGuard(t, files, nil)
+}
+
+// syntheticWrapPackage type-checks one synthetic file and returns its package.
+func syntheticWrapPackage(t *testing.T, filePath, src string) *wrapTypedPackage {
+	t.Helper()
+	return syntheticWrapPackageFiles(t, map[string]string{filePath: src}, filePath)
+}
+
+// syntheticWrapPackageFiles type-checks several synthetic files and returns the
+// package holding want.
+func syntheticWrapPackageFiles(t *testing.T, srcs map[string]string, want string) *wrapTypedPackage {
+	t.Helper()
+	set := loadWrapGuardFromMap(t, srcs)
+	pkg := set.packageForFile(want)
+	require.NotNilf(t, pkg, "no type-checked package for %s", want)
+	return pkg
 }
 
 // relevantPackageDirs returns the directories of the scope tables and the
-// exception/type lists: the only packages whose package-wide index the checks
-// read.
+// exception/type lists: the only packages whose type-checked view the checks
+// read directly.
 func relevantPackageDirs() map[string]bool {
 	dirs := make(map[string]bool)
 	for _, file := range inScopeWholeFiles {
@@ -147,55 +308,22 @@ func relevantPackageDirs() map[string]bool {
 	return dirs
 }
 
-// buildPackageIndexes parses every production file of the requested
-// directories and merges the package-level constant names and receiver method
-// sets, so a name or a method declared in a file other than the one being
-// checked is still resolved.
-func buildPackageIndexes(t *testing.T, files []string, dirs map[string]bool) map[string]*packageIndex {
-	t.Helper()
-	indexes := make(map[string]*packageIndex, len(dirs))
-	for _, file := range files {
-		dir := path.Dir(file)
-		if !dirs[dir] {
-			continue
-		}
-		index := indexes[dir]
-		if index == nil {
-			index = &packageIndex{
-				consts:  make(map[string]bool),
-				methods: make(map[string]map[string]bool),
-			}
-			indexes[dir] = index
-		}
-		_, parsed := identitymutationguard.ParseSource(t, file, identitymutationguard.ReadProductionSource(t, file))
-		mergePackageIndex(index, parsed)
-	}
-	return indexes
+// wrapScope is the scan's scope: whole-file units (with per-file excluded
+// function keys), function-unit entries, and the type-checked package set the
+// checks resolve names and method signatures against.
+type wrapScope struct {
+	wholeFiles map[string]map[string]bool
+	functions  map[string]map[string]bool
+	set        *wrapGuardSet
 }
 
-// mergePackageIndex merges one parsed file's package-level constant names and
-// receiver methods into index.
-func mergePackageIndex(index *packageIndex, parsed *ast.File) {
-	for name := range topLevelConstNames(parsed) {
-		index.consts[name] = true
-	}
-	for recv, methods := range collectReceiverMethods(parsed) {
-		if index.methods[recv] == nil {
-			index.methods[recv] = make(map[string]bool)
-		}
-		for method := range methods {
-			index.methods[recv][method] = true
-		}
-	}
-}
-
-// buildWrapScope turns the scope tables into the form the scan consumes,
-// adding the package-wide index of each scope directory.
-func buildWrapScope(t *testing.T, files []string) wrapScope {
-	t.Helper()
+// buildWrapScope turns the scope tables into the form the scan consumes, over
+// the type-checked packages of set.
+func buildWrapScope(set *wrapGuardSet) wrapScope {
 	scope := wrapScope{
 		wholeFiles: make(map[string]map[string]bool),
 		functions:  make(map[string]map[string]bool),
+		set:        set,
 	}
 	for _, file := range inScopeWholeFiles {
 		scope.wholeFiles[file] = make(map[string]bool)
@@ -209,8 +337,27 @@ func buildWrapScope(t *testing.T, files []string) wrapScope {
 		}
 		scope.functions[sf.file][sf.fn] = true
 	}
-	scope.packages = buildPackageIndexes(t, files, relevantPackageDirs())
 	return scope
+}
+
+var (
+	wrapProductionOnce sync.Once
+	wrapProductionSet  *wrapGuardSet
+)
+
+// wrapProductionGuardSet type-checks the repository's production files once for
+// every check.
+func wrapProductionGuardSet(t *testing.T) *wrapGuardSet {
+	t.Helper()
+	wrapProductionOnce.Do(func() {
+		var files []wrapGuardFile
+		for _, p := range identitymutationguard.ProductionGoFilesInRepo(t) {
+			files = append(files, wrapGuardFile{path: p, src: identitymutationguard.ReadProductionSource(t, p)})
+		}
+		wrapProductionSet = loadWrapGuard(t, files, relevantPackageDirs())
+	})
+	require.NotNil(t, wrapProductionSet, "loading the production packages failed in an earlier test")
+	return wrapProductionSet
 }
 
 // funcKey renders a function or method declaration's receiver-qualified key:
@@ -246,49 +393,6 @@ func receiverTypeName(expr ast.Expr) string {
 	return ""
 }
 
-// topLevelConstNames returns the names of the package-level const identifiers
-// declared in the file.
-func topLevelConstNames(file *ast.File) map[string]bool {
-	names := make(map[string]bool)
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			valueSpec, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for _, name := range valueSpec.Names {
-				names[name.Name] = true
-			}
-		}
-	}
-	return names
-}
-
-// topLevelTypeNames returns the names of the package-level type identifiers
-// declared in the file, so a check can pin that a named type is declared
-// where the scope says it is.
-func topLevelTypeNames(file *ast.File) map[string]bool {
-	names := make(map[string]bool)
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.TYPE {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			names[typeSpec.Name.Name] = true
-		}
-	}
-	return names
-}
-
 // exceptionsForFile returns the exception type names that apply to file. An
 // exception is keyed by both its declaring file and its type name, so a type
 // that merely shares a name with an exception type but is declared elsewhere
@@ -303,105 +407,44 @@ func exceptionsForFile(refs []typeRef, file string) map[string]bool {
 	return exceptions
 }
 
-// declaredInFunc returns the const and non-const names declared inside fn, so
-// the errors.New check can reject an argument that only shadows a package-level
-// constant. A function-local const name is still a constant expression and
-// stays in consts; parameters, short variable declarations, range variables
-// and var declarations go to vars.
-func declaredInFunc(fn *ast.FuncDecl) (consts, vars map[string]bool) {
-	consts = make(map[string]bool)
-	vars = make(map[string]bool)
-	addParams := func(ft *ast.FuncType) {
-		if ft == nil {
-			return
-		}
-		for _, fields := range []*ast.FieldList{ft.Params, ft.Results} {
-			if fields == nil {
-				continue
-			}
-			for _, field := range fields.List {
-				for _, name := range field.Names {
-					vars[name.Name] = true
-				}
-			}
-		}
-	}
-	addParams(fn.Type)
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.GenDecl:
-			for _, spec := range node.Specs {
-				valueSpec, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, name := range valueSpec.Names {
-					if node.Tok == token.CONST {
-						consts[name.Name] = true
-					} else {
-						vars[name.Name] = true
-					}
-				}
-			}
-		case *ast.AssignStmt:
-			if node.Tok == token.DEFINE {
-				for _, lhs := range node.Lhs {
-					if ident, ok := lhs.(*ast.Ident); ok {
-						vars[ident.Name] = true
-					}
-				}
-			}
-		case *ast.RangeStmt:
-			if node.Tok == token.DEFINE {
-				if ident, ok := node.Key.(*ast.Ident); ok {
-					vars[ident.Name] = true
-				}
-				if ident, ok := node.Value.(*ast.Ident); ok {
-					vars[ident.Name] = true
-				}
-			}
-		case *ast.FuncLit:
-			addParams(node.Type)
-		}
-		return true
-	})
-	return consts, vars
-}
-
-// isConstStringExpr reports whether expr is a constant string expression
-// without type information: a string literal, a name that is not shadowed by a
-// non-const declaration, or a "+" concatenation of those.
-func isConstStringExpr(expr ast.Expr, consts, vars map[string]bool) bool {
+// isConstantStringExpr reports whether expr is a constant string expression,
+// resolving every name through the type checker: a string literal, a constant
+// (declared in any lexical scope or a sibling file), or a "+" concatenation of
+// those. A parameter or variable that shadows a constant resolves to a
+// *types.Var, so it is rejected.
+func isConstantStringExpr(info *types.Info, expr ast.Expr) bool {
 	switch e := identitymutationguard.UnwrapParen(expr).(type) {
 	case *ast.BasicLit:
 		return e.Kind == token.STRING
 	case *ast.Ident:
-		return consts[e.Name] && !vars[e.Name]
+		_, ok := info.Uses[e].(*types.Const)
+		return ok
 	case *ast.BinaryExpr:
-		return e.Op == token.ADD && isConstStringExpr(e.X, consts, vars) && isConstStringExpr(e.Y, consts, vars)
+		return e.Op == token.ADD && isConstantStringExpr(info, e.X) && isConstantStringExpr(info, e.Y)
 	default:
 		return false
 	}
 }
 
-// checkFileWraps parses src and returns, for each call inside the scope of
-// filename, the number of in-scope declarations scanned and the positions of
-// fmt.Errorf, errors.Join and errors.New (with a non-constant argument) calls.
-func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanned int, violations []string) {
+// checkFileWraps returns, for each call inside the scope of filename, the
+// number of in-scope declarations scanned and the positions of fmt.Errorf,
+// errors.Join and errors.New (with a non-constant argument) calls. Names are
+// resolved with the type checker, so an errors.New argument counts as constant
+// only where it actually resolves to a constant, whatever shadows it by name.
+func checkFileWraps(t *testing.T, filename string, scope wrapScope) (scanned int, violations []string) {
 	t.Helper()
-
-	fset, file := identitymutationguard.ParseSource(t, filename, src)
+	require.NotNilf(t, scope.set, "%s: the scope carries no type-checked packages", filename)
+	wp := scope.set.packageForFile(filename)
+	require.NotNilf(t, wp, "%s: no type-checked package for its directory; the scope is broken", filename)
+	file := wp.file(filename)
+	require.NotNilf(t, file, "%s: the file is in scope but was not type-checked; the scope is broken", filename)
 	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
 		return importPath == "fmt" || importPath == "errors"
 	})
-	topConsts := topLevelConstNames(file)
-	if pkg := scope.packages[path.Dir(filename)]; pkg != nil {
-		topConsts = pkg.consts
-	}
 	wholeExcluded, whole := scope.wholeFiles[filename]
 	funcs := scope.functions[filename]
 
-	scan := func(decl ast.Decl, allowed bool, consts, vars map[string]bool) {
+	scan := func(decl ast.Decl, allowed bool) {
 		if !allowed {
 			return
 		}
@@ -415,23 +458,23 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 			if !ok {
 				return true
 			}
-			pkg, ok := sel.X.(*ast.Ident)
+			pkgIdent, ok := sel.X.(*ast.Ident)
 			if !ok {
 				return true
 			}
 			switch {
-			case qualifiers[pkg.Name] == "fmt" && sel.Sel.Name == "Errorf":
+			case qualifiers[pkgIdent.Name] == "fmt" && sel.Sel.Name == "Errorf":
 				violations = append(violations, fmt.Sprintf(
-					"%s: fmt.Errorf outside errmsg on an in-scope path", fset.Position(call.Pos())))
-			case qualifiers[pkg.Name] == "errors" && sel.Sel.Name == "Join":
+					"%s: fmt.Errorf outside errmsg on an in-scope path", wrapGuardFset.Position(call.Pos())))
+			case qualifiers[pkgIdent.Name] == "errors" && sel.Sel.Name == "Join":
 				violations = append(violations, fmt.Sprintf(
-					"%s: errors.Join outside errmsg.Join on an in-scope path", fset.Position(call.Pos())))
-			case qualifiers[pkg.Name] == "errors" && sel.Sel.Name == "New":
-				if len(call.Args) == 1 && isConstStringExpr(call.Args[0], consts, vars) {
+					"%s: errors.Join outside errmsg.Join on an in-scope path", wrapGuardFset.Position(call.Pos())))
+			case qualifiers[pkgIdent.Name] == "errors" && sel.Sel.Name == "New":
+				if len(call.Args) == 1 && isConstantStringExpr(wp.info, call.Args[0]) {
 					return true
 				}
 				violations = append(violations, fmt.Sprintf(
-					"%s: errors.New with a non-constant argument on an in-scope path", fset.Position(call.Pos())))
+					"%s: errors.New with a non-constant argument on an in-scope path", wrapGuardFset.Position(call.Pos())))
 			}
 			return true
 		})
@@ -441,66 +484,107 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			key := funcKey(d)
-			localConsts, localVars := declaredInFunc(d)
-			consts := make(map[string]bool, len(topConsts)+len(localConsts))
-			for name := range topConsts {
-				consts[name] = true
-			}
-			for name := range localConsts {
-				consts[name] = true
-			}
 			switch {
 			case whole:
-				scan(decl, !wholeExcluded[key], consts, localVars)
+				scan(decl, !wholeExcluded[key])
 			case funcs != nil:
-				scan(decl, funcs[key], consts, localVars)
+				scan(decl, funcs[key])
 			}
 		case *ast.GenDecl:
 			// Package-level declarations (for example a sentinel var built
 			// with errors.New) belong to the whole-file scope only.
 			if whole {
-				scan(decl, true, topConsts, nil)
+				scan(decl, true)
 			}
 		}
 	}
 	return scanned, violations
 }
 
-// collectReceiverMethods maps each receiver type declared in file to the set
-// of method names it declares.
-func collectReceiverMethods(file *ast.File) map[string]map[string]bool {
-	methods := make(map[string]map[string]bool)
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
-			continue
-		}
-		recv := receiverTypeName(fn.Recv.List[0].Type)
-		if recv == "" {
-			continue
-		}
-		if methods[recv] == nil {
-			methods[recv] = make(map[string]bool)
-		}
-		methods[recv][fn.Name.Name] = true
-	}
-	return methods
+// hasMethod reports whether the type named by tn has a method of the given
+// name, declared or promoted anywhere in its package.
+func hasMethod(pkg *wrapTypedPackage, tn *types.TypeName, name string) bool {
+	obj, _, _ := types.LookupFieldOrMethod(types.NewPointer(tn.Type()), false, pkg.pkg, name)
+	_, ok := obj.(*types.Func)
+	return ok
 }
 
-// missingStructuredMessage returns the type names that declare Unwrap in
-// inFile but not StructuredMessage anywhere in the package, skipping the
-// exception types. pkgMethods is the package-wide receiver method set, so a
-// StructuredMessage split into another file of the same package still counts.
-func missingStructuredMessage(inFile, pkgMethods map[string]map[string]bool, exceptions map[string]bool) []string {
+// declaresStructuredMessage reports whether the type named by tn has a
+// StructuredMessage method with the structured contract func() errmsg.Message,
+// declared or promoted. The result type is compared through the type checker,
+// so a same-named method with a parameter or a different result type is not
+// the structured contract.
+func declaresStructuredMessage(pkg *wrapTypedPackage, tn *types.TypeName) bool {
+	obj, _, _ := types.LookupFieldOrMethod(types.NewPointer(tn.Type()), false, pkg.pkg, "StructuredMessage")
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return false
+	}
+	sig := fn.Signature()
+	return sig.Params().Len() == 0 && sig.Results().Len() == 1 && isErrmsgMessage(sig.Results().At(0).Type())
+}
+
+// isErrmsgMessage reports whether t is errmsg.Message.
+func isErrmsgMessage(t types.Type) bool {
+	named, ok := types.Unalias(t).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj.Pkg() != nil && obj.Pkg().Path() == wrapGuardErrmsgImport && obj.Name() == "Message"
+}
+
+// receiverTypeNameObj returns the type name of a method declaration's receiver,
+// or nil when the type checker cannot resolve it.
+func receiverTypeNameObj(pkg *wrapTypedPackage, fn *ast.FuncDecl) *types.TypeName {
+	method, ok := pkg.info.Defs[fn.Name].(*types.Func)
+	if !ok {
+		return nil
+	}
+	recv := method.Signature().Recv()
+	if recv == nil {
+		return nil
+	}
+	t := types.Unalias(recv.Type())
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = types.Unalias(ptr.Elem())
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return nil
+	}
+	return named.Obj()
+}
+
+// missingStructuredMessage returns the receiver type names of the Unwrap
+// methods declared in the package's file filePath that have no
+// StructuredMessage of the structured contract, skipping the exception names
+// keyed to that file. The StructuredMessage lookup is package-wide, so a
+// StructuredMessage declared in a sibling file counts.
+func missingStructuredMessage(pkg *wrapTypedPackage, filePath string, exceptions map[string]bool) []string {
+	file := pkg.file(filePath)
+	if file == nil {
+		return nil
+	}
 	var missing []string
-	for recv, names := range inFile {
-		if !names["Unwrap"] || exceptions[recv] {
+	seen := map[*types.TypeName]bool{}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name.Name != "Unwrap" {
 			continue
 		}
-		if pkgMethods[recv]["StructuredMessage"] {
+		tn := receiverTypeNameObj(pkg, fn)
+		if tn == nil || seen[tn] {
 			continue
 		}
-		missing = append(missing, recv)
+		seen[tn] = true
+		if exceptions[tn.Name()] {
+			continue
+		}
+		if declaresStructuredMessage(pkg, tn) {
+			continue
+		}
+		missing = append(missing, tn.Name())
 	}
 	return missing
 }
@@ -511,15 +595,14 @@ func missingStructuredMessage(inFile, pkgMethods map[string]map[string]bool, exc
 func TestInScopeWrapsUseStructuredErrors(t *testing.T) {
 	files := identitymutationguard.ProductionGoFilesInRepo(t)
 	require.NotEmpty(t, files, "the repository scan returned no production files")
-	scope := buildWrapScope(t, files)
+	scope := buildWrapScope(wrapProductionGuardSet(t))
 
 	scannedFiles := 0
 	for _, file := range files {
 		if scope.wholeFiles[file] == nil && scope.functions[file] == nil {
 			continue
 		}
-		src := identitymutationguard.ReadProductionSource(t, file)
-		scanned, violations := checkFileWraps(t, file, src, scope)
+		scanned, violations := checkFileWraps(t, file, scope)
 		require.NotZero(t, scanned, "file %s is in scope but no declaration was scanned; the scope is broken", file)
 		scannedFiles++
 		assert.Empty(t, violations,
@@ -531,37 +614,35 @@ func TestInScopeWrapsUseStructuredErrors(t *testing.T) {
 	assert.Positive(t, scannedFiles, "no file was scanned; the guard is a no-op")
 }
 
-// TestInScopeErrorTypesDeclareStructuredMessage pins that the types wrapping
-// causes on an in-scope path declare StructuredMessage, both for the explicit
-// list (function-unit files) and for every Unwrap-declaring type in a
-// whole-file scope file.
+// TestInScopeErrorTypesDeclareStructuredMessage pins, through the type checker,
+// that the types wrapping causes on an in-scope path declare a
+// StructuredMessage of the structured contract func() errmsg.Message, both for
+// the explicit list (function-unit files) and for every Unwrap-declaring type
+// in a whole-file scope file.
 func TestInScopeErrorTypesDeclareStructuredMessage(t *testing.T) {
-	files := identitymutationguard.ProductionGoFilesInRepo(t)
-	indexes := buildPackageIndexes(t, files, relevantPackageDirs())
+	set := wrapProductionGuardSet(t)
 
 	// Explicit list: each named type must be declared in the named file and
-	// declare StructuredMessage somewhere in its package.
+	// declare a properly signed StructuredMessage somewhere in its package.
 	for _, ref := range inScopeErrorTypes {
-		src := identitymutationguard.ReadProductionSource(t, ref.file)
-		_, parsed := identitymutationguard.ParseSource(t, ref.file, src)
-		assert.Truef(t, topLevelTypeNames(parsed)[ref.name],
+		wp := set.pkgs[path.Dir(ref.file)]
+		require.NotNilf(t, wp, "%s: no type-checked package for %s", ref.file, path.Dir(ref.file))
+		tn, _ := wp.pkg.Scope().Lookup(ref.name).(*types.TypeName)
+		assert.Truef(t, tn != nil && wrapGuardFset.Position(tn.Pos()).Filename == ref.file,
 			"%s: type %s is not declared there; the scope is stale", ref.file, ref.name)
-		pkg := indexes[path.Dir(ref.file)]
-		require.NotNilf(t, pkg, "%s: no package index for %s", ref.file, path.Dir(ref.file))
-		assert.Truef(t, pkg.methods[ref.name]["StructuredMessage"],
-			"%s: type %s wraps an in-scope cause but does not declare StructuredMessage", ref.file, ref.name)
+		assert.Truef(t, tn != nil && declaresStructuredMessage(wp, tn),
+			"%s: type %s wraps an in-scope cause but does not declare a StructuredMessage of the structured contract", ref.file, ref.name)
 	}
 
-	// Whole-file scope: any Unwrap declaration must come with StructuredMessage
-	// anywhere in the package. An exception applies only in its own declaring
-	// file, so a same-named type elsewhere is not silently exempted.
+	// Whole-file scope: any Unwrap declaration must come with a properly
+	// signed StructuredMessage anywhere in the package. An exception applies
+	// only in its own declaring file, so a same-named type elsewhere is not
+	// silently exempted.
 	for _, file := range inScopeWholeFiles {
-		pkg := indexes[path.Dir(file)]
-		require.NotNilf(t, pkg, "%s: no package index for %s", file, path.Dir(file))
-		src := identitymutationguard.ReadProductionSource(t, file)
-		_, parsed := identitymutationguard.ParseSource(t, file, src)
+		wp := set.pkgs[path.Dir(file)]
+		require.NotNilf(t, wp, "%s: no type-checked package for %s", file, path.Dir(file))
 		exceptions := exceptionsForFile(unwrapWithoutStructuredExceptions, file)
-		missing := missingStructuredMessage(collectReceiverMethods(parsed), pkg.methods, exceptions)
+		missing := missingStructuredMessage(wp, file, exceptions)
 		assert.Empty(t, missing,
 			"%s: types declaring Unwrap must also declare StructuredMessage: %v", file, missing)
 	}
@@ -576,7 +657,7 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 	for _, file := range files {
 		present[file] = true
 	}
-	indexes := buildPackageIndexes(t, files, relevantPackageDirs())
+	set := wrapProductionGuardSet(t)
 
 	for _, file := range inScopeWholeFiles {
 		assert.Truef(t, present[file], "in-scope file %s is missing; the scope is stale", file)
@@ -590,8 +671,10 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 
 	for file, keys := range byFile {
 		require.Truef(t, present[file], "scope file %s is missing; the scope is stale", file)
-		src := identitymutationguard.ReadProductionSource(t, file)
-		_, parsed := identitymutationguard.ParseSource(t, file, src)
+		wp := set.pkgs[path.Dir(file)]
+		require.NotNilf(t, wp, "%s: no type-checked package for %s", file, path.Dir(file))
+		parsed := wp.file(file)
+		require.NotNilf(t, parsed, "%s: the file was not type-checked; the scope is broken", file)
 		declared := make(map[string]bool)
 		for _, decl := range parsed.Decls {
 			if fn, ok := decl.(*ast.FuncDecl); ok {
@@ -608,9 +691,10 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 	// the type it was written for.
 	for _, ref := range unwrapWithoutStructuredExceptions {
 		require.Truef(t, present[ref.file], "exception file %s is missing; the exception is stale", ref.file)
-		pkg := indexes[path.Dir(ref.file)]
-		require.NotNilf(t, pkg, "%s: no package index for %s", ref.file, path.Dir(ref.file))
-		assert.Truef(t, pkg.methods[ref.name]["Unwrap"],
+		wp := set.pkgs[path.Dir(ref.file)]
+		require.NotNilf(t, wp, "%s: no type-checked package for %s", ref.file, path.Dir(ref.file))
+		tn, _ := wp.pkg.Scope().Lookup(ref.name).(*types.TypeName)
+		assert.Truef(t, tn != nil && hasMethod(wp, tn, "Unwrap"),
 			"%s: exception %s no longer declares Unwrap; the exception is stale", ref.file, ref.name)
 	}
 }
@@ -622,16 +706,21 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 		runnerFile = "internal/runner/guard_sample.go"
 		configFile = "internal/runner/config/guard_sample.go"
 	)
-	scope := wrapScope{
-		wholeFiles: map[string]map[string]bool{
-			runnerFile: {"excluded": true},
-		},
-		functions: map[string]map[string]bool{
-			configFile: {"scanned": true, "(*T).method": true},
-		},
+	const runnerHeader = "package runner\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)\n\nvar _ = []any{fmt.Sprintf, errors.ErrUnsupported}\n\n"
+	const configHeader = "package config\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)\n\nvar _ = []any{fmt.Sprintf, errors.ErrUnsupported}\n\n"
+
+	scopeFor := func(t *testing.T, file wrapGuardFile) wrapScope {
+		t.Helper()
+		return wrapScope{
+			wholeFiles: map[string]map[string]bool{
+				runnerFile: {"excluded": true},
+			},
+			functions: map[string]map[string]bool{
+				configFile: {"scanned": true, "(*T).method": true},
+			},
+			set: loadWrapGuard(t, []wrapGuardFile{file}, nil),
+		}
 	}
-	const runnerHeader = "package runner\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)\n\n"
-	const configHeader = "package config\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n)\n\n"
 
 	tests := []struct {
 		name string
@@ -694,6 +783,14 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 			want: 1,
 		},
 		{
+			// The block-local const does not reach a use of the mutable
+			// package variable of the same name outside the block.
+			name: "a nested const does not vouch for the package variable it shadows",
+			file: runnerFile,
+			src:  runnerHeader + "var msg = buildMessage()\n\nfunc buildMessage() string { return \"x\" }\n\nfunc h() error { if false { const msg = \"sentinel\"; _ = msg }; return errors.New(msg) }\n",
+			want: 1,
+		},
+		{
 			name: "errors.New with a function-local const is accepted",
 			file: runnerFile,
 			src:  runnerHeader + "func h() error { const msg = \"sentinel\"; return errors.New(msg) }\n",
@@ -733,7 +830,7 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, violations := checkFileWraps(t, tt.file, tt.src, scope)
+			_, violations := checkFileWraps(t, tt.file, scopeFor(t, wrapGuardFile{path: tt.file, src: tt.src}))
 			assert.Len(t, violations, tt.want, "violations: %v", violations)
 		})
 	}
@@ -744,28 +841,39 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 // package is accepted, while a same-named non-constant of the checked file is
 // still reported.
 func TestWrapCheckResolvesPackageWideConsts(t *testing.T) {
-	const file = "internal/runner/guard_sample.go"
-	const header = "package runner\n\nimport \"errors\"\n\n"
-	_, sibling := identitymutationguard.ParseSource(t, "internal/runner/sibling.go",
-		"package runner\n\nconst errText = \"sibling sentinel\"\n")
-	index := &packageIndex{consts: map[string]bool{}, methods: map[string]map[string]bool{}}
-	mergePackageIndex(index, sibling)
-	scope := wrapScope{
-		wholeFiles: map[string]map[string]bool{file: {}},
-		packages:   map[string]*packageIndex{"internal/runner": index},
+	const (
+		file   = "internal/runner/guard_sample.go"
+		header = "package runner\n\nimport \"errors\"\n\n"
+	)
+	scope := func(t *testing.T, source string) wrapScope {
+		t.Helper()
+		return wrapScope{
+			wholeFiles: map[string]map[string]bool{file: {}},
+			set: loadWrapGuardFromMap(t, map[string]string{
+				file:                         source,
+				"internal/runner/sibling.go": "package runner\n\nconst errText = \"sibling sentinel\"\n",
+			}),
+		}
 	}
 
-	_, violations := checkFileWraps(t, file, header+"var errSentinel = errors.New(errText)\n", scope)
+	set := scope(t, header+"var errSentinel = errors.New(errText)\n")
+	_, violations := checkFileWraps(t, file, set)
 	assert.Emptyf(t, violations, "a sibling-file constant must be accepted: %v", violations)
 
-	src := header + "func f(errText string) error { return errors.New(errText) }\n"
-	_, violations = checkFileWraps(t, file, src, scope)
+	set = scope(t, header+"func f(errText string) error { return errors.New(errText) }\n")
+	_, violations = checkFileWraps(t, file, set)
 	assert.Lenf(t, violations, 1, "a parameter shadowing the sibling constant must be reported: %v", violations)
 }
 
 // TestUnwrapStructuredCheckRecognizesForms pins that the whole-file Unwrap
-// check reports a missing StructuredMessage and honours the exception list.
+// check reports a missing or wrongly signed StructuredMessage and honours the
+// exception list.
 func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
+	const (
+		filePath = "internal/x/x.go"
+		header   = "package x\n\ntype T struct{}\n\n"
+		imp      = "package x\n\nimport \"" + wrapGuardErrmsgImport + "\"\n\ntype T struct{}\n\n"
+	)
 	tests := []struct {
 		name       string
 		src        string
@@ -774,27 +882,37 @@ func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
 	}{
 		{
 			name: "a pointer receiver with Unwrap and no StructuredMessage is reported",
-			src:  "package x\n\nfunc (e *T) Unwrap() error { return nil }\n",
+			src:  header + "func (e *T) Unwrap() error { return nil }\n",
 			want: 1,
 		},
 		{
 			name: "a value receiver with Unwrap and no StructuredMessage is reported",
-			src:  "package x\n\nfunc (e T) Unwrap() error { return nil }\n",
+			src:  header + "func (e T) Unwrap() error { return nil }\n",
 			want: 1,
 		},
 		{
-			name: "a type declaring both is accepted",
-			src:  "package x\n\nfunc (e *T) Unwrap() error { return nil }\n\nfunc (e *T) StructuredMessage() M { return M{} }\n",
+			name: "a type declaring both with the structured contract is accepted",
+			src:  imp + "func (e *T) Unwrap() error { return nil }\n\nfunc (e *T) StructuredMessage() errmsg.Message { return errmsg.Message{} }\n",
 			want: 0,
 		},
 		{
+			name: "a StructuredMessage taking a parameter is not the structured contract",
+			src:  imp + "func (e *T) Unwrap() error { return nil }\n\nfunc (e *T) StructuredMessage(int) errmsg.Message { return errmsg.Message{} }\n",
+			want: 1,
+		},
+		{
+			name: "a StructuredMessage returning another type is not the structured contract",
+			src:  header + "func (e *T) Unwrap() error { return nil }\n\nfunc (e *T) StructuredMessage() string { return \"\" }\n",
+			want: 1,
+		},
+		{
 			name: "a type without Unwrap is not reported",
-			src:  "package x\n\nfunc (e *T) Error() string { return \"\" }\n",
+			src:  header + "func (e *T) Error() string { return \"\" }\n",
 			want: 0,
 		},
 		{
 			name:       "an exception type is accepted",
-			src:        "package x\n\nfunc (e *T) Unwrap() error { return nil }\n",
+			src:        header + "func (e *T) Unwrap() error { return nil }\n",
 			exceptions: map[string]bool{"T": true},
 			want:       0,
 		},
@@ -802,9 +920,8 @@ func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, file := identitymutationguard.ParseSource(t, "internal/x/x.go", tt.src)
-			methods := collectReceiverMethods(file)
-			missing := missingStructuredMessage(methods, methods, tt.exceptions)
+			pkg := syntheticWrapPackage(t, filePath, tt.src)
+			missing := missingStructuredMessage(pkg, filePath, tt.exceptions)
 			assert.Len(t, missing, tt.want, "missing: %v", missing)
 		})
 	}
@@ -814,26 +931,28 @@ func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
 // StructuredMessage declared in a sibling file satisfies the whole-file Unwrap
 // check, and that an exception applies only in its own declaring file.
 func TestMissingStructuredMessageResolvesPackageWideMethods(t *testing.T) {
-	_, parsed := identitymutationguard.ParseSource(t, "internal/runner/guard_sample.go",
-		"package runner\n\nfunc (e *T) Unwrap() error { return nil }\n")
-	inFile := collectReceiverMethods(parsed)
-
-	pkgMethods := map[string]map[string]bool{"T": {"Unwrap": true, "StructuredMessage": true}}
-	assert.Empty(t, missingStructuredMessage(inFile, pkgMethods, nil),
+	const guardFile = "internal/runner/guard_sample.go"
+	pkg := syntheticWrapPackageFiles(t, map[string]string{
+		guardFile:                    "package runner\n\ntype T struct{}\n\nfunc (e *T) Unwrap() error { return nil }\n",
+		"internal/runner/sibling.go": "package runner\n\nimport \"" + wrapGuardErrmsgImport + "\"\n\nfunc (e *T) StructuredMessage() errmsg.Message { return errmsg.Message{} }\n",
+	}, guardFile)
+	assert.Empty(t, missingStructuredMessage(pkg, guardFile, nil),
 		"a StructuredMessage in a sibling file must satisfy the check")
 
-	siblingOnly := map[string]map[string]bool{"T": {"Unwrap": true}}
-	assert.Len(t, missingStructuredMessage(inFile, siblingOnly, nil), 1,
+	pkg = syntheticWrapPackage(t, guardFile, "package runner\n\ntype T struct{}\n\nfunc (e *T) Unwrap() error { return nil }\n")
+	assert.Len(t, missingStructuredMessage(pkg, guardFile, nil), 1,
 		"a package with no StructuredMessage anywhere must be reported")
 
-	assert.Len(t, missingStructuredMessage(
-		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
-		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
-		exceptionsForFile(unwrapWithoutStructuredExceptions, "internal/runner/group_errors.go"),
-	), 1, "an exception keyed to another file must not exempt a same-named type")
-	assert.Empty(t, missingStructuredMessage(
-		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
-		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
-		exceptionsForFile(unwrapWithoutStructuredExceptions, "internal/logging/execution_error.go"),
-	), "the exception must apply in its declaring file")
+	pkg = syntheticWrapPackage(t, guardFile,
+		"package runner\n\ntype ExecutionError struct{}\n\nfunc (e *ExecutionError) Unwrap() error { return nil }\n")
+	assert.Len(t, missingStructuredMessage(pkg, guardFile,
+		exceptionsForFile(unwrapWithoutStructuredExceptions, guardFile)), 1,
+		"an exception keyed to another file must not exempt a same-named type")
+
+	const loggingFile = "internal/logging/execution_error.go"
+	pkg = syntheticWrapPackage(t, loggingFile,
+		"package logging\n\ntype ExecutionError struct{}\n\nfunc (e *ExecutionError) Unwrap() error { return nil }\n")
+	assert.Empty(t, missingStructuredMessage(pkg, loggingFile,
+		exceptionsForFile(unwrapWithoutStructuredExceptions, loggingFile)),
+		"the exception must apply in its declaring file")
 }

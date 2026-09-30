@@ -687,9 +687,14 @@ revert します（GitHub の Revert ボタン、または `gh pr revert 1136`�
 から `make test` を実行し、guard の green を確認します。同じ PR に複数の宣言サイトが混在し、
 問題のあるサイトだけを戻す場合も同じ要領で戻す差分を絞ります。
 
-構造化メッセージを記録に使う変更（実行時の切り替えスイッチはありません）を含む PR を
-revert すれば、`error_message` を構造化する前の挙動に戻ります。`RedactText` は変えないので、
-ほかのログ行・取り込んだ出力の redaction は revert の影響を受けません。
+構造化メッセージを記録に使う変更（実行時の切り替えスイッチはありません）を含む PR だけを
+revert しても、使える構造化前の状態には戻りません。後の Phase 5〜8 のエラー型・呼び出し側・
+guard・シナリオテストは `errmsg` の構造化メッセージの契約に依存しているためです。確定済みの
+Phase 8 実装計画書が要求するとおり、PR-4〜PR-8 をまとめて revert します。個別に戻す場合は
+`git revert -n` を使い、戻した記録の変更に合わせて `wrap_guard_test.go`・AC-12/AC-34 の
+テスト・本書の日英を同じ変更で整合させてから、`make test`・`make lint` を通します。
+`RedactText` は変えないので、ほかのログ行・取り込んだ出力の redaction は revert の影響を
+受けません。
 
 **Slack通知実装**:
 ```go
