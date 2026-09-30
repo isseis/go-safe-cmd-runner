@@ -3,7 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 // Variable value type names used in type-mismatch error details.
@@ -172,6 +175,183 @@ var (
 	ErrForbiddenEnvVar = errors.New("environment variable is forbidden")
 )
 
+// levelKind is the kind of a Level. The zero value is levelNone.
+type levelKind int
+
+const (
+	levelNone levelKind = iota
+	levelGlobal
+	levelGroup
+	levelCommand
+	levelTemplate
+)
+
+// Level is where a value was being expanded. The zero value is "no level"
+// and renders as the empty string.
+type Level struct {
+	kind levelKind
+	name string
+}
+
+func globalLevel() Level              { return Level{kind: levelGlobal} }
+func groupLevel(name string) Level    { return Level{kind: levelGroup, name: name} }
+func commandLevel(name string) Level  { return Level{kind: levelCommand, name: name} }
+func templateLevel(name string) Level { return Level{kind: levelTemplate, name: name} }
+
+// GroupLevel declares a group scope. It is the only constructor exported for
+// callers outside this package (ExpandWorkDir's callers).
+func GroupLevel(name string) Level { return groupLevel(name) }
+
+// CommandLevel declares a command scope.
+func CommandLevel(name string) Level { return commandLevel(name) }
+
+// String renders the level the way it has always been rendered for error
+// messages. The zero value renders as the empty string.
+func (l Level) String() string {
+	switch l.kind {
+	case levelGlobal:
+		return "global"
+	case levelGroup:
+		return "group[" + l.name + "]"
+	case levelCommand:
+		return "command[" + l.name + "]"
+	case levelTemplate:
+		return "template[" + l.name + "]"
+	default:
+		return ""
+	}
+}
+
+// parts builds the message parts for the level, declaring the scope name as an
+// identifier so it survives whole-value redaction. The zero value has no parts.
+func (l Level) parts() []errmsg.Part {
+	switch l.kind {
+	case levelGlobal:
+		return []errmsg.Part{errmsg.Const("global")}
+	case levelGroup:
+		return []errmsg.Part{errmsg.Const("group["), errmsg.Ident(l.name), errmsg.Const("]")}
+	case levelCommand:
+		return []errmsg.Part{errmsg.Const("command["), errmsg.Ident(l.name), errmsg.Const("]")}
+	case levelTemplate:
+		return []errmsg.Part{errmsg.Const("template["), errmsg.Ident(l.name), errmsg.Const("]")}
+	default:
+		return nil
+	}
+}
+
+// fieldKey is the configuration field being expanded. The zero value is
+// fieldNone.
+type fieldKey int
+
+const (
+	fieldNone fieldKey = iota
+	fieldCmd
+	fieldArgs
+	fieldEnv
+	fieldEnvVars
+	fieldEnvImport
+	fieldWorkdir
+	fieldVerifyFiles
+	fieldCmdAllowed
+	fieldVars
+)
+
+// Field is the configuration field being expanded. The zero value is
+// "no field" and renders as the empty string.
+type Field struct {
+	key      fieldKey
+	name     string // variable name, for vars fields only
+	index    int
+	hasIndex bool
+}
+
+func cmdField() Field              { return Field{key: fieldCmd} }
+func envField() Field              { return Field{key: fieldEnv} }
+func envVarsField(index int) Field { return Field{key: fieldEnvVars, index: index, hasIndex: true} }
+func envImportField() Field        { return Field{key: fieldEnvImport} }
+func workdirField() Field          { return Field{key: fieldWorkdir} }
+func argsField(index int) Field    { return Field{key: fieldArgs, index: index, hasIndex: true} }
+func verifyFilesField(index int) Field {
+	return Field{key: fieldVerifyFiles, index: index, hasIndex: true}
+}
+
+func cmdAllowedField(index int) Field {
+	return Field{key: fieldCmdAllowed, index: index, hasIndex: true}
+}
+func varsField() Field           { return Field{key: fieldVars} }
+func varField(name string) Field { return Field{key: fieldVars, name: name} }
+func varElementField(name string, index int) Field {
+	return Field{key: fieldVars, name: name, index: index, hasIndex: true}
+}
+
+// String renders the field the way it has always been rendered for error
+// messages. The zero value renders as the empty string.
+func (f Field) String() string {
+	switch f.key {
+	case fieldCmd:
+		return "cmd"
+	case fieldArgs:
+		return "args[" + strconv.Itoa(f.index) + "]"
+	case fieldEnv:
+		return "env"
+	case fieldEnvVars:
+		return "env_vars[" + strconv.Itoa(f.index) + "]"
+	case fieldEnvImport:
+		return "env_import"
+	case fieldWorkdir:
+		return "workdir"
+	case fieldVerifyFiles:
+		return "verify_files[" + strconv.Itoa(f.index) + "]"
+	case fieldCmdAllowed:
+		return "cmd_allowed[" + strconv.Itoa(f.index) + "]"
+	case fieldVars:
+		base := "vars"
+		if f.name != "" {
+			base += "." + f.name
+		}
+		if f.hasIndex {
+			base += "[" + strconv.Itoa(f.index) + "]"
+		}
+		return base
+	default:
+		return ""
+	}
+}
+
+// parts builds the message parts for the field: the key text is constant and
+// the variable name is an identifier. The zero value has no parts.
+func (f Field) parts() []errmsg.Part {
+	switch f.key {
+	case fieldCmd:
+		return []errmsg.Part{errmsg.Const("cmd")}
+	case fieldArgs:
+		return []errmsg.Part{errmsg.Const("args["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+	case fieldEnv:
+		return []errmsg.Part{errmsg.Const("env")}
+	case fieldEnvVars:
+		return []errmsg.Part{errmsg.Const("env_vars["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+	case fieldEnvImport:
+		return []errmsg.Part{errmsg.Const("env_import")}
+	case fieldWorkdir:
+		return []errmsg.Part{errmsg.Const("workdir")}
+	case fieldVerifyFiles:
+		return []errmsg.Part{errmsg.Const("verify_files["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+	case fieldCmdAllowed:
+		return []errmsg.Part{errmsg.Const("cmd_allowed["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+	case fieldVars:
+		parts := []errmsg.Part{errmsg.Const("vars")}
+		if f.name != "" {
+			parts = append(parts, errmsg.Const("."), errmsg.Ident(f.name))
+		}
+		if f.hasIndex {
+			parts = append(parts, errmsg.Const("["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]"))
+		}
+		return parts
+	default:
+		return nil
+	}
+}
+
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
 // This error type wraps ErrInvalidVariableName and is used for internal variable validation
 // in vars and from_env fields.
@@ -256,19 +436,42 @@ func (e *ErrCircularReferenceDetail) Unwrap() error {
 
 // ErrUndefinedVariableDetail provides detailed information about undefined variables
 type ErrUndefinedVariableDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	Context      string
 	Chain        []string // expansion path leading to this error
 }
 
-func (e *ErrUndefinedVariableDetail) Error() string {
-	msg := fmt.Sprintf("undefined variable in %s.%s: '%s' (context: %s)", e.Level, e.Field, e.VariableName, e.Context)
+// StructuredMessage declares the referenced variable, the scope name and the
+// expansion path as identifiers; the raw template context stays text.
+func (e *ErrUndefinedVariableDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("undefined variable in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Ident(e.VariableName),
+		errmsg.Const("' (context: "),
+		errmsg.Text(e.Context),
+		errmsg.Const(")"),
+	)
 	if len(e.Chain) > 0 {
-		msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+		parts = append(parts, errmsg.Const(" (expansion path: "))
+		for i, name := range e.Chain {
+			if i > 0 {
+				parts = append(parts, errmsg.Const(" -> "))
+			}
+			parts = append(parts, errmsg.Ident(name))
+		}
+		parts = append(parts, errmsg.Const(")"))
 	}
-	return msg
+	return errmsg.NewMessage(parts...)
+}
+
+func (e *ErrUndefinedVariableDetail) Error() string {
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrUndefinedVariableDetail) Unwrap() error {

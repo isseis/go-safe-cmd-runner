@@ -228,7 +228,7 @@ func TestValidateFieldVars(t *testing.T) {
 		name         string
 		input        string
 		templateName string
-		fieldName    string
+		fieldName    Field
 		globalVars   map[string]string
 		wantErr      bool
 		errType      any
@@ -237,7 +237,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "success: no variables",
 			input:        "hello world",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars:   map[string]string{},
 			wantErr:      false,
 		},
@@ -245,7 +245,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "success: global variable defined",
 			input:        "echo %{GREETING}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars: map[string]string{
 				"GREETING": "hello",
 			},
@@ -255,7 +255,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "success: multiple global variables defined",
 			input:        "%{VAR1} %{VAR2} %{VAR3}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars: map[string]string{
 				"VAR1": "a",
 				"VAR2": "b",
@@ -267,7 +267,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "error: local variable",
 			input:        "echo %{local_var}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars:   map[string]string{},
 			wantErr:      true,
 			errType:      &ErrLocalVariableInTemplate{},
@@ -276,7 +276,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "error: undefined global variable",
 			input:        "echo %{UNDEFINED}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars:   map[string]string{},
 			wantErr:      true,
 			errType:      &ErrUndefinedGlobalVariableInTemplate{},
@@ -285,7 +285,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "success: escaped percent",
 			input:        "echo \\%{NOT_A_VAR}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars:   map[string]string{},
 			wantErr:      false,
 		},
@@ -293,7 +293,7 @@ func TestValidateFieldVars(t *testing.T) {
 			name:         "error: variable name with invalid characters",
 			input:        "echo %{INVALID-NAME}",
 			templateName: "test",
-			fieldName:    "cmd",
+			fieldName:    cmdField(),
 			globalVars:   map[string]string{},
 			wantErr:      true,
 			errType:      &ErrInvalidVariableNameDetail{},

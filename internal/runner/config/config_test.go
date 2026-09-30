@@ -361,8 +361,8 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 				expandedWorkDir, err := ExpandString(
 					*cmdSpec.WorkDir,
 					runtimeGroup.ExpandedVars,
-					"command["+cmdSpec.Name+"]",
-					"workdir",
+					commandLevel(cmdSpec.Name),
+					workdirField(),
 				)
 				require.NoError(t, err, "Failed to expand command workdir")
 				assert.Equal(t, tt.expectedWorkDir, expandedWorkDir, "Expanded workdir mismatch")

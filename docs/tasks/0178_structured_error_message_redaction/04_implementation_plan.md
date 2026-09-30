@@ -121,7 +121,9 @@
 - `cmd/runner/main_test.go`: `Message` のリテラル 1 か所（`:104-109`）。`TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError`（`:717`）は `:730` で `preExec.Message` が原因の文言を含むことを確かめている。原因が `Err` に移るので、`errors.Is` と `Detail()` の確認に変える。`errCheckerUnavailable` は `:473` にある。
 - `cmd/runner/integration_slack_flush_test.go`: `Message` のリテラル 1 か所（`:78-84`）。
 - `internal/runner/runerrors/pre_execution_guard_test.go`（7 か所）と `internal/logging/notification_contract_guard_test.go`（19 か所 + `ExecutionError` 3 か所）の `PreExecutionError{` は、いずれも自己テストの入力文字列の中のテストフィクスチャであり、実際の複合リテラルではない。`Message` を設定していないので書き換えは不要。実行して変化が無いことを確かめる。
-- `internal/runner/config/errors_test.go:71-76`（`TestErrUndefinedVariableDetail_Unwrap`）の `Level: "global"`・`Field: "env"` を `globalLevel()`・`envField()` にする。`ErrUndefinedVariableDetail` の `Level`・`Field` を文字列として比べる既存テストは無い（`rg` で確認）。`VariableName` だけを比べるテスト（`expansion_unit_test.go` など）は影響を受けない。
+- `internal/runner/config/errors_test.go:71-76`（`TestErrUndefinedVariableDetail_Unwrap`）の `Level: "global"`・`Field: "env"` を `globalLevel()`・`envField()` にする。`ErrUndefinedVariableDetail` の `Level`・`Field` を文字列として比べる既存テストは無い（`rg` で確認）。
+- 引数の型が変わる関数を直接呼ぶ既存テストは、引数を構築関数に合わせる。`expansion_unit_test.go` は `Level`・`Field` を文字列で渡していたためコンパイルできなくなる。`Level` は `GroupLevel`・`CommandLevel` しか公開しない（03 §6.1）ので、`globalLevel()` などの非公開の構築関数を使うために `package config` へ移す（`config.` の接頭辞を外す）。`config_test.go`・`validation_test.go`・`template_expansion_validation_test.go` は同じパッケージ内なので、`Level`・`Field` を型にし、`"global"` は `globalLevel()`、`"group[test]"` は `groupLevel("test")`、`"cmd"` は `cmdField()`、`"vars"` は `varsField()` にする。`internal/runner/group_executor_test.go` は `config.ExpandString` を直接呼ぶので、`config.CommandLevel(...)` とゼロ値の `config.Field{}` を渡す（外部パッケージから作れる `Field` はゼロ値だけである）。
+- `internal/runner/group_executor_test.go::TestExecuteGroup_PreExecutionStageErrors` の `wantIdentifiers` は、原因が構造化されるとその `Identifier` の断片が増える。`ErrUndefinedVariableDetail` を原因に持つ 4 行（group expansion・group workdir resolution・command expansion・command workdir resolution）の期待値を、`Level.parts` の group/command 名と `VariableName` の分だけ増やす（コメントの「later phase ... adds its own Identifier segments here」のとおり）。
 - `internal/runner/group_stage_test.go`: `:33` の `def.message` の非空確認と、`:126`・`:164`・`:183`・`:199` の `Message` 比較を `.String()` にする。テスト内の期待表（`:64-106`）の `message` は文字列のままにし、比較の右辺を `.String()` にする。`:183` は `attr.Value.String()` ではなく `preExecErr.Message` の直接比較である。`:199` は `assert.Equal` なので型が合わないままコンパイルが通り、実行時に落ちる。
 - `internal/logging/pre_execution_error_test.go:249`（`assert.Equal(t, "integration test error", preExecErr.Message)`）: `assert.Equal` は型の異なる値を比較できるためコンパイルが通り、実行時に落ちる。`.String()` を付ける。
 - `internal/runner/multi_group_error_integration_test.go:137`: `logging.ExecutionError{Message: "error running commands", ...}` はコンパイルエラーになる。`errmsg.ConstSummary` にする。
@@ -324,21 +326,23 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 6: `internal/runner/config` の `Level`・`Field` と `ErrUndefinedVariableDetail`
 
 **Files**: `internal/runner/config/errors.go`・`expansion.go`・`validation.go`・`template_expansion.go`（変更）、`internal/runner/group_executor.go`（`ExpandWorkDir` の呼び出し）、および対応するテスト
 
-- [ ] `errors.go` に `Level`・`Field` の型、種類、パッケージ内の構築関数、`String()`、`parts()`、公開の `GroupLevel`・`CommandLevel` を実装する。`String()` は変更前に `fmt.Sprintf` で作っていた文字列と同じにする（03 §6.1）。
-- [ ] `ErrUndefinedVariableDetail` の `Level`・`Field` を型にし、`StructuredMessage` を実装する。参照された変数名・`Chain` の各名前・`Level`・`Field` の中の名前は `Identifier`、`Context` は `Text` にする（03 §6.3）。
-- [ ] `expansion.go` の各ラップを 03 §6.5 の分類に従って構造化する。`ErrUndefinedVariableDetail` を運びうるラップは名前を `Ident`・固定の文言を `Const`、運びえないラップは前置きの全体を 1 つの `Text` にして `Cause` を続ける。
-- [ ] `ExpandWorkDir` のシグネチャを `Level` にし、相対パスの拒否のエラーを 03 §6.4 のとおりに構造化する。`group_executor.go:687`・`:724` は `config.GroupLevel(...)`・`config.CommandLevel(...)` を渡す（§1.3 の食い違い表のとおり、ここで行う）。
-- [ ] 03 §6.2 の表の関数の引数を `Level`・`Field` に変える。`variableResolver` の `field` と各関数リテラルの第 2 引数も `Field` にする。`validateVariableName` の `level == "global"` の比較は `level.kind == levelGlobal` にする。
-- [ ] 文字列の `Level`・`Field` を持つ既存の詳細型（`ErrCircularReferenceDetail` など）には `level.String()`・`field.String()` を渡す。固定のキーは構築関数から作る（03 §6.2 の最後の項）。
-- [ ] `errors_test.go:71-76` のリテラルを `globalLevel()`・`envField()` に書き換える。`Level`・`Field` の `String()` が変更前の `fmt.Sprintf` の結果と同じであることを確かめるテストをキーごとに追加する。
-- [ ] `ErrUndefinedVariableDetail` の部分の並び（`Chain` が空・非空の両方）を確かめるテストを追加する。
+- [x] `errors.go` に `Level`・`Field` の型、種類、パッケージ内の構築関数、`String()`、`parts()`、公開の `GroupLevel`・`CommandLevel` を実装する。`String()` は変更前に `fmt.Sprintf` で作っていた文字列と同じにする（03 §6.1）。
+- [x] `ErrUndefinedVariableDetail` の `Level`・`Field` を型にし、`StructuredMessage` を実装する。参照された変数名・`Chain` の各名前・`Level`・`Field` の中の名前は `Identifier`、`Context` は `Text` にする（03 §6.3）。
+- [x] `expansion.go` の各ラップを 03 §6.5 の分類に従って構造化する。`ErrUndefinedVariableDetail` を運びうるラップは名前を `Ident`・固定の文言を `Const`、運びえないラップは前置きの全体を 1 つの `Text` にして `Cause` を続ける。
+- [x] `ExpandWorkDir` のシグネチャを `Level` にし、相対パスの拒否のエラーを 03 §6.4 のとおりに構造化する。`group_executor.go:757`・`:794` は `config.GroupLevel(...)`・`config.CommandLevel(...)` を渡す（§1.3 の食い違い表のとおり、ここで行う。行番号は Phase 4・5 の変更でずれた）。
+- [x] 03 §6.2 の表の関数の引数を `Level`・`Field` に変える。`variableResolver` の `field` と各関数リテラルの第 2 引数も `Field` にする。`validateVariableName` の `level == "global"` の比較は `level.kind == levelGlobal` にする。
+- [x] 文字列の `Level`・`Field` を持つ既存の詳細型（`ErrCircularReferenceDetail` など）には `level.String()`・`field.String()` を渡す。固定のキーは構築関数から作る（03 §6.2 の最後の項）。`cmd_allowed` の重複検出の `Field` は変更前と同じ前置き（index なし）なので文字列のままにする。
+- [x] `errors_test.go:71-76` のリテラルを `globalLevel()`・`envField()` に書き換える。`Level`・`Field` の `String()` が変更前の `fmt.Sprintf` の結果と同じであることを確かめるテスト（`TestLevelAndField_StringMatchesLegacyFormat`）をキーごとに追加する。
+- [x] `ErrUndefinedVariableDetail` の部分の並び（`Chain` が空・非空の両方）を確かめるテスト（`TestErrUndefinedVariableDetail_StructuredMessage`）を追加する。
+- [x] §1.3「更新が必要な既存テスト」のとおり、引数の型が変わる関数を呼ぶ既存テストを更新する。`expansion_unit_test.go` は `package config` へ移し、`group_executor_test.go::TestExecuteGroup_PreExecutionStageErrors` の `wantIdentifiers` に構造化された原因の断片を足す。
+- [x] §4.4 の変異で `TestLevelAndField_StringMatchesLegacyFormat`（`Field.String()` の `vars.<name>` の組み立てを変える）と `TestExpandWorkDir_RelativePathError`（相対パス拒否のパスを `Path` から `Ident` に変える）が失敗することを確認した。レビューの指摘を受け、`ExpandWorkDir` の相対パス拒否の役割と文言、`Level`・`Field` の `parts()` と `String()` の一致を固定するテストを追加した。
 
 **完了条件**: `internal/runner/config` のテストが green。`ErrUndefinedVariableDetail.Error()` の文言が変更前と同じである。`go test -tags test ./internal/runner/config/... ./internal/runner/...` が通る。
 
@@ -350,8 +354,8 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 
@@ -515,6 +519,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 | 4 | `HandleExecutionError` で `Freeze()` を外し、stderr と記録がそれぞれ `ReportMessage()` を評価する | `TestHandleExecutionError_EvaluatesCauseOnce` |
 | 5 | `GroupErrors` を `Merge` ではなく平らにして作る | `TestGroupErrors_MergePreservesIdentifierSegments` |
 | 6 | `Field.String()` の `vars.<name>` の組み立てを変える | `TestLevelAndField_StringMatchesLegacyFormat` |
+| 6 | `ExpandWorkDir` の相対パス拒否で、パスを `Path` ではなく `Ident` にする | `TestExpandWorkDir_RelativePathError` |
 | 7 | `killAfterCancelError` を `Cause` だけの 1 原因にする | `TestKillAfterCancelError_TextAndReachability`（2 経路の両方） |
 | 7 | 一時ディレクトリの 2 つ目のラップの前置きを 1 つ目と同じにする | `TestTempDirManager_Create_WrapTexts`（`os.Chmod` の行） |
 | 7 | `cmd/runner` の 4 か所のうち 1 か所で原因を `Err` に移さず `Message` に残す | `cmd/runner/main_test.go::TestPreExecutionCauseReachability`（Phase 7 で追加する。Phase 4 の完了時点ではこのテストはまだ無い） |

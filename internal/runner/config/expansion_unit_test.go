@@ -1,11 +1,12 @@
-package config_test
+package config
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,13 +47,13 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 			input:       "test\\x",
 			vars:        map[string]string{},
 			wantErr:     true,
-			wantErrType: config.ErrInvalidEscapeSequence,
+			wantErrType: ErrInvalidEscapeSequence,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := config.ExpandString(tt.input, tt.vars, "test", "field")
+			got, err := ExpandString(tt.input, tt.vars, groupLevel("test"), Field{})
 			if tt.wantErr {
 				require.Error(t, err)
 				require.ErrorIs(t, err, tt.wantErrType)
@@ -94,12 +95,12 @@ func TestExpandString_UndefinedVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ExpandString(tt.input, tt.vars, "test", "field")
+			_, err := ExpandString(tt.input, tt.vars, groupLevel("test"), Field{})
 			require.Error(t, err)
-			require.ErrorIs(t, err, config.ErrUndefinedVariable)
+			require.ErrorIs(t, err, ErrUndefinedVariable)
 
 			// Also verify the specific variable name in the detailed error
-			if detailErr, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err); ok {
+			if detailErr, ok := errors.AsType[*ErrUndefinedVariableDetail](err); ok {
 				assert.Equal(t, tt.checkVar, detailErr.VariableName)
 			}
 		})
@@ -159,7 +160,7 @@ func TestExpandString_ComplexPatterns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := config.ExpandString(tt.input, tt.vars, "test", "field")
+			got, err := ExpandString(tt.input, tt.vars, groupLevel("test"), Field{})
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -182,31 +183,31 @@ func TestExpandString_InvalidSyntax(t *testing.T) {
 			name:        "unclosed variable reference",
 			input:       "%{UNCLOSED",
 			vars:        map[string]string{},
-			wantErrType: config.ErrUnclosedVariableReference,
+			wantErrType: ErrUnclosedVariableReference,
 		},
 		{
 			name:        "empty variable name",
 			input:       "%{}",
 			vars:        map[string]string{},
-			wantErrType: config.ErrInvalidVariableName,
+			wantErrType: ErrInvalidVariableName,
 		},
 		{
 			name:        "variable with invalid characters",
 			input:       "%{VAR-WITH-DASH}",
 			vars:        map[string]string{},
-			wantErrType: config.ErrInvalidVariableName,
+			wantErrType: ErrInvalidVariableName,
 		},
 		{
 			name:        "variable with space",
 			input:       "%{VAR NAME}",
 			vars:        map[string]string{},
-			wantErrType: config.ErrInvalidVariableName,
+			wantErrType: ErrInvalidVariableName,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ExpandString(tt.input, tt.vars, "test", "field")
+			_, err := ExpandString(tt.input, tt.vars, groupLevel("test"), Field{})
 			require.Error(t, err)
 			require.ErrorIs(t, err, tt.wantErrType)
 		})
@@ -230,7 +231,7 @@ func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 			allowlist:   []string{"ALLOWED_VAR"},
 			systemEnv:   map[string]string{"BLOCKED_VAR": "value"},
 			wantErr:     true,
-			wantErrType: config.ErrVariableNotInAllowlist,
+			wantErrType: ErrVariableNotInAllowlist,
 		},
 		{
 			name:        "system variable in allowlist",
@@ -246,13 +247,13 @@ func TestProcessEnvImport_AllowlistViolation(t *testing.T) {
 			allowlist:   []string{},
 			systemEnv:   map[string]string{"ANY_VAR": "value"},
 			wantErr:     true,
-			wantErrType: config.ErrVariableNotInAllowlist,
+			wantErrType: ErrVariableNotInAllowlist,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ProcessEnvImport(tt.fromEnv, tt.allowlist, tt.systemEnv, "test")
+			result, err := ProcessEnvImport(tt.fromEnv, tt.allowlist, tt.systemEnv, groupLevel("test"))
 			if tt.wantErr {
 				require.Error(t, err)
 				require.ErrorIs(t, err, tt.wantErrType)
@@ -271,7 +272,7 @@ func TestProcessEnvImport_SystemVariableNotSet(t *testing.T) {
 	allowlist := []string{"MISSING_VAR"}
 	systemEnv := map[string]string{} // MISSING_VAR not set
 
-	result, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "test")
+	result, err := ProcessEnvImport(fromEnv, allowlist, systemEnv, groupLevel("test"))
 	require.NoError(t, err, "Missing system variables should not cause an error")
 	assert.Equal(t, "", result["my_var"], "Missing variable should have empty string value")
 }
@@ -286,23 +287,23 @@ func TestProcessEnvImport_InvalidFormat(t *testing.T) {
 		{
 			name:        "missing equals sign",
 			fromEnv:     []string{"no_equals"},
-			wantErrType: config.ErrInvalidEnvImportFormat,
+			wantErrType: ErrInvalidEnvImportFormat,
 		},
 		{
 			name:        "empty mapping",
 			fromEnv:     []string{""},
-			wantErrType: config.ErrInvalidEnvImportFormat,
+			wantErrType: ErrInvalidEnvImportFormat,
 		},
 		{
 			name:        "multiple equals signs causes invalid system var name",
 			fromEnv:     []string{"var=SYS=VAR"},
-			wantErrType: config.ErrInvalidSystemVariableName,
+			wantErrType: ErrInvalidSystemVariableName,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ProcessEnvImport(tt.fromEnv, []string{}, map[string]string{}, "test")
+			_, err := ProcessEnvImport(tt.fromEnv, []string{}, map[string]string{}, groupLevel("test"))
 			require.Error(t, err)
 			require.ErrorIs(t, err, tt.wantErrType)
 		})
@@ -319,23 +320,23 @@ func TestProcessEnvImport_InvalidInternalVariableName(t *testing.T) {
 		{
 			name:        "empty internal variable name",
 			fromEnv:     []string{"=SYSTEM_VAR"},
-			wantErrType: config.ErrInvalidEnvImportFormat,
+			wantErrType: ErrInvalidEnvImportFormat,
 		},
 		{
 			name:        "internal variable with dash",
 			fromEnv:     []string{"my-var=SYSTEM_VAR"},
-			wantErrType: config.ErrInvalidVariableName,
+			wantErrType: ErrInvalidVariableName,
 		},
 		{
 			name:        "internal variable with space",
 			fromEnv:     []string{"my var=SYSTEM_VAR"},
-			wantErrType: config.ErrInvalidVariableName,
+			wantErrType: ErrInvalidVariableName,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ProcessEnvImport(tt.fromEnv, []string{"SYSTEM_VAR"}, map[string]string{"SYSTEM_VAR": "value"}, "test")
+			_, err := ProcessEnvImport(tt.fromEnv, []string{"SYSTEM_VAR"}, map[string]string{"SYSTEM_VAR": "value"}, groupLevel("test"))
 			require.Error(t, err)
 			require.ErrorIs(t, err, tt.wantErrType)
 		})
@@ -354,9 +355,9 @@ func TestProcessEnvImport_DuplicateDefinition(t *testing.T) {
 		"SYSTEM_VAR2": "value2",
 	}
 
-	_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "test")
+	_, err := ProcessEnvImport(fromEnv, allowlist, systemEnv, groupLevel("test"))
 	require.Error(t, err)
-	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
+	require.ErrorIs(t, err, ErrDuplicateVariableDefinition)
 }
 
 // TestProcessEnvImport_ForbiddenVariable tests that environment variables on the denylist cannot be imported.
@@ -403,9 +404,9 @@ func TestProcessEnvImport_ForbiddenVariable(t *testing.T) {
 			allowlist := []string{tt.sysVar}
 			systemEnv := map[string]string{tt.sysVar: tt.sysVal}
 
-			_, err := config.ProcessEnvImport(fromEnv, allowlist, systemEnv, "global")
+			_, err := ProcessEnvImport(fromEnv, allowlist, systemEnv, globalLevel())
 			require.Error(t, err)
-			assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
+			assert.ErrorIs(t, err, ErrForbiddenEnvVar)
 		})
 	}
 }
@@ -435,9 +436,9 @@ func TestProcessEnv_ForbiddenVariable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := config.ProcessEnv(tt.env, nil, "test")
+			_, err := ProcessEnv(tt.env, nil, groupLevel("test"))
 			require.Error(t, err)
-			assert.ErrorIs(t, err, config.ErrForbiddenEnvVar)
+			assert.ErrorIs(t, err, ErrForbiddenEnvVar)
 		})
 	}
 }
@@ -470,9 +471,9 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			baseVars := make(map[string]string)
 			envImportVars := make(map[string]string)
-			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, envImportVars, "test")
+			_, _, err := ProcessVars(tt.vars, baseVars, nil, envImportVars, groupLevel("test"))
 			require.Error(t, err)
-			require.ErrorIs(t, err, config.ErrInvalidVariableName)
+			require.ErrorIs(t, err, ErrInvalidVariableName)
 		})
 	}
 }
@@ -482,7 +483,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 	tests := []struct {
 		name    string
 		vars    map[string]any
-		level   string
+		level   Level
 		wantErr bool
 	}{
 		{
@@ -490,7 +491,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"GLOBAL_VAR": "value",
 			},
-			level:   "global",
+			level:   globalLevel(),
 			wantErr: false,
 		},
 		{
@@ -498,7 +499,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"local_var": "value",
 			},
-			level:   "global",
+			level:   globalLevel(),
 			wantErr: true,
 		},
 		{
@@ -506,7 +507,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"local_var": "value",
 			},
-			level:   "group[test]",
+			level:   groupLevel("test"),
 			wantErr: false,
 		},
 		{
@@ -514,7 +515,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"GLOBAL_VAR": "value",
 			},
-			level:   "group[test]",
+			level:   groupLevel("test"),
 			wantErr: true,
 		},
 		{
@@ -522,7 +523,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"cmd_var": "value",
 			},
-			level:   "group[test].command[cmd1]",
+			level:   commandLevel("cmd1"),
 			wantErr: false,
 		},
 		{
@@ -530,7 +531,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 			vars: map[string]any{
 				"CMD_VAR": "value",
 			},
-			level:   "group[test].command[cmd1]",
+			level:   commandLevel("cmd1"),
 			wantErr: true,
 		},
 	}
@@ -539,7 +540,7 @@ func TestProcessVars_InvalidVariableScope(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			baseVars := make(map[string]string)
 			envImportVars := make(map[string]string)
-			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, envImportVars, tt.level)
+			_, _, err := ProcessVars(tt.vars, baseVars, nil, envImportVars, tt.level)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -602,7 +603,7 @@ func TestProcessVars_ComplexReferenceChain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			envImportVars := make(map[string]string)
-			result, _, err := config.ProcessVars(tt.vars, tt.baseVars, nil, envImportVars, "test")
+			result, _, err := ProcessVars(tt.vars, tt.baseVars, nil, envImportVars, groupLevel("test"))
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -621,9 +622,9 @@ func TestProcessVars_UndefinedReference(t *testing.T) {
 	baseVars := make(map[string]string)
 	envImportVars := make(map[string]string)
 
-	_, _, err := config.ProcessVars(vars, baseVars, nil, envImportVars, "test")
+	_, _, err := ProcessVars(vars, baseVars, nil, envImportVars, groupLevel("test"))
 	require.Error(t, err)
-	require.ErrorIs(t, err, config.ErrUndefinedVariable)
+	require.ErrorIs(t, err, ErrUndefinedVariable)
 }
 
 // TestProcessVars_EnvImportVarsConflict tests env_import and vars conflict detection
@@ -673,10 +674,10 @@ func TestProcessVars_EnvImportVarsConflict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			baseVars := make(map[string]string)
-			_, _, err := config.ProcessVars(tt.vars, baseVars, nil, tt.envImportVars, "test")
+			_, _, err := ProcessVars(tt.vars, baseVars, nil, tt.envImportVars, groupLevel("test"))
 			if tt.wantErr {
 				require.Error(t, err)
-				require.ErrorIs(t, err, config.ErrEnvImportVarsConflict)
+				require.ErrorIs(t, err, ErrEnvImportVarsConflict)
 			} else {
 				require.NoError(t, err)
 			}
@@ -719,7 +720,7 @@ func TestProcessEnv_VariableReference(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ProcessEnv(tt.env, tt.internalVars, "test")
+			result, err := ProcessEnv(tt.env, tt.internalVars, groupLevel("test"))
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -735,9 +736,9 @@ func TestProcessEnv_UndefinedVariable(t *testing.T) {
 	env := []string{"ENV_VAR=%{UNDEFINED}"}
 	internalVars := make(map[string]string)
 
-	_, err := config.ProcessEnv(env, internalVars, "test")
+	_, err := ProcessEnv(env, internalVars, groupLevel("test"))
 	require.Error(t, err)
-	require.ErrorIs(t, err, config.ErrUndefinedVariable)
+	require.ErrorIs(t, err, ErrUndefinedVariable)
 }
 
 // TestProcessEnv_InvalidEnvVarName tests invalid environment variable names
@@ -750,24 +751,24 @@ func TestProcessEnv_InvalidEnvVarName(t *testing.T) {
 		{
 			name:        "env var with dash",
 			env:         []string{"MY-VAR=value"},
-			wantErrType: config.ErrInvalidEnvKey,
+			wantErrType: ErrInvalidEnvKey,
 		},
 		{
 			name:        "env var with space",
 			env:         []string{"MY VAR=value"},
-			wantErrType: config.ErrInvalidEnvKey,
+			wantErrType: ErrInvalidEnvKey,
 		},
 		{
 			name:        "empty env var name",
 			env:         []string{"=value"},
-			wantErrType: config.ErrInvalidEnvFormat,
+			wantErrType: ErrInvalidEnvFormat,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			internalVars := make(map[string]string)
-			_, err := config.ProcessEnv(tt.env, internalVars, "test")
+			_, err := ProcessEnv(tt.env, internalVars, groupLevel("test"))
 			require.Error(t, err)
 			require.ErrorIs(t, err, tt.wantErrType)
 		})
@@ -782,9 +783,9 @@ func TestProcessEnv_DuplicateDefinition(t *testing.T) {
 	}
 	internalVars := make(map[string]string)
 
-	_, err := config.ProcessEnv(env, internalVars, "test")
+	_, err := ProcessEnv(env, internalVars, groupLevel("test"))
 	require.Error(t, err)
-	require.ErrorIs(t, err, config.ErrDuplicateVariableDefinition)
+	require.ErrorIs(t, err, ErrDuplicateVariableDefinition)
 }
 
 // TestIntegration_FullExpansionChain tests the full expansion chain: from_env -> vars -> env
@@ -811,7 +812,7 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 
 	// Expand global
-	runtime, err := config.ExpandGlobal(spec)
+	runtime, err := ExpandGlobal(spec)
 	require.NoError(t, err)
 	require.NotNil(t, runtime)
 
@@ -878,11 +879,11 @@ func TestExpandGroup_SetsEnvAllowlistInheritanceMode(t *testing.T) {
 			globalSpec := &runnertypes.GlobalSpec{
 				EnvAllowed: []string{"GLOBAL_VAR"},
 			}
-			globalRuntime, err := config.ExpandGlobal(globalSpec)
+			globalRuntime, err := ExpandGlobal(globalSpec)
 			require.NoError(t, err)
 
 			// Expand group
-			runtimeGroup, err := config.ExpandGroup(groupSpec, globalRuntime)
+			runtimeGroup, err := ExpandGroup(groupSpec, globalRuntime)
 			require.NoError(t, err, "ExpandGroup should not return an error")
 			require.NotNil(t, runtimeGroup, "ExpandGroup should return a non-nil RuntimeGroup")
 
@@ -914,7 +915,7 @@ func TestHasVariableReference(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, config.HasVariableReference(tt.input))
+			assert.Equal(t, tt.want, HasVariableReference(tt.input))
 		})
 	}
 }
@@ -927,14 +928,82 @@ func TestHasVariableReference(t *testing.T) {
 func TestHasVariableReference_MustBeAskedOfTheTemplate(t *testing.T) {
 	const template = "/opt/\\%{LITERAL}/bin"
 
-	assert.False(t, config.HasVariableReference(template), "an escaped reference was never a reference")
+	assert.False(t, HasVariableReference(template), "an escaped reference was never a reference")
 
-	expanded, err := config.ExpandString(template, map[string]string{}, "test", "field")
+	expanded, err := ExpandString(template, map[string]string{}, groupLevel("test"), Field{})
 	require.NoError(t, err)
 	require.Equal(t, "/opt/%{LITERAL}/bin", expanded)
 
 	// Asking the expanded value gives the opposite, wrong answer. Recording that here
 	// makes the failure loud if someone later moves the call to the expanded value.
-	assert.True(t, config.HasVariableReference(expanded),
+	assert.True(t, HasVariableReference(expanded),
 		"the expanded value cannot answer the question; it must not be the thing asked")
+}
+
+// TestExpandWorkDir_RelativePathError pins the roles and the wording of the
+// relative-path rejection: the scope name is an Identifier (exempt from
+// redaction) while the expanded path is a Path (still redacted). Swapping them
+// would stop RedactText from running on a config-controlled path.
+func TestExpandWorkDir_RelativePathError(t *testing.T) {
+	tests := []struct {
+		name  string
+		level Level
+		want  errmsg.Segments
+	}{
+		{
+			name:  "group",
+			level: groupLevel("backup"),
+			want: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "group["},
+				{Role: errmsg.RoleIdentifier, Text: "backup"},
+				{Role: errmsg.RoleConstant, Text: "]"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: ErrInvalidWorkDir.Error()},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RolePath, Text: `"relative/path"`},
+				{Role: errmsg.RoleConstant, Text: " (relative paths are not allowed for security reasons)"},
+			},
+		},
+		{
+			name:  "command",
+			level: commandLevel("build"),
+			want: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: "command["},
+				{Role: errmsg.RoleIdentifier, Text: "build"},
+				{Role: errmsg.RoleConstant, Text: "]"},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RoleText, Text: ErrInvalidWorkDir.Error()},
+				{Role: errmsg.RoleConstant, Text: ": "},
+				{Role: errmsg.RolePath, Text: `"relative/path"`},
+				{Role: errmsg.RoleConstant, Text: " (relative paths are not allowed for security reasons)"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ExpandWorkDir("relative/path", map[string]string{}, tt.level)
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrInvalidWorkDir)
+
+			want := fmt.Sprintf("%s: %s: %q (relative paths are not allowed for security reasons)",
+				tt.level, ErrInvalidWorkDir, "relative/path")
+			assert.Equal(t, want, err.Error())
+
+			structured, ok := errors.AsType[errmsg.Structured](err)
+			require.True(t, ok, "ExpandWorkDir must return a structured error; got %T", err)
+			assert.Equal(t, tt.want, structured.StructuredMessage().Segments())
+		})
+	}
+}
+
+// TestExpandWorkDir_ExpandFailureKeepsField pins that a failed expansion wraps
+// the cause and still declares the workdir field.
+func TestExpandWorkDir_ExpandFailureKeepsField(t *testing.T) {
+	_, err := ExpandWorkDir("prefix/%{UNDEFINED_VAR}", map[string]string{}, groupLevel("backup"))
+	require.ErrorIs(t, err, ErrUndefinedVariable)
+
+	want := "failed to expand workdir: undefined variable in group[backup].workdir: " +
+		"'UNDEFINED_VAR' (context: prefix/%{UNDEFINED_VAR})"
+	assert.Equal(t, want, err.Error())
 }

@@ -753,11 +753,10 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 	if runtimeGroup.Spec.WorkDir != "" {
 		// __runner_workdir is not defined yet: it is derived from what this
 		// function returns.
-		level := fmt.Sprintf("group[%s]", runtimeGroup.Spec.Name)
 		expandedWorkDir, err := config.ExpandWorkDir(
 			runtimeGroup.Spec.WorkDir,
 			runtimeGroup.ExpandedVars,
-			level,
+			config.GroupLevel(runtimeGroup.Spec.Name),
 		)
 		if err != nil {
 			return "", nil, err
@@ -790,11 +789,10 @@ func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 	// A non-nil WorkDir wins even when it is the empty string, which is how a
 	// command asks to opt out of the group's directory.
 	if runtimeCmd.Spec.WorkDir != nil {
-		level := fmt.Sprintf("command[%s]", runtimeCmd.Spec.Name)
 		expandedWorkDir, err := config.ExpandWorkDir(
 			*runtimeCmd.Spec.WorkDir,
 			runtimeCmd.ExpandedVars,
-			level,
+			config.CommandLevel(runtimeCmd.Spec.Name),
 		)
 		if err != nil {
 			return "", err
