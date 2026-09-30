@@ -137,7 +137,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 ### 1. システム環境変数の名前の役割
 
-`env_import` の右辺の名前（例: `gh=GITHUB_TOKEN` の `GITHUB_TOKEN`）と `env_allowed` の名前は、設定に書かれた名前である。
+`env_import` の右辺の名前（例: `gh=GITHUB_TOKEN` の `GITHUB_TOKEN`）は、設定に書かれた名前である。`env_allowed` の名前は名前の検証を受けず、現行のエラーの本文にも現れないので、本決定の対象としない。
 
 → **提案:** 名前の検証（`security.ValidateVariableName` と禁止された環境変数の検査）を通った名前は `Identifier` とする。値ではなく名前であり、形式は `[A-Za-z_][A-Za-z0-9_]*` に限られる。名前の検証で拒否された名前は、決定事項 3 に従い `Text` とする。
 
@@ -145,7 +145,9 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 → **提案:**
 
-- **テンプレート名**（`command_templates` のキー、コマンドの `template` が参照する名前）とテンプレートのパラメータ名（`${param}` の `param`）は、定義された名前なので `Identifier` とする。
+- **テンプレート名**（`command_templates` のキーで、`ValidateTemplateName` を通ったもの）とテンプレートのパラメータ名（`${param}` の `param`）は、定義された名前なので `Identifier` とする。
+- **コマンドの `template` が参照する名前**は、名前の検証を受けない。参照先が存在しないとき（`ErrTemplateNotFound`）の名前は定義された名前ではないので、`--groups` で指定された存在しない名前（決定事項 4）と同じく `Text` とする。
+- **`ErrDuplicateTemplateName` の名前**は、`loader.go` で `ValidateTemplateName` より前に検査されるので、形式が検証されていない。`Text` とする。
 - **`env` のキー**（`KEY=VALUE` の `KEY`）は、名前の検証を通ったものを `Identifier` とする。キーにプレースホルダを含むもの（`ErrPlaceholderInEnvKey`）は名前の検証で拒否されたものとして `Text` とする。
 - **フィールド名**（`cmd`・`args[0]`・`env_vars[1]`・`vars.<name>` など）は、キーを `Constant`、添字を `Text`、変数名を `Identifier` とする。0178 の `ErrUndefinedVariableDetail` と同じく、フィールドとレベル（`global`・`group[<name>]`・`command[<name>]`・`template[<name>]`）は、描画済みの文字列ではなく型付きの値（既存の `Level`・`Field`）で運ぶ。`fmt.Sprintf("vars.%s", name)` のように組み立てた文字列を後から解析して分けることはしない。
 - **数値**（添字・件数・上限・深さ）は、0178 と同じく `Text` とする。
@@ -190,7 +192,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 **Acceptance Criteria**:
 - **AC-01**: `internal/runner/config` で宣言され `Error() string` を持つすべての型が、`errmsg.Structured` を実装する。テストはパッケージの型宣言を走査して確かめ、対象の型の一覧を保守しない。構造化メッセージを実装しない型を加えると、このテストが失敗する。
 - **AC-02**: 各エラー型の構造化メッセージで、定義された名前（決定事項 1・2 の名前、group 名・コマンド名・変数名）は `Identifier`、パスは `Path`、固定の文言は `Constant` として宣言される。
-- **AC-03**: 名前の検証で拒否された名前、`--groups` で指定された存在しない名前、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
+- **AC-03**: 名前の検証で拒否された名前、名前の検証を受けていない名前（存在しないテンプレートへの参照名、`ErrDuplicateTemplateName` の名前）、`--groups` で指定された存在しない名前、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
 - **AC-04**: レベルとフィールドの部分は、型付きの `Level`・`Field` から作られる。エラー型のレベル・フィールドを描画済みの文字列として持つフィールドは残らない。
 - **AC-05**: 原因を持つエラー型は、原因の構造を保つ。構造化メッセージを返す原因の `Identifier` の部分は、外側のエラーを通しても `Identifier` として描画される。
 
