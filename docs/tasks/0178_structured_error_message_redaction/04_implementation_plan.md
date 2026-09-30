@@ -561,7 +561,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 - [x] PR-5 マージ済み（対象ステップ: Phase 5。runner の 4 型と `cancelledRunError` が green）
 - [x] PR-6 マージ済み（対象ステップ: Phase 6。`Level`・`Field` と `ErrUndefinedVariableDetail` が green）
 - [x] PR-7 マージ済み（対象ステップ: Phase 7。コマンドの実行の経路と `cmd/runner` が green）
-- [ ] PR-8 マージ済み（対象ステップ: Phase 8。AC-41 のガード・例示のシナリオ・日英の文書・`make verify-docs-checks` が green）
+- [x] PR-8 マージ済み（対象ステップ: Phase 8。AC-41 のガード・例示のシナリオ・日英の文書・`make verify-docs-checks` が green）
 - [x] すべての AC が §7 の検証で green
 - [x] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録（Phase 8 の 5 種の変異で各テストが失敗することを確認）
 - [x] `make slack-group-notification-test` の結果を記録（実行環境では完走せず。AC-12 の E2E テストで代替）
