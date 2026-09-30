@@ -6,7 +6,11 @@
 // the binary is an ELF or Mach-O file.
 package dynlib
 
-import "fmt"
+import (
+	"strconv"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
+)
 
 // ErrRecursionDepthExceeded indicates that dependency resolution exceeded the
 // maximum allowed depth. This typically indicates an abnormal library configuration
@@ -18,8 +22,21 @@ type ErrRecursionDepthExceeded struct {
 }
 
 func (e *ErrRecursionDepthExceeded) Error() string {
-	return fmt.Sprintf("dependency resolution depth exceeded: %s at depth %d (max %d)",
-		e.SOName, e.Depth, e.MaxDepth)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the SOName as a path and the depth numbers as free
+// text, so a library name that contains a sensitive word is not replaced whole.
+func (e *ErrRecursionDepthExceeded) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("dependency resolution depth exceeded: "),
+		errmsg.Path(e.SOName),
+		errmsg.Const(" at depth "),
+		errmsg.Text(strconv.Itoa(e.Depth)),
+		errmsg.Const(" (max "),
+		errmsg.Text(strconv.Itoa(e.MaxDepth)),
+		errmsg.Const(")"),
+	)
 }
 
 // ErrLibraryHashMismatch indicates that a library's hash does not match the recorded value
@@ -32,12 +49,23 @@ type ErrLibraryHashMismatch struct {
 }
 
 func (e *ErrLibraryHashMismatch) Error() string {
-	return fmt.Sprintf("dynamic library hash mismatch: %s\n"+
-		"  path: %s\n"+
-		"  expected hash: %s\n"+
-		"  actual hash: %s\n"+
-		"  please re-run 'record' command",
-		e.SOName, e.Path, e.ExpectedHash, e.ActualHash)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the SOName and the library path as paths and the
+// hashes as free text.
+func (e *ErrLibraryHashMismatch) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("dynamic library hash mismatch: "),
+		errmsg.Path(e.SOName),
+		errmsg.Const("\n  path: "),
+		errmsg.Path(e.Path),
+		errmsg.Const("\n  expected hash: "),
+		errmsg.Text(e.ExpectedHash),
+		errmsg.Const("\n  actual hash: "),
+		errmsg.Text(e.ActualHash),
+		errmsg.Const("\n  please re-run 'record' command"),
+	)
 }
 
 // ErrEmptyLibraryPath indicates that a LibEntry has an empty path,
@@ -47,9 +75,16 @@ type ErrEmptyLibraryPath struct {
 }
 
 func (e *ErrEmptyLibraryPath) Error() string {
-	return fmt.Sprintf("incomplete record: empty path for library %s\n"+
-		"  please re-run 'record' command",
-		e.SOName)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the SOName as a path.
+func (e *ErrEmptyLibraryPath) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("incomplete record: empty path for library "),
+		errmsg.Path(e.SOName),
+		errmsg.Const("\n  please re-run 'record' command"),
+	)
 }
 
 // ErrDynLibDepsRequired indicates that a DynLibDeps record is required
@@ -59,7 +94,14 @@ type ErrDynLibDepsRequired struct {
 }
 
 func (e *ErrDynLibDepsRequired) Error() string {
-	return fmt.Sprintf("dynamic library dependencies not recorded for binary: %s\n"+
-		"  please re-run 'record' command",
-		e.BinaryPath)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the binary path as a path.
+func (e *ErrDynLibDepsRequired) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("dynamic library dependencies not recorded for binary: "),
+		errmsg.Path(e.BinaryPath),
+		errmsg.Const("\n  please re-run 'record' command"),
+	)
 }
