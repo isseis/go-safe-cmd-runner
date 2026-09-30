@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -120,23 +121,25 @@ func captureStdStreams(t *testing.T, fn func()) (stdout, stderr string) {
 }
 
 // captureExecutionErrorReport runs HandleExecutionError for execErr with the
-// process streams and the default logger captured, returning the stderr
-// report and the structured error_message. groupName and commandName are the
-// outer context the caller would attach in production (cmd/runner's
+// process streams captured and the default logger behind the production
+// RedactingHandler, returning the stderr report and the redacted
+// error_message. message is the report's summary; groupName and commandName
+// are the outer context the caller would attach in production (cmd/runner's
 // executionErrorContext); pass empty strings for none.
-func captureExecutionErrorReport(t *testing.T, execErr error, groupName, commandName string) (stderr, errorMessage string) {
+func captureExecutionErrorReport(t *testing.T, execErr error, message errmsg.Summary, groupName, commandName string) (stderr, errorMessage string) {
 	t.Helper()
 
 	var records []slog.Record
 	originalLogger := slog.Default()
-	slog.SetDefault(slog.New(tu.NewCallbackHandler(func(r slog.Record) {
+	recorder := tu.NewCallbackHandler(func(r slog.Record) {
 		records = append(records, r)
-	})))
+	})
+	slog.SetDefault(slog.New(redaction.NewRedactingHandler(recorder, redaction.DefaultConfig(), nil)))
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
 
 	_, stderr = captureStdStreams(t, func() {
 		logging.HandleExecutionError(&logging.ExecutionError{
-			Message:     errmsg.ConstSummary("error running commands"),
+			Message:     message,
 			Component:   string(resource.ComponentRunner),
 			RunID:       "test-run-attribution",
 			GroupName:   groupName,
@@ -235,7 +238,7 @@ func TestRunner_MultiGroupFailureAttribution(t *testing.T) {
 	capErr, ok := errors.AsType[*output.CaptureError](execErr)
 	require.True(t, ok, "the report chain must carry the size-limit CaptureError")
 
-	stderr, errorMessage := captureExecutionErrorReport(t, execErr, "", "")
+	stderr, errorMessage := captureExecutionErrorReport(t, execErr, errmsg.ConstSummary("error running commands"), "", "")
 	details := detailsBlock(t, stderr)
 
 	// Each Details line names its own group.
@@ -272,7 +275,7 @@ func TestHandleExecutionError_FilesystemCaptureErrorKeepsCause(t *testing.T) {
 	require.Contains(t, captureErr.Error(), "file already closed",
 		"the real filesystem cause must be present in the error")
 
-	stderr, errorMessage := captureExecutionErrorReport(t, captureErr, "", "")
+	stderr, errorMessage := captureExecutionErrorReport(t, captureErr, errmsg.ConstSummary("error running commands"), "", "")
 	details := detailsBlock(t, stderr)
 
 	assert.Contains(t, details, captureErr.Error(),
@@ -302,6 +305,7 @@ func TestRunner_SingleCommandFailureReportUnchanged(t *testing.T) {
 		"solo-group", cmdErr.CommandName, legacy)
 
 	stderr, errorMessage := captureExecutionErrorReport(t, execErr,
+		errmsg.ConstSummary("error running commands"),
 		groupErrs.Errors()[0].GroupName(), cmdErr.CommandName)
 	details := detailsBlock(t, stderr)
 	assert.Equal(t, wantMessage, errorMessage)
@@ -328,7 +332,7 @@ func TestRunner_TimeoutAttributionIntegration(t *testing.T) {
 		groupFailure{group: "group-2", err: group2Err})
 	assert.Equal(t, []string{"group-1", "group-2"}, groupNames(t, execErr))
 
-	stderr, errorMessage := captureExecutionErrorReport(t, execErr, "", "")
+	stderr, errorMessage := captureExecutionErrorReport(t, execErr, errmsg.ConstSummary("error running commands"), "", "")
 	details := detailsBlock(t, stderr)
 	lines := strings.Split(details, "\n")
 
@@ -342,4 +346,57 @@ func TestRunner_TimeoutAttributionIntegration(t *testing.T) {
 			"continuation line %d of group-2 must be indented under it: %q", i+2, line)
 	}
 	assert.Equal(t, details, errorMessage)
+}
+
+// TestRunner_MultiGroupSensitiveNamesSurvive is the multi-group end-to-end scenario:
+// two groups fail with a non-zero exit code, one group name contains a
+// whole-value trigger word, and the recorded error_message keeps every
+// Identifier the two group errors declare. A free-text control summary that
+// carries only a whole-value trigger becomes the placeholder in the same
+// record, which proves the report went through the production redaction rather
+// than being compared unredacted.
+func TestRunner_MultiGroupSensitiveNamesSurvive(t *testing.T) {
+	const (
+		sensitiveGroup = "token-rotate"
+		plainGroup     = "backup"
+	)
+	// Layer isolation: the group name trips only the whole-value layer, so it
+	// is a value that would disappear if identifiers were not exempt.
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(sensitiveGroup),
+		"the sensitive group name must trip the whole-value layer, or surviving it proves nothing")
+	require.Equal(t, sensitiveGroup, redaction.DefaultConfig().RedactText(sensitiveGroup),
+		"RedactText must not react to the group name on its own")
+
+	group1Err := newGroupFailureForTest(t, sensitiveGroup, "renew", "exit 3", nil, 1<<20, 30)
+	require.Error(t, group1Err)
+	group2Err := newGroupFailureForTest(t, plainGroup, "dump", "exit 3", nil, 1<<20, 30)
+	require.Error(t, group2Err)
+
+	_, execErr := executeWithGroupFailures(t, false,
+		groupFailure{group: sensitiveGroup, err: group1Err},
+		groupFailure{group: plainGroup, err: group2Err})
+	require.Error(t, execErr)
+	require.Equal(t, []string{sensitiveGroup, plainGroup}, groupNames(t, execErr))
+
+	// The control summary carries only a whole-value trigger and no key=value
+	// or value-format shape, so only the per-segment whole-value layer can
+	// replace it.
+	const trigger = "api_key"
+	control := errmsg.TextSummary("error running commands for " + trigger + " target")
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(control.String()),
+		"the control summary must trip the whole-value layer")
+	require.Equal(t, control.String(), redaction.DefaultConfig().RedactText(control.String()),
+		"the control summary must not trip the text layer on its own")
+
+	_, errorMessage := captureExecutionErrorReport(t, execErr, control, "", "")
+
+	// Every Identifier the two group errors declare survives.
+	for _, want := range []string{sensitiveGroup, plainGroup, "renew", "dump"} {
+		assert.Contains(t, errorMessage, want,
+			"an Identifier the group errors declare must survive redaction: %q", errorMessage)
+	}
+	assert.NotEqual(t, redaction.DefaultPlaceholder, errorMessage,
+		"the whole body must not be replaced; the group errors must stay readable")
+	assert.Contains(t, errorMessage, redaction.DefaultPlaceholder,
+		"the Text control summary must be replaced")
 }

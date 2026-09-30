@@ -15,6 +15,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -814,6 +815,103 @@ cmd = %q
 	require.Len(t, notified, 1)
 	assert.Equal(t, true, notified[0]["slack_notify"])
 	assert.Equal(t, "test-group-preparation-001", notified[0]["run_id"])
+}
+
+// TestIntegration_GroupVarsUndefinedVariableIdentifiersSurviveRedaction is the
+// group-vars end-to-end scenario: a group name (token_rotate) and the group variable
+// (token_file) both contain whole-value trigger words, and the variable's value
+// references an undefined variable whose name (api_key) does too. The group
+// fails during group preparation, and the Slack Error Message must keep the
+// three declared Identifiers instead of becoming the whole-value placeholder.
+//
+// The raw report body is read from stderr (which is never redacted), and the
+// check that stripping the identifiers removes every whole-value trigger shows
+// the survival is the identifier exemption and not a coincidence of the body.
+func TestIntegration_GroupVarsUndefinedVariableIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "token_rotate"
+
+[groups.vars]
+token_file = "%%{api_key}"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-group-vars-001",
+	})
+	require.Equal(t, 1, run.exitCode, "an undefined variable in group vars fails the run")
+
+	message, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=token_rotate : group_preparation_failed", message.Text)
+	assert.Equal(t, "group=token_rotate", attachmentField(t, fields, "Scope"))
+
+	// Layer isolation: the raw body is a whole-value trigger only because of
+	// the identifiers; removing them leaves no trigger.
+	rawBody := strings.TrimPrefix(stderrDetailsLine(t, run.stderr), "  Details: ")
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("token_rotate", "", "token_file", "", "api_key", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	for _, want := range []string{"token_rotate", "token_file", "api_key"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced; the group failure must stay readable")
+}
+
+// TestIntegration_GlobalExpansionUndefinedVariableIdentifiersSurviveRedaction
+// is the global-expansion end-to-end scenario: a global variable references an undefined
+// variable whose name (api_key) is a whole-value trigger. The global expansion
+// failure reaches Slack with the constant summary and the declared variable
+// name intact.
+func TestIntegration_GlobalExpansionUndefinedVariableIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[global.vars]
+GLOBAL_FILE = "%%{api_key}"
+
+[[groups]]
+name = "unused"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-global-vars-001",
+	})
+	require.Equal(t, 1, run.exitCode, "an undefined variable in global vars fails the run")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "(global)", attachmentField(t, fields, "Scope"))
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Contains(t, errorMessage, "Failed to expand global configuration",
+		"the constant summary must survive: %q", errorMessage)
+	assert.Contains(t, errorMessage, "api_key",
+		"the declared variable name must survive redaction: %q", errorMessage)
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced")
 }
 
 // countLinesWithPrefix returns how many lines of text start with prefix.

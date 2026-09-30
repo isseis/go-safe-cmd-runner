@@ -3214,6 +3214,65 @@ func TestCancelledRunError_TextAndReachability(t *testing.T) {
 	require.True(t, ok, "the failing group's error must be reachable")
 }
 
+// TestRunner_CancelledRunErrorMessageKeepsIdentifiers is the cancelled-run end-to-end
+// scenario: a run whose context is cancelled while a group fails returns the
+// dedicated *cancelledRunError, and the report recorded through the production
+// RedactingHandler keeps the cancellation text and every Identifier and Path
+// the failing group's error declares. A free-text control summary carrying only
+// a whole-value trigger becomes the placeholder in the same record, proving the
+// record crossed the real redaction boundary.
+func TestRunner_CancelledRunErrorMessageKeepsIdentifiers(t *testing.T) {
+	const (
+		groupName   = "token-rotate"
+		commandName = "renew"
+		path        = "/usr/bin/token-tool"
+	)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(groupName),
+		"the group name must trip only the whole-value layer, or surviving it proves nothing")
+	require.Equal(t, groupName, redaction.DefaultConfig().RedactText(groupName),
+		"RedactText must not react to the group name on its own")
+
+	groupErr := &CommandExecutionError{
+		GroupName:   groupName,
+		CommandName: commandName,
+		Err: errmsg.NewError(
+			errmsg.Const("using "),
+			errmsg.Path(path),
+			errmsg.Const(": "),
+			errmsg.Cause(errors.New("exit status 130")),
+		),
+	}
+	require.NotErrorIs(t, groupErr, context.Canceled,
+		"the group error must not carry the cancellation, or the row proves nothing about the run context")
+
+	_, err := executeWithGroupFailures(t, false,
+		groupFailure{group: groupName, err: groupErr, cancelRun: true})
+
+	_, ok := errors.AsType[*cancelledRunError](err)
+	require.True(t, ok, "executeGroups must declare the cancellation with *cancelledRunError, got %T", err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	const trigger = "api_key"
+	control := errmsg.TextSummary("error running commands for " + trigger + " target")
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(control.String()),
+		"the control summary must trip the whole-value layer")
+	require.Equal(t, control.String(), redaction.DefaultConfig().RedactText(control.String()),
+		"the control summary must not trip the text layer on its own")
+
+	_, errorMessage := captureExecutionErrorReport(t, err, control, groupName, commandName)
+
+	assert.Contains(t, errorMessage, "context canceled",
+		"the cancellation text must reach the recorded error_message: %q", errorMessage)
+	for _, want := range []string{groupName, commandName, path} {
+		assert.Contains(t, errorMessage, want,
+			"an Identifier or Path the failing group declares must survive redaction: %q", errorMessage)
+	}
+	assert.NotEqual(t, redaction.DefaultPlaceholder, errorMessage,
+		"the whole body must not be replaced; the cancelled group must stay readable")
+	assert.Contains(t, errorMessage, redaction.DefaultPlaceholder,
+		"the Text control summary must be replaced")
+}
+
 // TestRunner_CommandExecutionFailureSkipsStageNotification fixes that a failure
 // after commands started is left to the existing group summary.
 func TestRunner_CommandExecutionFailureSkipsStageNotification(t *testing.T) {
