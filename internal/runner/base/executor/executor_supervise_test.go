@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	privilegetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -831,6 +832,26 @@ func TestKillAfterCancelError_TextAndReachability(t *testing.T) {
 		assert.NoError(t, killOutcome(nil, pid))
 		assert.NoError(t, killOutcome(os.ErrProcessDone, pid))
 	})
+}
+
+// TestKillChild_UndeclaredStrategyStructuredText pins the default kill branch:
+// the strategy sentinel is the cause and the pid is text, not a constant.
+func TestKillChild_UndeclaredStrategyStructuredText(t *testing.T) {
+	const pid = 77
+
+	e := NewDefaultExecutor().(*DefaultExecutor)
+	err := e.killChild(&preparedCommand{kill: killUnset}, nil, pid)
+
+	require.ErrorIs(t, err, ErrKillStrategyUnset)
+	assert.Equal(t, ErrKillStrategyUnset.Error()+": pid="+strconv.Itoa(pid), err.Error())
+
+	structured, ok := errors.AsType[errmsg.Structured](err)
+	require.True(t, ok, "the default kill branch must return a structured error; got %T", err)
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: ErrKillStrategyUnset.Error()},
+		{Role: errmsg.RoleConstant, Text: ": pid="},
+		{Role: errmsg.RoleText, Text: strconv.Itoa(pid)},
+	}, structured.StructuredMessage().Segments())
 }
 
 // TestKillChild_RecordsOnlyWindowsThatOpened verifies what the kill path hands

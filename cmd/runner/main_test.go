@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -779,7 +778,6 @@ func runForError(t *testing.T, configBody, groupsFlag string) error {
 
 	originalLogger := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(originalLogger) })
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	return run("test-run")
 }
@@ -827,6 +825,8 @@ template = "greeting"
 			},
 			assert: func(t *testing.T, err error, preExec *logging.PreExecutionError) {
 				assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+				_, ok := errors.AsType[*config.ErrUndefinedVariableDetail](err)
+				assert.True(t, ok, "the undefined-variable cause must be reachable through Unwrap")
 				assert.Equal(t, "Failed to expand global configuration: "+
 					"failed to process global vars: undefined variable in global.vars.GREETING: "+
 					"'UNDEFINED_GLOBAL' (context: ) (expansion path: UNDEFINED_GLOBAL)", preExec.Detail())
