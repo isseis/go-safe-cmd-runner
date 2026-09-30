@@ -287,7 +287,7 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 - `errmsg` に、部分の列を引用する構築関数 `errmsg.Quoted` を加える。平らにした結果は次のとおりである。前後の引用符は `Constant` の断片にする。中の各断片は役割をそのまま保ち、文字列だけを `strconv.Quote` の規則でエスケープする（前後の引用符は含めない）。引用の中に `Field` のように複数の部分が入る場合も、`errmsg.Quoted(f.parts()...)` の形で表せる。
 - `errmsg.Quoted` の契約: 平らにした結果をつないだ文字列は、中の部分を引用せずに描画した文字列 `s` に対する `strconv.Quote(s)` と、常にバイト単位で一致する。`strconv.Quote` は UTF-8 の文字の単位でエスケープするので、断片ごとにエスケープした結果がこれと一致しないのは、断片の境目で 1 つの文字が分かれている場合だけである。その場合は、引用の全体（引用符を含む）を 1 つの `Text` の断片にする（fail-closed）。
 - エスケープの処理を `errmsg` の中に置くのは、0178 の方針（免除の役割の断片に入るバイトは、宣言された値・定数式・`errmsg` が持つ固定の文字のどれかであり、呼び出し側が整形のために渡すバイトは入らない。0178 02 §1.1・§3.8.2）に合わせるためである。`IndentedCause` の字下げと同じ位置づけであり、エスケープ文字は `errmsg` が決める。
-- `errmsg.Part` は 1 つの断片か 1 つの原因を表す構造なので（`errmsg.go:57-63`）、`errmsg.Quoted` のために、中の部分の列を持つ部分の種類を加える。平らにする処理（`Segments`、それを使う `Freeze`・`String`）は、この種類を上の規則で断片の列に展開する。
+- `errmsg.Part` は 1 つの断片か 1 つの原因を表す構造なので（`errmsg.go:57-63`）、`errmsg.Quoted` のために、中の部分の列を持つ部分の種類を加える。種類ごとに断片へ展開するのは `Part.appendSegments`（`errmsg.go:218`）であり、`Message.Segments`・`Freeze`・`String` はこれを通る。先頭の `p.kind != partCause` の分岐（`errmsg.go:219-223`）の前に、新しい種類を上の規則で断片の列に展開する分岐を加える。
 - `errmsg.Quoted` の中に原因の部分を置いた場合は、引用の全体を 1 つの `Text` の断片にする（fail-closed）。中の原因は `errmsg.NewError` の「原因はちょうど 1 つ」の数に入らず、`Unwrap` でも届かない。本タスクの箇所では原因を引用しない。
 - 採らない案:
   - 呼び出し側で `strconv.Quote` を適用して `errmsg.Ident` などに渡す案。呼び出し側の整形のバイトが免除の役割の断片に入り、上の 0178 の方針に反する。`Field` のように複数の部分からなる値では、`parts()` と同じ分岐を引用用にもう 1 つ持つことになる。
@@ -336,7 +336,8 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 |---|---|---|
 | 許可位置（`exemptRolePositions`） | `errors.go`・`template_errors.go`・`template_expansion.go`・`cli/filter.go` をファイル全体の許可位置にする。`expansion.go` の除外をなくす | AC-20 |
 | `PathErrorCause` の許可位置 | `expansion.go` の `expandCmdAllowed` を加える | AC-20 |
-| `errmsg` の中の役割の決定 | `errmsg.Quoted` を加えるのに合わせて、`errmsg` の中で役割と原因の種類を決める関数の呼び出し元の表（`errmsgRoleChoosers`）を更新する | AC-20 |
+| `errmsg` の中の部分の構築 | `errmsg.Quoted` を加えるのに合わせて、`Part` の複合リテラルを構築してよい関数の表（`errmsgPartBuilders`）に、`Quoted` の部分を構築する関数（`Quoted` 自身か補助関数）を加える | AC-20 |
+| `errmsg` の中の役割の決定 | `errmsg.Quoted` を加えるのに合わせて、`errmsg` の中で役割と原因の種類を決める関数の呼び出し元の表（`errmsgRoleChoosers`）を更新する。構築関数が引用符のために `rolePart` を呼ぶなら、`errmsgRoleChoosers["rolePart"]` にもその関数を加える | AC-20 |
 | `Const` の定数式の検査 | 変更なし | AC-20 |
 | wrap guard（`fmt.Errorf` などの禁止と、`Unwrap` を持つ型の `StructuredMessage` の要求） | `errors.go`・`template_errors.go`・`template_expansion.go`・`cli/filter.go` をファイル全体の範囲に加える。`expansion.go` の除外と、`errors.go` の関数単位の指定をなくす | AC-06・AC-20 |
 | エラー型の網羅（新規） | 検査の対象に指定したパッケージ（現時点では `internal/runner/config` だけ）で宣言され、`Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は、それが指す型として確かめる | AC-01 |
@@ -361,7 +362,7 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 | `internal/runner/config/validation.go` | 変更 | `validateVariableName` のエラー型の構築箇所で `Level`・`Field` を型のまま渡す。エラー書式は変えない |
 | `internal/runner/cli/filter.go` | 変更 | `checkGroupsExist` のエラーの構造化。到達できない分岐の削除 |
 | `internal/errmsg/errmsg_test.go` | 変更 | `errmsg.Quoted` のテスト |
-| `internal/errmsg/errmsg_guard_test.go` | 変更 | 許可位置と `errmsgRoleChoosers` の更新、新しい検査と自己テスト |
+| `internal/errmsg/errmsg_guard_test.go` | 変更 | 許可位置、`errmsgPartBuilders`、`errmsgRoleChoosers` の更新、新しい検査と自己テスト |
 | `internal/runner/wrap_guard_test.go` | 変更 | 範囲の更新、除外の一覧の削除 |
 | `internal/runner/config/*_test.go`・`internal/runner/cli/filter_test.go`・`internal/redaction`・`internal/runner`・`cmd/runner` のテスト | 追加 | 7 節のテスト |
 | `docs/dev/architecture_design/security-architecture.ja.md`・`.md` | 変更 | 3.6 節 |
