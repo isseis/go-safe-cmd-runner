@@ -354,7 +354,7 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 変更範囲が広い機械的な型変更だが、`expansion.go` の運びうるかどうかの分類は経路をたどる判断を伴う。設計は 03 で確定している
 
-- [ ] `make test && make lint` が green であることを確認した
+- [x] `make test && make lint` が green であることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
