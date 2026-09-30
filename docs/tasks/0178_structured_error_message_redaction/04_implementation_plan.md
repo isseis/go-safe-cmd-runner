@@ -423,8 +423,8 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ---
 
@@ -561,7 +561,7 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 - [x] PR-5 マージ済み（対象ステップ: Phase 5。runner の 4 型と `cancelledRunError` が green）
 - [x] PR-6 マージ済み（対象ステップ: Phase 6。`Level`・`Field` と `ErrUndefinedVariableDetail` が green）
 - [x] PR-7 マージ済み（対象ステップ: Phase 7。コマンドの実行の経路と `cmd/runner` が green）
-- [ ] PR-8 マージ済み（対象ステップ: Phase 8。AC-41 のガード・例示のシナリオ・日英の文書・`make verify-docs-checks` が green）
+- [x] PR-8 マージ済み（対象ステップ: Phase 8。AC-41 のガード・例示のシナリオ・日英の文書・`make verify-docs-checks` が green）
 - [x] すべての AC が §7 の検証で green
 - [x] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録（Phase 8 の 5 種の変異で各テストが失敗することを確認）
 - [x] `make slack-group-notification-test` の結果を記録（実行環境では完走せず。AC-12 の E2E テストで代替）
@@ -611,11 +611,11 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] 削除した `WithPlaceholder`・`WithAdditionalKeyValuePatterns` の名前が、本番コード・テスト・コメントのどこにも残っていないこと。Go のソースだけを対象にする（`rg -n '\bWithPlaceholder\b|\bWithAdditionalKeyValuePatterns\b' internal cmd`）。設計文書（02・03・本書）と過去のタスクの文書には、決定の記録として旧名が残る。`TestOptionalParameter_EnvKeyWithPlaceholder` は語の途中に現れるので、単語境界で除外される。`make test` は参照だけを検出し、コメントの旧名は検出しない。
-- [ ] 旧称「値まるごと判定」と "whole-value detection" が `docs/dev/architecture_design/security-architecture.ja.md` と `.md` に残っていないこと（`docs/translation_glossary.md:658` の旧称の注記は除く）。`docs/user/security-risk-assessment.ja.md:301`・`.md:305` の識別子の免除の記述は Phase 8 の文書タスクで更新し、(1) `error` 属性・`record.Message` についての説明として正確であること、(2) 構造化メッセージの `error_message` では宣言された `Identifier` の断片が値全体置換を受けずに残り、普通の `error` 文字列・`record.Message` は従来どおり値全体置換で全文が置換されうること、の 2 点を満たすこと。英語版は `/mktrans` で反映し、`check_structured_message_redaction_docs.sh` の必須語と `make verify-docs-checks` で機械的に確かめる。
-- [ ] `docs/translation_glossary.md` に、Phase 8 で新しく使う用語（構造化メッセージ = structured message、断片 = segment、役割 = role など）の対訳が `/mktrans` により登録されていること。値全体置換 = whole-value replacement は登録済みである（`:658`）。
-- [ ] `internal/runner/config` の `Level`・`Field` と同名の型が他のパッケージにあり、import の別名が必要になっていないこと（`rg -n "type Level |type Field "`。config の中には既存の同名型は無い）。
-- [ ] 0176 の `error_message` の本文が値全体置換で `[REDACTED]` になることを固定するテストが無いこと（`rg` で確認済み。3 つの `REDACTED` と `error_message` を含むテストはいずれも識別子の免除または key=value を確かめている）。新しく加えたテストがこの逆を固定していないことを確認する。
+- [x] 削除した `WithPlaceholder`・`WithAdditionalKeyValuePatterns` の名前が、本番コード・テスト・コメントのどこにも残っていないこと。Go のソースだけを対象にする（`rg -n '\bWithPlaceholder\b|\bWithAdditionalKeyValuePatterns\b' internal cmd`）。設計文書（02・03・本書）と過去のタスクの文書には、決定の記録として旧名が残る。`TestOptionalParameter_EnvKeyWithPlaceholder` は語の途中に現れるので、単語境界で除外される。`make test` は参照だけを検出し、コメントの旧名は検出しない。
+- [x] 旧称「値まるごと判定」と "whole-value detection" が `docs/dev/architecture_design/security-architecture.ja.md` と `.md` に残っていないこと（`docs/translation_glossary.md:658` の旧称の注記は除く）。`docs/user/security-risk-assessment.ja.md:301`・`.md:305` の識別子の免除の記述は Phase 8 の文書タスクで更新し、(1) `error` 属性・`record.Message` についての説明として正確であること、(2) 構造化メッセージの `error_message` では宣言された `Identifier` の断片が値全体置換を受けずに残り、普通の `error` 文字列・`record.Message` は従来どおり値全体置換で全文が置換されうること、の 2 点を満たすこと。英語版は `/mktrans` で反映し、`check_structured_message_redaction_docs.sh` の必須語と `make verify-docs-checks` で機械的に確かめる。
+- [x] `docs/translation_glossary.md` に、Phase 8 で新しく使う用語（構造化メッセージ = structured message、断片 = segment、役割 = role など）の対訳が `/mktrans` により登録されていること。値全体置換 = whole-value replacement は登録済みである（`:658`）。
+- [x] `internal/runner/config` の `Level`・`Field` と同名の型が他のパッケージにあり、import の別名が必要になっていないこと（`rg -n "type Level |type Field "`。config の中には既存の同名型は無い）。
+- [x] 0176 の `error_message` の本文が値全体置換で `[REDACTED]` になることを固定するテストが無いこと（`rg` で確認済み。3 つの `REDACTED` と `error_message` を含むテストはいずれも識別子の免除または key=value を確かめている）。新しく加えたテストがこの逆を固定していないことを確認する。
 
 ---
 
