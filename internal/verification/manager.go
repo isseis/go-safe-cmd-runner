@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/elfdynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/dynlib/machodylib"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/fileanalysis"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
@@ -822,7 +823,14 @@ func (m *Manager) verifyDynLibDepsResolution(cmdPath string, shebangChain []file
 func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error) {
 	resolved, err := m.elfDynLibAnalyzer.Analyze(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to re-resolve ELF dynamic library dependencies for %s: %w", path, err)
+		// Keep the analyzer's own structure: the prefix is free text because it
+		// carries the binary path, but wrapping the cause as a structured error
+		// lets a structured cause (e.g. a recursion-depth failure) survive to
+		// the report instead of being flattened into one text segment.
+		return nil, errmsg.NewError(
+			errmsg.Text(fmt.Sprintf("failed to re-resolve ELF dynamic library dependencies for %s: ", path)),
+			errmsg.Cause(err),
+		)
 	}
 	if resolved != nil {
 		return resolved, nil
@@ -830,7 +838,10 @@ func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error
 	// Not an ELF binary (or a static ELF): try Mach-O.
 	resolved, warnings, err := m.machoDynLibAnalyzer.Analyze(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to re-resolve Mach-O dynamic library dependencies for %s: %w", path, err)
+		return nil, errmsg.NewError(
+			errmsg.Text(fmt.Sprintf("failed to re-resolve Mach-O dynamic library dependencies for %s: ", path)),
+			errmsg.Cause(err),
+		)
 	}
 	for _, w := range warnings {
 		slog.Warn("Mach-O dependency resolution warning during verify",

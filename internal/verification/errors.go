@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 var (
@@ -78,15 +80,25 @@ type ErrDynLibDepsResolutionChanged struct {
 
 // Error returns the error message
 func (e *ErrDynLibDepsResolutionChanged) Error() string {
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the SOName and both paths as paths, so a library
+// or path name that contains a sensitive word is not replaced whole.
+func (e *ErrDynLibDepsResolutionChanged) StructuredMessage() errmsg.Message {
 	soName := e.SOName
 	if soName == "" {
 		soName = "<unknown>"
 	}
-	return fmt.Sprintf("dynamic library dependency resolution changed since record: %s\n"+
-		"  recorded path: %s\n"+
-		"  resolved path: %s\n"+
-		"  please re-run 'record' command if this change is expected",
-		soName, e.RecordedPath, e.ResolvedPath)
+	return errmsg.NewMessage(
+		errmsg.Const("dynamic library dependency resolution changed since record: "),
+		errmsg.Path(soName),
+		errmsg.Const("\n  recorded path: "),
+		errmsg.Path(e.RecordedPath),
+		errmsg.Const("\n  resolved path: "),
+		errmsg.Path(e.ResolvedPath),
+		errmsg.Const("\n  please re-run 'record' command if this change is expected"),
+	)
 }
 
 // SecurityViolationError is the base error type for security-related violations
@@ -228,7 +240,15 @@ type ErrInterpreterRecordNotFound struct {
 
 // Error returns the error message.
 func (e *ErrInterpreterRecordNotFound) Error() string {
-	return fmt.Sprintf("interpreter record not found: %s", e.Path)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the interpreter path as a path.
+func (e *ErrInterpreterRecordNotFound) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("interpreter record not found: "),
+		errmsg.Path(e.Path),
+	)
 }
 
 // ErrInterpreterSymlinkRedirected is returned when the shebang interpreter path
@@ -242,8 +262,20 @@ type ErrInterpreterSymlinkRedirected struct {
 
 // Error returns the error message.
 func (e *ErrInterpreterSymlinkRedirected) Error() string {
-	return fmt.Sprintf("interpreter symlink redirected: %s was %s at record time, now resolves to %s",
-		e.RawPath, e.RecordedPath, e.ActualPath)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the raw interpreter reference and both resolved
+// paths as paths.
+func (e *ErrInterpreterSymlinkRedirected) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("interpreter symlink redirected: "),
+		errmsg.Path(e.RawPath),
+		errmsg.Const(" was "),
+		errmsg.Path(e.RecordedPath),
+		errmsg.Const(" at record time, now resolves to "),
+		errmsg.Path(e.ActualPath),
+	)
 }
 
 // ErrInterpreterPathMismatch is returned when the shebang interpreter resolved at
@@ -256,6 +288,18 @@ type ErrInterpreterPathMismatch struct {
 
 // Error returns the error message.
 func (e *ErrInterpreterPathMismatch) Error() string {
-	return fmt.Sprintf("interpreter path mismatch for %s: recorded %s, actual %s",
-		e.CommandName, e.RecordedPath, e.ActualPath)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the interpreter command name and both paths as
+// paths.
+func (e *ErrInterpreterPathMismatch) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("interpreter path mismatch for "),
+		errmsg.Path(e.CommandName),
+		errmsg.Const(": recorded "),
+		errmsg.Path(e.RecordedPath),
+		errmsg.Const(", actual "),
+		errmsg.Path(e.ActualPath),
+	)
 }

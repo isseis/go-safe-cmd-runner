@@ -8,7 +8,7 @@
 | Created | 2026-09-30 |
 | Review date | 2026-09-30 |
 | Reviewer | isseis |
-| Comments | - |
+| Comments | 2026-09-30: 実装中に決定 6（ガードのビルド変種規則の限定）を追加し、レビューで承認。0178 03 §9.0 と自己テストを同時に更新。 |
 
 ## 位置づけ（フルセット文書を作らない理由）
 
@@ -69,7 +69,7 @@ redaction を通らない）。
 適用しない。これにより `libkeyutils.so.1` のような正当な名前が丸ごと消えるのを
 防ぎつつ、値形式の機密は引き続き検出できる。
 
-## 要件で決めること（承認待ち）
+## 要件で決めること
 
 1. **SOName の役割。** SOName は検証対象バイナリの `DT_NEEDED` から読む値であり、
    設定で定義された名前ではないので `Identifier`（redaction 完全免除）にはしない。
@@ -92,6 +92,14 @@ redaction を通らない）。
 5. **構造化メッセージの置き場所。** 8 型は既存パッケージに置いたまま `errmsg` を
    import する。0178 の設計（`errmsg` は末端）はこの制約を満たす。→ **決定:
    既存パッケージのまま（2026-09-30 承認）**。
+6. **ガードのビルド変種規則の限定（実装中に追加）。** `internal/dynlib` が
+   `errmsg` を import すると、`internal/dynlib` を import する
+   `internal/dynlib/machodylib` が到達範囲に入り、その Darwin 変種ファイルの型
+   宣言が 0178 03 §9.0 の「変種のファイルは型を宣言しない」規則で誤検出される。
+   machodylib は `errmsg` を参照しないため、`checkBuildVariants` の型宣言規則を
+   `errmsg` を直接 import するパッケージの変種ファイルに限定する。errmsg の
+   import と `Error`・`StructuredMessage` の宣言の禁止は変種ファイル一般に保つ。
+   → **決定: 限定する（2026-09-30 承認。0178 03 §9.0 を更新）**。
 
 ## 対応方針
 
@@ -135,6 +143,9 @@ func (e *ErrLibraryHashMismatch) StructuredMessage() errmsg.Message {
   2 パッケージが `errmsg` を import した時点で、`Const` の定数式検査（§9.3）・
   `Part` の流れ（§9.8）・文言と構造の一致（§9.5）の対象に自動的に入る。追加の
   一覧保守は不要。
+- `checkBuildVariants` の型宣言規則を、`errmsg` を直接 import するパッケージの
+  変種ファイルに限定する（決定 6）。0178 03 §9.0 と自己テスト
+  （`TestBuildVariantCheckRecognizesForms`）を更新する。
 - §9.1（`wrap_guard_test.go` が持つラップの対象範囲）には、この 2 ファイルを
   加えない。加えるとファイル全体の `Unwrap` 型がすべて `StructuredMessage` を
   要求され、本タスクの範囲を超える。§9.3 の `Const` 検査は §9.1 とは独立に
@@ -190,18 +201,24 @@ func (e *ErrLibraryHashMismatch) StructuredMessage() errmsg.Message {
   変え、再解決経路の `ErrRecursionDepthExceeded` が内側の構造を保つことを
   テストで確かめる。
 - **AC-08**: 上記を壊すと失敗するガード・テストの自己テストがある。
+- **AC-09**: `checkBuildVariants` の型宣言規則が `errmsg` を直接 import する
+  パッケージの変種ファイルに限定され、`errmsg` を import しないパッケージの
+  変種ファイルの型宣言を検出しないことを自己テストで固定する。0178 03 §9.0 が
+  この限定を記す。
 
 ## 実装チェックリスト
 
-- [ ] `internal/dynlib/errors.go` の 4 型に `StructuredMessage` を追加し、
+- [x] `internal/dynlib/errors.go` の 4 型に `StructuredMessage` を追加し、
       `Error()` を `StructuredMessage().String()` に変える (AC-01〜AC-03)
-- [ ] `internal/verification/errors.go` の 4 型に同様に追加する (AC-01〜AC-04)
-- [ ] `resolveDynLibDeps` の 2 か所のラップを `errmsg` に変える（決定 4。AC-07）
-- [ ] `internal/errmsg/errmsg_guard_test.go` の `exemptRolePositions` を更新し、
+- [x] `internal/verification/errors.go` の 4 型に同様に追加する (AC-01〜AC-04)
+- [x] `resolveDynLibDeps` の 2 か所のラップを `errmsg` に変える（決定 4。AC-07）
+- [x] `internal/errmsg/errmsg_guard_test.go` の `exemptRolePositions` を更新し、
       自己テストを追加する (AC-06, AC-08)
-- [ ] `internal/dynlib`・`internal/verification`・`internal/redaction` のテストを
+- [x] `checkBuildVariants` の型宣言規則を限定し、自己テストと 0178 03 §9.0 を
+      更新する（決定 6。AC-09）
+- [x] `internal/dynlib`・`internal/verification`・`internal/redaction` のテストを
       追加する (AC-01〜AC-05)
-- [ ] `make fmt` / `make test` / `make lint` を通す
+- [x] `make fmt` / `make test` / `make lint` を通す
 - [ ] Issue #1196 をクローズ（PR とリンク）
 
 ## Acceptance Criteria Verification
@@ -216,6 +233,7 @@ func (e *ErrLibraryHashMismatch) StructuredMessage() errmsg.Message {
 | AC-06 | `internal/errmsg/errmsg_guard_test.go::TestProductionExemptRoleCalls` ほか自己テスト | ガード | 対象パッケージと許可位置 |
 | AC-07 | `internal/verification/manager_test.go`・`internal/redaction/message_test.go` | `resolveDynLibDeps` | 再解決経路で内側の構造が残る |
 | AC-08 | 各ガードの自己テスト | ガード・テスト | 実装を壊すと失敗する |
+| AC-09 | `internal/errmsg/errmsg_guard_test.go::TestBuildVariantCheckRecognizesForms` | `checkBuildVariants` | 直接 import しないパッケージの変種型宣言を検出しない |
 
 ## 関連
 

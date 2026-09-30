@@ -70,6 +70,8 @@ var exemptRolePositions = positions{
 	"internal/runner/base/output/manager.go":     {"DefaultOutputCaptureManager.validateAndResolvePath"},
 	"internal/runner/resource/normal_manager.go": {"NormalResourceManager.ExecuteCommand", "NormalResourceManager.ValidateOutputPath"},
 	"internal/runner/resource/dryrun_manager.go": {"DryRunResourceManager.evaluateCommandRisk", "DryRunResourceManager.ValidateOutputPath"},
+	"internal/dynlib/errors.go":                  {"ErrRecursionDepthExceeded.StructuredMessage", "ErrLibraryHashMismatch.StructuredMessage", "ErrEmptyLibraryPath.StructuredMessage", "ErrDynLibDepsRequired.StructuredMessage"},
+	"internal/verification/errors.go":            {"ErrDynLibDepsResolutionChanged.StructuredMessage", "ErrInterpreterRecordNotFound.StructuredMessage", "ErrInterpreterSymlinkRedirected.StructuredMessage", "ErrInterpreterPathMismatch.StructuredMessage"},
 }
 
 // pathErrorCausePositions are the only positions allowed to split a
@@ -143,18 +145,29 @@ type guardSet struct {
 	pkgs     []*typedPackage // sorted by directory
 	errmsg   *types.Package
 	variants map[string]struct{} // paths of the build-variant files
+	// errmsgDirect holds the directories that import errmsg in at least one
+	// build. Only such a package can declare errmsg structure; a package that
+	// reaches errmsg only through the packages it imports cannot, so its
+	// build-variant type declarations are not part of the structure checks.
+	errmsgDirect map[string]struct{}
 }
 
 // loadGuard parses files, marks the build variants among them and
 // type-checks, per directory, the files the current build selects.
 func loadGuard(t *testing.T, files []guardFile) *guardSet {
 	t.Helper()
-	set := &guardSet{variants: map[string]struct{}{}}
+	set := &guardSet{variants: map[string]struct{}{}, errmsgDirect: map[string]struct{}{}}
 	groups := map[string][]*sourceFile{}
 	for _, f := range files {
 		file, err := parser.ParseFile(guardFset, f.path, f.src, parser.SkipObjectResolution)
 		require.NoErrorf(t, err, "failed to parse %s", f.path)
 		sf := &sourceFile{guardFile: f, file: file}
+		for _, imp := range file.Imports {
+			if imp.Path.Value == strconv.Quote(errmsgImportPath) {
+				set.errmsgDirect[path.Dir(f.path)] = struct{}{}
+				break
+			}
+		}
 		selected := map[bool]struct{}{}
 		for _, ctx := range supportedBuilds {
 			selected[selectedBy(t, ctx, sf)] = struct{}{}
@@ -1574,15 +1587,20 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 }
 
 // checkBuildVariants reports every build-variant file that imports errmsg,
-// declares a type, or declares a method named Error or StructuredMessage: the
-// other checks type-check one build, so these must be the same in every
-// supported build (03 §9.0).
+// declares a type in a package that imports errmsg, or declares a method named
+// Error or StructuredMessage: the other checks type-check one build, so these
+// must be the same in every supported build (03 §9.0).
+//
+// A type declaration only matters in a package that imports errmsg: structure
+// can only be declared there, and a package that merely reaches errmsg through
+// its own imports cannot carry a role segment whose shape varies by build.
 func checkBuildVariants(s *guardSet) []string {
 	var violations []string
 	for _, f := range s.files {
 		if !f.variant {
 			continue
 		}
+		_, direct := s.errmsgDirect[path.Dir(f.path)]
 		for _, imp := range f.file.Imports {
 			if imp.Path.Value == strconv.Quote(errmsgImportPath) {
 				violations = append(violations, fmt.Sprintf("%s: a build-variant file must not import errmsg", position(imp.Pos())))
@@ -1591,7 +1609,7 @@ func checkBuildVariants(s *guardSet) []string {
 		for _, decl := range f.file.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
-				if d.Tok != token.TYPE {
+				if d.Tok != token.TYPE || !direct {
 					continue
 				}
 				for _, spec := range d.Specs {
@@ -1630,9 +1648,16 @@ func TestBuildVariantCheckRecognizesForms(t *testing.T) {
 			want:  1,
 		},
 		{
-			name:  "a variant file declaring a type",
+			name: "a variant file declaring a type in a package that imports errmsg",
+			files: []guardFile{
+				{"internal/x/x.go", "package x\n\nimport \"" + errmsgImportPath + "\"\n\nvar _ = errmsg.Text(\"x\")\n"},
+				{"internal/x/t_darwin.go", "package x\n\ntype T struct{}\n"},
+			},
+			want: 1,
+		},
+		{
+			name:  "a variant file declaring a type in a package that does not import errmsg",
 			files: []guardFile{{"internal/x/t_darwin.go", "package x\n\ntype T struct{}\n"}},
-			want:  1,
 		},
 		{
 			name: "a variant file declaring Error",
@@ -1644,9 +1669,12 @@ func TestBuildVariantCheckRecognizesForms(t *testing.T) {
 			want: 2,
 		},
 		{
-			name:  "a cgo variant declaring a type",
-			files: []guardFile{{"internal/x/c.go", "//go:build cgo\n\npackage x\n\ntype C struct{}\n"}},
-			want:  1,
+			name: "a cgo variant declaring a type in a package that imports errmsg",
+			files: []guardFile{
+				{"internal/x/x.go", "package x\n\nimport \"" + errmsgImportPath + "\"\n\nvar _ = errmsg.Text(\"x\")\n"},
+				{"internal/x/c.go", "//go:build cgo\n\npackage x\n\ntype C struct{}\n"},
+			},
+			want: 1,
 		},
 		{
 			name: "a file in every supported build is not a variant",

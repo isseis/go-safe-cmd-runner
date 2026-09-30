@@ -1038,8 +1038,9 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - 対象のパッケージ: errmsg と、本番のファイルの import をたどって errmsg に届くパッケージである。import はどのビルドのファイルのものも数える。
 - ビルドの変種: 型検査は、テストを実行する環境のビルド（GOOS と cgo の設定）が選ぶファイルで行う。サポートするビルド（linux/amd64・linux/arm64・darwin/arm64 のそれぞれで cgo の有無）の間で採否が変わるファイルを、変種のファイルと呼ぶ。どのビルドでも検査の結果が同じになるように、対象のパッケージの変種のファイルは次のことをしてはならない。
   - errmsg を import する。
-  - 型を宣言する。
+  - 型を宣言する（errmsg を直接 import するパッケージの変種のファイルに限る）。
   - `Error`・`StructuredMessage` という名前のメソッドを宣言する。
+- 型の宣言の禁止を errmsg を直接 import するパッケージに限るのは、型の形がビルドで変わりうることを気にするのは、その型が役割付きの断片を運びうる場合だけだからである。errmsg を import しないパッケージは役割の断片を宣言できず、推移的に errmsg に届くだけのパッケージ（例: `internal/dynlib` を import する `internal/dynlib/machodylib`）が変種のファイルで型を宣言しても、ほかのチェックの結果は変わらない。errmsg を import する・`Error`・`StructuredMessage` を宣言する、の 2 つは変種のファイル一般に禁じたままとする。この限定は Task 0179（dynlib・shebang のエラー型の構造化）で `internal/dynlib` が errmsg を import するようになったために加えた（2026-09-30）。
 - `//go:build !windows` のように、サポートするどのビルドにも含まれるファイルは変種のファイルではない。現在の変種のファイル（`fdexec_linux.go`・`identity_linux.go`・`trusted_gids_darwin.go` など）は、いずれも上の 3 つをしていない。
 
 ### 9.1 対象の範囲（ガードが持つ唯一の定義）
@@ -1168,7 +1169,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - `Part` の検査: `errmsg.Part{}`・`[]errmsg.Part{{}}`・ドット import・欄の公開・別パッケージの `Part` 風の型、`errmsg` の新しい関数での `Part` のリテラルと欄の書き換え（埋め込みを通す形、増減・アドレス・`range` を含む）を並べる。
 - 部分の流れ: 免除の役割を宣言できない位置からの、部分を作る関数（範囲外・範囲内・型引数を明示した呼び出し・型引数を持つ型のメソッド・別パッケージの公開の関数・メソッド呼び出しの受け手や呼び出し先の添字や即時に呼ぶ関数リテラルの中の呼び出し）・関数を持つ変数・コールバックの引数・部分を書き込むポインタの引数・呼び出し元のスライスを渡す可変長引数・部分のスライスを持つ struct の引数・部分を書き込むポインタの受け手・部分を返す型引数の関数の呼び出し、ポインタの受け手を保つメソッド値、部分を持つ変数のアドレスをインターフェースに入れる形、パッケージの変数（ドット import 経由を含む）・欄の読み出し・型アサーション・型 switch・メソッド値を検出する。`Const`・`Text`・`Cause` と `append`・`slices.Concat`・複合リテラル・関数の中の変数で部分を組み立てる形、部分を値で受け取る関数（struct・配列に入れて渡す形を含む）・クロージャ・新しく並べる可変長引数、組み込みの `error` の `Error` の呼び出し、値の受け手のメソッド、可変長引数に何も渡さない呼び出し、即時に呼ぶ関数リテラル、ドット import した errmsg の構築関数、免除の役割を宣言できる位置での明示の型引数の呼び出し、`ContextString` を検出しないことを確かめる。
 - 文言と構造の一致: `Error()` が 2 文の型・違う式を返す型・`*errmsg.Error` を埋め込んで `Error()` を宣言する型・名前の無い struct 型を指す別名・関数の中で宣言した型を並べ、括弧で囲んだ 1 文の形を受け入れることを確かめる。引数を取る `StructuredMessage` を対象にしないこと、引数を取る `Error` を `Error` と数えないことも確かめる。
-- 変種のファイルの検査（§9.0）: 変種のファイルでの errmsg の import・型の宣言・`Error` の宣言と、変種のファイルの定数を `Const` に渡す形を並べる。サポートするすべてのビルドに含まれるファイル（`//go:build !windows`）を変種のファイルとして扱わないことも確かめる。
+- 変種のファイルの検査（§9.0）: 変種のファイルでの errmsg の import・型の宣言（errmsg を直接 import するパッケージの変種のファイルに限る）・`Error` の宣言と、変種のファイルの定数を `Const` に渡す形を並べる。errmsg を import しないパッケージの変種のファイルが型を宣言する形を検出しないこと、サポートするすべてのビルドに含まれるファイル（`//go:build !windows`）を変種のファイルとして扱わないことも確かめる。
 - ラップの検査: 範囲内の `fmt.Errorf`・`errors.Join`・非定数 `errors.New`・範囲外の `fmt.Errorf` を並べる。範囲の関数名と除外関数名がコードに見つかることも確かめる。型の検査では、明示の一覧の型が `StructuredMessage` を欠く形を検出し、例外の型（`PreExecutionError`・`ExecutionError`・config の `*Detail` 型）を検出しないことを確かめる。
 - AC-25: `errmsg.Role(99)` の変換・`errmsg.RoleText` の参照・`Segment.Role` への代入・`case errmsg.RolePath` を並べる。
 
