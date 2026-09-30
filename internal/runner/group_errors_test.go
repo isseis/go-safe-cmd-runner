@@ -94,7 +94,6 @@ func TestGroupErrorStructuredRoles(t *testing.T) {
 // unstructured cause is one Text segment, and a structured cause keeps its own
 // roles instead of being flattened.
 func TestCommandExecutionErrorStructuredRoles(t *testing.T) {
-	const prefix = 5
 	structuredCause := errmsg.NewError(
 		errmsg.Const("failed: "),
 		errmsg.Ident("api_key"),
@@ -137,7 +136,6 @@ func TestCommandExecutionErrorStructuredRoles(t *testing.T) {
 				{Role: errmsg.RoleIdentifier, Text: "token-rotate"},
 				{Role: errmsg.RoleConstant, Text: " failed: "},
 			}
-			assert.Len(t, want, prefix)
 			assert.Equal(t, append(want, tt.tail...), cmdErr.StructuredMessage().Segments())
 		})
 	}
