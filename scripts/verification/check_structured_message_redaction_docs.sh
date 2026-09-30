@@ -83,6 +83,7 @@ check_word "$ARCH_JA" "対象外" "the Path boundary outside whole-value replace
 check_word "$ARCH_JA" "Path" "the Path role (AC-26)"
 check_word "$ARCH_JA" "Text" "the fail-closed Text role (AC-26)"
 check_word "$ARCH_JA" "構造を持たない" "the fail-closed treatment of unstructured errors (AC-26)"
+check_word "$ARCH_JA" "値全体置換は適用しません" "the Path boundary sentence (AC-26)"
 
 # Architecture (English) mirrors the Japanese content.
 check_word "$ARCH_EN" "structured message" "the structured message design (AC-26)"
@@ -91,6 +92,7 @@ check_word "$ARCH_EN" "whole-value replacement" "the whole-value replacement lay
 check_word "$ARCH_EN" "Path" "the Path role (AC-26)"
 check_word "$ARCH_EN" "Text" "the fail-closed Text role (AC-26)"
 check_word "$ARCH_EN" "no structure" "the fail-closed treatment of unstructured errors (AC-26)"
+check_word "$ARCH_EN" "whole-value replacement is not applied" "the Path boundary sentence (AC-26)"
 
 # The old term for the value-based layer must not come back.
 check_absent "$ARCH_JA" "値まるごと判定" "the renamed value-based layer (AC-26)"
@@ -103,6 +105,7 @@ check_word "$RISK_JA" "免除" "the identifier exemption (AC-26)"
 check_word "$RISK_JA" "error_message" "the structured error_message boundary (AC-26)"
 check_word "$RISK_JA" "構造化メッセージ" "the structured error_message boundary (AC-26)"
 check_word "$RISK_JA" "Identifier" "the declared identifier part (AC-26)"
+check_word "$RISK_JA" "値全体置換を受けずに" "the structured error_message exemption statement (AC-26)"
 
 # Risk assessment (English) mirrors the Japanese content.
 check_word "$RISK_EN" "identifier" "the identifier exemption (AC-26)"
@@ -110,6 +113,7 @@ check_word "$RISK_EN" "exempt" "the identifier exemption (AC-26)"
 check_word "$RISK_EN" "error_message" "the structured error_message boundary (AC-26)"
 check_word "$RISK_EN" "structured message" "the structured error_message boundary (AC-26)"
 check_word "$RISK_EN" "Identifier" "the declared identifier part (AC-26)"
+check_word "$RISK_EN" "without whole-value replacement" "the structured error_message exemption statement (AC-26)"
 
 # Package reference: the new leaf package and its responsibility.
 check_word "$PKG" "errmsg/" "the internal/errmsg package listing (AC-26)"

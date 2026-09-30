@@ -32,6 +32,7 @@ write_complete_fixture() {
 役割
 値全体置換
 対象外
+値全体置換は適用しません
 Path
 Text
 構造を持たない
@@ -43,6 +44,7 @@ whole-value replacement
 Path
 Text
 no structure
+whole-value replacement is not applied
 EOF
     cat > "$RISK_JA" <<'EOF'
 識別子
@@ -50,6 +52,7 @@ EOF
 error_message
 構造化メッセージ
 Identifier
+値全体置換を受けずに
 EOF
     cat > "$RISK_EN" <<'EOF'
 identifier
@@ -57,6 +60,7 @@ exempt
 error_message
 structured message
 Identifier
+without whole-value replacement
 EOF
     cat > "$PKG" <<'EOF'
 errmsg/

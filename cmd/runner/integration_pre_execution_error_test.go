@@ -857,7 +857,7 @@ cmd = %q
 
 	// Layer isolation: the raw body is a whole-value trigger only because of
 	// the identifiers; removing them leaves no trigger.
-	rawBody := strings.TrimPrefix(stderrDetailsLine(t, run.stderr), "  Details: ")
+	rawBody := stderrDetailsBlock(t, run.stderr)
 	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
 		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
 	withoutIdentifiers := strings.NewReplacer("token_rotate", "", "token_file", "", "api_key", "").Replace(rawBody)

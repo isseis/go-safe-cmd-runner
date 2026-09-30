@@ -123,7 +123,6 @@ func buildWrapScope() wrapScope {
 	for _, file := range inScopeWholeFiles {
 		scope.wholeFiles[file] = make(map[string]bool)
 	}
-	scope.wholeFiles["internal/runner/config/expansion.go"] = make(map[string]bool)
 	for _, fn := range expansionExcludedFunctions {
 		scope.wholeFiles["internal/runner/config/expansion.go"][fn] = true
 	}
@@ -142,15 +141,15 @@ func funcKey(fn *ast.FuncDecl) string {
 	if fn.Recv == nil || len(fn.Recv.List) == 0 {
 		return fn.Name.Name
 	}
-	switch recv := fn.Recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		if ident, ok := recv.X.(*ast.Ident); ok {
-			return "(*" + ident.Name + ")." + fn.Name.Name
-		}
-	case *ast.Ident:
-		return "(" + recv.Name + ")." + fn.Name.Name
+	recvType := fn.Recv.List[0].Type
+	recv := receiverTypeName(recvType)
+	if recv == "" {
+		return fn.Name.Name
 	}
-	return fn.Name.Name
+	if _, isPointer := identitymutationguard.UnwrapParen(recvType).(*ast.StarExpr); isPointer {
+		return "(*" + recv + ")." + fn.Name.Name
+	}
+	return "(" + recv + ")." + fn.Name.Name
 }
 
 // receiverTypeName returns the bare type name of a method receiver
@@ -169,17 +168,16 @@ func receiverTypeName(expr ast.Expr) string {
 	return ""
 }
 
-// constStringNames returns the names of every const identifier declared in the
-// file, including function-local ones. A string constant passed to errors.New
-// is a constant expression and is allowed.
-func constStringNames(file *ast.File) map[string]bool {
+// topLevelConstNames returns the names of the package-level const identifiers
+// declared in the file.
+func topLevelConstNames(file *ast.File) map[string]bool {
 	names := make(map[string]bool)
-	ast.Inspect(file, func(n ast.Node) bool {
-		decl, ok := n.(*ast.GenDecl)
-		if !ok || decl.Tok != token.CONST {
-			return true
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
 		}
-		for _, spec := range decl.Specs {
+		for _, spec := range gen.Specs {
 			valueSpec, ok := spec.(*ast.ValueSpec)
 			if !ok {
 				continue
@@ -188,22 +186,86 @@ func constStringNames(file *ast.File) map[string]bool {
 				names[name.Name] = true
 			}
 		}
-		return true
-	})
+	}
 	return names
 }
 
+// declaredInFunc returns the const and non-const names declared inside fn, so
+// the errors.New check can reject an argument that only shadows a package-level
+// constant. A function-local const name is still a constant expression and
+// stays in consts; parameters, short variable declarations, range variables
+// and var declarations go to vars.
+func declaredInFunc(fn *ast.FuncDecl) (consts, vars map[string]bool) {
+	consts = make(map[string]bool)
+	vars = make(map[string]bool)
+	addParams := func(ft *ast.FuncType) {
+		if ft == nil {
+			return
+		}
+		for _, fields := range []*ast.FieldList{ft.Params, ft.Results} {
+			if fields == nil {
+				continue
+			}
+			for _, field := range fields.List {
+				for _, name := range field.Names {
+					vars[name.Name] = true
+				}
+			}
+		}
+	}
+	addParams(fn.Type)
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.GenDecl:
+			for _, spec := range node.Specs {
+				valueSpec, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, name := range valueSpec.Names {
+					if node.Tok == token.CONST {
+						consts[name.Name] = true
+					} else {
+						vars[name.Name] = true
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			if node.Tok == token.DEFINE {
+				for _, lhs := range node.Lhs {
+					if ident, ok := lhs.(*ast.Ident); ok {
+						vars[ident.Name] = true
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if node.Tok == token.DEFINE {
+				if ident, ok := node.Key.(*ast.Ident); ok {
+					vars[ident.Name] = true
+				}
+				if ident, ok := node.Value.(*ast.Ident); ok {
+					vars[ident.Name] = true
+				}
+			}
+		case *ast.FuncLit:
+			addParams(node.Type)
+		}
+		return true
+	})
+	return consts, vars
+}
+
 // isConstStringExpr reports whether expr is a constant string expression
-// without type information: a string literal, a name of a same-file const, or
-// a "+" concatenation of those.
-func isConstStringExpr(expr ast.Expr, consts map[string]bool) bool {
+// without type information: a string literal, a name that is not shadowed by a
+// non-const declaration, or a "+" concatenation of those.
+func isConstStringExpr(expr ast.Expr, consts, vars map[string]bool) bool {
 	switch e := identitymutationguard.UnwrapParen(expr).(type) {
 	case *ast.BasicLit:
 		return e.Kind == token.STRING
 	case *ast.Ident:
-		return consts[e.Name]
+		return consts[e.Name] && !vars[e.Name]
 	case *ast.BinaryExpr:
-		return e.Op == token.ADD && isConstStringExpr(e.X, consts) && isConstStringExpr(e.Y, consts)
+		return e.Op == token.ADD && isConstStringExpr(e.X, consts, vars) && isConstStringExpr(e.Y, consts, vars)
 	default:
 		return false
 	}
@@ -219,11 +281,11 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 	qualifiers := identitymutationguard.ResolveLocalImports(t, filename, file, func(importPath string) bool {
 		return importPath == "fmt" || importPath == "errors"
 	})
-	consts := constStringNames(file)
+	topConsts := topLevelConstNames(file)
 	wholeExcluded, whole := scope.wholeFiles[filename]
 	funcs := scope.functions[filename]
 
-	scan := func(decl ast.Decl, allowed bool) {
+	scan := func(decl ast.Decl, allowed bool, consts, vars map[string]bool) {
 		if !allowed {
 			return
 		}
@@ -249,7 +311,7 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 				violations = append(violations, fmt.Sprintf(
 					"%s: errors.Join outside errmsg.Join on an in-scope path", fset.Position(call.Pos())))
 			case qualifiers[pkg.Name] == "errors" && sel.Sel.Name == "New":
-				if len(call.Args) == 1 && isConstStringExpr(call.Args[0], consts) {
+				if len(call.Args) == 1 && isConstStringExpr(call.Args[0], consts, vars) {
 					return true
 				}
 				violations = append(violations, fmt.Sprintf(
@@ -263,17 +325,25 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
 			key := funcKey(d)
+			localConsts, localVars := declaredInFunc(d)
+			consts := make(map[string]bool, len(topConsts)+len(localConsts))
+			for name := range topConsts {
+				consts[name] = true
+			}
+			for name := range localConsts {
+				consts[name] = true
+			}
 			switch {
 			case whole:
-				scan(decl, !wholeExcluded[key])
+				scan(decl, !wholeExcluded[key], consts, localVars)
 			case funcs != nil:
-				scan(decl, funcs[key])
+				scan(decl, funcs[key], consts, localVars)
 			}
 		case *ast.GenDecl:
 			// Package-level declarations (for example a sentinel var built
 			// with errors.New) belong to the whole-file scope only.
 			if whole {
-				scan(decl, true)
+				scan(decl, true, topConsts, nil)
 			}
 		}
 	}
@@ -409,6 +479,17 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 			assert.Truef(t, declared[key], "%s: scope entry %s was not found; the scope is stale", file, key)
 		}
 	}
+
+	// The exception list must keep naming types that still declare Unwrap, or
+	// an exception silently stops applying to the type it was written for.
+	for _, ref := range unwrapWithoutStructuredExceptions {
+		require.Truef(t, present[ref.file], "exception file %s is missing; the exception is stale", ref.file)
+		src := identitymutationguard.ReadProductionSource(t, ref.file)
+		_, parsed := identitymutationguard.ParseSource(t, ref.file, src)
+		methods := collectReceiverMethods(parsed)
+		assert.Truef(t, methods[ref.name]["Unwrap"],
+			"%s: exception %s no longer declares Unwrap; the exception is stale", ref.file, ref.name)
+	}
 }
 
 // TestWrapCheckRecognizesForms pins that checkFileWraps reports the forms it
@@ -475,6 +556,24 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 			name: "errors.New with a concatenated const is accepted",
 			file: runnerFile,
 			src:  runnerHeader + "const part = \"sentinel\"\n\nvar errSentinel = errors.New(part + \" rest\")\n",
+			want: 0,
+		},
+		{
+			name: "errors.New with a parameter shadowing a const is reported",
+			file: runnerFile,
+			src:  runnerHeader + "const msg = \"sentinel\"\n\nfunc h(msg string) error { return errors.New(msg) }\n",
+			want: 1,
+		},
+		{
+			name: "errors.New with a local variable shadowing a const is reported",
+			file: runnerFile,
+			src:  runnerHeader + "const msg = \"sentinel\"\n\nfunc h() error { msg := \"x\"; return errors.New(msg) }\n",
+			want: 1,
+		},
+		{
+			name: "errors.New with a function-local const is accepted",
+			file: runnerFile,
+			src:  runnerHeader + "func h() error { const msg = \"sentinel\"; return errors.New(msg) }\n",
 			want: 0,
 		},
 		{

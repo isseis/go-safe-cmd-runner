@@ -358,3 +358,33 @@ func stderrDetailsLine(t *testing.T, stderr string) string {
 	t.Fatalf("no \"  Details:\" line in stderr: %q", stderr)
 	return ""
 }
+
+// stderrDetailsBlock returns the Details field of the stderr report including
+// its continuation lines, without the prefix and the continuation indent. Use
+// it when the assertion concerns the whole message rather than one line.
+func stderrDetailsBlock(t *testing.T, stderr string) string {
+	t.Helper()
+
+	const prefix = "  Details: "
+	indent := strings.Repeat(" ", len(prefix))
+	lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
+
+	start := -1
+	var block []string
+	for i, line := range lines {
+		if start < 0 {
+			if strings.HasPrefix(line, prefix) {
+				start = i
+				block = append(block, strings.TrimPrefix(line, prefix))
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, indent); ok {
+			block = append(block, rest)
+			continue
+		}
+		break
+	}
+	require.GreaterOrEqual(t, start, 0, "no \"  Details:\" line in stderr: %q", stderr)
+	return strings.Join(block, "\n")
+}
