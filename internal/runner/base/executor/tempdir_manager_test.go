@@ -1,12 +1,17 @@
 package executor
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestTempDirManager_Create_NormalMode tests directory creation in normal mode
@@ -37,6 +42,51 @@ func TestTempDirManager_Create_NormalMode(t *testing.T) {
 
 	// Verify path contains group name
 	assert.True(t, strings.Contains(filepath.Base(path), "test-group"), "Path does not contain group name: %s", path)
+}
+
+// TestTempDirManager_Create_WrapTexts pins the wording of the two creation
+// wraps and that each keeps the *fs.PathError's path as a Path segment, so a
+// group name inside the path is not exempted from redaction.
+func TestTempDirManager_Create_WrapTexts(t *testing.T) {
+	const tempPath = "/tmp/scr-group-abc123"
+
+	restoreMkdir, restoreChmod := mkdirTemp, chmodDir
+	t.Cleanup(func() { mkdirTemp, chmodDir = restoreMkdir, restoreChmod })
+
+	pathSegments := func(t *testing.T, err error) []string {
+		t.Helper()
+		structured, ok := errors.AsType[errmsg.Structured](err)
+		require.True(t, ok, "the wrap must be a structured error; got %T", err)
+		var paths []string
+		for _, segment := range structured.StructuredMessage().Segments() {
+			if segment.Role == errmsg.RolePath {
+				paths = append(paths, segment.Text)
+			}
+		}
+		return paths
+	}
+
+	t.Run("mkdir failure", func(t *testing.T) {
+		mkdirErr := &fs.PathError{Op: "mkdir", Path: tempPath, Err: syscall.ENOSPC}
+		mkdirTemp = func(_, _ string) (string, error) { return "", mkdirErr }
+		chmodDir = os.Chmod
+
+		_, err := NewTempDirManager("group", false).Create()
+		require.Error(t, err)
+		assert.Equal(t, "failed to create temporary directory: "+mkdirErr.Error(), err.Error())
+		assert.Equal(t, []string{tempPath}, pathSegments(t, err))
+	})
+
+	t.Run("chmod failure", func(t *testing.T) {
+		chmodErr := &fs.PathError{Op: "chmod", Path: tempPath, Err: syscall.EPERM}
+		mkdirTemp = func(_, _ string) (string, error) { return tempPath, nil }
+		chmodDir = func(string, os.FileMode) error { return chmodErr }
+
+		_, err := NewTempDirManager("group", false).Create()
+		require.Error(t, err)
+		assert.Equal(t, "failed to set permissions on temporary directory: "+chmodErr.Error(), err.Error())
+		assert.Equal(t, []string{tempPath}, pathSegments(t, err))
+	})
 }
 
 // TestTempDirManager_Create_DryRunMode tests directory creation in dry-run mode

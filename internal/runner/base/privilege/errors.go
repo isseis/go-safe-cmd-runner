@@ -4,8 +4,10 @@ package privilege
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -32,8 +34,24 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("privilege operation '%s' failed for command '%s' (uid %d->%d): %v",
-		e.Operation, e.CommandName, e.OriginalUID, e.TargetUID, e.SyscallErr)
+	return e.StructuredMessage().String()
+}
+
+// StructuredMessage declares the command name as an identifier; the operation,
+// the uids and the system-call error are text. Timestamp is not rendered.
+func (e *Error) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("privilege operation '"),
+		errmsg.Text(string(e.Operation)),
+		errmsg.Const("' failed for command '"),
+		errmsg.Ident(e.CommandName),
+		errmsg.Const("' (uid "),
+		errmsg.Text(strconv.Itoa(e.OriginalUID)),
+		errmsg.Const("->"),
+		errmsg.Text(strconv.Itoa(e.TargetUID)),
+		errmsg.Const("): "),
+		errmsg.Cause(e.SyscallErr),
+	)
 }
 
 func (e *Error) Unwrap() error {

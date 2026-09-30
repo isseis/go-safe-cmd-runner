@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -68,12 +69,12 @@ func (m *DefaultOutputCaptureManager) validateAndResolvePath(outputPath string, 
 	// 1. Path validation and resolution
 	resolvedPath, err := m.pathValidator.ValidateAndResolvePath(outputPath, workDir)
 	if err != nil {
-		return "", fmt.Errorf("path validation failed: %w", err)
+		return "", errmsg.NewError(errmsg.Const("path validation failed: "), errmsg.Cause(err))
 	}
 
 	// 2. Security permission check
 	if err := m.securityValidator.ValidateOutputWritePermission(resolvedPath, os.Getuid()); err != nil {
-		return "", fmt.Errorf("security validation failed: %w", err)
+		return "", errmsg.NewError(errmsg.Const("security validation failed: "), errmsg.Cause(err))
 	}
 
 	return resolvedPath, nil

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -214,7 +215,7 @@ func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.Elevati
 func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error {
 	if execCtx.needsPrivilegeEscalation {
 		if err := m.escalatePrivileges(execCtx); err != nil {
-			return fmt.Errorf("privilege escalation failed: %w", err)
+			return errmsg.NewError(errmsg.Const("privilege escalation failed: "), errmsg.Cause(err))
 		}
 	}
 

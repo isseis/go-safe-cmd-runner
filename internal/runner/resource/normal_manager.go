@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -82,11 +83,11 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 	// Validate command and group for consistency with dry-run mode
 	if err := validateCommand(cmd); err != nil {
-		return "", nil, fmt.Errorf("command validation failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("command validation failed: "), errmsg.Cause(err))
 	}
 
 	if err := validateCommandGroup(group); err != nil {
-		return "", nil, fmt.Errorf("command group validation failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("command group validation failed: "), errmsg.Cause(err))
 	}
 
 	// Unified Risk Evaluation Approach
@@ -99,7 +100,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		// missing from the audit trail. The only error source is an
 		// unclassifiable analysis record-load failure.
 		n.emitErrorAudit(ctx, cmd, risktypes.ErrorClassRecordLoad)
-		return "", nil, fmt.Errorf("risk evaluation failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("risk evaluation failed: "), errmsg.Cause(err))
 	}
 	// The plan owns any verified file descriptor opened during evaluation. Close it
 	// on every path -- allowed, gate-denied, or error -- so descriptors are not
@@ -117,7 +118,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 		// Configuration error: audit as a deny (classified as a risk_level config
 		// error so the entry is not a reason-less deny) before aborting.
 		n.auditRiskDecision(ctx, cmd, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny, risktypes.ErrorClassRiskLevelConfig)
-		return "", nil, fmt.Errorf("invalid risk_level configuration: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("invalid risk_level configuration: "), errmsg.Cause(err))
 	}
 
 	// Step 3: Unified risk gate. A Blocking assessment (uncertain analysis,
@@ -144,11 +145,25 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 			"command_path", identifier.NewIdentifier(group.Name),
 		)
 		if plan.Assessment.Blocking {
-			return "", nil, fmt.Errorf("%w: command %s denied (reason: %s)",
-				runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, plan.Assessment.BlockingReason)
+			return "", nil, errmsg.NewError(
+				errmsg.Cause(runnertypes.ErrCommandSecurityViolation),
+				errmsg.Const(": command "),
+				errmsg.Path(cmd.ExpandedCmd),
+				errmsg.Const(" denied (reason: "),
+				errmsg.Text(string(plan.Assessment.BlockingReason)),
+				errmsg.Const(")"),
+			)
 		}
-		return "", nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
-			runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, effectiveRisk.String(), maxAllowedRisk.String())
+		return "", nil, errmsg.NewError(
+			errmsg.Cause(runnertypes.ErrCommandSecurityViolation),
+			errmsg.Const(": command "),
+			errmsg.Path(cmd.ExpandedCmd),
+			errmsg.Const(" (effective risk: "),
+			errmsg.Text(effectiveRisk.String()),
+			errmsg.Const(") exceeds maximum allowed risk level ("),
+			errmsg.Text(maxAllowedRisk.String()),
+			errmsg.Const(")"),
+		)
 	}
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
@@ -250,7 +265,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, pl
 
 	capture, err := n.outputManager.PrepareOutput(cmd.Output(), cmd.EffectiveWorkDir, maxSize)
 	if err != nil {
-		return nil, fmt.Errorf("output capture preparation failed: %w", err)
+		return nil, errmsg.NewError(errmsg.Const("output capture preparation failed: "), errmsg.Cause(err))
 	}
 
 	// Cleanup and close capture on function exit
@@ -261,9 +276,13 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, pl
 			n.logger.Error("Failed to close capture", "error", closeErr)
 			// Update the error to propagate close errors
 			if err == nil {
-				err = fmt.Errorf("failed to close output capture: %w", closeErr)
+				err = errmsg.NewError(errmsg.Const("failed to close output capture: "), errmsg.Cause(closeErr))
 			} else {
-				err = fmt.Errorf("%w; and also failed to close output capture: %v", err, closeErr)
+				err = errmsg.NewError(
+					errmsg.Cause(err),
+					errmsg.Const("; and also failed to close output capture: "),
+					errmsg.Text(closeErr.Error()),
+				)
 			}
 		}
 
@@ -287,7 +306,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, pl
 	// this is safe even though we also call Close() in the defer above
 	if err = n.outputManager.FinalizeOutput(capture); err != nil {
 		// Return result even on finalization error to preserve exit code
-		return result, fmt.Errorf("output capture finalization failed: %w", err)
+		return result, errmsg.NewError(errmsg.Const("output capture finalization failed: "), errmsg.Cause(err))
 	}
 
 	return result, nil

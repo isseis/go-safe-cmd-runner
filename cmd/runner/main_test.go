@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -17,12 +18,16 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/cli"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	isec "github.com/isseis/go-safe-cmd-runner/internal/security"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
@@ -731,6 +736,167 @@ func TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError(t *testi
 	assert.ErrorIs(t, err, errCheckerUnavailable,
 		"the cause must be reachable through Unwrap now that it travels in Err")
 	assert.Equal(t, "directory permission checker initialisation failed: "+errCheckerUnavailable.Error(), preExec.Detail())
+}
+
+// runForError drives the production run() entrypoint in-process with a real
+// config file whose hash is recorded, so the run reaches the pre-execution
+// failure the caller wants rather than failing hash verification. It replaces
+// process-wide state (package-level flag variables, the default logger, the
+// default hash directory), so a test that calls it must not call t.Parallel.
+func runForError(t *testing.T, configBody, groupsFlag string) error {
+	t.Helper()
+
+	configFile := filepath.Join(tu.SafeTempDir(t), "config.toml")
+	require.NoError(t, os.WriteFile(configFile, []byte(configBody), configFilePerm))
+
+	hashDir := tu.SafeTempDir(t)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir, filevalidator.ValidatorConfig{})
+	require.NoError(t, err)
+	_, _, err = validator.SaveRecord(configFile, true)
+	require.NoError(t, err)
+
+	restoreHashDir := cmdcommon.DefaultHashDirectory
+	cmdcommon.DefaultHashDirectory = hashDir
+	t.Cleanup(func() { cmdcommon.DefaultHashDirectory = restoreHashDir })
+
+	// Both Slack URLs empty disables Slack notifications entirely, so the run
+	// needs no handler factory.
+	t.Setenv(logging.SlackWebhookURLErrorEnvVar, "")
+	t.Setenv(logging.SlackWebhookURLSuccessEnvVar, "")
+
+	originalConfigPath, originalLogLevel, originalLogDir := configPath, logLevel, logDir
+	originalDryRun, originalGroups, originalRunID := dryRun, groups, runID
+	t.Cleanup(func() {
+		configPath, logLevel, logDir = originalConfigPath, originalLogLevel, originalLogDir
+		dryRun, groups, runID = originalDryRun, originalGroups, originalRunID
+	})
+	configPath = configFile
+	logLevel = "info"
+	logDir = tu.SafeTempDir(t)
+	dryRun = false
+	groups = groupsFlag
+	runID = ""
+
+	originalLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalLogger) })
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	return run("test-run")
+}
+
+// TestPreExecutionCauseReachability pins the four causes Phase 4 moved out of
+// Message into Err: each stays reachable with errors.Is/errors.AsType, and
+// Detail() keeps the wording it had before the move.
+func TestPreExecutionCauseReachability(t *testing.T) {
+	const globalExpansionBody = `
+[global.vars]
+GREETING = "%{UNDEFINED_GLOBAL}"
+
+[[groups]]
+name = "g"
+
+[[groups.commands]]
+name = "c"
+cmd = "/bin/echo"
+`
+	const templateValidationBody = `
+[global.vars]
+GREETING = "hi"
+
+[command_templates.greeting]
+cmd = "/bin/echo"
+args = ["%{UNDEFINED_GLOBAL}"]
+
+[[groups]]
+name = "g"
+
+[[groups.commands]]
+name = "c"
+template = "greeting"
+`
+
+	tests := []struct {
+		name    string
+		produce func(t *testing.T) error
+		assert  func(t *testing.T, err error, preExec *logging.PreExecutionError)
+	}{
+		{
+			name: "global expansion",
+			produce: func(t *testing.T) error {
+				return runForError(t, globalExpansionBody, "")
+			},
+			assert: func(t *testing.T, err error, preExec *logging.PreExecutionError) {
+				assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+				assert.Equal(t, "Failed to expand global configuration: "+
+					"failed to process global vars: undefined variable in global.vars.GREETING: "+
+					"'UNDEFINED_GLOBAL' (context: ) (expansion path: UNDEFINED_GLOBAL)", preExec.Detail())
+			},
+		},
+		{
+			name: "template validation",
+			produce: func(t *testing.T) error {
+				return runForError(t, templateValidationBody, "")
+			},
+			assert: func(t *testing.T, err error, preExec *logging.PreExecutionError) {
+				_, ok := errors.AsType[*config.ErrUndefinedGlobalVariableInTemplate](err)
+				assert.True(t, ok, "the template cause must be reachable through Unwrap")
+				assert.Equal(t, "Template validation failed: "+
+					`template "greeting" field "args[0]": global variable "UNDEFINED_GLOBAL" is not defined in [global.vars]`,
+					preExec.Detail())
+			},
+		},
+		{
+			name: "directory permission checker init",
+			produce: func(_ *testing.T) error {
+				failing := func() (isec.DirectoryPermChecker, error) { return nil, errCheckerUnavailable }
+				_, err := auditConfiguredDirPermissions(auditConfig(), &runnertypes.RuntimeGlobal{}, "test-run", failing)
+				return err
+			},
+			assert: func(t *testing.T, err error, preExec *logging.PreExecutionError) {
+				assert.ErrorIs(t, err, errCheckerUnavailable)
+				assert.Equal(t, "directory permission checker initialisation failed: "+
+					errCheckerUnavailable.Error(), preExec.Detail())
+			},
+		},
+		{
+			name: "invalid --groups",
+			produce: func(t *testing.T) error {
+				originalGroups := groups
+				t.Cleanup(func() { groups = originalGroups })
+				groups = "missing"
+
+				vm, err := verification.NewManagerForDryRun()
+				require.NoError(t, err)
+
+				cfg := &runnertypes.ConfigSpec{
+					Groups: []runnertypes.GroupSpec{{
+						Name:     "g",
+						Commands: []runnertypes.CommandSpec{{Name: "c", Cmd: "/bin/echo"}},
+					}},
+				}
+				return executeRunner(context.Background(), cfg, &runnertypes.RuntimeGlobal{}, vm, "test-run", nil, nil)
+			},
+			assert: func(t *testing.T, err error, preExec *logging.PreExecutionError) {
+				assert.ErrorIs(t, err, cli.ErrGroupNotFound)
+				assert.Equal(t, "Invalid groups specified: "+
+					"group not found: group(s) [missing] specified in --groups do not exist in configuration\n"+
+					"Available groups: [g]", preExec.Detail())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			captureLogs(t)
+
+			err := tt.produce(t)
+			require.Error(t, err)
+
+			preExec, ok := errors.AsType[*logging.PreExecutionError](err)
+			require.True(t, ok, "the failure must reach the pre-execution error path; got %T", err)
+			tt.assert(t, err, preExec)
+		})
+	}
 }
 
 // TestNewDryRunFormatter_UnknownFormatReturnsError verifies the fail-secure

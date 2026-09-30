@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 )
 
@@ -19,6 +20,14 @@ const (
 // ErrTempDirAlreadyCreated is returned when Create() is called more than once
 // on the same TempDirManager instance.
 var ErrTempDirAlreadyCreated = errors.New("temporary directory has already been created for this TempDirManager instance; Create() can only be called once")
+
+// mkdirTemp creates the temporary directory and chmodDir sets its permissions.
+// They are variables so a test can replace them and exercise the two failure
+// wraps separately.
+var (
+	mkdirTemp = os.MkdirTemp
+	chmodDir  = os.Chmod
+)
 
 // TempDirManager manages the lifecycle of a temporary directory for a group
 type TempDirManager interface {
@@ -72,9 +81,12 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 
 	// Normal mode: create actual directory
 	prefix := fmt.Sprintf("scr-%s-", m.groupName)
-	tempDir, err := os.MkdirTemp(os.TempDir(), prefix)
+	tempDir, err := mkdirTemp(os.TempDir(), prefix)
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary directory: %w", err)
+		return "", errmsg.NewError(
+			errmsg.Const("failed to create temporary directory: "),
+			errmsg.PathErrorCause(err),
+		)
 	}
 
 	// Resolve symlinks in the created path (e.g., /var -> /private/var on macOS)
@@ -85,9 +97,12 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 
 	// Security: ensure strict 0700 permissions
 	// #nosec G302 - 0700 is intentional for temporary working directories to allow execution
-	if err := os.Chmod(tempDir, tempDirPermissions); err != nil {
+	if err := chmodDir(tempDir, tempDirPermissions); err != nil {
 		_ = os.RemoveAll(tempDir) // Best effort cleanup
-		return "", fmt.Errorf("failed to set permissions on temporary directory: %w", err)
+		return "", errmsg.NewError(
+			errmsg.Const("failed to set permissions on temporary directory: "),
+			errmsg.PathErrorCause(err),
+		)
 	}
 
 	m.tempDirPath = tempDir

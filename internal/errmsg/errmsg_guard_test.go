@@ -66,8 +66,10 @@ var exemptRolePositions = positions{
 	"internal/logging/execution_error.go":        {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
 	"internal/runner/base/privilege/errors.go":   {"Error.StructuredMessage"},
 	"internal/runner/base/executor/executor.go":  {"DefaultExecutor.Validate", "DefaultExecutor.validatePrivilegedCommand", "DefaultExecutor.executeNormal", "DefaultExecutor.executeWithUserGroup"},
-	"internal/runner/resource/normal_manager.go": {"NormalResourceManager.ExecuteCommand"},
-	"internal/runner/resource/dryrun_manager.go": {"DryRunResourceManager.evaluateCommandRisk"},
+	"internal/runner/base/output/path.go":        {"validatePathSecurity", "DefaultPathValidator.validateRelativePath"},
+	"internal/runner/base/output/manager.go":     {"DefaultOutputCaptureManager.validateAndResolvePath"},
+	"internal/runner/resource/normal_manager.go": {"NormalResourceManager.ExecuteCommand", "NormalResourceManager.ValidateOutputPath"},
+	"internal/runner/resource/dryrun_manager.go": {"DryRunResourceManager.evaluateCommandRisk", "DryRunResourceManager.ValidateOutputPath"},
 }
 
 // pathErrorCausePositions are the only positions allowed to split a
