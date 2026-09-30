@@ -68,7 +68,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 ## 目的
 
 - `internal/runner/config` のエラー型と `cli.FilterGroups` のエラーの本文を、役割を宣言した構造化メッセージとして運ぶ。機密ではない名前のために、原因の部分全体が `[REDACTED]` にならないようにする。
-- 秘密の保護を弱めない。`Text` から役割を変えるのは、名前やパスのように、設定の中で名前として定義され、検証を通った値と、運用者が `--groups` で指定した group 名・コマンドの `template` で参照したテンプレート名に限る（決定事項 2・4）。生の設定値（`env` の `KEY=VALUE` のエントリ、テンプレートの入力文字列など）は `Text` のままとする。
+- 秘密の保護を弱めない。`Text` から役割を変えるのは、名前やパスのように、設定の中で名前として定義され、検証を通った値と、運用者が `--groups` で指定した group 名・コマンドの `template` で参照したテンプレート名・重複して定義されたテンプレート名に限る（決定事項 2・4）。生の設定値（`env` の `KEY=VALUE` のエントリ、テンプレートの入力文字列など）は `Text` のままとする。
 - 役割は、エラーを作るコードが型で宣言する。描画済みの文字列（`group[deploy]`・`vars.token_file` など）を解析して役割を決めない（CLAUDE.md「Declare, don't infer」）。
 
 ## 用語
@@ -88,7 +88,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
    - `ExpandGlobal` のうち、0178 で原因をラップする文言を `Text` として宣言した箇所（例: `failed to process global env_import: `）。固定の文言は `Constant` として宣言する。
 3. **`--groups` の検証:** `cli.FilterGroups` が返すエラーを構造化する。
 4. **ガード:** 0178 の AST ガード（`internal/errmsg/errmsg_guard_test.go` など）の許可位置と対象範囲を、上の 1〜3 に合わせて更新する。
-5. **文書:** `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、システム環境変数の名前・テンプレート名（存在しないテンプレートへの参照名を含む）・パラメータ名・`--groups` で指定された名前を `Identifier` として免除すること、名前の検証で拒否された名前を `Text` とすることを追記する。英語版は `/mktrans` で反映する。
+5. **文書:** `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、システム環境変数の名前・テンプレート名（存在しないテンプレートへの参照名と、重複して定義された名前を含む）・パラメータ名・`--groups` で指定された名前を `Identifier` として免除すること、名前の検証で拒否された名前を `Text` とすることを追記する。英語版は `/mktrans` で反映する。
 
 ### 対象外
 
@@ -146,7 +146,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 - **テンプレート名**（`command_templates` のキーで、`ValidateTemplateName` を通ったもの）とテンプレートのパラメータ名（`${param}` の `param`）は、定義された名前なので `Identifier` とする。
 - **コマンドの `template` が参照する名前**は、参照先が存在しないとき（`ErrTemplateNotFound`）も `Identifier` とする。この名前は名前の検証を受けないが、`--groups` で指定された存在しない名前（決定事項 4）と同じ理由による。運用者が自分で書いた名前であり、実際に起きるのはテンプレート名の打ち間違いである。誤って秘密を書いた場合に、値形式の検出も免除されて Slack に出ることを、保護の境界として受け入れる。
-- **`ErrDuplicateTemplateName` の名前**は、`loader.go` で `ValidateTemplateName` より前に検査されるので、形式が検証されていない。`Text` とする。
+- **`ErrDuplicateTemplateName` の名前**も `Identifier` とする。この名前は `loader.go` で `ValidateTemplateName` より前に検査されるので、形式が検証されていない。それでも、運用者がテンプレートファイルに定義した名前であり、秘密を書く場所ではない。誤って秘密を書いた場合に値形式の検出も免除されることを、保護の境界として受け入れる。このエラーは設定の読み込み時に起き、Slack には届かない。
 - **`env` のキー**（`KEY=VALUE` の `KEY`）は、名前の検証を通ったものを `Identifier` とする。キーにプレースホルダを含むもの（`ErrPlaceholderInEnvKey`）は名前の検証で拒否されたものとして `Text` とする。
 - **フィールド名**（`cmd`・`args[0]`・`env_vars[1]`・`vars.<name>` など）は、キーを `Constant`、添字を `Text`、変数名を `Identifier` とする。0178 の `ErrUndefinedVariableDetail` と同じく、フィールドとレベル（`global`・`group[<name>]`・`command[<name>]`・`template[<name>]`）は、描画済みの文字列ではなく型付きの値（既存の `Level`・`Field`）で運ぶ。`fmt.Sprintf("vars.%s", name)` のように組み立てた文字列を後から解析して分けることはしない。
 - **数値**（添字・件数・上限・深さ）は、0178 と同じく `Text` とする。
@@ -155,7 +155,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 `validateGroupName`・`validateCommandName` は、拒否した名前を本文に含めない（拒否された識別子が資格情報の形をしている可能性がある、という理由がコードのコメントにある）。変数名・システム環境変数の名前・テンプレート名・プレースホルダ名のエラーは、拒否した名前を本文に含める。
 
-→ **提案:** 名前の検証で拒否された名前は、定義された名前ではないので `Text` とする。形式が正しく、検証以外の理由（未定義・重複・衝突・allowlist にない・循環参照など）でエラーになった名前は `Identifier` とする。本文に含めない方向への文言の変更は、本タスクでは行わない（F-004）。
+→ **提案:** 名前の検証で拒否された名前は、定義された名前ではないので `Text` とする。形式が正しく、検証以外の理由（未定義・重複・衝突・allowlist にない・循環参照など）でエラーになった名前は `Identifier` とする。名前の検証を受けていない名前（存在しないテンプレートへの参照名・重複して定義されたテンプレート名・`--groups` で指定された名前）は、決定事項 2・4 のとおり `Identifier` とする。本文に含めない方向への文言の変更は、本タスクでは行わない（F-004）。
 
 ### 4. `--groups` の名前の役割
 
@@ -195,7 +195,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 **Acceptance Criteria**:
 - **AC-01**: `internal/runner/config` で宣言され `Error() string` を持つすべての型が、`errmsg.Structured` を実装する。テストはパッケージの型宣言を走査して確かめ、対象の型の一覧を保守しない。構造化メッセージを実装しない型を加えると、このテストが失敗する。
 - **AC-02**: 各エラー型の構造化メッセージで、定義された名前（決定事項 1・2 の名前、group 名・コマンド名・変数名）は `Identifier`、パスは `Path`、固定の文言は `Constant` として宣言される。
-- **AC-03**: 名前の検証で拒否された名前、名前の検証を受けていない名前（`ErrDuplicateTemplateName` の名前）、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
+- **AC-03**: 名前の検証で拒否された名前、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
 - **AC-04**: レベルとフィールドの部分は、型付きの `Level`・`Field` から作られる。エラー型のレベル・フィールドを描画済みの文字列として持つフィールドは残らない。
 - **AC-05**: 原因を持つエラー型は、原因の構造を保つ。構造化メッセージを返す原因の `Identifier` の部分は、外側のエラーを通しても `Identifier` として描画される。
 
@@ -240,7 +240,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 #### F-007: 文書
 
 **Acceptance Criteria**:
-- **AC-23**: `docs/dev/architecture_design/security-architecture.ja.md` に、システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前と存在しないテンプレートへの参照名を `Identifier` とすることとその保護の境界が記載されている。英語版は日本語版と同じ内容である。
+- **AC-23**: `docs/dev/architecture_design/security-architecture.ja.md` に、システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前・存在しないテンプレートへの参照名・重複して定義されたテンプレート名を `Identifier` とすることとその保護の境界が記載されている。英語版は日本語版と同じ内容である。
 
 #### F-008: 全体の健全性
 
