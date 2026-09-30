@@ -68,7 +68,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 ## 目的
 
 - `internal/runner/config` のエラー型と `cli.FilterGroups` のエラーの本文を、役割を宣言した構造化メッセージとして運ぶ。機密ではない名前のために、原因の部分全体が `[REDACTED]` にならないようにする。
-- 秘密の保護を弱めない。`Text` から役割を変えるのは、名前やパスのように、設定の中で名前として定義され、検証を通った値に限る。生の設定値（`env` の `KEY=VALUE` のエントリ、テンプレートの入力文字列など）は `Text` のままとする。
+- 秘密の保護を弱めない。`Text` から役割を変えるのは、名前やパスのように、設定の中で名前として定義され、検証を通った値と、運用者が `--groups` で指定した group 名に限る（決定事項 4）。生の設定値（`env` の `KEY=VALUE` のエントリ、テンプレートの入力文字列など）は `Text` のままとする。
 - 役割は、エラーを作るコードが型で宣言する。描画済みの文字列（`group[deploy]`・`vars.token_file` など）を解析して役割を決めない（CLAUDE.md「Declare, don't infer」）。
 
 ## 用語
@@ -88,7 +88,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
    - `ExpandGlobal` のうち、0178 で原因をラップする文言を `Text` として宣言した箇所（例: `failed to process global env_import: `）。固定の文言は `Constant` として宣言する。
 3. **`--groups` の検証:** `cli.FilterGroups` が返すエラーを構造化する。
 4. **ガード:** 0178 の AST ガード（`internal/errmsg/errmsg_guard_test.go` など）の許可位置と対象範囲を、上の 1〜3 に合わせて更新する。
-5. **文書:** `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` として免除すること、名前の検証で拒否された名前を `Text` とすることを追記する。英語版は `/mktrans` で反映する。
+5. **文書:** `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、システム環境変数の名前・テンプレート名・パラメータ名・`--groups` で指定された名前を `Identifier` として免除すること、名前の検証で拒否された名前を `Text` とすることを追記する。英語版は `/mktrans` で反映する。
 
 ### 対象外
 
@@ -111,7 +111,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 | 変数の循環参照で、変数名が語を含む（例: `api_key`） | 原因が `[REDACTED]` | `circular reference in group[backup].vars.…: 'api_key' (chain: [api_key token_file api_key])` がすべて残る |
 | テンプレート名・パラメータ名が語を含むテンプレートのエラー（例: テンプレート `rotate_token` の必須パラメータ `secret_file` がない） | 原因が `[REDACTED]` | `template "rotate_token" args[0]: required parameter "secret_file" not provided` がすべて残る |
 | `vars` と `env_import` で同じ名前を定義し、名前が語を含む | 原因が `[REDACTED]` | 変数名・レベルを含む本文がすべて残る |
-| `--groups` に存在しない group 名を指定し、定義済みの group 名が語を含む（例: `token_rotate`） | 原因が `[REDACTED]` | 定義済みの group 名の一覧は残る。指定された名前は下の「一部だけ救われるケース」のとおり |
+| `--groups` に存在しない group 名を指定し、定義済みの group 名が語を含む（例: `token_rotate`） | 原因が `[REDACTED]` | 指定された名前と定義済みの group 名の一覧がすべて残る |
 
 ### 一部だけ救われるケース
 
@@ -119,7 +119,6 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 | ケース | 消える部分 |
 |---|---|
-| `--groups` に指定した存在しない名前が語を含む（例: `secret_rotate`） | 指定された名前の部分。設定で定義された名前ではない（決定事項 4） |
 | 変数名の形式の検証で拒否され、拒否された名前が語を含む | 拒否された名前の部分（決定事項 3） |
 | `env` のエントリの形式が不正（例: `API_TOKEN` に `=` がない） | エントリの部分。生の設定値である |
 | テンプレートの入力文字列（プレースホルダを含む生の文字列）が語を含む | 入力文字列の部分 |
@@ -146,7 +145,7 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 → **提案:**
 
 - **テンプレート名**（`command_templates` のキーで、`ValidateTemplateName` を通ったもの）とテンプレートのパラメータ名（`${param}` の `param`）は、定義された名前なので `Identifier` とする。
-- **コマンドの `template` が参照する名前**は、名前の検証を受けない。参照先が存在しないとき（`ErrTemplateNotFound`）の名前は定義された名前ではないので、`--groups` で指定された存在しない名前（決定事項 4）と同じく `Text` とする。
+- **コマンドの `template` が参照する名前**は、名前の検証を受けない。参照先が存在しないとき（`ErrTemplateNotFound`）の名前は定義された名前ではないので `Text` とする。
 - **`ErrDuplicateTemplateName` の名前**は、`loader.go` で `ValidateTemplateName` より前に検査されるので、形式が検証されていない。`Text` とする。
 - **`env` のキー**（`KEY=VALUE` の `KEY`）は、名前の検証を通ったものを `Identifier` とする。キーにプレースホルダを含むもの（`ErrPlaceholderInEnvKey`）は名前の検証で拒否されたものとして `Text` とする。
 - **フィールド名**（`cmd`・`args[0]`・`env_vars[1]`・`vars.<name>` など）は、キーを `Constant`、添字を `Text`、変数名を `Identifier` とする。0178 の `ErrUndefinedVariableDetail` と同じく、フィールドとレベル（`global`・`group[<name>]`・`command[<name>]`・`template[<name>]`）は、描画済みの文字列ではなく型付きの値（既存の `Level`・`Field`）で運ぶ。`fmt.Sprintf("vars.%s", name)` のように組み立てた文字列を後から解析して分けることはしない。
@@ -162,7 +161,11 @@ system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' 
 
 → **提案:**
 
-- `--groups` で指定され、設定に存在しない名前は、CLI からの入力であり定義された名前ではないので `Text` とする。
+- `--groups` で指定され、設定に存在しない名前も `Identifier` とする。理由は次のとおりである。
+  - コマンドライン引数は、プロセス一覧・シェルの履歴・systemd のユニットや cron の定義に残る。秘密を渡す経路ではない。
+  - 入力するのは runner を起動する運用者自身であり、外部からの入力ではない。
+  - 実際に起きるのは group 名の打ち間違いであり、打ち間違えた名前は定義済みの group 名と同じく機密を示す語を含みうる（例: `token_rotate` のつもりの `token_rotat`）。`Text` にすると、救いたい本文そのものが消える。
+- この扱いにより、誤って秘密を `--groups` に貼り付けた場合、その値は値形式の検出も免除されて Slack に出る。これを保護の境界として受け入れる。
 - 定義済みの group 名の一覧（`Available groups:`）は、`ValidateIdentifiers` を通った group 名なので、各要素を `Identifier` とする。
 - `%v` による `[a b c]` の書式は、区切り文字と括弧を `Constant` として保ち、`Error()` の文言を変えない。
 
@@ -192,7 +195,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 **Acceptance Criteria**:
 - **AC-01**: `internal/runner/config` で宣言され `Error() string` を持つすべての型が、`errmsg.Structured` を実装する。テストはパッケージの型宣言を走査して確かめ、対象の型の一覧を保守しない。構造化メッセージを実装しない型を加えると、このテストが失敗する。
 - **AC-02**: 各エラー型の構造化メッセージで、定義された名前（決定事項 1・2 の名前、group 名・コマンド名・変数名）は `Identifier`、パスは `Path`、固定の文言は `Constant` として宣言される。
-- **AC-03**: 名前の検証で拒否された名前、名前の検証を受けていない名前（存在しないテンプレートへの参照名、`ErrDuplicateTemplateName` の名前）、`--groups` で指定された存在しない名前、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
+- **AC-03**: 名前の検証で拒否された名前、名前の検証を受けていない名前（存在しないテンプレートへの参照名、`ErrDuplicateTemplateName` の名前）、生の設定値（`env` のエントリ・`env_import` のマッピング・テンプレートの入力文字列）、数値は `Text` として宣言される。
 - **AC-04**: レベルとフィールドの部分は、型付きの `Level`・`Field` から作られる。エラー型のレベル・フィールドを描画済みの文字列として持つフィールドは残らない。
 - **AC-05**: 原因を持つエラー型は、原因の構造を保つ。構造化メッセージを返す原因の `Identifier` の部分は、外側のエラーを通しても `Identifier` として描画される。
 
@@ -201,7 +204,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 **Acceptance Criteria**:
 - **AC-06**: スコープの対象 2 の関数の中に、`%w` を含む `fmt.Errorf` がない。この AC は、対象の関数の中を実際に走査する AST の検査で確かめる。後から加わった箇所も、一覧を保守せずに検査の対象になる。
 - **AC-07**: スコープの対象 2 の箇所で原因に付加する固定の文言は `Constant`、挿入する名前は決定事項 1〜3 の役割として宣言される。
-- **AC-08**: `cli.FilterGroups` が存在しない group 名で失敗したとき、返すエラーは構造化メッセージを実装し、定義済みの group 名は `Identifier`、指定された存在しない名前は `Text` として宣言される。`errors.Is(err, cli.ErrGroupNotFound)` が成り立つ。
+- **AC-08**: `cli.FilterGroups` が存在しない group 名で失敗したとき、返すエラーは構造化メッセージを実装し、指定された存在しない名前と定義済みの group 名は `Identifier` として宣言される。`errors.Is(err, cli.ErrGroupNotFound)` が成り立つ。
 
 #### F-003: 通知の本文
 
@@ -210,7 +213,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 - **AC-09**: group の展開で、`env_import` のシステム環境変数の名前（例: `GITHUB_TOKEN`）が allowlist になく、group 名とシステム環境変数の名前が機密を示す語を含むとき、Slack の `Error Message` では、システム環境変数の名前・変数名・group 名が置き換えられずに出る。
 - **AC-10**: global の `vars` の展開で、名前が機密を示す語を含む変数が循環参照するとき、Slack の `Error Message` では、循環の経路の変数名が置き換えられずに出る。
 - **AC-11**: `ValidateAllTemplates` の失敗で、テンプレート名と変数名が機密を示す語を含むとき、Slack の `Error Message` では、テンプレート名と変数名が置き換えられずに出る。
-- **AC-12**: `--groups` に存在しない名前を指定し、指定した名前と定義済みの group 名がどちらも機密を示す語を含むとき、Slack の `Error Message` では、定義済みの group 名が置き換えられずに出て、指定した名前の部分だけが置換文字列になる。
+- **AC-12**: `--groups` に存在しない名前を指定し、指定した名前と定義済みの group 名がどちらも機密を示す語を含むとき、Slack の `Error Message` では、指定した名前と定義済みの group 名がどちらも置き換えられずに出る。
 - **AC-13**: コマンドの展開でテンプレートの展開が失敗し、テンプレート名・パラメータ名が機密を示す語を含むとき、Slack の `Error Message` では、テンプレート名・パラメータ名・コマンド名・group 名が置き換えられずに出る。
 
 #### F-004: 既存の出力の維持
@@ -224,7 +227,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 #### F-005: 保護の維持
 
 **Acceptance Criteria**:
-- **AC-18**: `Text` として宣言した部分（生の設定値・拒否された名前・`--groups` で指定された名前）に値全体置換だけが反応する入力を与えると、その部分が置換文字列になる。
+- **AC-18**: `Text` として宣言した部分（生の設定値・拒否された名前）に値全体置換だけが反応する入力を与えると、その部分が置換文字列になる。
 - **AC-19**: `Identifier` 以外の部分に値形式の検出だけが反応する値（例: GitHub トークン形式の値）を含む `env` のエントリやテンプレートの入力文字列は、変更後もマスクされる。
 
 #### F-006: 宣言の保証
@@ -237,7 +240,7 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 #### F-007: 文書
 
 **Acceptance Criteria**:
-- **AC-23**: `docs/dev/architecture_design/security-architecture.ja.md` に、システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前と `--groups` で指定された名前を `Text` とすることが記載されている。英語版は日本語版と同じ内容である。
+- **AC-23**: `docs/dev/architecture_design/security-architecture.ja.md` に、システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前を `Identifier` とすることとその保護の境界が記載されている。英語版は日本語版と同じ内容である。
 
 #### F-008: 全体の健全性
 
@@ -253,6 +256,6 @@ Issue は優先順位として、(1) `env_import`・allowlist、(2) 循環参照
 ## Success Criteria（要件レベル）
 
 - global・group・コマンドの展開、テンプレートの検証、`--groups` の検証の失敗の Slack 通知で、定義された名前（システム環境変数の名前・テンプレート名・パラメータ名を含む）のために原因の部分全体が `[REDACTED]` にならない。
-- 生の設定値・拒否された名前・CLI から指定された名前は `Text` として、変更前と同じ保護を受ける。
+- 生の設定値・拒否された名前は `Text` として、変更前と同じ保護を受ける。
 - 役割は型で宣言され、文字列の内容から推測されない。
 - `Error()` の文言、stderr の文言、通知の種別と構成は変わらない。
