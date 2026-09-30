@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
@@ -54,6 +56,28 @@ var ErrStartPhaseNotRun = errors.New("start window returned without running the 
 // killGraceDelay after the kill, which usually means a grandchild inherited
 // the pipe.
 var ErrChildNotReaped = errors.New("command did not exit after kill")
+
+// killAfterCancelError reports a kill attempted after cancellation whose
+// underlying cause must stay reachable together with ErrKillAfterCancel.
+// Its text equals fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, err).
+type killAfterCancelError struct {
+	pid int
+	err error
+}
+
+func (e *killAfterCancelError) Error() string { return e.StructuredMessage().String() }
+
+func (e *killAfterCancelError) Unwrap() []error { return []error{ErrKillAfterCancel, e.err} }
+
+func (e *killAfterCancelError) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Cause(ErrKillAfterCancel),
+		errmsg.Const(": pid="),
+		errmsg.Text(strconv.Itoa(e.pid)),
+		errmsg.Const(": "),
+		errmsg.Cause(e.err),
+	)
+}
 
 // execBinding declares how the executed inode is bound. The zero value is
 // bindingUnset, which startPrepared rejects, so a preparedCommand whose
@@ -586,11 +610,11 @@ func (e *DefaultExecutor) runCommand(ctx context.Context, pc *preparedCommand, s
 		if elevErr == nil {
 			elevErr = ErrStartPhaseNotRun
 		}
-		return nil, errors.Join(elevErr, closeErr, fdErr, pc.release())
+		return nil, errmsg.Join(elevErr, closeErr, fdErr, pc.release())
 	case !started:
-		return e.reportStartFailure(pc, errors.Join(elevErr, closeErr, fdErr))
+		return e.reportStartFailure(pc, errmsg.Join(elevErr, closeErr, fdErr))
 	default:
-		return e.superviseCommand(ctx, pc, errors.Join(elevErr, closeErr))
+		return e.superviseCommand(ctx, pc, errmsg.Join(elevErr, closeErr))
 	}
 }
 
@@ -616,13 +640,13 @@ func (e *DefaultExecutor) logStartWindowRecords(pc *preparedCommand, started boo
 // reportStartFailure releases everything the prepare phase acquired and builds
 // the placeholder Result a run that never started has always reported.
 func (e *DefaultExecutor) reportStartFailure(pc *preparedCommand, startErr error) (*Result, error) {
-	combinedErr := errors.Join(startErr, pc.release())
+	combinedErr := errmsg.Join(startErr, pc.release())
 	result := &Result{ExitCode: ExitCodeUnknown}
 	e.Logger.Error("Command execution failed",
 		"error", combinedErr,
 		"command", pc.cmdLine,
 		"exit_code", result.ExitCode)
-	return result, fmt.Errorf("command execution failed: %w", combinedErr)
+	return result, errmsg.NewError(errmsg.Const("command execution failed: "), errmsg.Cause(combinedErr))
 }
 
 // superviseCommand reaps the child, reads its output and builds the Result,
@@ -733,7 +757,11 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 	var notReapedErr error
 	switch {
 	case !outcome.reaped:
-		notReapedErr = fmt.Errorf("%w: pid=%d", ErrChildNotReaped, pid)
+		notReapedErr = errmsg.NewError(
+			errmsg.Cause(ErrChildNotReaped),
+			errmsg.Const(": pid="),
+			errmsg.Text(strconv.Itoa(pid)),
+		)
 		e.Logger.Error("Command did not exit after kill",
 			"error", notReapedErr,
 			"command", pc.cmdLine,
@@ -779,14 +807,14 @@ func (e *DefaultExecutor) superviseCommand(ctx context.Context, pc *preparedComm
 		result.ExitCode = ExitCodeUnknown
 	}
 
-	cmdErr := errors.Join(rankedError(outcome), outcome.killErr, notReapedErr, startupErr)
+	cmdErr := errmsg.Join(rankedError(outcome), outcome.killErr, notReapedErr, startupErr)
 	if cmdErr != nil {
 		e.Logger.Error("Command execution failed",
 			"error", cmdErr,
 			"command", pc.cmdLine,
 			"exit_code", result.ExitCode,
 			"stderr", string(outcome.stderr))
-		return result, fmt.Errorf("command execution failed: %w", cmdErr)
+		return result, errmsg.NewError(errmsg.Const("command execution failed: "), errmsg.Cause(cmdErr))
 	}
 
 	return result, nil
@@ -903,7 +931,7 @@ func (e *DefaultExecutor) killChild(pc *preparedCommand, proc *os.Process, pid i
 		return killOutcome(proc.Kill(), pid)
 	case killReelevated:
 		if e.PrivMgr == nil {
-			return fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, ErrNoPrivilegeManager)
+			return &killAfterCancelError{pid: pid, err: ErrNoPrivilegeManager}
 		}
 		elevationCtx := pc.runAsElevation
 		elevationCtx.Operation = runnertypes.OperationKillAfterCancel
@@ -928,7 +956,11 @@ func (e *DefaultExecutor) killChild(pc *preparedCommand, proc *os.Process, pid i
 		}
 		return killOutcome(err, pid)
 	default:
-		return fmt.Errorf("%w: pid=%d", ErrKillStrategyUnset, pid)
+		return errmsg.NewError(
+			errmsg.Cause(ErrKillStrategyUnset),
+			errmsg.Const(": pid="),
+			errmsg.Text(strconv.Itoa(pid)),
+		)
 	}
 }
 
@@ -939,5 +971,5 @@ func killOutcome(err error, pid int) error {
 	if err == nil || errors.Is(err, os.ErrProcessDone) {
 		return nil
 	}
-	return fmt.Errorf("%w: pid=%d: %w", ErrKillAfterCancel, pid, err)
+	return &killAfterCancelError{pid: pid, err: err}
 }

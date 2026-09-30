@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common/testutil"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio/testutil"
@@ -816,6 +817,87 @@ func TestEvaluateSecurityRisk_PathBoundarySecurityFix(t *testing.T) {
 						"This would be a false positive with vulnerable string prefix checking.",
 					tt.path, tt.workDir)
 			}
+		})
+	}
+}
+
+// TestPathValidationWraps_KeepInsertedPath pins that the output-path
+// validation wraps keep their wording and declare the rejected path as a Path
+// segment. Path (not Identifier) is what keeps RedactText running on a
+// config-controlled path.
+func TestPathValidationWraps_KeepInsertedPath(t *testing.T) {
+	securityErr := errors.New("write permission denied")
+
+	pathSegments := func(t *testing.T, err error) []string {
+		t.Helper()
+		structured, ok := errors.AsType[errmsg.Structured](err)
+		require.True(t, ok, "the wrap must be a structured error; got %T", err)
+		var paths []string
+		for _, segment := range structured.StructuredMessage().Segments() {
+			if segment.Role == errmsg.RolePath {
+				paths = append(paths, segment.Text)
+			}
+		}
+		return paths
+	}
+
+	tests := []struct {
+		name      string
+		run       func(t *testing.T) error
+		want      string
+		wantPaths []string
+	}{
+		{
+			name:      "path traversal",
+			run:       func(*testing.T) error { return validatePathSecurity("a/../b") },
+			want:      ErrPathTraversal.Error() + ": a/../b",
+			wantPaths: []string{"a/../b"},
+		},
+		{
+			name:      "dangerous characters",
+			run:       func(*testing.T) error { return validatePathSecurity("a;b") },
+			want:      ErrDangerousCharactersInPath.Error() + ": a;b (found: [;])",
+			wantPaths: []string{"a;b"},
+		},
+		{
+			name: "relative path escapes workdir",
+			run: func(*testing.T) error {
+				_, err := NewDefaultPathValidator().validateRelativePath("../x", "/work")
+				return err
+			},
+			want:      ErrPathEscapesWorkDirectory.Error() + ": ../x",
+			wantPaths: []string{"../x"},
+		},
+		{
+			name: "manager path validation wrap",
+			run: func(*testing.T) error {
+				m := NewDefaultOutputCaptureManager(&MockSecurityValidator{})
+				_, err := m.validateAndResolvePath("a;b", "/work")
+				return err
+			},
+			want:      "path validation failed: " + ErrDangerousCharactersInPath.Error() + ": a;b (found: [;])",
+			wantPaths: []string{"a;b"},
+		},
+		{
+			name: "manager security validation wrap",
+			run: func(t *testing.T) error {
+				validator := &MockSecurityValidator{}
+				validator.On("ValidateOutputWritePermission", mock.AnythingOfType("string"), mock.AnythingOfType("int")).Return(securityErr)
+				m := NewDefaultOutputCaptureManager(validator)
+				_, err := m.validateAndResolvePath(filepath.Join(t.TempDir(), "ok.txt"), "")
+				return err
+			},
+			want:      "security validation failed: " + securityErr.Error(),
+			wantPaths: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Equal(t, tt.want, err.Error())
+			assert.Equal(t, tt.wantPaths, pathSegments(t, err))
 		})
 	}
 }

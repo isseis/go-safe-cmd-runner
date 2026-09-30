@@ -2,12 +2,14 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/output"
@@ -615,6 +617,96 @@ func TestNormalResourceManager_ValidateOutputPath_RelativePath(t *testing.T) {
 			}
 
 			f.MockOutputMgr.AssertExpectations(t)
+		})
+	}
+}
+
+// TestResourceManagers_StructuredWrapTexts pins the wording and the role of
+// the command and group validation wraps shared by the normal and dry-run
+// managers: a constant prefix and the cause as text.
+func TestResourceManagers_StructuredWrapTexts(t *testing.T) {
+	const (
+		commandPrefix = "command validation failed: "
+		groupPrefix   = "command group validation failed: "
+	)
+
+	tests := []struct {
+		name     string
+		run      func(t *testing.T) error
+		want     string
+		segments errmsg.Segments
+	}{
+		{
+			name: "normal command validation",
+			run: func(_ *testing.T) error {
+				f := createTestNormalResourceManager()
+				_, _, err := f.Manager.ExecuteCommand(context.Background(),
+					executortestutil.CreateRuntimeCommand("", nil, executortestutil.WithName("c")),
+					createTestCommandGroup(), nil)
+				return err
+			},
+			want: commandPrefix + ErrEmptyCommand.Error(),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: commandPrefix},
+				{Role: errmsg.RoleText, Text: ErrEmptyCommand.Error()},
+			},
+		},
+		{
+			name: "normal command group validation",
+			run: func(_ *testing.T) error {
+				f := createTestNormalResourceManager()
+				_, _, err := f.Manager.ExecuteCommand(context.Background(),
+					executortestutil.CreateRuntimeCommand("echo", nil, executortestutil.WithName("c")),
+					&runnertypes.GroupSpec{}, nil)
+				return err
+			},
+			want: groupPrefix + ErrEmptyGroupName.Error(),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: groupPrefix},
+				{Role: errmsg.RoleText, Text: ErrEmptyGroupName.Error()},
+			},
+		},
+		{
+			name: "dry-run command validation",
+			run: func(_ *testing.T) error {
+				m := createTestDryRunResourceManager()
+				_, _, err := m.ExecuteCommand(context.Background(),
+					executortestutil.CreateRuntimeCommand("", nil, executortestutil.WithName("c")),
+					createTestCommandGroup(), nil)
+				return err
+			},
+			want: commandPrefix + ErrEmptyCommand.Error(),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: commandPrefix},
+				{Role: errmsg.RoleText, Text: ErrEmptyCommand.Error()},
+			},
+		},
+		{
+			name: "dry-run command group validation",
+			run: func(_ *testing.T) error {
+				m := createTestDryRunResourceManager()
+				_, _, err := m.ExecuteCommand(context.Background(),
+					executortestutil.CreateRuntimeCommand("echo", nil, executortestutil.WithName("c")),
+					&runnertypes.GroupSpec{}, nil)
+				return err
+			},
+			want: groupPrefix + ErrEmptyGroupName.Error(),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleConstant, Text: groupPrefix},
+				{Role: errmsg.RoleText, Text: ErrEmptyGroupName.Error()},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run(t)
+			require.Error(t, err)
+			assert.Equal(t, tt.want, err.Error())
+
+			structured, ok := errors.AsType[errmsg.Structured](err)
+			require.True(t, ok, "the wrap must be a structured error; got %T", err)
+			assert.Equal(t, tt.segments, structured.StructuredMessage().Segments())
 		})
 	}
 }

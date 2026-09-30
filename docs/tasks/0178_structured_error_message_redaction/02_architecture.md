@@ -488,7 +488,9 @@ func (e *cancelledRunError) StructuredMessage() errmsg.Message
 次は対象にしない。
 
 - `(*DefaultExecutor).stageFromFD` など、3.8.1 節の範囲に入れる規則に当たらない関数。
-- `(*DryRunResourceManager).UpdateCommandDebugInfo`・`ValidateOutputPath` と、一時ディレクトリの後始末の関数: 2 つのレコードの原因にならない。
+- `(*DryRunResourceManager).UpdateCommandDebugInfo` と、一時ディレクトリの後始末の関数: 2 つのレコードの原因にならない。
+
+`ValidateOutputPath` は、`group_executor.go` の `output path validation failed: ` のラップを通って最終の実行エラーの原因になり、その先の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する。規則 (ii) に当たるので範囲に入れる（3.8.1 節の表）。
 
 関数ごとの箇所と部分の並びは申し送り「コマンドの実行の経路の箇所ごとの部分の並び」にある。
 
@@ -520,7 +522,8 @@ AC-41 の「対象の経路」を、次の範囲として確定する。この�
 |---|---|---|
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` のファイル全体、`runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` | — |
 | `internal/runner/config` | `expansion.go` のファイル全体、`(*ErrUndefinedVariableDetail).StructuredMessage`、`Level`・`Field` の非公開の部分の組み立て | 下の表の関数 |
-| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` | — |
+| `internal/runner/resource` | `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`・`ValidateOutputPath`、`(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk`・`ValidateOutputPath` | — |
+| `internal/runner/base/output` | `(*DefaultOutputCaptureManager).ValidateOutputPath`・`validateAndResolvePath`、`(*DefaultPathValidator).ValidateAndResolvePath`・`validateRelativePath`、`validatePathSecurity` | — |
 | `internal/runner/base/executor` | `(*DefaultTempDirManager).Create`、`(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup`・`runCommand`・`reportStartFailure`・`superviseCommand`・`killChild`、`killOutcome` | — |
 | `internal/runner/base/privilege` | `(*Error).StructuredMessage`、`(*UnixPrivilegeManager).performElevation` | — |
 | `internal/logging` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`contextParts` | — |

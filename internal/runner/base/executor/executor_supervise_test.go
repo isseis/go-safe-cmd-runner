@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege"
 	privilegetestutil "github.com/isseis/go-safe-cmd-runner/internal/runner/base/privilege/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
@@ -788,6 +789,69 @@ func TestKillChild_RejectsUndeclaredAndUnavailableStrategies(t *testing.T) {
 			assert.Empty(t, pc.privilegeWindows, "a kill that never opened a window must record none")
 		})
 	}
+}
+
+// TestKillAfterCancelError_TextAndReachability pins that the dedicated type
+// renders the old fmt.Errorf text and keeps both causes reachable, on the two
+// paths that build it.
+func TestKillAfterCancelError_TextAndReachability(t *testing.T) {
+	const pid = 4242
+
+	t.Run("killChild without privilege manager", func(t *testing.T) {
+		e := NewDefaultExecutor().(*DefaultExecutor)
+		pc := &preparedCommand{kill: killReelevated}
+
+		err := e.killChild(pc, nil, pid)
+
+		require.Error(t, err)
+		assert.Equal(t,
+			ErrKillAfterCancel.Error()+": pid="+strconv.Itoa(pid)+": "+ErrNoPrivilegeManager.Error(),
+			err.Error())
+		assert.ErrorIs(t, err, ErrKillAfterCancel)
+		assert.ErrorIs(t, err, ErrNoPrivilegeManager)
+		_, ok := errors.AsType[*killAfterCancelError](err)
+		assert.True(t, ok, "the no-privilege-manager path must use the dedicated type")
+	})
+
+	t.Run("killOutcome", func(t *testing.T) {
+		childErr := errors.New("operation not permitted")
+
+		err := killOutcome(childErr, pid)
+
+		require.Error(t, err)
+		assert.Equal(t,
+			ErrKillAfterCancel.Error()+": pid="+strconv.Itoa(pid)+": "+childErr.Error(),
+			err.Error())
+		assert.ErrorIs(t, err, ErrKillAfterCancel)
+		assert.ErrorIs(t, err, childErr)
+		_, ok := errors.AsType[*killAfterCancelError](err)
+		assert.True(t, ok, "killOutcome must use the dedicated type")
+	})
+
+	t.Run("success is nil", func(t *testing.T) {
+		assert.NoError(t, killOutcome(nil, pid))
+		assert.NoError(t, killOutcome(os.ErrProcessDone, pid))
+	})
+}
+
+// TestKillChild_UndeclaredStrategyStructuredText pins the default kill branch:
+// the strategy sentinel is the cause and the pid is text, not a constant.
+func TestKillChild_UndeclaredStrategyStructuredText(t *testing.T) {
+	const pid = 77
+
+	e := NewDefaultExecutor().(*DefaultExecutor)
+	err := e.killChild(&preparedCommand{kill: killUnset}, nil, pid)
+
+	require.ErrorIs(t, err, ErrKillStrategyUnset)
+	assert.Equal(t, ErrKillStrategyUnset.Error()+": pid="+strconv.Itoa(pid), err.Error())
+
+	structured, ok := errors.AsType[errmsg.Structured](err)
+	require.True(t, ok, "the default kill branch must return a structured error; got %T", err)
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: ErrKillStrategyUnset.Error()},
+		{Role: errmsg.RoleConstant, Text: ": pid="},
+		{Role: errmsg.RoleText, Text: strconv.Itoa(pid)},
+	}, structured.StructuredMessage().Segments())
 }
 
 // TestKillChild_RecordsOnlyWindowsThatOpened verifies what the kill path hands

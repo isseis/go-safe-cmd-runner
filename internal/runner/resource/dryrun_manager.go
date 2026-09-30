@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor"
@@ -156,7 +157,11 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 		// In dry-run mode, we can still perform basic validation without an output manager
 		// Check for path traversal by analyzing path components
 		if common.ContainsPathTraversalSegment(outputPath) {
-			return fmt.Errorf("%w: %s", ErrPathTraversalDetected, outputPath)
+			return errmsg.NewError(
+				errmsg.Cause(ErrPathTraversalDetected),
+				errmsg.Const(": "),
+				errmsg.Path(outputPath),
+			)
 		}
 		return nil
 	}
@@ -172,17 +177,17 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 
 	// Validate command and group for consistency with normal mode
 	if err := validateCommand(cmd); err != nil {
-		return "", nil, fmt.Errorf("command validation failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("command validation failed: "), errmsg.Cause(err))
 	}
 
 	if err := validateCommandGroup(group); err != nil {
-		return "", nil, fmt.Errorf("command group validation failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("command group validation failed: "), errmsg.Cause(err))
 	}
 
 	// Analyze the command
 	analysis, err := d.analyzeCommand(ctx, cmd, group, env)
 	if err != nil {
-		return "", nil, fmt.Errorf("command analysis failed: %w", err)
+		return "", nil, errmsg.NewError(errmsg.Const("command analysis failed: "), errmsg.Cause(err))
 	}
 
 	// Check if output capture is requested and analyze it
@@ -413,7 +418,13 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 		// is left absent (nil) per the RiskAuditEntry contract rather than logging an
 		// unresolved value.
 		d.emitDryRunErrorAudit(ctx, cmd, nil, risktypes.ErrorClassPathResolution)
-		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.ExpandedCmd, err)
+		return errmsg.NewError(
+			errmsg.Const("failed to resolve command path '"),
+			errmsg.Path(cmd.ExpandedCmd),
+			errmsg.Const("': "),
+			errmsg.Cause(err),
+			errmsg.Const(". This typically occurs if the command is not found in the system PATH or there are permission issues preventing access"),
+		)
 	}
 
 	// Evaluate against a copy carrying the resolved path so the input is not mutated.
@@ -424,7 +435,12 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 		// (3) unexpected internal error -> hard error in dry-run too. The path was
 		// resolved, so record it for correlation.
 		d.emitDryRunErrorAudit(ctx, &prepared, optString(prepared.ExpandedCmd), risktypes.ErrorClassRecordLoad)
-		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
+		return errmsg.NewError(
+			errmsg.Const("security analysis failed for command '"),
+			errmsg.Path(cmd.ExpandedCmd),
+			errmsg.Const("': "),
+			errmsg.Cause(err),
+		)
 	}
 	defer func() {
 		if closeErr := plan.Close(); closeErr != nil {
@@ -438,7 +454,12 @@ func (d *DryRunResourceManager) evaluateCommandRisk(ctx context.Context, cmd *ru
 		// Audit it as a deny (classified as a risk_level config error) correlated
 		// with the evaluated identity, mirroring normal mode, before aborting.
 		d.auditRiskDecision(ctx, &prepared, &plan, runnertypes.RiskLevelUnknown, risktypes.DecisionDeny, false, risktypes.ErrorClassRiskLevelConfig)
-		return fmt.Errorf("invalid risk_level configuration for command '%s': %w", cmd.ExpandedCmd, err)
+		return errmsg.NewError(
+			errmsg.Const("invalid risk_level configuration for command '"),
+			errmsg.Path(cmd.ExpandedCmd),
+			errmsg.Const("': "),
+			errmsg.Cause(err),
+		)
 	}
 
 	effectiveRisk := plan.Assessment.Level

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/identifier"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/risktypes"
@@ -192,14 +193,14 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 	// Validate the command before any privilege changes
 	if err := e.Validate(cmd); err != nil {
 		e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
-		return nil, fmt.Errorf("command validation failed: %w", err)
+		return nil, errmsg.NewError(errmsg.Const("command validation failed: "), errmsg.Cause(err))
 	}
 
 	// Additional security validation for privileged commands BEFORE path resolution
 	// This ensures the original command in the config file uses absolute paths
 	if err := e.validatePrivilegedCommand(cmd); err != nil {
 		e.Logger.Error("Privileged command security validation failed", "error", err, "command", cmd.ExpandedCmd)
-		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
+		return nil, errmsg.NewError(errmsg.Const("privileged command security validation failed: "), errmsg.Cause(err))
 	}
 
 	if cmd.ExpandedCmd == "" {
@@ -251,7 +252,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 		// The command never ran, so there is no exit code to report; the
 		// placeholder keeps Execute's promise that a failed run still yields
 		// a Result for the caller to read an exit code from.
-		return &Result{ExitCode: ExitCodeUnknown}, fmt.Errorf("user/group privilege execution failed: %w", err)
+		return &Result{ExitCode: ExitCodeUnknown}, errmsg.NewError(errmsg.Const("user/group privilege execution failed: "), errmsg.Cause(err))
 	}
 
 	e.Logger.Debug("Calling WithPrivileges for user/group execution", "command", identifier.NewIdentifier(cmd.Name()), "user", cmd.RunAsUser(), "group", cmd.RunAsGroup())
@@ -302,7 +303,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, plan *riskty
 			failureAttrs = append(failureAttrs, "privilege_duration_"+string(op)+"_us", duration.Microseconds())
 		}
 		e.Logger.Error("User/group privilege execution failed", failureAttrs...)
-		return result, fmt.Errorf("user/group privilege execution failed: %w", err)
+		return result, errmsg.NewError(errmsg.Const("user/group privilege execution failed: "), errmsg.Cause(err))
 	}
 
 	e.auditUserGroupExecution(ctx, cmd, result, startTime, metrics)
@@ -341,7 +342,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		e.Logger.Error("Command validation failed", "error", err, "command", cmd.ExpandedCmd)
-		return nil, fmt.Errorf("command validation failed: %w", err)
+		return nil, errmsg.NewError(errmsg.Const("command validation failed: "), errmsg.Cause(err))
 	}
 
 	if cmd.ExpandedCmd == "" {
@@ -354,7 +355,11 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, plan *risktypes.Ver
 	// No need for exec.LookPath() here as the path is already resolved.
 	if !filepath.IsAbs(cmd.ExpandedCmd) {
 		e.Logger.Error("Command path is not absolute", "command", cmd.ExpandedCmd)
-		return nil, fmt.Errorf("%w: %s", ErrPathNotAbsolute, cmd.ExpandedCmd)
+		return nil, errmsg.NewError(
+			errmsg.Cause(ErrPathNotAbsolute),
+			errmsg.Const(": "),
+			errmsg.Path(cmd.ExpandedCmd),
+		)
 	}
 
 	pc, err := e.prepareCommand(ctx, plan, cmd.ExpandedCmd, cmd, envVars, outputWriter, nil)
@@ -610,20 +615,37 @@ func (e *DefaultExecutor) Validate(cmd *runnertypes.RuntimeCommand) error {
 
 	// Validate command path to prevent command injection and ensure proper format
 	if !filepath.IsLocal(cmd.ExpandedCmd) && !filepath.IsAbs(cmd.ExpandedCmd) {
-		return fmt.Errorf("%w: command path must be local or absolute: %s", ErrInvalidPath, cmd.ExpandedCmd)
+		return errmsg.NewError(
+			errmsg.Cause(ErrInvalidPath),
+			errmsg.Const(": command path must be local or absolute: "),
+			errmsg.Path(cmd.ExpandedCmd),
+		)
 	}
 	if filepath.Clean(cmd.ExpandedCmd) != cmd.ExpandedCmd {
-		return fmt.Errorf("%w: command path contains relative path components ('.' or '..'): %s", ErrInvalidPath, cmd.ExpandedCmd)
+		return errmsg.NewError(
+			errmsg.Cause(ErrInvalidPath),
+			errmsg.Const(": command path contains relative path components ('.' or '..'): "),
+			errmsg.Path(cmd.ExpandedCmd),
+		)
 	}
 
 	// Check if working directory exists and is accessible
 	if cmd.EffectiveWorkDir != "" {
 		exists, err := e.FS.FileExists(cmd.EffectiveWorkDir)
 		if err != nil {
-			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkDir, err)
+			return errmsg.NewError(
+				errmsg.Const("failed to check directory "),
+				errmsg.Path(cmd.EffectiveWorkDir),
+				errmsg.Const(": "),
+				errmsg.Cause(err),
+			)
 		}
 		if !exists {
-			return fmt.Errorf("%w: %s", ErrDirNotExists, cmd.EffectiveWorkDir)
+			return errmsg.NewError(
+				errmsg.Cause(ErrDirNotExists),
+				errmsg.Const(": "),
+				errmsg.Path(cmd.EffectiveWorkDir),
+			)
 		}
 	}
 
@@ -712,12 +734,20 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd *runnertypes.RuntimeComm
 
 	// Enforce absolute paths for privileged commands
 	if !filepath.IsAbs(cmd.ExpandedCmd) {
-		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.ExpandedCmd)
+		return errmsg.NewError(
+			errmsg.Cause(ErrPrivilegedCmdSecurity),
+			errmsg.Const(": privileged commands must use absolute paths: "),
+			errmsg.Path(cmd.ExpandedCmd),
+		)
 	}
 
 	// Ensure working directory is also absolute for privileged commands
 	if cmd.EffectiveWorkDir != "" && !filepath.IsAbs(cmd.EffectiveWorkDir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.EffectiveWorkDir)
+		return errmsg.NewError(
+			errmsg.Cause(ErrPrivilegedCmdSecurity),
+			errmsg.Const(": privileged commands must use absolute working directory paths: "),
+			errmsg.Path(cmd.EffectiveWorkDir),
+		)
 	}
 
 	// Additional validation could include:

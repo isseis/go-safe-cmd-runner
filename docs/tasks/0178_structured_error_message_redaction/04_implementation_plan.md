@@ -143,7 +143,7 @@
 | 03 §11.2 | `package_reference.md` に `internal/identifier` の記述が無い | ディレクトリ一覧のアルファベット順の位置と Package Responsibilities に `internal/errmsg` を追記し、`internal/identifier` の記述の有無には依存しない |
 | 03 §10.7 | `ErrUndefinedVariableDetail.Level`・`Field` を文字列として比べるテストは無い | `errors_test.go:71-76` のリテラルだけを書き換え、`String()` の期待値テストは新設する |
 | 03 §2.9・§9.10 | `identitymutationguard` に自己テスト用の共通ヘルパは無い | 各ガードの自己テストは `group_errors_guard_test.go` の表の形で各ガードファイルに置く |
-| 02 §3.8.1・03 §7.1・§9.1 | `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`（および両者が委譲する `(*DefaultOutputCaptureManager).ValidateOutputPath` と `validateAndResolvePath`）を「2 つのレコードの原因にならない」として対象外にしている。しかし `group_executor.go:520-521` の `output path validation failed: %w`（対象の範囲内）を通って最終の実行エラーの原因になり、`dryrun_manager.go:159` と `base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`base/output/manager.go:71`・`:76` のラップは `path validation failed: `・`security validation failed: ` の定数の前置きだけで、パスは挿入しない）。02 §3.8.1 の規則 (ii)（パスを挿入するラップは対象）と矛盾する | **ブロッキングタスク**として扱う。02 の対象の範囲を修正して再承認を得るまで Phase 7・8 を開始しない（Phase 7 の冒頭）。修正では `base/output/path.go` の `validatePathSecurity`・`validateRelativePath` を対象に加え、03 §9.1 の範囲と §9.4 の役割の許可位置にも同じ関数を加えてから承認を得る |
+| 02 §3.8.1・03 §7.1・§9.1 | `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`（および両者が委譲する `(*DefaultOutputCaptureManager).ValidateOutputPath` と `validateAndResolvePath`）を「2 つのレコードの原因にならない」として対象外にしている。しかし `group_executor.go:581-586` の `output path validation failed: `（対象の範囲内）を通って最終の実行エラーの原因になり、`dryrun_manager.go:159` と `base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`base/output/manager.go:71`・`:76` のラップは `path validation failed: `・`security validation failed: ` の定数の前置きだけで、パスは挿入しない）。02 §3.8.1 の規則 (ii)（パスを挿入するラップは対象）と矛盾する | **ブロッキングタスク**として扱い、Phase 7 の冒頭でレビュアーの再承認を得た（解決済み）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`base/output` の 5 関数を加え、03 §9.1 の範囲・§9.4 の役割の許可位置・§7.1 と §7.5 の表・`errmsg_guard_test.go` の許可位置の表を合わせた |
 | 03 §3.4 | `ErrMessageFlattenPanic` は `PanicValue any` を持ち、既存の `ErrLogValuePanic`（`errors.go:13-15`）と同じ `%v` の `Error()` にすると panic 値が `ShutdownReporter` の出力（`reporter.go:132` の `%v`）に漏れる。本文を含まないという記述だけでは足りない | **編集上の修正**として Phase 3 で扱った。`PanicValue`・`StackTrace` の欄を設けず、panic 値の型名（`PanicType`）だけを持つ。`Error()` は型名と固定の文言だけを描画する。`TestRedactingHandler_FlattenPanicDoesNotLeakPanicValueToShutdownReport` で固定した |
 | 03 §9.4 | 許可位置の表が `expansion.go` を「ファイル全体」としており、02 §3.8.1 が対象の範囲から除く 5 関数（`ProcessEnvImport` など）でも `Identifier`・`Path` を宣言できてしまう。02 §3.8.1 はこの範囲を `Identifier`・`Path` を宣言できる箇所の唯一の定義としている | **編集上の修正**として Phase 1 で扱った。03 §9.4 の表を「ファイル全体（§9.1 の除く関数を除く）」に改め、`errmsg_guard_test.go` の免除の役割の検査は §9.1 の範囲（除く関数を含む）にも入っていることを求める。§9.1 の範囲の表は `errmsg_guard_test.go` が持ち、Phase 8 の `wrap_guard_test.go` と共有する形にまとめる |
 | 03 §13 | 手順 4（`Message` のリテラルの書き換え）と手順 7（`cmd/runner`）が、どちらも `cmd/runner` の 4 か所に触れる | `Message` の型の変更により 23 か所のリテラルの書き換えと 4 か所の原因の `Err` への付け替えは Phase 4 で完了させる。4 か所の到達性の検証だけを Phase 7 で行う |
@@ -356,23 +356,23 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 7: コマンドの実行の経路と `cmd/runner`
 
 **Files**: `internal/runner/resource/normal_manager.go`・`dryrun_manager.go`、`internal/runner/base/output/path.go`（`validatePathSecurity`・`validateRelativePath` のパスを挿入する 3 か所）・`manager.go`（上の修正の再承認後。`validateAndResolvePath` などのパス検証）、`internal/runner/base/executor/tempdir_manager.go`・`executor.go`・`command_lifecycle.go`、`internal/runner/base/privilege/errors.go`・`unix.go`、`cmd/runner/main_test.go`（到達性テストの追加）、および対応するテスト。`cmd/runner/main.go` ほかの `Message` のリテラルと 4 か所の原因の付け替えは Phase 4 で完了している（§1.3 の食い違い表を参照）
 
-- [ ] **【ブロッキング】** 02 §3.8.1 の `ValidateOutputPath` の除外を修正する。出力パスの検証の失敗は `group_executor.go:520-521` の `output path validation failed: %w` を通って最終の実行エラーの原因になり、`base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`manager.go:71`・`:76` のラップは定数の前置きだけで、パスを挿入しない。§1.3 の食い違い表）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`(*DefaultOutputCaptureManager).ValidateOutputPath`・`(*DefaultPathValidator).ValidateAndResolvePath` とその先の `validatePathSecurity`・`validateRelativePath`（および `validateAndResolvePath`）を加え、出力パスを `Path` として宣言できるようにする修正を提案し、レビュアーの再承認を得る。03 §9.1 の範囲と §9.4 の役割の許可位置に同じ関数を加え、§7.1 の resource の表にも `ValidateOutputPath` 系を加えてから合わせる。**再承認が完了するまで、この Phase の resource の実装と Phase 8 の AC-41 のガードを開始しない。**
-- [ ] `internal/runner/resource` の対象の箇所（16 か所と、上の修正で加わる `ValidateOutputPath` 系）を 03 §7.1 の表と修正後の範囲のとおりに構造化する。`CreateTempDir`・`CleanupTempDir`・`CleanupAllTempDirs`・`UpdateCommandDebugInfo` は変えない。
-- [ ] `internal/runner/base/output/path.go` の `validatePathSecurity`・`validateRelativePath` の 3 か所（`:57`・`:62`・`:91`）の挿入するパスを `Path`、番兵と固定の文言を `Const`、原因を `Cause` として構造化する。`manager.go:71`・`:76` の定数の前置きのラップも、原因が運ぶ `Path` の断片を保つように構造化する（再承認後）。
-- [ ] `tempdir_manager.go` の 2 つのラップを `PathErrorCause` にし、前置きは既存の文言（`failed to create temporary directory: `・`failed to set permissions on temporary directory: `）を保つ。`os.MkdirTemp` と `os.Chmod` の失敗をそれぞれ別に起こして文言を確かめる（03 §7.2.1）。
-- [ ] `executor.go` の 12 か所を 03 §7.2.2 のとおりに構造化する。パスは `Path`、固定の文言は `Const`。`stageFromFD`・`prepareCommand`・`output_pump.go`・`fdexec_linux.go` の `fmt.Errorf` は変えない。
-- [ ] `command_lifecycle.go` の `runCommand`・`reportStartFailure`・`superviseCommand` の `errors.Join` を `errmsg.Join` にし、`killChild`・`killOutcome` の 2 つの `%w` の書式を `killAfterCancelError`（03 §7.2.3）にする。`:736`・`:789`・`:931` は 03 の表のとおりに構造化する。`rankedError`・`release`・`startPrepared` は変えない。
-- [ ] `privilege/errors.go` の `(*Error).Error()` を `StructuredMessage()` から作るようにし、`unix.go:217` の `fmt.Errorf` を構造化する（03 §7.3）。`WithPrivileges`・`escalatePrivileges` は変えない。
-- [ ] 03 §10.5 の各エラー型のテスト（ラップごとの文言、到達性、`killAfterCancelError` の 2 経路、`privilege.Error`）を追加・更新する。`killAfterCancelError` は `TestKillAfterCancelError_TextAndReachability` で確かめる。一時ディレクトリの 2 つのラップは `TestTempDirManager_Create_WrapTexts` で確かめる。`base/output/path.go` の 2 関数と `manager.go` の 2 つのラップは `TestPathValidationWraps_KeepInsertedPath` で、文言が変更前と同じであり、出力パスが `Path` の断片として残ることを確かめる（再承認後）。`TestRunCommand_ChildStateTransitions/spent_command_stays_not_started`・`TestExecute_FdBoundStartFailureNoLeak`・`TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が green のままであることを確かめる。
-- [ ] `cmd/runner/main_test.go` に表駆動の `TestPreExecutionCauseReachability` を追加する。global の展開・テンプレート検証・ディレクトリ権限チェッカーの初期化・`--groups` の各失敗について、`PreExecutionError.Err` に付け替えた原因へ `errors.Is`・`errors.AsType` が届くことと、`Detail()` の文言が変更前と同じであることを確かめる。`run`・`executeRunner` はパッケージ内テストからフラグと設定ファイルを与えて直接呼ぶ。既存の `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError` の seam をチェッカーの初期化の行に使う。
-- [ ] 数値の役割（index・終了コード・件数・理由の番号）が `Text` であり、`Const` を使っていないことを確かめる。
+- [x] **【ブロッキング】** 02 §3.8.1 の `ValidateOutputPath` の除外を修正する。出力パスの検証の失敗は `group_executor.go:581-586` の `output path validation failed: ` を通って最終の実行エラーの原因になり、`base/output/path.go:57`・`:62`・`:91` の `validatePathSecurity`・`validateRelativePath` が出力パスを挿入する（`manager.go:71`・`:76` のラップは定数の前置きだけで、パスを挿入しない。§1.3 の食い違い表）。02 の対象の範囲に `(*NormalResourceManager).ValidateOutputPath`・`(*DryRunResourceManager).ValidateOutputPath`・`(*DefaultOutputCaptureManager).ValidateOutputPath`・`(*DefaultPathValidator).ValidateAndResolvePath` とその先の `validatePathSecurity`・`validateRelativePath`（および `validateAndResolvePath`）を加え、出力パスを `Path` として宣言できるようにする修正を提案し、レビュアーの再承認を得た。03 §9.1 の範囲と §9.4 の役割の許可位置に同じ関数を加え、§7.1 の resource の表にも `ValidateOutputPath` 系を加えた（`base/output` は §7.5 に追加）。`internal/errmsg/errmsg_guard_test.go` の役割の許可位置の表も合わせた。
+- [x] `internal/runner/resource` の対象の箇所（16 か所と、上の修正で加わる `ValidateOutputPath` 系）を 03 §7.1 の表と修正後の範囲のとおりに構造化する。`CreateTempDir`・`CleanupTempDir`・`CleanupAllTempDirs`・`UpdateCommandDebugInfo` は変えない。
+- [x] `internal/runner/base/output/path.go` の `validatePathSecurity`・`validateRelativePath` の 3 か所（`:57`・`:62`・`:91`）の挿入するパスを `Path`、番兵と固定の文言を `Const`、原因を `Cause` として構造化する。`manager.go:71`・`:76` の定数の前置きのラップも、原因が運ぶ `Path` の断片を保つように構造化する（再承認後）。
+- [x] `tempdir_manager.go` の 2 つのラップを `PathErrorCause` にし、前置きは既存の文言（`failed to create temporary directory: `・`failed to set permissions on temporary directory: `）を保つ。`os.MkdirTemp` と `os.Chmod` の失敗をそれぞれ別に起こして文言を確かめる（03 §7.2.1）。両方を差し替えられるよう、`os.MkdirTemp`・`os.Chmod` をパッケージ変数（`mkdirTemp`・`chmodDir`）にした（`output_pump.go` の `pipeFn` と同じ形）。
+- [x] `executor.go` の 12 か所を 03 §7.2.2 のとおりに構造化する。パスは `Path`、固定の文言は `Const`。`stageFromFD`・`prepareCommand`・`output_pump.go`・`fdexec_linux.go` の `fmt.Errorf` は変えない。
+- [x] `command_lifecycle.go` の `runCommand`・`reportStartFailure`・`superviseCommand` の `errors.Join` を `errmsg.Join` にし、`killChild`・`killOutcome` の 2 つの `%w` の書式を `killAfterCancelError`（03 §7.2.3）にする。`:736`・`:789`・`:931` は 03 の表のとおりに構造化する。`rankedError`・`release`・`startPrepared` は変えない。
+- [x] `privilege/errors.go` の `(*Error).Error()` を `StructuredMessage()` から作るようにし、`unix.go:217` の `fmt.Errorf` を構造化する（03 §7.3）。`WithPrivileges`・`escalatePrivileges` は変えない。
+- [x] 03 §10.5 の各エラー型のテスト（ラップごとの文言、到達性、`killAfterCancelError` の 2 経路、`privilege.Error`）を追加・更新する。`killAfterCancelError` は `TestKillAfterCancelError_TextAndReachability` で確かめる。一時ディレクトリの 2 つのラップは `TestTempDirManager_Create_WrapTexts` で確かめる。`base/output/path.go` の 2 関数と `manager.go` の 2 つのラップは `TestPathValidationWraps_KeepInsertedPath` で、文言が変更前と同じであり、出力パスが `Path` の断片として残ることを確かめる（再承認後）。`privilege.Error` は `TestPrivilegeError` に断片の並びを足して確かめる。レビューの指摘を受け、resource の command/group 検証と `(*DryRunResourceManager).ValidateOutputPath`・`evaluateCommandRisk` の経路（`TestResourceManagers_StructuredWrapTexts`・`TestDryRunResourceManager_ValidateOutputPath_KeepsPathSegment`・`TestDryRunResourceManager_PathResolutionFailure`）、executor の `Validate`・`validatePrivilegedCommand`・`executeNormal`（`TestExecutor_StructuredWrapTexts`）、`killChild` の既定の分岐（`TestKillChild_UndeclaredStrategyStructuredText`）の文言と役割も固定した。`TestRunCommand_ChildStateTransitions/spent_command_stays_not_started`・`TestExecute_FdBoundStartFailureNoLeak`・`TestStartPrepared_StartFailureRemovesStagedCopyInsideWindow` が green のままであることを確かめる。
+- [x] `cmd/runner/main_test.go` に表駆動の `TestPreExecutionCauseReachability` を追加する。global の展開・テンプレート検証・ディレクトリ権限チェッカーの初期化・`--groups` の各失敗について、`PreExecutionError.Err` に付け替えた原因へ `errors.Is`・`errors.AsType` が届くことと、`Detail()` の文言が変更前と同じであることを確かめる。`run`・`executeRunner` はパッケージ内テストからフラグと設定ファイルを与えて直接呼ぶ。既存の `TestStartDirPermAudit_CheckerInitFailureReturnsPreExecutionError` の seam をチェッカーの初期化の行に使う（テスト名は `TestStartupDirPermAudit_CheckerInitFailureReturnsPreExecutionError`）。
+- [x] 数値の役割（index・終了コード・件数・理由の番号）が `Text` であり、`Const` を使っていないことを確かめる。数値は `Text(strconv.Itoa(...))` で組み立て、`Const` は定数式に限るガード（§9.3）が非定数の `Const` を拒否する。
 
 **完了条件**: 対象の経路のテストが green。ラップごとの `Error()` の文言が変更前と同じである。`errors.Is`・`errors.AsType` が変更前と同じ対象に届く。
 
@@ -384,8 +384,8 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 経路が広く、既存の到達性テストとの整合が必要。設計は 03 で確定しているが、複合の型の置き換えは注意を要する
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 
@@ -553,13 +553,13 @@ AC-12・AC-16・AC-31・AC-34 の例示のシナリオは、エラーの発生�
 
 ## 6. 実装チェックリスト
 
-- [ ] 02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落の修正が再承認され、03 §9.1・§9.4 に同じ関数が入っている（Phase 7・8 の前提）
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1。`internal/errmsg` とそのガードが green）
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2。差分テストとファジングが green、網羅率の差を記録済み）
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3。`RedactMessage` のテストとベンチマークが green）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4。2 つのレコードが構造化メッセージになり、stderr と文言が不変）
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5。runner の 4 型と `cancelledRunError` が green）
-- [ ] PR-6 マージ済み（対象ステップ: Phase 6。`Level`・`Field` と `ErrUndefinedVariableDetail` が green）
+- [x] 02 §3.8.1 の `ValidateOutputPath` の除外と `base/output/path.go` のパスを挿入する関数の欠落の修正が再承認され、03 §9.1・§9.4 に同じ関数が入っている（Phase 7・8 の前提）
+- [x] PR-1 マージ済み（対象ステップ: Phase 1。`internal/errmsg` とそのガードが green）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2。差分テストとファジングが green、網羅率の差を記録済み）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3。`RedactMessage` のテストとベンチマークが green）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4。2 つのレコードが構造化メッセージになり、stderr と文言が不変）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5。runner の 4 型と `cancelledRunError` が green）
+- [x] PR-6 マージ済み（対象ステップ: Phase 6。`Level`・`Field` と `ErrUndefinedVariableDetail` が green）
 - [ ] PR-7 マージ済み（対象ステップ: Phase 7。コマンドの実行の経路と `cmd/runner` が green）
 - [ ] PR-8 マージ済み（対象ステップ: Phase 8。AC-41 のガード・例示のシナリオ・日英の文書・`make verify-docs-checks` が green）
 - [ ] すべての AC が §7 の検証で green

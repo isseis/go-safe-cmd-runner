@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
 
 // Path validation errors
@@ -54,12 +55,23 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 func validatePathSecurity(path string) error {
 	// Check for path traversal patterns by examining path segments
 	if common.ContainsPathTraversalSegment(path) {
-		return fmt.Errorf("%w: %s", ErrPathTraversal, path)
+		return errmsg.NewError(
+			errmsg.Cause(ErrPathTraversal),
+			errmsg.Const(": "),
+			errmsg.Path(path),
+		)
 	}
 
 	// Check for dangerous characters in the path
 	if chars := containsDangerousCharacters(path); len(chars) > 0 {
-		return fmt.Errorf("%w: %s (found: %v)", ErrDangerousCharactersInPath, path, chars)
+		return errmsg.NewError(
+			errmsg.Cause(ErrDangerousCharactersInPath),
+			errmsg.Const(": "),
+			errmsg.Path(path),
+			errmsg.Const(" (found: "),
+			errmsg.Text(fmt.Sprintf("%v", chars)),
+			errmsg.Const(")"),
+		)
 	}
 
 	return nil
@@ -88,7 +100,11 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 	// Use filepath.Rel to check if the path escapes the work directory
 	relPath, err := filepath.Rel(cleanWorkDir, cleanPath)
 	if err != nil || escapesWorkDirectory(relPath) {
-		return "", fmt.Errorf("%w: %s", ErrPathEscapesWorkDirectory, path)
+		return "", errmsg.NewError(
+			errmsg.Cause(ErrPathEscapesWorkDirectory),
+			errmsg.Const(": "),
+			errmsg.Path(path),
+		)
 	}
 
 	return cleanPath, nil

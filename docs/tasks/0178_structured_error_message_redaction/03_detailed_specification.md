@@ -864,11 +864,14 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 | 416 | `evaluateCommandRisk` | `failed to resolve command path '%s': %w. This typically occurs ...` | `Const("failed to resolve command path '")`・`Path(cmd.ExpandedCmd)`・`Const("': ")`・`Cause(err)`・`Const(". This typically occurs if the command is not found in the system PATH or there are permission issues preventing access")` |
 | 427 | `evaluateCommandRisk` | `security analysis failed for command '%s': %w` | `Const("security analysis failed for command '")`・`Path(cmd.ExpandedCmd)`・`Const("': ")`・`Cause` |
 | 441 | `evaluateCommandRisk` | `invalid risk_level configuration for command '%s': %w` | `Const("invalid risk_level configuration for command '")`・`Path(cmd.ExpandedCmd)`・`Const("': ")`・`Cause` |
+| 159 | `(*DryRunResourceManager).ValidateOutputPath` | `%w: %s`（`ErrPathTraversalDetected`） | `Cause(ErrPathTraversalDetected)`・`Const(": ")`・`Path(outputPath)` |
 
 - `:266` の `closeErr` は変更前も `%v` で入れていてラップしていないので、`Text(closeErr.Error())` にしても到達性は変わらない。
 - `:147`・`:150` の `cmd.ExpandedCmd` はパスなので `Path`。`BlockingReason`・危険度の文字列は `Text`。
 - `executeCommandInternal` はエラーを組み立てないので変えない。
-- `NormalResourceManager.CreateTempDir`（`:325`）・`CleanupTempDir`（`:337`）・`CleanupAllTempDirs`（`:362`）・`DryRunResourceManager.ValidateOutputPath`（`:159`）・`UpdateCommandDebugInfo`（`:923-945`）は、02 §3.6.2 の「対象にしない」に従い変えない。
+- `NormalResourceManager.CreateTempDir`（`:325`）・`CleanupTempDir`（`:337`）・`CleanupAllTempDirs`（`:362`）・`UpdateCommandDebugInfo`（`:923-945`）は、02 §3.6.2 の「対象にしない」に従い変えない。
+- `(*NormalResourceManager).ValidateOutputPath` は `fmt.Errorf` を組み立てず番兵をそのまま返すので、この表に載せない（範囲には入る）。
+- `(*DryRunResourceManager).ValidateOutputPath`（`:159`）は出力パスを挿入するので、02 §3.8.1 の規則 (ii) により範囲に入れる（上の表の行）。
 
 ### 7.2 `internal/runner/base/executor`
 
@@ -987,6 +990,23 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - `privilege.Error` の `SyscallErr`、`runCommand` の複合、`superviseCommand` の複合、`killAfterCancelError` の `err` は、いずれも `Cause` の部分として運ぶ。`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことをテストで確かめる（§10.6）。
 - #1196・#1197 でこの経路のどれかの型が `Structured` を実装したら、範囲の規則 (i) に当たる箇所が変わるので、分類を確かめ直す。
 
+### 7.5 `internal/runner/base/output`
+
+`(*DefaultPathValidator).ValidateAndResolvePath` から呼ばれるパス検証が出力パスを挿入する。3 か所を `Path` として宣言し、`(*DefaultOutputCaptureManager).validateAndResolvePath` の 2 つの定数の前置きのラップは、原因が運ぶ `Path` の断片を保つように構造化する。
+
+| ファイル:行 | 関数 | 変更前 | 部分 |
+|---|---|---|---|
+| `path.go:57` | `validatePathSecurity` | `%w: %s`（`ErrPathTraversal`） | `Cause(ErrPathTraversal)`・`Const(": ")`・`Path(path)` |
+| `path.go:62` | `validatePathSecurity` | `%w: %s (found: %v)`（`ErrDangerousCharactersInPath`） | `Cause(ErrDangerousCharactersInPath)`・`Const(": ")`・`Path(path)`・`Const(" (found: ")`・`Text(fmt.Sprintf("%v", chars))`・`Const(")")` |
+| `path.go:91` | `(*DefaultPathValidator).validateRelativePath` | `%w: %s`（`ErrPathEscapesWorkDirectory`） | `Cause(ErrPathEscapesWorkDirectory)`・`Const(": ")`・`Path(path)` |
+| `manager.go:71` | `(*DefaultOutputCaptureManager).validateAndResolvePath` | `path validation failed: %w` | `Const("path validation failed: ")`・`Cause(err)` |
+| `manager.go:76` | `(*DefaultOutputCaptureManager).validateAndResolvePath` | `security validation failed: %w` | `Const("security validation failed: ")`・`Cause(err)` |
+
+- `path.go:62` の `chars` は `%v` で入れていた `[]string` なので、`Text(fmt.Sprintf("%v", chars))` にして文言を保つ。
+- `manager.go` の 2 つのラップはパスを挿入しないが、原因（`path.go` の `Path` の断片）を保つために範囲に入れ、`Cause` で運ぶ（規則 (i)）。
+- `(*DefaultPathValidator).ValidateAndResolvePath`（`path.go:35`）・`(*DefaultOutputCaptureManager).ValidateOutputPath`（`manager.go:83`）は `fmt.Errorf` を組み立てないので、この表に載せない（範囲には入る）。
+- `(*DefaultPathValidator).validateAbsolutePath`（`path.go:69`）は `filepath.Clean` の結果を返すだけでパスを挿入しないので、範囲に入れない。
+
 ## 8. `cmd/runner`（変更）
 
 原因を `Message` に埋め込んでいる 4 か所を、原因を `Err` に移し、`Message` を定数式の要約文にする（01 対象 4、§4.4 の #9・#10・#13・#15）。
@@ -1030,7 +1050,8 @@ func (e *Error) StructuredMessage() errmsg.Message {
 |---|---|---|
 | `internal/runner` | `group_executor.go`・`group_stage.go`・`group_errors.go` | `runner.go` の `(*Runner).Execute`・`(*Runner).ExecuteGroup`・`(*Runner).executeGroups` |
 | `internal/runner/config` | `expansion.go` | `errors.go` の `(*ErrUndefinedVariableDetail).StructuredMessage`・`(Level).parts`・`(Field).parts` |
-| `internal/runner/resource` | — | `normal_manager.go` の `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`。`dryrun_manager.go` の `(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk` |
+| `internal/runner/resource` | — | `normal_manager.go` の `(*NormalResourceManager).ExecuteCommand`・`executeCommandWithOutput`・`ValidateOutputPath`。`dryrun_manager.go` の `(*DryRunResourceManager).ExecuteCommand`・`evaluateCommandRisk`・`ValidateOutputPath` |
+| `internal/runner/base/output` | — | `manager.go` の `(*DefaultOutputCaptureManager).ValidateOutputPath`・`validateAndResolvePath`。`path.go` の `(*DefaultPathValidator).ValidateAndResolvePath`・`validateRelativePath`・`validatePathSecurity` |
 | `internal/runner/base/executor` | — | `tempdir_manager.go` の `(*DefaultTempDirManager).Create`。`executor.go` の `(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup`。`command_lifecycle.go` の `runCommand`・`reportStartFailure`・`superviseCommand`・`killChild`・`killOutcome` |
 | `internal/runner/base/privilege` | — | `errors.go` の `(*Error).StructuredMessage`。`unix.go` の `(*UnixPrivilegeManager).performElevation` |
 | `internal/logging` | — | `pre_execution_error.go` の `(*PreExecutionError).DetailMessage`。`execution_error.go` の `(*ExecutionError).ReportMessage`・`(*ExecutionError).contextParts` |
@@ -1080,8 +1101,10 @@ func (e *Error) StructuredMessage() errmsg.Message {
 | `internal/logging/pre_execution_error.go`・`execution_error.go` | `(*PreExecutionError).DetailMessage`・`(*ExecutionError).ReportMessage`・`(*ExecutionError).contextParts` |
 | `internal/runner/base/privilege/errors.go` | `(*Error).StructuredMessage` |
 | `internal/runner/base/executor/executor.go` | `(*DefaultExecutor).Validate`・`validatePrivilegedCommand`・`executeNormal`・`executeWithUserGroup` |
-| `internal/runner/resource/normal_manager.go` | `(*NormalResourceManager).ExecuteCommand` |
-| `internal/runner/resource/dryrun_manager.go` | `evaluateCommandRisk` |
+| `internal/runner/resource/normal_manager.go` | `(*NormalResourceManager).ExecuteCommand`・`(*NormalResourceManager).ValidateOutputPath` |
+| `internal/runner/resource/dryrun_manager.go` | `evaluateCommandRisk`・`(*DryRunResourceManager).ValidateOutputPath` |
+| `internal/runner/base/output/path.go` | `validatePathSecurity`・`(*DefaultPathValidator).validateRelativePath` |
+| `internal/runner/base/output/manager.go` | `(*DefaultOutputCaptureManager).validateAndResolvePath` |
 
 ### 9.5 文言と構造の一致（1.1 節）
 

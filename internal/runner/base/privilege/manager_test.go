@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,6 +51,22 @@ func TestPrivilegeError(t *testing.T) {
 	expectedMsg := "privilege operation 'command_execution' failed for command 'test_cmd' (uid 1000->0): failed to elevate privileges"
 	assert.Equal(t, expectedMsg, err.Error())
 	assert.Equal(t, ErrPrivilegeElevationFailed, err.Unwrap())
+	assert.ErrorIs(t, err, ErrPrivilegeElevationFailed)
+
+	// The command name is an Identifier (exempt from redaction); the operation,
+	// the uids and the system-call error are Text.
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleConstant, Text: "privilege operation '"},
+		{Role: errmsg.RoleText, Text: "command_execution"},
+		{Role: errmsg.RoleConstant, Text: "' failed for command '"},
+		{Role: errmsg.RoleIdentifier, Text: "test_cmd"},
+		{Role: errmsg.RoleConstant, Text: "' (uid "},
+		{Role: errmsg.RoleText, Text: "1000"},
+		{Role: errmsg.RoleConstant, Text: "->"},
+		{Role: errmsg.RoleText, Text: "0"},
+		{Role: errmsg.RoleConstant, Text: "): "},
+		{Role: errmsg.RoleText, Text: ErrPrivilegeElevationFailed.Error()},
+	}, err.StructuredMessage().Segments())
 }
 
 func TestOperationConstants(t *testing.T) {

@@ -2,8 +2,10 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/executor/testutil"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -161,6 +163,22 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 
 	require.ErrorIs(t, err, assert.AnError, "the resolver's failure must reach the caller")
 	assert.Nil(t, result)
+
+	want := "command analysis failed: failed to resolve command path 'nonexistent-cmd': " +
+		assert.AnError.Error() +
+		". This typically occurs if the command is not found in the system PATH or there are permission issues preventing access"
+	assert.Equal(t, want, err.Error())
+
+	structured, ok := errors.AsType[errmsg.Structured](err)
+	require.True(t, ok, "the wrap must be a structured error; got %T", err)
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleConstant, Text: "command analysis failed: "},
+		{Role: errmsg.RoleConstant, Text: "failed to resolve command path '"},
+		{Role: errmsg.RolePath, Text: "nonexistent-cmd"},
+		{Role: errmsg.RoleConstant, Text: "': "},
+		{Role: errmsg.RoleText, Text: assert.AnError.Error()},
+		{Role: errmsg.RoleConstant, Text: ". This typically occurs if the command is not found in the system PATH or there are permission issues preventing access"},
+	}, structured.StructuredMessage().Segments())
 }
 
 func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
@@ -572,4 +590,25 @@ func TestDryRunResourceManager_CalculateSummary_SkippedNotDoubleCounted(t *testi
 	totalCounted := summary.Successful + summary.Failed + summary.Skipped
 	assert.Equal(t, summary.TotalResources, totalCounted,
 		"total resources should equal sum of successful + failed + skipped (no double counting)")
+}
+
+// TestDryRunResourceManager_ValidateOutputPath_KeepsPathSegment pins that the
+// dry-run output-path rejection declares the rejected path as a Path segment
+// (still redacted), not Text or Identifier. The nil output manager forces the
+// fallback branch that builds the message.
+func TestDryRunResourceManager_ValidateOutputPath_KeepsPathSegment(t *testing.T) {
+	const outputPath = "../../etc/passwd"
+
+	err := (&DryRunResourceManager{}).ValidateOutputPath(outputPath, "/tmp")
+
+	require.ErrorIs(t, err, ErrPathTraversalDetected)
+	assert.Equal(t, ErrPathTraversalDetected.Error()+": "+outputPath, err.Error())
+
+	structured, ok := errors.AsType[errmsg.Structured](err)
+	require.True(t, ok, "the rejection must be a structured error; got %T", err)
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: ErrPathTraversalDetected.Error()},
+		{Role: errmsg.RoleConstant, Text: ": "},
+		{Role: errmsg.RolePath, Text: outputPath},
+	}, structured.StructuredMessage().Segments())
 }
