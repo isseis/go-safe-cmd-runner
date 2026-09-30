@@ -16,6 +16,7 @@ This document provides a detailed reference of the package structure in this cod
   - `dynlib/`: Dynamic library dependency analysis
     - `elfdynlib/`: ELF binary dynamic library dependency analysis
     - `machodylib/`: Mach-O binary dynamic library dependency analysis
+  - `errmsg/`: Role-tagged structured error messages for per-segment redaction
   - `fileanalysis/`: Unified file analysis records (hash, syscall, symbol, shebang)
   - `filevalidator/`: File integrity validation
     - `pathencoding/`: Hybrid hash filename encoding
@@ -104,6 +105,7 @@ This document provides a detailed reference of the package structure in this cod
 #### Utilities
 - **`common/`**: Common utilities and filesystem abstraction
 - **`cmdcommon/`**: Shared command utilities
+- **`errmsg/`**: Leaf package (`internal/errmsg`) that carries an error body as a sequence of parts whose redaction role is declared by type, giving redaction its per-segment unit
 - **`redaction/`**: Automatic sensitive data filtering
 - **`runner/debuginfo/`**: Debug functionality
 - **`runner/runerrors/`**: Verification failure report conversion

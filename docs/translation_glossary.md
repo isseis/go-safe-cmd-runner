@@ -575,6 +575,8 @@
 | 静的解析 | static analysis | バイナリ静的解析の文脈 |
 | 文字列 | string | |
 | 構造体 | struct | Go言語の文脈 |
+| 構造化メッセージ | structured message | 役割を型で宣言した部分の列としてエラー本文を運ぶ表現（`errmsg.Message`）。役割ごとに部分を redaction する（Task 0178） |
+| 断片 | segment | 構造化メッセージを平らにした 1 つの要素（`errmsg.Segment`）。役割と文字列を持つ（Task 0178） |
 | 置換 | substitution | 変数展開の文脈 |
 | シンボリックリンク | symlink | "symbolic link" の略 |
 | 対処法 | solution | Error troubleshooting context |
