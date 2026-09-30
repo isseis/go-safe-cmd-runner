@@ -94,3 +94,21 @@ name = "never_runs"
 description = "This command is never executed because group preparation fails first"
 cmd = "echo"
 args = ["This should not run"]
+
+# Group 6: Group whose name and variables contain sensitive words, and which
+# fails before any command runs because a variable references an undefined one.
+# The pre_execution_error notification must keep the group name (token_rotate),
+# the defined variable (token_file) and the referenced variable (api_key)
+# instead of replacing the whole Error Message.
+[[groups]]
+name = "token_rotate"
+description = "Group whose vars reference an undefined variable, so it fails before running any command"
+
+[groups.vars]
+token_file = "%{api_key}"
+
+[[groups.commands]]
+name = "never_runs_token"
+description = "This command is never executed because group preparation fails first"
+cmd = "echo"
+args = ["This should not run"]

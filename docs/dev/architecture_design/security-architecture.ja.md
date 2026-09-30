@@ -637,18 +637,45 @@ logger := slog.New(redactedHandler)
 
 group 名とコマンド名は識別子として宣言型 `identifier.Identifier` でログ属性に載せられ、
 `identifier.NewIdentifier` で構築された値だけが値ベース redaction から免除されます。免除は
-key=value 置換・値形式検出・値まるごと判定の 3 層すべてに及び、名前に `=` や `:` が含まれる
+key=value 置換・値形式検出・値全体置換の 3 層すべてに及び、名前に `=` や `:` が含まれる
 場合や、AWS アクセスキー ID・GitHub トークンの形式に一致する場合、機密語を含む場合
 （`monkey`、`rotate_api_key` など）でも書き換えません。これにより Slack 通知の Scope と
 JSON ログの `name` には、設定に書かれた識別子がそのまま表示されます。
 
-免除は宣言された値だけに掛かります。stdout・stderr・展開済みコマンド行・引数・環境変数値・
-message・error 文字列などの自由文は、同じ文字列でも従来どおり値ベース redaction の対象です。
-message・error 文字列に連結された識別子は型では宣言できないため免除の対象外であり、
-`failed to execute group monkey: ...` のような error 属性の文字列は、key=value 置換に続く
-値まるごと判定で全文が `[REDACTED]` になりえます（`record.Message` には `Config.RedactText`
-の key=value 置換と値形式検出のみが適用され、`IsSensitiveValue` による値まるごと判定は
-行われません）。この残余リスクは本タスクの設計文書に記録しています。
+2 つのエラーレコード（group 実行前段の失敗の `pre_execution_error` と最終の実行エラーの
+`execution_error`）の `error_message` は、役割を型で宣言した部分の列（構造化メッセージ、
+`internal/errmsg`）として運ばれます。`RedactingHandler` は断片ごとに役割に応じた redaction
+を適用してから 1 本の文字列に描画します。役割は次の 4 つです。
+
+- `Constant`: コードに書かれた固定の文言。部分単体には redaction を適用しません（本文全体
+  の検出の対象になることはあります）。
+- `Identifier`: 設定で定義された名前（group 名・コマンド名・変数名。変数名は定義する側と
+  参照される側の両方）。値ベース redaction を免除します。
+- `Path`: ファイルシステム上のパス（コマンドパス・作業ディレクトリ・一時ディレクトリなど）。
+  `RedactText` のみを受け、値全体置換を適用しません（`failed_file_paths` と同じ扱いです）。
+- `Text`: 上のどれにも当たらない自由文。現行の全段（`RedactText` と、変化がなければ値全体
+  置換）を受けます。
+
+この免除は、2 つのレコードの `error_message` の中で役割を宣言した部分に限られます。
+`error` 属性の文字列・`record.Message`・stdout・stderr・展開済みコマンド行・引数・環境変数
+値などの自由文は、同じ文字列でも従来どおり値ベース redaction の対象です。message・error
+文字列に連結された識別子は型では宣言できないため免除の対象外であり、`error` 属性の
+`failed to execute group monkey: ...` のような文字列は、key=value 置換に続く値全体置換で
+全文が `[REDACTED]` になりえます（`record.Message` には `Config.RedactText` の key=value
+置換と値形式検出のみが適用され、`IsSensitiveValue` による値全体置換は行われません）。
+
+構造を持たないエラーは、その `Error()` 全体が 1 つの `Text` の部分として扱われます。未対応の
+エラー型・`errors.Join` などの標準ライブラリのエラー・外部ライブラリのエラーは、現状と同じ
+保護を受けます（fail-closed）。`error_message` では、`Identifier` の断片はその中の機密を
+示す語（`api_key` のような変数名や `monkey` のような group 名、`%{AKIA…}` のような名前を
+含む）でもそのまま現れ、`Path` の断片は値全体置換を受けません。これは、設定の名前に機密を
+書いた場合にその文字列がそのまま現れるという既存の境界を、変数名にも広げるものです。
+
+値全体置換は部分ごとに判定します。そのため、変更前は別の部分（group 名など）に語があった
+ために本文ごと消えていた `Text` の部分が、それ自体は語も形式も含まなければ表示されます。
+一方で、本文全体の検出範囲（`RedactText` の結果）は、名前やパスの後ろにある固定の文言や
+原因の一部を置き換えることがあります。置換文字列の位置が変わるだけで、秘密を出す方向の
+変化ではありません。
 
 免除を止める専用の実行時スイッチはありません。設定の名前に機密を書いた場合、その文字列は
 通知・ログにそのまま現れます。免除を解除する場合は、識別子の免除を導入した PR（#1136）を
@@ -658,6 +685,10 @@ revert します（GitHub の Revert ボタン、または `gh pr revert 1136`�
 `git revert -n -m 1` で revert して競合を解消し、後続の変更を残す差分のまとまりだけを選んで
 から `make test` を実行し、guard の green を確認します。同じ PR に複数の宣言サイトが混在し、
 問題のあるサイトだけを戻す場合も同じ要領で戻す差分を絞ります。
+
+構造化メッセージを記録に使う変更（実行時の切り替えスイッチはありません）を含む PR を
+revert すれば、`error_message` を構造化する前の挙動に戻ります。`RedactText` は変えないので、
+ほかのログ行・取り込んだ出力の redaction は revert の影響を受けません。
 
 **Slack通知実装**:
 ```go

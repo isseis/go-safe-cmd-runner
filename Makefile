@@ -668,12 +668,14 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	echo "  2. ERROR notification for 'failure_group' (this group is designed to fail)"; \
 	echo "  3. SUCCESS notification for 'second_success_group'"; \
 	echo "  4. ERROR notification for 'mixed_group' (ends with failure)"; \
-	echo "  5. ERROR pre_execution_error notification for 'pre_execution_failure_group' (error_type=group_preparation_failed)"; \
+	echo "  5. ERROR pre_execution_error notification for 'pre_execution_failure_group' (error_type=group_preparation_failed; its env_vars reference an undefined variable)"; \
+	echo "  6. ERROR pre_execution_error notification for 'token_rotate' (error_type=group_preparation_failed; its vars reference an undefined variable, and the group and variable names contain sensitive words, so the Error Message must keep them instead of becoming [REDACTED])"; \
 	echo ""; \
 	echo "Check the log output above for messages containing:"; \
 	echo "  - 'slack_notify=true'"; \
 	echo "  - 'message_type=command_group_summary'"; \
 	echo "  - 'message_type=pre_execution_error' and 'error_type=group_preparation_failed'"; \
+	echo "  - 'token_rotate' and 'api_key' in the token_rotate pre_execution_error's Error Message"; \
 	echo "  - 'status=success' or 'status=error'"; \
 	echo ""; \
 	$(RM) -r /tmp/slack-group-test; \
