@@ -4,11 +4,11 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-09-30 |
-| Review date | - |
-| Reviewer | - |
-| Comments | 2026-09-30: 決定 1（SOName を `Path`）、決定 2（hash を `Text`）、決定 3（インタプリタの識別子を `Path`）、決定 4（再解決のラップを `errmsg` 化）、決定 5（型は既存パッケージのまま）をすべて承認。文書全体の承認待ち。 |
+| Review date | 2026-09-30 |
+| Reviewer | isseis |
+| Comments | - |
 
 ## 位置づけ（フルセット文書を作らない理由）
 
