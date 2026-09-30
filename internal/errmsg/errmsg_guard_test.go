@@ -157,6 +157,9 @@ type guardSet struct {
 func loadGuard(t *testing.T, files []guardFile) *guardSet {
 	t.Helper()
 	set := &guardSet{variants: map[string]struct{}{}, errmsgDirect: map[string]struct{}{}}
+	// errmsg does not import itself, so seed its own directory: it can declare
+	// errmsg structure and its build-variant files must not declare types.
+	set.errmsgDirect[errmsgDir] = struct{}{}
 	groups := map[string][]*sourceFile{}
 	for _, f := range files {
 		file, err := parser.ParseFile(guardFset, f.path, f.src, parser.SkipObjectResolution)
@@ -471,6 +474,19 @@ func TestProductionConstCallsUseConstantExpressions(t *testing.T) {
 	assert.Empty(t, violations, strings.Join(violations, "\n"))
 }
 
+// TestProductionGuardScopeIncludesDynLibAndVerification pins that the two
+// packages whose errors now carry structured messages are inside the guard's
+// production scan. Dropping their errmsg import would otherwise silently remove
+// them from the Const, part-flow and exempt-role checks.
+func TestProductionGuardScopeIncludesDynLibAndVerification(t *testing.T) {
+	dirs := map[string]struct{}{}
+	for _, f := range productionGuardFiles(t) {
+		dirs[path.Dir(f.path)] = struct{}{}
+	}
+	assert.Contains(t, dirs, "internal/dynlib")
+	assert.Contains(t, dirs, "internal/verification")
+}
+
 func TestConstCallCheckRecognizesForms(t *testing.T) {
 	const header = "package x\n\nimport %s\"" + errmsgImportPath + "\"\n\n"
 	src := func(alias, body string) string { return fmt.Sprintf(header, alias) + body }
@@ -657,6 +673,9 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 		{name: "function value", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Validate() { f := errmsg.Ident; _ = f }`)}}, want: 1},
 		{name: "PathErrorCause in Create", files: []guardFile{{tempdirFile, src("", `func (m *DefaultTempDirManager) Create(err error) { _ = errmsg.PathErrorCause(err) }`)}}},
 		{name: "PathErrorCause elsewhere", files: []guardFile{{executorFile, src("", `func (e *DefaultExecutor) Validate(err error) { _ = errmsg.PathErrorCause(err) }`)}}, want: 1},
+		{name: "Ident in a dynlib error StructuredMessage", files: []guardFile{{"internal/dynlib/errors.go", "package dynlib\n\nimport \"" + errmsgImportPath + "\"\n\ntype ErrEmptyLibraryPath struct{ SOName string }\n\nfunc (e *ErrEmptyLibraryPath) StructuredMessage() errmsg.Message { return errmsg.NewMessage(errmsg.Ident(e.SOName)) }\n"}}},
+		{name: "Ident in another dynlib function", files: []guardFile{{"internal/dynlib/errors.go", "package dynlib\n\nimport \"" + errmsgImportPath + "\"\n\nfunc other(s string) errmsg.Part { return errmsg.Ident(s) }\n"}}, want: 1},
+		{name: "Path in a verification error StructuredMessage", files: []guardFile{{"internal/verification/errors.go", "package verification\n\nimport \"" + errmsgImportPath + "\"\n\ntype ErrInterpreterRecordNotFound struct{ Path string }\n\nfunc (e *ErrInterpreterRecordNotFound) StructuredMessage() errmsg.Message { return errmsg.NewMessage(errmsg.Path(e.Path)) }\n"}}},
 		{
 			name:  "Ident in the expansion file",
 			files: []guardFile{{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"}},
@@ -1592,8 +1611,10 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 // must be the same in every supported build (03 §9.0).
 //
 // A type declaration only matters in a package that imports errmsg: structure
-// can only be declared there, and a package that merely reaches errmsg through
-// its own imports cannot carry a role segment whose shape varies by build.
+// is declared there, and a type declared in a package that merely reaches
+// errmsg through its own imports cannot change the role of a segment the checks
+// see. Such a type could gain structure only by embedding an errmsg-structured
+// type, and that type's own declaration is checked where it is declared.
 func checkBuildVariants(s *guardSet) []string {
 	var violations []string
 	for _, f := range s.files {
@@ -1658,6 +1679,11 @@ func TestBuildVariantCheckRecognizesForms(t *testing.T) {
 		{
 			name:  "a variant file declaring a type in a package that does not import errmsg",
 			files: []guardFile{{"internal/x/t_darwin.go", "package x\n\ntype T struct{}\n"}},
+		},
+		{
+			name:  "a variant file declaring a type inside errmsg",
+			files: []guardFile{{errmsgDir + "/t_darwin.go", "package errmsg\n\ntype T struct{}\n"}},
+			want:  1,
 		},
 		{
 			name: "a variant file declaring Error",

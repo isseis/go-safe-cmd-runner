@@ -70,10 +70,12 @@ func TestErrDynLibDepsResolutionChanged_StructuredMessage_EmptySOName(t *testing
 
 // TestResolveDynLibDeps_WrapIsStructured pins that re-resolution wraps an
 // analyzer failure in a structured error. The wrap keeps the cause's own
-// structure (errmsg.Cause), so an ErrRecursionDepthExceeded raised while
-// re-resolving reaches the report with its SOName declared as a Path instead of
-// being flattened into one text segment. Reverting the wrap to fmt.Errorf makes
-// this test fail because the result is no longer an *errmsg.Error.
+// structure (errmsg.Cause), so a structured cause such as
+// ErrRecursionDepthExceeded reaches the report with its SOName declared as a
+// Path instead of being flattened into one text segment. Reverting the wrap to
+// fmt.Errorf makes this test fail because the result is no longer an
+// *errmsg.Error. The composition with a structured cause is pinned by
+// TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause.
 func TestResolveDynLibDeps_WrapIsStructured(t *testing.T) {
 	m, err := NewManagerForTest(tu.SafeTempDir(t), WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 	require.NoError(t, err)

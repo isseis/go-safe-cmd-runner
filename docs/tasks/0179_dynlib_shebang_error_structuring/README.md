@@ -229,9 +229,9 @@ func (e *ErrLibraryHashMismatch) StructuredMessage() errmsg.Message {
 | AC-02 | 同上（`Segments()` の役割を表と突き合わせ） | 各 `StructuredMessage` | 部分ごとの役割を確認 |
 | AC-03 | 同上（複数行の型） | 同上 | `Error()` とのバイト一致を確認 |
 | AC-04 | `internal/verification/errors_test.go` | `ErrDynLibDepsResolutionChanged.StructuredMessage` | 空 SOName で `<unknown>` |
-| AC-05 | `internal/redaction/message_test.go` | 8 型 | `Path` と対照 `Text` の層別の挙動 |
-| AC-06 | `internal/errmsg/errmsg_guard_test.go::TestProductionExemptRoleCalls` ほか自己テスト | ガード | 対象パッケージと許可位置 |
-| AC-07 | `internal/verification/manager_test.go`・`internal/redaction/message_test.go` | `resolveDynLibDeps` | 再解決経路で内側の構造が残る |
+| AC-05 | `internal/redaction/error_types_test.go` | 8 型 | `Path` と対照 `Text` の層別の挙動 |
+| AC-06 | `internal/errmsg/errmsg_guard_test.go::TestProductionExemptRoleCallsAreInAllowedPositions`・`TestExemptRoleCallCheckRecognizesForms`・`TestProductionGuardScopeIncludesDynLibAndVerification` | ガード | 対象パッケージと許可位置 |
+| AC-07 | `internal/verification/structured_errors_test.go::TestResolveDynLibDeps_WrapIsStructured`・`internal/redaction/error_types_test.go::TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause` | `resolveDynLibDeps` | 再解決経路で内側の構造が残る |
 | AC-08 | 各ガードの自己テスト | ガード・テスト | 実装を壊すと失敗する |
 | AC-09 | `internal/errmsg/errmsg_guard_test.go::TestBuildVariantCheckRecognizesForms` | `checkBuildVariants` | 直接 import しないパッケージの変種型宣言を検出しない |
 

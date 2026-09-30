@@ -1040,7 +1040,7 @@ func (e *Error) StructuredMessage() errmsg.Message {
   - errmsg を import する。
   - 型を宣言する（errmsg を直接 import するパッケージの変種のファイルに限る）。
   - `Error`・`StructuredMessage` という名前のメソッドを宣言する。
-- 型の宣言の禁止を errmsg を直接 import するパッケージに限るのは、型の形がビルドで変わりうることを気にするのは、その型が役割付きの断片を運びうる場合だけだからである。errmsg を import しないパッケージは役割の断片を宣言できず、推移的に errmsg に届くだけのパッケージ（例: `internal/dynlib` を import する `internal/dynlib/machodylib`）が変種のファイルで型を宣言しても、ほかのチェックの結果は変わらない。errmsg を import する・`Error`・`StructuredMessage` を宣言する、の 2 つは変種のファイル一般に禁じたままとする。この限定は Task 0179（dynlib・shebang のエラー型の構造化）で `internal/dynlib` が errmsg を import するようになったために加えた（2026-09-30）。
+- 型の宣言の禁止を errmsg を直接 import するパッケージに限るのは、ガードが見る断片の役割を変えうる型は、errmsg を import するパッケージが宣言する型だけだからである。推移的に errmsg に届くだけのパッケージ（例: `internal/dynlib` を import する `internal/dynlib/machodylib`）が変種のファイルで型を宣言しても、その型が役割を持つようになるのは errmsg の構造化型を埋め込んだ場合だけで、その構造化型の宣言は宣言された場所で調べられる。errmsg を import する・`Error`・`StructuredMessage` を宣言する、の 2 つは変種のファイル一般に禁じたままとする。この限定は Task 0179（dynlib・shebang のエラー型の構造化）で `internal/dynlib` が errmsg を import するようになったために加えた（2026-09-30）。
 - `//go:build !windows` のように、サポートするどのビルドにも含まれるファイルは変種のファイルではない。現在の変種のファイル（`fdexec_linux.go`・`identity_linux.go`・`trusted_gids_darwin.go` など）は、いずれも上の 3 つをしていない。
 
 ### 9.1 対象の範囲（ガードが持つ唯一の定義）

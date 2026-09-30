@@ -59,12 +59,40 @@ func TestRedactMessage_DependencyBodiesKeepLibraryNames(t *testing.T) {
 }
 
 // TestRedactMessage_PathSegmentStillMasksValueFormats pins that declaring a
-// library name as a Path does not disable value-format redaction: a keyed value
-// inside the Path segment is still masked.
+// library name as a Path does not disable RedactText: both a keyed value and a
+// value-format secret inside the Path segment are still masked.
 func TestRedactMessage_PathSegmentStillMasksValueFormats(t *testing.T) {
 	cfg := redaction.DefaultConfig()
-	m := errmsg.NewMessage(errmsg.Cause(&verification.ErrInterpreterRecordNotFound{Path: "/tmp/token=abc123/interp"}))
-	out, err := cfg.RedactMessage(m)
+
+	t.Run("keyed value", func(t *testing.T) {
+		m := errmsg.NewMessage(errmsg.Cause(&verification.ErrInterpreterRecordNotFound{Path: "/tmp/token=abc123/interp"}))
+		out, err := cfg.RedactMessage(m)
+		require.NoError(t, err)
+		assert.Contains(t, out, "token=[REDACTED]")
+	})
+
+	t.Run("value format", func(t *testing.T) {
+		m := errmsg.NewMessage(errmsg.Cause(&verification.ErrInterpreterRecordNotFound{Path: "/tmp/AKIAIOSFODNN7EXAMPLE/interp"}))
+		out, err := cfg.RedactMessage(m)
+		require.NoError(t, err)
+		assert.NotContains(t, out, "AKIAIOSFODNN7EXAMPLE")
+		assert.Contains(t, out, redaction.DefaultPlaceholder)
+	})
+}
+
+// TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause pins the wrap
+// resolveDynLibDeps uses: a free-text prefix plus the cause. A structured cause
+// inside it keeps its own segments, so the SOName survives even though the
+// whole message contains the sensitive word the whole-value replacement reacts
+// to.
+func TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause(t *testing.T) {
+	cfg := redaction.DefaultConfig()
+	wrapped := errmsg.NewError(
+		errmsg.Text("failed to re-resolve ELF dynamic library dependencies for /usr/bin/curl: "),
+		errmsg.Cause(&dynlib.ErrRecursionDepthExceeded{SOName: "libkeyutils.so.1", Depth: 3, MaxDepth: 2}),
+	)
+
+	out, err := cfg.RedactMessage(wrapped.StructuredMessage())
 	require.NoError(t, err)
-	assert.Contains(t, out, "token=[REDACTED]")
+	assert.Contains(t, out, "libkeyutils.so.1")
 }
