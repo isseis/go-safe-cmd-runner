@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"path"
 	"strings"
 	"testing"
 
@@ -108,14 +109,90 @@ var unwrapWithoutStructuredExceptions = []typeRef{
 }
 
 // wrapScope is the scan's scope: whole-file units (with per-file excluded
-// function keys) and function-unit entries.
+// function keys), function-unit entries, and the package-wide index of every
+// directory that holds an in-scope file.
 type wrapScope struct {
 	wholeFiles map[string]map[string]bool
 	functions  map[string]map[string]bool
+	packages   map[string]*packageIndex
 }
 
-// buildWrapScope turns the scope tables into the form the scan consumes.
-func buildWrapScope() wrapScope {
+// packageIndex is the package-wide view of one directory: the top-level
+// constant names and the receiver method set collected from every file of the
+// package. A constant declared in a sibling file or a method split into
+// another file is therefore visible to the per-file checks instead of only
+// the file currently being parsed.
+type packageIndex struct {
+	consts  map[string]bool
+	methods map[string]map[string]bool
+}
+
+// relevantPackageDirs returns the directories of the scope tables and the
+// exception/type lists: the only packages whose package-wide index the checks
+// read.
+func relevantPackageDirs() map[string]bool {
+	dirs := make(map[string]bool)
+	for _, file := range inScopeWholeFiles {
+		dirs[path.Dir(file)] = true
+	}
+	for _, sf := range inScopeFunctions {
+		dirs[path.Dir(sf.file)] = true
+	}
+	for _, ref := range inScopeErrorTypes {
+		dirs[path.Dir(ref.file)] = true
+	}
+	for _, ref := range unwrapWithoutStructuredExceptions {
+		dirs[path.Dir(ref.file)] = true
+	}
+	return dirs
+}
+
+// buildPackageIndexes parses every production file of the requested
+// directories and merges the package-level constant names and receiver method
+// sets, so a name or a method declared in a file other than the one being
+// checked is still resolved.
+func buildPackageIndexes(t *testing.T, files []string, dirs map[string]bool) map[string]*packageIndex {
+	t.Helper()
+	indexes := make(map[string]*packageIndex, len(dirs))
+	for _, file := range files {
+		dir := path.Dir(file)
+		if !dirs[dir] {
+			continue
+		}
+		index := indexes[dir]
+		if index == nil {
+			index = &packageIndex{
+				consts:  make(map[string]bool),
+				methods: make(map[string]map[string]bool),
+			}
+			indexes[dir] = index
+		}
+		_, parsed := identitymutationguard.ParseSource(t, file, identitymutationguard.ReadProductionSource(t, file))
+		mergePackageIndex(index, parsed)
+	}
+	return indexes
+}
+
+// mergePackageIndex merges one parsed file's package-level constant names and
+// receiver methods into index.
+func mergePackageIndex(index *packageIndex, parsed *ast.File) {
+	for name := range topLevelConstNames(parsed) {
+		index.consts[name] = true
+	}
+	for recv, methods := range collectReceiverMethods(parsed) {
+		if index.methods[recv] == nil {
+			index.methods[recv] = make(map[string]bool)
+		}
+		for method := range methods {
+			index.methods[recv][method] = true
+		}
+	}
+}
+
+// buildWrapScope turns the scope tables into the form the scan consumes,
+// adding the package-wide index of each scope directory.
+func buildWrapScope(t *testing.T, files []string) wrapScope {
+	t.Helper()
 	scope := wrapScope{
 		wholeFiles: make(map[string]map[string]bool),
 		functions:  make(map[string]map[string]bool),
@@ -132,6 +209,7 @@ func buildWrapScope() wrapScope {
 		}
 		scope.functions[sf.file][sf.fn] = true
 	}
+	scope.packages = buildPackageIndexes(t, files, relevantPackageDirs())
 	return scope
 }
 
@@ -188,6 +266,41 @@ func topLevelConstNames(file *ast.File) map[string]bool {
 		}
 	}
 	return names
+}
+
+// topLevelTypeNames returns the names of the package-level type identifiers
+// declared in the file, so a check can pin that a named type is declared
+// where the scope says it is.
+func topLevelTypeNames(file *ast.File) map[string]bool {
+	names := make(map[string]bool)
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			names[typeSpec.Name.Name] = true
+		}
+	}
+	return names
+}
+
+// exceptionsForFile returns the exception type names that apply to file. An
+// exception is keyed by both its declaring file and its type name, so a type
+// that merely shares a name with an exception type but is declared elsewhere
+// is not silently exempted.
+func exceptionsForFile(refs []typeRef, file string) map[string]bool {
+	exceptions := make(map[string]bool)
+	for _, ref := range refs {
+		if ref.file == file {
+			exceptions[ref.name] = true
+		}
+	}
+	return exceptions
 }
 
 // declaredInFunc returns the const and non-const names declared inside fn, so
@@ -282,6 +395,9 @@ func checkFileWraps(t *testing.T, filename, src string, scope wrapScope) (scanne
 		return importPath == "fmt" || importPath == "errors"
 	})
 	topConsts := topLevelConstNames(file)
+	if pkg := scope.packages[path.Dir(filename)]; pkg != nil {
+		topConsts = pkg.consts
+	}
 	wholeExcluded, whole := scope.wholeFiles[filename]
 	funcs := scope.functions[filename]
 
@@ -371,12 +487,17 @@ func collectReceiverMethods(file *ast.File) map[string]map[string]bool {
 	return methods
 }
 
-// missingStructuredMessage returns the type names that declare Unwrap but not
-// StructuredMessage, skipping the exception types.
-func missingStructuredMessage(methods map[string]map[string]bool, exceptions map[string]bool) []string {
+// missingStructuredMessage returns the type names that declare Unwrap in
+// inFile but not StructuredMessage anywhere in the package, skipping the
+// exception types. pkgMethods is the package-wide receiver method set, so a
+// StructuredMessage split into another file of the same package still counts.
+func missingStructuredMessage(inFile, pkgMethods map[string]map[string]bool, exceptions map[string]bool) []string {
 	var missing []string
-	for recv, names := range methods {
-		if !names["Unwrap"] || names["StructuredMessage"] || exceptions[recv] {
+	for recv, names := range inFile {
+		if !names["Unwrap"] || exceptions[recv] {
+			continue
+		}
+		if pkgMethods[recv]["StructuredMessage"] {
 			continue
 		}
 		missing = append(missing, recv)
@@ -388,9 +509,9 @@ func missingStructuredMessage(methods map[string]map[string]bool, exceptions map
 // use fmt.Errorf, errors.Join or a non-constant errors.New, so every wrap on
 // the two records' paths goes through errmsg and keeps the cause's structure.
 func TestInScopeWrapsUseStructuredErrors(t *testing.T) {
-	scope := buildWrapScope()
 	files := identitymutationguard.ProductionGoFilesInRepo(t)
 	require.NotEmpty(t, files, "the repository scan returned no production files")
+	scope := buildWrapScope(t, files)
 
 	scannedFiles := 0
 	for _, file := range files {
@@ -415,31 +536,32 @@ func TestInScopeWrapsUseStructuredErrors(t *testing.T) {
 // list (function-unit files) and for every Unwrap-declaring type in a
 // whole-file scope file.
 func TestInScopeErrorTypesDeclareStructuredMessage(t *testing.T) {
-	exceptions := make(map[string]bool)
-	for _, ref := range unwrapWithoutStructuredExceptions {
-		exceptions[ref.name] = true
-	}
+	files := identitymutationguard.ProductionGoFilesInRepo(t)
+	indexes := buildPackageIndexes(t, files, relevantPackageDirs())
 
-	// Explicit list: each named type must exist and declare StructuredMessage.
-	byFile := make(map[string][]string)
+	// Explicit list: each named type must be declared in the named file and
+	// declare StructuredMessage somewhere in its package.
 	for _, ref := range inScopeErrorTypes {
-		byFile[ref.file] = append(byFile[ref.file], ref.name)
-	}
-	for file, names := range byFile {
-		src := identitymutationguard.ReadProductionSource(t, file)
-		_, parsed := identitymutationguard.ParseSource(t, file, src)
-		methods := collectReceiverMethods(parsed)
-		for _, name := range names {
-			assert.Truef(t, methods[name]["StructuredMessage"],
-				"%s: type %s wraps an in-scope cause but does not declare StructuredMessage", file, name)
-		}
+		src := identitymutationguard.ReadProductionSource(t, ref.file)
+		_, parsed := identitymutationguard.ParseSource(t, ref.file, src)
+		assert.Truef(t, topLevelTypeNames(parsed)[ref.name],
+			"%s: type %s is not declared there; the scope is stale", ref.file, ref.name)
+		pkg := indexes[path.Dir(ref.file)]
+		require.NotNilf(t, pkg, "%s: no package index for %s", ref.file, path.Dir(ref.file))
+		assert.Truef(t, pkg.methods[ref.name]["StructuredMessage"],
+			"%s: type %s wraps an in-scope cause but does not declare StructuredMessage", ref.file, ref.name)
 	}
 
-	// Whole-file scope: any Unwrap declaration must come with StructuredMessage.
+	// Whole-file scope: any Unwrap declaration must come with StructuredMessage
+	// anywhere in the package. An exception applies only in its own declaring
+	// file, so a same-named type elsewhere is not silently exempted.
 	for _, file := range inScopeWholeFiles {
+		pkg := indexes[path.Dir(file)]
+		require.NotNilf(t, pkg, "%s: no package index for %s", file, path.Dir(file))
 		src := identitymutationguard.ReadProductionSource(t, file)
 		_, parsed := identitymutationguard.ParseSource(t, file, src)
-		missing := missingStructuredMessage(collectReceiverMethods(parsed), exceptions)
+		exceptions := exceptionsForFile(unwrapWithoutStructuredExceptions, file)
+		missing := missingStructuredMessage(collectReceiverMethods(parsed), pkg.methods, exceptions)
 		assert.Empty(t, missing,
 			"%s: types declaring Unwrap must also declare StructuredMessage: %v", file, missing)
 	}
@@ -454,6 +576,7 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 	for _, file := range files {
 		present[file] = true
 	}
+	indexes := buildPackageIndexes(t, files, relevantPackageDirs())
 
 	for _, file := range inScopeWholeFiles {
 		assert.Truef(t, present[file], "in-scope file %s is missing; the scope is stale", file)
@@ -480,14 +603,14 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 		}
 	}
 
-	// The exception list must keep naming types that still declare Unwrap, or
-	// an exception silently stops applying to the type it was written for.
+	// The exception list must keep naming types that still declare Unwrap
+	// somewhere in their package, or an exception silently stops applying to
+	// the type it was written for.
 	for _, ref := range unwrapWithoutStructuredExceptions {
 		require.Truef(t, present[ref.file], "exception file %s is missing; the exception is stale", ref.file)
-		src := identitymutationguard.ReadProductionSource(t, ref.file)
-		_, parsed := identitymutationguard.ParseSource(t, ref.file, src)
-		methods := collectReceiverMethods(parsed)
-		assert.Truef(t, methods[ref.name]["Unwrap"],
+		pkg := indexes[path.Dir(ref.file)]
+		require.NotNilf(t, pkg, "%s: no package index for %s", ref.file, path.Dir(ref.file))
+		assert.Truef(t, pkg.methods[ref.name]["Unwrap"],
 			"%s: exception %s no longer declares Unwrap; the exception is stale", ref.file, ref.name)
 	}
 }
@@ -616,6 +739,30 @@ func TestWrapCheckRecognizesForms(t *testing.T) {
 	}
 }
 
+// TestWrapCheckResolvesPackageWideConsts pins that an errors.New argument
+// which is a package-level constant declared in a sibling file of the same
+// package is accepted, while a same-named non-constant of the checked file is
+// still reported.
+func TestWrapCheckResolvesPackageWideConsts(t *testing.T) {
+	const file = "internal/runner/guard_sample.go"
+	const header = "package runner\n\nimport \"errors\"\n\n"
+	_, sibling := identitymutationguard.ParseSource(t, "internal/runner/sibling.go",
+		"package runner\n\nconst errText = \"sibling sentinel\"\n")
+	index := &packageIndex{consts: map[string]bool{}, methods: map[string]map[string]bool{}}
+	mergePackageIndex(index, sibling)
+	scope := wrapScope{
+		wholeFiles: map[string]map[string]bool{file: {}},
+		packages:   map[string]*packageIndex{"internal/runner": index},
+	}
+
+	_, violations := checkFileWraps(t, file, header+"var errSentinel = errors.New(errText)\n", scope)
+	assert.Emptyf(t, violations, "a sibling-file constant must be accepted: %v", violations)
+
+	src := header + "func f(errText string) error { return errors.New(errText) }\n"
+	_, violations = checkFileWraps(t, file, src, scope)
+	assert.Lenf(t, violations, 1, "a parameter shadowing the sibling constant must be reported: %v", violations)
+}
+
 // TestUnwrapStructuredCheckRecognizesForms pins that the whole-file Unwrap
 // check reports a missing StructuredMessage and honours the exception list.
 func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
@@ -656,8 +803,37 @@ func TestUnwrapStructuredCheckRecognizesForms(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, file := identitymutationguard.ParseSource(t, "internal/x/x.go", tt.src)
-			missing := missingStructuredMessage(collectReceiverMethods(file), tt.exceptions)
+			methods := collectReceiverMethods(file)
+			missing := missingStructuredMessage(methods, methods, tt.exceptions)
 			assert.Len(t, missing, tt.want, "missing: %v", missing)
 		})
 	}
+}
+
+// TestMissingStructuredMessageResolvesPackageWideMethods pins that a
+// StructuredMessage declared in a sibling file satisfies the whole-file Unwrap
+// check, and that an exception applies only in its own declaring file.
+func TestMissingStructuredMessageResolvesPackageWideMethods(t *testing.T) {
+	_, parsed := identitymutationguard.ParseSource(t, "internal/runner/guard_sample.go",
+		"package runner\n\nfunc (e *T) Unwrap() error { return nil }\n")
+	inFile := collectReceiverMethods(parsed)
+
+	pkgMethods := map[string]map[string]bool{"T": {"Unwrap": true, "StructuredMessage": true}}
+	assert.Empty(t, missingStructuredMessage(inFile, pkgMethods, nil),
+		"a StructuredMessage in a sibling file must satisfy the check")
+
+	siblingOnly := map[string]map[string]bool{"T": {"Unwrap": true}}
+	assert.Len(t, missingStructuredMessage(inFile, siblingOnly, nil), 1,
+		"a package with no StructuredMessage anywhere must be reported")
+
+	assert.Len(t, missingStructuredMessage(
+		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
+		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
+		exceptionsForFile(unwrapWithoutStructuredExceptions, "internal/runner/group_errors.go"),
+	), 1, "an exception keyed to another file must not exempt a same-named type")
+	assert.Empty(t, missingStructuredMessage(
+		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
+		map[string]map[string]bool{"ExecutionError": {"Unwrap": true}},
+		exceptionsForFile(unwrapWithoutStructuredExceptions, "internal/logging/execution_error.go"),
+	), "the exception must apply in its declaring file")
 }
