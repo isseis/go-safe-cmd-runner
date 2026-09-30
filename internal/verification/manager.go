@@ -823,14 +823,7 @@ func (m *Manager) verifyDynLibDepsResolution(cmdPath string, shebangChain []file
 func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error) {
 	resolved, err := m.elfDynLibAnalyzer.Analyze(path)
 	if err != nil {
-		// Keep the analyzer's own structure: the prefix is free text because it
-		// carries the binary path, but wrapping the cause as a structured error
-		// lets a structured cause (e.g. a recursion-depth failure) survive to
-		// the report instead of being flattened into one text segment.
-		return nil, errmsg.NewError(
-			errmsg.Text(fmt.Sprintf("failed to re-resolve ELF dynamic library dependencies for %s: ", path)),
-			errmsg.Cause(err),
-		)
+		return nil, wrapResolveError("ELF", path, err)
 	}
 	if resolved != nil {
 		return resolved, nil
@@ -838,16 +831,26 @@ func (m *Manager) resolveDynLibDeps(path string) ([]fileanalysis.LibEntry, error
 	// Not an ELF binary (or a static ELF): try Mach-O.
 	resolved, warnings, err := m.machoDynLibAnalyzer.Analyze(path)
 	if err != nil {
-		return nil, errmsg.NewError(
-			errmsg.Text(fmt.Sprintf("failed to re-resolve Mach-O dynamic library dependencies for %s: ", path)),
-			errmsg.Cause(err),
-		)
+		return nil, wrapResolveError("Mach-O", path, err)
 	}
 	for _, w := range warnings {
 		slog.Warn("Mach-O dependency resolution warning during verify",
 			"cmd_path", path, "warning", w.String())
 	}
 	return resolved, nil
+}
+
+// wrapResolveError builds the error for a dependency re-resolution failure: a
+// free-text prefix that names the format and the binary path, followed by the
+// analyzer's own error as the cause. The prefix is free text because it carries
+// the binary path; keeping the cause as a structured part lets a structured
+// analyzer error such as ErrRecursionDepthExceeded reach the report with its
+// SOName declared as a Path instead of being flattened into one text segment.
+func wrapResolveError(format, path string, err error) error {
+	return errmsg.NewError(
+		errmsg.Text(fmt.Sprintf("failed to re-resolve %s dynamic library dependencies for %s: ", format, path)),
+		errmsg.Cause(err),
+	)
 }
 
 // compareDynLibDeps confirms that the resolved search-path set matches the

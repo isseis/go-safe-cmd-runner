@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/dynlib"
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	tu "github.com/isseis/go-safe-cmd-runner/internal/testutil"
 )
@@ -69,13 +70,8 @@ func TestErrDynLibDepsResolutionChanged_StructuredMessage_EmptySOName(t *testing
 }
 
 // TestResolveDynLibDeps_WrapIsStructured pins that re-resolution wraps an
-// analyzer failure in a structured error. The wrap keeps the cause's own
-// structure (errmsg.Cause), so a structured cause such as
-// ErrRecursionDepthExceeded reaches the report with its SOName declared as a
-// Path instead of being flattened into one text segment. Reverting the wrap to
-// fmt.Errorf makes this test fail because the result is no longer an
-// *errmsg.Error. The composition with a structured cause is pinned by
-// TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause.
+// analyzer failure in a structured error. Reverting the wrap to fmt.Errorf
+// makes this test fail because the result is no longer an *errmsg.Error.
 func TestResolveDynLibDeps_WrapIsStructured(t *testing.T) {
 	m, err := NewManagerForTest(tu.SafeTempDir(t), WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 	require.NoError(t, err)
@@ -86,6 +82,34 @@ func TestResolveDynLibDeps_WrapIsStructured(t *testing.T) {
 
 	_, ok := errors.AsType[*errmsg.Error](err)
 	assert.True(t, ok, "the wrap must be structured so a structured cause survives to the report")
+}
+
+// TestWrapResolveError_KeepsStructuredCause pins the wrap resolveDynLibDeps
+// uses: a free-text prefix plus the analyzer's error as the cause. A structured
+// cause keeps its own segments, so ErrRecursionDepthExceeded reaches the report
+// with its SOName declared as a Path instead of being flattened into one text
+// segment. A wrap that replaced the cause with an unstructured copy of its text
+// fails this test.
+func TestWrapResolveError_KeepsStructuredCause(t *testing.T) {
+	cause := &dynlib.ErrRecursionDepthExceeded{SOName: "libkeyutils.so.1", Depth: 3, MaxDepth: 2}
+	err := wrapResolveError("ELF", "/usr/bin/curl", cause)
+
+	assert.Equal(t,
+		"failed to re-resolve ELF dynamic library dependencies for /usr/bin/curl: "+cause.Error(),
+		err.Error())
+
+	wrapped, ok := errors.AsType[*errmsg.Error](err)
+	require.True(t, ok)
+	assert.Equal(t, errmsg.Segments{
+		{Role: errmsg.RoleText, Text: "failed to re-resolve ELF dynamic library dependencies for /usr/bin/curl: "},
+		{Role: errmsg.RoleConstant, Text: "dependency resolution depth exceeded: "},
+		{Role: errmsg.RolePath, Text: "libkeyutils.so.1"},
+		{Role: errmsg.RoleConstant, Text: " at depth "},
+		{Role: errmsg.RoleText, Text: "3"},
+		{Role: errmsg.RoleConstant, Text: " (max "},
+		{Role: errmsg.RoleText, Text: "2"},
+		{Role: errmsg.RoleConstant, Text: ")"},
+	}, wrapped.StructuredMessage().Segments())
 }
 
 func TestErrInterpreterRecordNotFound_StructuredMessage(t *testing.T) {

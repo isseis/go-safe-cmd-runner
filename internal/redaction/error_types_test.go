@@ -79,20 +79,3 @@ func TestRedactMessage_PathSegmentStillMasksValueFormats(t *testing.T) {
 		assert.Contains(t, out, redaction.DefaultPlaceholder)
 	})
 }
-
-// TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause pins the wrap
-// resolveDynLibDeps uses: a free-text prefix plus the cause. A structured cause
-// inside it keeps its own segments, so the SOName survives even though the
-// whole message contains the sensitive word the whole-value replacement reacts
-// to.
-func TestRedactMessage_ResolveDynLibDepsWrapperKeepsStructuredCause(t *testing.T) {
-	cfg := redaction.DefaultConfig()
-	wrapped := errmsg.NewError(
-		errmsg.Text("failed to re-resolve ELF dynamic library dependencies for /usr/bin/curl: "),
-		errmsg.Cause(&dynlib.ErrRecursionDepthExceeded{SOName: "libkeyutils.so.1", Depth: 3, MaxDepth: 2}),
-	)
-
-	out, err := cfg.RedactMessage(wrapped.StructuredMessage())
-	require.NoError(t, err)
-	assert.Contains(t, out, "libkeyutils.so.1")
-}
