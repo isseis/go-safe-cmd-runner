@@ -1077,6 +1077,13 @@ func (e *Error) StructuredMessage() errmsg.Message {
 - ガードは `internal/runner/wrap_guard_test.go`（`//go:build test`）に置く。
 - 実装の指針: `identitymutationguard.ProductionGoFilesInRepo`・`ReadProductionSource`・`ParseSource`・`ResolveLocalImports` を使い、範囲の定義（ファイル全体・関数の単位・除く関数）をテストの中の表として持つ。関数の単位は、`*ast.FuncDecl` のレシーバ型名と関数名で照合する。範囲の全ファイルを調べ、`fmt.Errorf`・`errors.Join`・`errors.New` の呼び出し位置が範囲の中にあるかで判定する。
 
+#### 9.2.1 受容する制約
+
+§9.0 のとおり、ガードは通常のコードを書くときの誤りを検出する。判定の実装が §9.2 の契約より狭く、正しいコードを拒否しうる箇所は、既知の制約として受容する。実際のコードがその形を書いた時点で、§9.0「規則の書き方」に従って許す形を書き足す。次の 2 点がこれに当たる。
+
+- **変換・選択子を使った `errors.New` の定数式を拒否する。** ガードが定数式として認めるのは、文字列リテラル、同じパッケージの `const` に解決できる名前、それらを `+` でつないだ式だけである。`errors.New(string(errorCode))` のような変換や、他パッケージがエクスポートした文字列定数を選択子で指す式は既定の側で拒否される。式の型と定数値（`go/types` の `Info.Types`）で判定すれば、契約どおり「定数式か」だけを問う形に広げられる。
+- **import したパッケージ名を隠す局所の識別子を区別しない。** パッケージ限定子の判定をファイルの import 集合で行うため、局所の値が `fmt`・`errors` と同じ名前を使っていると、`fmt.Errorf`・`errors.New` を標準ライブラリの呼び出しとみなし、範囲外の `fmt.Errorf` として誤って報告しうる。Go はこの隠蔽を許すが、通常のコードは局所の値に標準パッケージ名を付けない。`go/types` の `Uses` で識別子を解決し `*types.PkgName` を要求すれば区別できる。
+
 ### 9.3 `Const` の検査（AC-24）
 
 - 本番のコードの `errmsg.Const`・`errmsg.ConstSummary` の呼び出しの引数が、文字列リテラル、同じパッケージの `const` 宣言に解決できる名前、またはそれらを `+` でつないだ式であること。
