@@ -3,10 +3,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -367,6 +369,11 @@ func TestTemplateExpansionWrapSites_StructuredMessage(t *testing.T) {
 			require.Truef(t, ok, "%T must implement errmsg.Structured", err)
 			assert.Equal(t, tt.want, err.Error())
 			assert.Equal(t, tt.segments, nonConstantSegments(structured.StructuredMessage()))
+
+			// The DetermineScope cause must stay reachable through the wrap.
+			var target *variable.ErrReservedVariableName
+			require.True(t, errors.As(err, &target), "the DetermineScope cause must stay reachable")
+			assert.Equal(t, "__foo", target.Name)
 		})
 	}
 }

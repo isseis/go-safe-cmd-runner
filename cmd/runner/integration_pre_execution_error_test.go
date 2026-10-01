@@ -1108,7 +1108,7 @@ args = ["${secret_file}"]
 name = "token_rotate"
 
 [[groups.commands]]
-name = "rotate_cmd"
+name = "secret_cmd"
 template = "rotate_token"
 `, slackHost)
 		},
@@ -1121,12 +1121,12 @@ template = "rotate_token"
 	rawBody := stderrDetailsBlock(t, run.stderr)
 	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
 		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
-	withoutIdentifiers := strings.NewReplacer("rotate_token", "", "secret_file", "", "token_rotate", "").Replace(rawBody)
+	withoutIdentifiers := strings.NewReplacer("rotate_token", "", "secret_file", "", "token_rotate", "", "secret_cmd", "").Replace(rawBody)
 	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
 		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
 
 	errorMessage := attachmentField(t, fields, "Error Message")
-	for _, want := range []string{"rotate_token", "secret_file", "rotate_cmd", "token_rotate"} {
+	for _, want := range []string{"rotate_token", "secret_file", "secret_cmd", "token_rotate"} {
 		assert.Contains(t, errorMessage, want,
 			"the Identifier %q must survive redaction: %q", want, errorMessage)
 	}
