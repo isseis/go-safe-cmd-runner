@@ -210,7 +210,7 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 型変更が広く、テンプレートの欄の組み立てを宣言に置き換える判断を伴う
 
-- [ ] `make test && make lint` が green であることを確認した
+- [x] `make test && make lint` が green であることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
