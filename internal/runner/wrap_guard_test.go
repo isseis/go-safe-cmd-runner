@@ -48,6 +48,7 @@ var inScopeWholeFiles = []string{
 	"internal/runner/config/errors.go",
 	"internal/runner/config/template_errors.go",
 	"internal/runner/config/template_expansion.go",
+	"internal/runner/cli/filter.go",
 }
 
 // inScopeFunctions are the functions and methods that are in scope for the guard

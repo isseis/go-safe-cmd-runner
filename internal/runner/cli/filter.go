@@ -2,9 +2,9 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 )
 
@@ -47,9 +47,6 @@ func checkGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 	if len(names) == 0 {
 		return nil
 	}
-	if config == nil {
-		return fmt.Errorf("%w: %w", ErrGroupNotFound, ErrNilConfig)
-	}
 
 	// Build a map of existing group names for O(1) lookup
 	// This reduces time complexity from O(N*M) to O(N+M)
@@ -81,8 +78,27 @@ func checkGroupsExist(names []string, config *runnertypes.ConfigSpec) error {
 			available = append(available, groupName)
 		}
 
-		return fmt.Errorf("%w: group(s) %v specified in --groups do not exist in configuration\nAvailable groups: %v",
-			ErrGroupNotFound, missing, available)
+		// The requested and available names are identifiers: the operator typed
+		// the requested one, and the available ones passed config.ValidateIdentifiers.
+		parts := []errmsg.Part{
+			errmsg.Cause(ErrGroupNotFound),
+			errmsg.Const(": group(s) ["),
+		}
+		for i, name := range missing {
+			if i > 0 {
+				parts = append(parts, errmsg.Const(" "))
+			}
+			parts = append(parts, errmsg.Ident(name))
+		}
+		parts = append(parts, errmsg.Const("] specified in --groups do not exist in configuration\nAvailable groups: ["))
+		for i, name := range available {
+			if i > 0 {
+				parts = append(parts, errmsg.Const(" "))
+			}
+			parts = append(parts, errmsg.Ident(name))
+		}
+		parts = append(parts, errmsg.Const("]"))
+		return errmsg.NewError(parts...)
 	}
 
 	return nil

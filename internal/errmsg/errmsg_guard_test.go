@@ -63,6 +63,7 @@ var exemptRolePositions = positions{
 	"internal/runner/config/errors.go":             {wholeFile},
 	"internal/runner/config/template_errors.go":    {wholeFile},
 	"internal/runner/config/template_expansion.go": {wholeFile},
+	"internal/runner/cli/filter.go":                {wholeFile},
 	"internal/logging/pre_execution_error.go":      {"PreExecutionError.DetailMessage"},
 	"internal/logging/execution_error.go":          {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
 	"internal/runner/base/privilege/errors.go":     {"Error.StructuredMessage"},

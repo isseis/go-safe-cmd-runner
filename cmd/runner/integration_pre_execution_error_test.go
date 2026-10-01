@@ -1133,3 +1133,58 @@ template = "rotate_token"
 	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
 		"the whole body must not be replaced")
 }
+
+// TestIntegration_GroupsFlagMissingIdentifiersSurviveRedaction is the --groups
+// end-to-end scenario: a requested name (token_wrong) and the available group
+// names (token_rotate, api_key_rotate) all contain whole-value trigger words.
+// cli.FilterGroups fails pre-execution, and the Slack Error Message must keep
+// the requested name and the available names instead of becoming the
+// whole-value placeholder.
+func TestIntegration_GroupsFlagMissingIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "token_rotate"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+
+[[groups]]
+name = "api_key_rotate"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath(), trueCmdPath())
+		},
+		groups: "token_wrong",
+		runID:  "test-groups-flag-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a missing --groups name fails the run")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+
+	rawBody := stderrDetailsBlock(t, run.stderr)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("token_wrong", "", "token_rotate", "", "api_key_rotate", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Contains(t, errorMessage, "specified in --groups do not exist in configuration",
+		"the group-not-found wording must survive: %q", errorMessage)
+	for _, want := range []string{"token_wrong", "token_rotate", "api_key_rotate"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced")
+}
