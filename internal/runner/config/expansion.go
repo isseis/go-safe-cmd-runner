@@ -1410,7 +1410,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	}
 
 	// Expand cmd
-	expandedCmd, err := expandSingleArg(template.Cmd, cmdSpec.Params, templateName, "cmd")
+	expandedCmd, err := expandSingleArg(template.Cmd, cmdSpec.Params, templateName, cmdField())
 	if err != nil {
 		return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template cmd: "), errmsg.Cause(err))
 	}
@@ -1444,7 +1444,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Expand workdir from template (if non-nil)
 	var expandedWorkDir *string
 	if template.WorkDir != nil {
-		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workDirKey)
+		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workdirField())
 		if err != nil {
 			return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template workdir: "), errmsg.Cause(err))
 		}
@@ -1460,7 +1460,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Expand output_file from template (if non-nil)
 	var expandedOutputFile *string
 	if template.OutputFile != nil {
-		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, "output_file")
+		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, outputFileField())
 		if err != nil {
 			return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template output_file: "), errmsg.Cause(err))
 		}

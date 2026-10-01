@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
@@ -53,9 +54,6 @@ const (
 
 // placeholderPrefixLen is the length of the placeholder prefix "${".
 const placeholderPrefixLen = 2
-
-// field name
-const workDirKey = "workdir"
 
 // placeholder represents a parsed placeholder in a template string.
 type placeholder struct {
@@ -203,7 +201,7 @@ func expandSingleArg(
 	arg string,
 	params map[string]any,
 	templateName string,
-	field string,
+	field Field,
 ) ([]string, error) {
 	placeholders, err := parsePlaceholders(arg)
 	if err != nil {
@@ -248,11 +246,11 @@ func expandArrayPlaceholder(
 	name string,
 	params map[string]any,
 	templateName string,
-	field string,
+	field Field,
 ) ([]string, error) {
 	// Array placeholders are not allowed in workdir field - it must
 	// expand to a single value (one directory path)
-	if field == workDirKey {
+	if field.key == fieldWorkdir {
 		return nil, &ErrArrayInMixedContext{
 			TemplateName: templateName,
 			Field:        field,
@@ -312,7 +310,7 @@ func expandOptionalPlaceholder(
 	name string,
 	params map[string]any,
 	templateName string,
-	field string,
+	field Field,
 ) ([]string, error) {
 	value, exists := params[name]
 	if !exists {
@@ -343,7 +341,7 @@ func expandStringPlaceholders(
 	placeholders []placeholder,
 	params map[string]any,
 	templateName string,
-	field string,
+	field Field,
 ) ([]string, error) {
 	result := input
 
@@ -422,7 +420,7 @@ func ExpandTemplateArgs(
 	var result []string
 
 	for i, arg := range args {
-		field := fmt.Sprintf("args[%d]", i)
+		field := argsField(i)
 		expanded, err := expandSingleArg(arg, params, templateName, field)
 		if err != nil {
 			return nil, err
@@ -444,7 +442,7 @@ func ExpandTemplateEnv(
 	result := make([]string, 0, len(env))
 
 	for i, envEntry := range env {
-		field := fmt.Sprintf("env_vars[%d]", i)
+		field := envVarsField(i)
 
 		// Pre-validate: check if KEY part contains placeholders (before expansion)
 		if err := validateEnvPre(envEntry, templateName, field); err != nil {
@@ -484,7 +482,7 @@ func ExpandTemplateEnv(
 
 // validateEnvPre validates env_vars entry before placeholder expansion.
 // This checks that the KEY part (before '=') does not contain placeholders.
-func validateEnvPre(entry, templateName, _ string) error {
+func validateEnvPre(entry, templateName string, _ Field) error {
 	// Check if this is a pure placeholder (entire element is ${...} or ${?...} or ${@...})
 	placeholders, err := parsePlaceholders(entry)
 	if err != nil {
@@ -509,7 +507,12 @@ func validateEnvPre(entry, templateName, _ string) error {
 	// Check that KEY part does not contain placeholders (security requirement)
 	keyPlaceholders, err := parsePlaceholders(key)
 	if err != nil {
-		return fmt.Errorf("failed to parse env_vars key %q: %w", key, err)
+		return errmsg.NewError(
+			errmsg.Const("failed to parse env_vars key "),
+			errmsg.Quoted(errmsg.Text(key)),
+			errmsg.Const(": "),
+			errmsg.Cause(err),
+		)
 	}
 	if len(keyPlaceholders) > 0 {
 		return &ErrPlaceholderInEnvKey{
@@ -525,7 +528,7 @@ func validateEnvPre(entry, templateName, _ string) error {
 // validateEnvPost validates that an env_vars entry is in KEY=VALUE format
 // after placeholder expansion.
 // Returns (shouldInclude=false, nil) if the entry should be skipped (empty VALUE).
-func validateEnvPost(entry, templateName, field string, expandedIndex int) (bool, error) {
+func validateEnvPost(entry, templateName string, field Field, expandedIndex int) (bool, error) {
 	// Check KEY=VALUE format
 	_, after, ok := strings.Cut(entry, "=")
 	if !ok {
@@ -569,7 +572,7 @@ func validateEnvUnique(env []string, templateName string) error {
 		if _, exists := seen[key]; exists {
 			return &ErrDuplicateEnvVariableDetail{
 				TemplateName: templateName,
-				Field:        "env_vars",
+				Field:        envVarsFieldNoIndex(),
 				EnvKey:       key,
 			}
 		}
@@ -626,7 +629,7 @@ func ValidateTemplateDefinition(
 	if template.Cmd == "" {
 		return &ErrMissingRequiredField{
 			TemplateName: name,
-			Field:        "cmd",
+			Field:        cmdField(),
 		}
 	}
 
@@ -705,7 +708,16 @@ func validateGlobalOnly(input, templateName string, field Field) error {
 
 		scope, err := variable.DetermineScope(varName)
 		if err != nil {
-			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, field.String(), varName, err)
+			return errmsg.NewError(
+				errmsg.Const("template "),
+				errmsg.Quoted(errmsg.Ident(templateName)),
+				errmsg.Const(" field "),
+				errmsg.Quoted(field.parts()...),
+				errmsg.Const(": invalid variable name "),
+				errmsg.Quoted(errmsg.Text(varName)),
+				errmsg.Const(": "),
+				errmsg.Cause(err),
+			)
 		}
 
 		if scope != variable.ScopeGlobal {
@@ -750,7 +762,7 @@ func validateCmdSpec(
 			return &ErrMissingRequiredField{
 				GroupName:    groupName,
 				CommandIndex: commandIndex,
-				Field:        "cmd",
+				Field:        cmdField(),
 			}
 		}
 		return nil
@@ -762,7 +774,7 @@ func validateCmdSpec(
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
 			TemplateName: spec.Template,
-			Field:        "cmd",
+			Field:        cmdField(),
 		}
 	}
 
@@ -771,7 +783,7 @@ func validateCmdSpec(
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
 			TemplateName: spec.Template,
-			Field:        "args",
+			Field:        argsFieldNoIndex(),
 		}
 	}
 
@@ -780,7 +792,7 @@ func validateCmdSpec(
 			GroupName:    groupName,
 			CommandIndex: commandIndex,
 			TemplateName: spec.Template,
-			Field:        "env_vars",
+			Field:        envVarsFieldNoIndex(),
 		}
 	}
 
@@ -807,7 +819,7 @@ func ExpandTemplateVars(
 	result := make(map[string]any, len(vars))
 
 	for varName, varValue := range vars {
-		field := fmt.Sprintf("vars.%s", varName)
+		field := varField(varName)
 
 		switch v := varValue.(type) {
 		case string:
@@ -851,7 +863,7 @@ func ExpandTemplateVars(
 					}
 				}
 
-				elemField := fmt.Sprintf("%s[%d]", field, i)
+				elemField := varElementField(varName, i)
 				expanded, err := expandSingleArg(str, params, templateName, elemField)
 				if err != nil {
 					return nil, err
@@ -868,7 +880,7 @@ func ExpandTemplateVars(
 			// Expand array elements
 			expandedArray := make([]any, 0, len(v))
 			for i, str := range v {
-				elemField := fmt.Sprintf("%s[%d]", field, i)
+				elemField := varElementField(varName, i)
 				expanded, err := expandSingleArg(str, params, templateName, elemField)
 				if err != nil {
 					return nil, err
@@ -884,7 +896,7 @@ func ExpandTemplateVars(
 		default:
 			return nil, &ErrUnsupportedParamType{
 				TemplateName: templateName,
-				Field:        "vars",
+				Field:        varsField(),
 				ParamName:    varName,
 				ActualType:   fmt.Sprintf("%T", varValue),
 			}
@@ -1132,7 +1144,16 @@ func validateFieldVars(
 
 		scope, err := variable.DetermineScope(varName)
 		if err != nil {
-			return fmt.Errorf("template %q field %q: invalid variable name %q: %w", templateName, fieldName.String(), varName, err)
+			return errmsg.NewError(
+				errmsg.Const("template "),
+				errmsg.Quoted(errmsg.Ident(templateName)),
+				errmsg.Const(" field "),
+				errmsg.Quoted(fieldName.parts()...),
+				errmsg.Const(": invalid variable name "),
+				errmsg.Quoted(errmsg.Text(varName)),
+				errmsg.Const(": "),
+				errmsg.Cause(err),
+			)
 		}
 
 		// Check if it's a local variable (not allowed in templates)
