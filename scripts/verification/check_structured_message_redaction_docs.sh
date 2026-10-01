@@ -119,6 +119,21 @@ check_word "$RISK_EN" "without whole-value replacement" "the structured error_me
 check_word "$PKG" "errmsg/" "the internal/errmsg package listing (AC-26)"
 check_word "$PKG" "internal/errmsg" "the internal/errmsg responsibility (AC-26)"
 
+# Config expansion and validation error identifiers and their boundary (AC-23).
+check_word "$ARCH_JA" "システム環境変数の名前" "the system environment variable name identifier (AC-23)"
+check_word "$ARCH_JA" "テンプレート名" "the template name identifier (AC-23)"
+check_word "$ARCH_JA" "パラメータ名" "the parameter name identifier (AC-23)"
+check_word "$ARCH_JA" "--groups" "the --groups name identifier (AC-23)"
+check_word "$ARCH_JA" "拒否された名前" "the rejected-name Text role (AC-23)"
+check_word "$ARCH_JA" "保護の境界" "the documented protection boundary (AC-23)"
+
+check_word "$ARCH_EN" "system environment variable name" "the system environment variable name identifier (AC-23)"
+check_word "$ARCH_EN" "template name" "the template name identifier (AC-23)"
+check_word "$ARCH_EN" "parameter name" "the parameter name identifier (AC-23)"
+check_word "$ARCH_EN" "--groups" "the --groups name identifier (AC-23)"
+check_word "$ARCH_EN" "rejected by name validation" "the rejected-name Text role (AC-23)"
+check_word "$ARCH_EN" "protection boundary" "the documented protection boundary (AC-23)"
+
 if [ "$status" -eq 0 ]; then
     echo "All structured-message redaction documentation checks passed"
 else

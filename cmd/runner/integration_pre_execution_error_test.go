@@ -1188,3 +1188,188 @@ cmd = %q
 	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
 		"the whole body must not be replaced")
 }
+
+// TestIntegration_PreExecutionConfigErrors_OutputContract drives one scenario
+// per config error producer (global expansion, group expansion, template
+// validation, --groups filtering, and command/template expansion) and pins the
+// unchanged output contract: the stderr Details block wording (AC-16) and the
+// notification count, Scope, field composition, message_type and error_type
+// (AC-17).
+func TestIntegration_PreExecutionConfigErrors_OutputContract(t *testing.T) {
+	tests := []struct {
+		name          string
+		configBody    func(slackHost string) string
+		groups        string
+		wantScope     string
+		wantComponent string
+		wantDetails   string
+		wantErrorType string
+		wantRecord    string
+	}{
+		{
+			name: "global expansion",
+			configBody: func(slackHost string) string {
+				return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[global.vars]
+GLOBAL_FILE = "%%{api_key}"
+
+[[groups]]
+name = "unused"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+			},
+			wantScope:     "(global)",
+			wantComponent: "config",
+			wantDetails:   "Failed to expand global configuration: failed to process global vars: undefined variable in global.vars.GLOBAL_FILE: 'api_key' (context: ) (expansion path: api_key)",
+			wantErrorType: "config_parsing_failed",
+			wantRecord:    "Pre-execution error occurred",
+		},
+		{
+			name: "group expansion",
+			configBody: func(slackHost string) string {
+				return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "token_rotate"
+env_allowed = []
+env_import = ["gh=GITHUB_TOKEN"]
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+			},
+			wantScope:     "group=token_rotate",
+			wantComponent: "runner",
+			wantDetails:   "error running commands (group: token_rotate): failed to execute group token_rotate: failed to expand group[token_rotate]: failed to process group[token_rotate] env_import: system environment variable 'GITHUB_TOKEN' not in allowlist (referenced as 'gh' in group[token_rotate].from_env)",
+			wantErrorType: "group_preparation_failed",
+			wantRecord:    "Pre-execution error notified",
+		},
+		{
+			name: "template validation",
+			configBody: func(slackHost string) string {
+				return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[global.vars]
+PLAIN = "x"
+
+[command_templates.rotate_token]
+cmd = "/bin/echo"
+args = ["%%{TOKEN_FILE}"]
+
+[[groups]]
+name = "unused"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+			},
+			wantScope:     "(global)",
+			wantComponent: "config",
+			wantDetails:   "Template validation failed: template \"rotate_token\" field \"args[0]\": global variable \"TOKEN_FILE\" is not defined in [global.vars]",
+			wantErrorType: "config_parsing_failed",
+			wantRecord:    "Pre-execution error occurred",
+		},
+		{
+			name: "groups filtering",
+			configBody: func(slackHost string) string {
+				return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "token_rotate"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+			},
+			groups:        "token_wrong",
+			wantScope:     "(global)",
+			wantComponent: "runner",
+			wantDetails:   "Invalid groups specified: group not found: group(s) [token_wrong] specified in --groups do not exist in configuration\nAvailable groups: [token_rotate]",
+			wantErrorType: "config_parsing_failed",
+			wantRecord:    "Pre-execution error occurred",
+		},
+		{
+			name: "command template expansion",
+			configBody: func(slackHost string) string {
+				return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[command_templates.rotate_token]
+cmd = "/bin/echo"
+args = ["${secret_file}"]
+
+[[groups]]
+name = "token_rotate"
+
+[[groups.commands]]
+name = "secret_cmd"
+template = "rotate_token"
+`, slackHost)
+			},
+			wantScope:     "group=token_rotate command=secret_cmd",
+			wantComponent: "runner",
+			wantDetails:   "error running commands (group: token_rotate, command: secret_cmd): failed to execute group token_rotate: failed to pre-expand commands for group[token_rotate]: command[secret_cmd] (index 0): failed to expand template \"rotate_token\" for command \"secret_cmd\": failed to expand template args: template \"rotate_token\" args[0]: required parameter \"secret_file\" not provided",
+			wantErrorType: "group_preparation_failed",
+			wantRecord:    "Pre-execution error notified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := runMainWithSlackMock(t, slackRunSpec{
+				configBody: tt.configBody,
+				groups:     tt.groups,
+				runID:      "test-output-contract-001",
+			})
+			require.Equal(t, 1, run.exitCode, "the config error must fail the run")
+
+			// AC-16: the stderr Details block wording is unchanged.
+			assert.Equal(t, tt.wantDetails, stderrDetailsBlock(t, run.stderr))
+
+			// AC-17: exactly one notification, with the unchanged scope,
+			// component and field composition.
+			message, fields := requireSinglePreExecutionError(t, run)
+			require.Len(t, message.Attachments, 1)
+			assert.Equal(t, tt.wantScope, attachmentField(t, fields, "Scope"))
+			assert.Equal(t, tt.wantComponent, attachmentField(t, fields, "Component"))
+
+			var titles []string
+			for _, field := range fields {
+				titles = append(titles, field.Title)
+			}
+			assert.Equal(t, []string{"Error Message", "Component", "Scope", "Hostname", "Run ID"}, titles)
+
+			// AC-17: message_type and error_type are unchanged.
+			records := jsonLogRecords(t, run, tt.wantRecord)
+			require.Len(t, records, 1)
+			assert.Equal(t, "pre_execution_error", records[0]["message_type"])
+			assert.Equal(t, tt.wantErrorType, records[0]["error_type"])
+		})
+	}
+}

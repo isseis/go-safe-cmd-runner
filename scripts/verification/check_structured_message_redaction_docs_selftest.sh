@@ -36,6 +36,12 @@ write_complete_fixture() {
 Path
 Text
 構造を持たない
+システム環境変数の名前
+テンプレート名
+パラメータ名
+--groups
+拒否された名前
+保護の境界
 EOF
     cat > "$ARCH_EN" <<'EOF'
 structured message
@@ -45,6 +51,12 @@ Path
 Text
 no structure
 whole-value replacement is not applied
+system environment variable name
+template name
+parameter name
+--groups
+rejected by name validation
+protection boundary
 EOF
     cat > "$RISK_JA" <<'EOF'
 識別子

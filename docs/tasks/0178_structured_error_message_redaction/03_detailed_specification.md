@@ -733,7 +733,7 @@ func varElementField(name string, index int) Field {
 - `Level.parts()`: `levelGlobal` は `[]Part{Const("global")}`、`levelGroup` は `Const("group[")`・`Ident(l.name)`・`Const("]")`、`levelCommand` は `Const("command[")` で同じ形、`levelTemplate` は `Const("template[")` で同じ形、`levelNone` は nil。
 - `Field.parts()`: キーごとの `switch` で、各文言を `Const` の文字列リテラルから作る。キーの文言を変数から `Const` に渡すと §9.3 のガードが定数式でないとして拒否するためである。`args`・`verify_files`・`cmd_allowed` の index と `vars` の index は `Text(strconv.Itoa(...))`。`vars.<name>` の名前は `Ident(f.name)`（`name` が空なら `Const("vars")` だけ）。`fieldNone` は nil。
 - `parts()` の結果は、呼び出し側が `slices.Concat` でほかの部分とつないで `NewMessage`・`NewError` に渡す。
-- `Level` の文字列を使うほかのエラー型（`ErrCircularReferenceDetail`・`ErrInvalidVariableNameDetail` など、`Level string`・`Field string` を持つ型）は、`level.String()`・`field.String()` を保持する。これらは #1197 の対象なので構造化しない。
+- `Level` の文字列を使うほかのエラー型（`ErrCircularReferenceDetail`・`ErrInvalidVariableNameDetail` など、`Level string`・`Field string` を持つ型）は、本書の時点では `level.String()`・`field.String()` を保持する。これらは #1197 の対象だったので本書では構造化しない。**注記（Task 0180、#1197）**: その後 Task 0180 でこれらの型も `StructuredMessage` を持ち、`level`・`field` の欄を型付きの `Level`・`Field` として運ぶ。本書の「#1197 の対象なので構造化しない」という記述は当該タスクで範囲に入った。
 
 ### 6.2 引数の型を変える関数
 
@@ -833,8 +833,10 @@ func ExpandWorkDir(workdir string, expandedVars map[string]string, level Level) 
 
 - `:1226` の原因は `NewRuntimeCommand`（`expansion.go:1224`）の検証エラーであり、`ErrUndefinedVariableDetail` を運びえない。したがって 02 §3.5.3 の「運びえないラップ」に当たり、前置きの全体を 1 つの `Text` にする。コマンド名を `Identifier` にする案（design_carryover.md）は採らない。
 - `:919`・`:948` は `fmt.Errorf` の引数に group 名・index・パスを含むが、原因が carry 不可なので前置き全体が `Text` になる。パスを `Path` として宣言するのは、02 §3.5.3 の規則（運びえないラップでは `Identifier`・`Path`・`Constant` を使わない）を優先する。
-- `ProcessEnvImport`・`ProcessEnv`・`resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec` の内側の `fmt.Errorf` は変更しない（除外関数。§9.1）。ただし引数の型は §6.2 に従って変える。
+- `ProcessEnvImport`・`ProcessEnv`・`resolveAndPrepareCommandSpec`・`ApplyTemplateInheritance`・`expandTemplateToSpec` の内側の `fmt.Errorf` は本書の時点では変更しない（除外関数。§9.1）。ただし引数の型は §6.2 に従って変える。
 - `ErrUndefinedVariableDetail` を作る箇所（`:128`・`:425`）は、`Level`・`Field` の型付きの値をそのまま入れる。それ以外の詳細型を作る箇所は §6.2 の最後の項に従う。
+
+**注記（Task 0180、#1197）**: 本 §6.5 の対象範囲と除外は本書（0178）の時点のものである。その後 Task 0180 で `expansion.go` の除外 5 関数をなくし、表の「不可」のラップ（`NewRuntimeGlobal`・`NewRuntimeGroup`・`NewRuntimeCommand` の作成、`env_import` の各ラップ、`EvalSymlinks` の失敗）も、固定の文言を `Constant`、挿入する名前を `Identifier`、原因を `Cause`（`EvalSymlinks` は `PathErrorCause`）として宣言し直した。ファイル全体が wrap guard と許可位置の対象になり、`config` の `*...Detail` 型は範囲外の例外ではなくなった。
 
 ### 6.6 `template_expansion.go` の変更
 
