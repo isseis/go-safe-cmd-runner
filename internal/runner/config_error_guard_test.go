@@ -7,6 +7,8 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -130,20 +132,17 @@ func configRoleTypes(pkg *wrapTypedPackage) (levelType, fieldType types.Type, pr
 	return levelType, fieldType, true
 }
 
-// configFlatteningAllowedFile and configFlatteningAllowedFormat name the one
-// allowed flattening: the "%s.%s" location string validateVariableName passes
-// to variable.ValidateVariableNameForScope.
-const (
-	configFlatteningAllowedFile   = "internal/runner/config/validation.go"
-	configFlatteningAllowedFormat = "%s.%s"
-	configFlatteningAllowedFunc   = "validateVariableName"
-)
+// configFlatteningAllowedFile is where the one allowed flattening lives: the
+// location string validateVariableName passes to
+// variable.ValidateVariableNameForScope.
+const configFlatteningAllowedFile = "internal/runner/config/validation.go"
 
 // configFlattenedLevelFieldValues reports every position in pkg where a
 // config.Level or config.Field value is flattened to a string and loses its
 // role: an explicit .String() call, or a fmt formatting call that renders it
 // (with %s/%v/%q, or the no-format Print/Sprint family). The only allowed
-// position is the location string in validateVariableName's expression.
+// position is the location string expression validateVariableName passes to
+// variable.ValidateVariableNameForScope.
 func configFlattenedLevelFieldValues(pkg *wrapTypedPackage) []string {
 	levelType, fieldType, present := configRoleTypes(pkg)
 	if !present {
@@ -152,156 +151,284 @@ func configFlattenedLevelFieldValues(pkg *wrapTypedPackage) []string {
 	if levelType == nil || fieldType == nil {
 		return []string{"config.Level/config.Field not found; the guard is broken"}
 	}
+	// A role value is a Level or a Field, seen directly or through any number
+	// of pointers.
 	isRoleValue := func(t types.Type) bool {
-		return t != nil && (types.Identical(t, levelType) || types.Identical(t, fieldType))
+		if t == nil {
+			return false
+		}
+		t = types.Unalias(t)
+		for {
+			ptr, ok := t.(*types.Pointer)
+			if !ok {
+				break
+			}
+			t = types.Unalias(ptr.Elem())
+		}
+		return types.Identical(t, levelType) || types.Identical(t, fieldType)
 	}
+	// isRoleExpr reports whether expr's type is a Level or a Field, however it
+	// is parenthesized.
+	isRoleExpr := func(e ast.Expr) bool {
+		return isRoleValue(pkg.info.Types[identitymutationguard.UnwrapParen(e)].Type)
+	}
+	allowed := configFlatteningAllowedNodes(pkg)
 
 	var violations []string
 	for _, file := range pkg.files {
-		for _, decl := range file.file.Decls {
-			funcName := ""
-			if fd, ok := decl.(*ast.FuncDecl); ok {
-				funcName = fd.Name.Name
+		ast.Inspect(file.file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-			ast.Inspect(decl, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
 
-				// A fmt formatting call flattens a Level/Field argument.
-				format, fmtArgs, fmtName, ok := fmtFlatteningCall(pkg, call)
-				if ok {
-					if isAllowedFlattening(file.path, funcName, fmtName, format) {
-						return true
-					}
-					for _, arg := range fmtArgs {
-						if isRoleValue(pkg.info.Types[arg].Type) {
-							violations = append(violations, fmt.Sprintf(
-								"%s: a config.Level/config.Field is rendered through fmt.%s; use its parts() instead",
-								wrapGuardFset.Position(call.Pos()), fmtName))
-							break
-						}
-					}
+			// A fmt formatting call flattens the arguments it renders with a
+			// flattening verb.
+			fmtArgs, fmtName, ok := fmtFlatteningCall(pkg, call)
+			if ok {
+				if allowed[call] {
 					return true
 				}
-
-				// An explicit .String() call on a Level/Field value.
-				sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "String" {
-					return true
-				}
-				if isRoleValue(pkg.info.Types[sel.X].Type) {
+				if slices.ContainsFunc(fmtArgs, isRoleExpr) {
 					violations = append(violations, fmt.Sprintf(
-						"%s: a config.Level/config.Field is flattened with .String(); use its parts() instead",
-						wrapGuardFset.Position(call.Pos())))
+						"%s: a config.Level/config.Field is rendered through fmt.%s; use its parts() instead",
+						wrapGuardFset.Position(call.Pos()), fmtName))
 				}
 				return true
-			})
-		}
+			}
+
+			// An explicit .String() call on a Level/Field value.
+			sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "String" {
+				return true
+			}
+			if isRoleExpr(sel.X) {
+				violations = append(violations, fmt.Sprintf(
+					"%s: a config.Level/config.Field is flattened with .String(); use its parts() instead",
+					wrapGuardFset.Position(call.Pos())))
+			}
+			return true
+		})
 	}
 	return violations
 }
 
-// fmtFlatteningCall reports whether call is a fmt call that would render its
-// value arguments, the arguments that carry values (the format string and the
-// writer excluded), the function name, and the constant format string (empty
-// for the no-format Print/Sprint family).
-func fmtFlatteningCall(pkg *wrapTypedPackage, call *ast.CallExpr) (format string, args []ast.Expr, name string, ok bool) {
+// configFlatteningAllowedNodes returns the identities of the expressions in the
+// config package that may flatten Level/Field values: the location argument of
+// variable.ValidateVariableNameForScope, whether written directly as the
+// flattening call or assigned to the local variable it names.
+func configFlatteningAllowedNodes(pkg *wrapTypedPackage) map[*ast.CallExpr]bool {
+	allowed := map[*ast.CallExpr]bool{}
+	if pkg.pkg.Path() != configImportPath {
+		return allowed
+	}
+	for _, file := range pkg.files {
+		ast.Inspect(file.file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || !isValidateVariableNameForScope(pkg, call) || len(call.Args) < 3 {
+				return true
+			}
+			if node, ok := assignedCall(pkg, call.Args[2]).(*ast.CallExpr); ok {
+				allowed[node] = true
+			}
+			return true
+		})
+	}
+	return allowed
+}
+
+// isValidateVariableNameForScope reports whether call resolves to
+// variable.ValidateVariableNameForScope.
+func isValidateVariableNameForScope(pkg *wrapTypedPackage, call *ast.CallExpr) bool {
+	sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "ValidateVariableNameForScope" {
+		return false
+	}
+	fn, ok := pkg.info.Uses[sel.Sel].(*types.Func)
+	return ok && fn.Pkg() != nil &&
+		fn.Pkg().Path() == wrapGuardModulePath+"/internal/runner/base/variable"
+}
+
+// assignedCall returns the call expression that produces the value of expr: the
+// call itself, or the call assigned to the local variable expr names.
+func assignedCall(pkg *wrapTypedPackage, expr ast.Expr) ast.Expr {
+	expr = identitymutationguard.UnwrapParen(expr)
+	if _, ok := expr.(*ast.CallExpr); ok {
+		return expr
+	}
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	obj := pkg.info.Uses[ident]
+	if obj == nil {
+		obj = pkg.info.Defs[ident]
+	}
+	if obj == nil {
+		return nil
+	}
+	for _, file := range pkg.files {
+		var found ast.Expr
+		ast.Inspect(file.file, func(n ast.Node) bool {
+			if found != nil {
+				return false
+			}
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok || len(assign.Rhs) != 1 {
+				return true
+			}
+			rhs := identitymutationguard.UnwrapParen(assign.Rhs[0])
+			if _, ok := rhs.(*ast.CallExpr); !ok {
+				return true
+			}
+			for _, lhs := range assign.Lhs {
+				lhsIdent, ok := identitymutationguard.UnwrapParen(lhs).(*ast.Ident)
+				if !ok {
+					continue
+				}
+				def := pkg.info.Defs[lhsIdent]
+				if def == nil {
+					def = pkg.info.Uses[lhsIdent]
+				}
+				if def == obj {
+					found = rhs
+					return false
+				}
+			}
+			return true
+		})
+		if found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// fmtFlatteningCall reports whether call is a fmt call that renders at least one
+// value argument with a flattening verb, the arguments it so renders, and the
+// function name.
+func fmtFlatteningCall(pkg *wrapTypedPackage, call *ast.CallExpr) (args []ast.Expr, name string, ok bool) {
 	sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
-		return "", nil, "", false
+		return nil, "", false
 	}
 	pkgIdent, ok := sel.X.(*ast.Ident)
 	if !ok {
-		return "", nil, "", false
+		return nil, "", false
 	}
 	pkgName, ok := pkg.info.Uses[pkgIdent].(*types.PkgName)
 	if !ok || pkgName.Imported().Path() != "fmt" {
-		return "", nil, "", false
+		return nil, "", false
 	}
 	name = sel.Sel.Name
 	switch name {
 	case "Sprintf", "Errorf", "Printf":
-		format, args, ok = fmtFormatArgs(pkg, call.Args, 0)
-	case "Fprintf":
-		format, args, ok = fmtFormatArgs(pkg, call.Args, 1)
+		args = fmtFlatteningArgs(pkg, call.Args, 0)
+	case "Fprintf", "Appendf":
+		args = fmtFlatteningArgs(pkg, call.Args, 1)
 	case "Sprint", "Sprintln", "Print", "Println":
-		args, ok = call.Args, true
-	case "Fprint", "Fprintln":
+		args = call.Args
+	case "Fprint", "Fprintln", "Append", "Appendln":
 		if len(call.Args) < 1 {
-			return "", nil, name, false
+			return nil, name, false
 		}
-		args, ok = call.Args[1:], true
+		args = call.Args[1:]
 	default:
-		return "", nil, name, false
+		return nil, name, false
 	}
-	return format, args, name, ok
+	return args, name, len(args) > 0
 }
 
-// fmtFormatArgs returns the value arguments of a fmt call whose format string is
-// at index formatIdx, when that format string is constant and renders a value
-// with %s, %v or %q.
-func fmtFormatArgs(pkg *wrapTypedPackage, all []ast.Expr, formatIdx int) (string, []ast.Expr, bool) {
+// fmtFlatteningArgs returns the value arguments a constant format string
+// renders with a flattening verb. The format string is at index formatIdx and
+// the value arguments follow it.
+func fmtFlatteningArgs(pkg *wrapTypedPackage, all []ast.Expr, formatIdx int) []ast.Expr {
 	if len(all) <= formatIdx {
-		return "", nil, false
+		return nil
 	}
 	tv, ok := pkg.info.Types[all[formatIdx]]
 	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", nil, false
+		return nil
 	}
 	format := constant.StringVal(tv.Value)
-	if !containsFlatteningVerb(format) {
-		return "", nil, false
+	indexes := flatteningVerbArgIndexes(format)
+	if len(indexes) == 0 {
+		return nil
 	}
-	return format, all[formatIdx+1:], true
+	var args []ast.Expr
+	for i, arg := range all[formatIdx+1:] {
+		if indexes[i+1] {
+			args = append(args, arg)
+		}
+	}
+	return args
 }
 
-// containsFlatteningVerb reports whether format renders a value with a
-// flattening verb: %s, %v or %q, with any flags, argument index, width or
-// precision between the percent sign and the verb (so %+v, %#v, %10v and
-// %[1]v are recognized).
-func containsFlatteningVerb(format string) bool {
-	for i := 0; i < len(format); i++ {
+// flatteningVerbArgIndexes returns the 1-based positions of the value arguments
+// that a constant format string renders with a flattening verb (%s, %v or %q).
+// It follows fmt's argument indexing: the implicit sequential counter, an
+// explicit %[n] index, and the arguments consumed by a * width or precision.
+// Non-flattening verbs still advance the counter, so a value used only with one
+// of them is never attributed to a flattening verb.
+func flatteningVerbArgIndexes(format string) map[int]bool {
+	out := map[int]bool{}
+	next := 1
+	for i := 0; i < len(format); {
 		if format[i] != '%' {
+			i++
 			continue
 		}
-		j := i + 1
-		if j < len(format) && format[j] == '%' {
-			i = j
+		i++
+		if i < len(format) && format[i] == '%' {
+			i++
 			continue
 		}
-		for j < len(format) && strings.ContainsRune("+#- 0", rune(format[j])) {
-			j++
+		for i < len(format) && strings.ContainsRune("+#- 0", rune(format[i])) {
+			i++
 		}
-		if j < len(format) && format[j] == '[' {
+		if i < len(format) && format[i] == '[' {
+			j := i + 1
 			for j < len(format) && format[j] != ']' {
 				j++
 			}
-			j++
-		}
-		for j < len(format) && (format[j] == '.' || (format[j] >= '0' && format[j] <= '9')) {
-			j++
-		}
-		if j < len(format) {
-			switch format[j] {
-			case 's', 'v', 'q':
-				return true
+			if j < len(format) {
+				if n, err := strconv.Atoi(format[i+1 : j]); err == nil && n > 0 {
+					next = n
+				}
+				i = j + 1
 			}
 		}
-		i = j
+		if i < len(format) && format[i] == '*' {
+			next++
+			i++
+		} else {
+			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+				i++
+			}
+		}
+		if i < len(format) && format[i] == '.' {
+			i++
+			if i < len(format) && format[i] == '*' {
+				next++
+				i++
+			} else {
+				for i < len(format) && format[i] >= '0' && format[i] <= '9' {
+					i++
+				}
+			}
+		}
+		if i >= len(format) {
+			break
+		}
+		verb := format[i]
+		i++
+		switch verb {
+		case 's', 'v', 'q':
+			out[next] = true
+		}
+		next++
 	}
-	return false
-}
-
-// isAllowedFlattening reports whether the position is the one expression that
-// may render a Level and a Field through fmt: the "%s.%s" call inside
-// validateVariableName.
-func isAllowedFlattening(file, funcName, fmtName, format string) bool {
-	return file == configFlatteningAllowedFile &&
-		funcName == configFlatteningAllowedFunc &&
-		fmtName == "Sprintf" &&
-		format == configFlatteningAllowedFormat
+	return out
 }
 
 // configGuardPackage returns the type-checked config package the guards read.
@@ -387,13 +514,34 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 	const fmtImport = "import \"fmt\"\n\n"
 	const roleTypes = "type Level struct{}\n\nfunc (Level) String() string { return \"\" }\n\ntype Field struct{}\n\nfunc (Field) String() string { return \"\" }\n\n"
 
-	// Self-test: the allowed location string is accepted.
-	pkg := syntheticWrapPackage(t, configFlatteningAllowedFile,
-		pkgLine+fmtImport+roleTypes+"func validateVariableName(l Level, fld Field) string { return fmt.Sprintf(\"%s.%s\", l, fld) }\n")
-	assert.Empty(t, configFlattenedLevelFieldValues(pkg))
+	// The allowed-position self-tests call variable.ValidateVariableNameForScope,
+	// so they type-check a synthetic variable package alongside the config one.
+	const variablePath = wrapGuardModulePath + "/internal/runner/base/variable"
+	const variableFile = "internal/runner/base/variable/scope.go"
+	const variableSrc = "package variable\n\ntype Scope int\n\nconst (\n\tScopeLocal Scope = iota\n\tScopeGlobal\n)\n\nfunc ValidateVariableNameForScope(name string, expectedScope Scope, location string) error { return nil }\n"
+	configWithLocation := func(body string) string {
+		return pkgLine +
+			"import (\n\t\"fmt\"\n\tvariable \"" + variablePath + "\"\n)\n\n" +
+			roleTypes + body
+	}
+	syntheticAllowed := func(body string) *wrapTypedPackage {
+		return syntheticWrapPackageFiles(t,
+			map[string]string{variableFile: variableSrc, configFlatteningAllowedFile: configWithLocation(body)},
+			configFlatteningAllowedFile)
+	}
+
+	// Self-test: the location string passed to ValidateVariableNameForScope is
+	// accepted, even when built in a temporary variable.
+	allowedBody := "func validateVariableName(l Level, fld Field) string {\n\tlocation := fmt.Sprintf(\"%s.%s\", l, fld)\n\t_ = variable.ValidateVariableNameForScope(\"x\", variable.ScopeLocal, location)\n\treturn location\n}\n"
+	assert.Empty(t, configFlattenedLevelFieldValues(syntheticAllowed(allowedBody)))
+
+	// Self-test: a second "%s.%s" call in the same function is not the location
+	// expression, so it is reported.
+	secondBody := "func validateVariableName(l Level, fld Field) string {\n\tlocation := fmt.Sprintf(\"%s.%s\", l, fld)\n\t_ = variable.ValidateVariableNameForScope(\"x\", variable.ScopeLocal, location)\n\treturn fmt.Sprintf(\"%s.%s\", l, fld)\n}\n"
+	assert.Len(t, configFlattenedLevelFieldValues(syntheticAllowed(secondBody)), 1)
 
 	// Self-test: a Level rendered with %s elsewhere is reported.
-	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+	pkg := syntheticWrapPackage(t, "internal/runner/config/x.go",
 		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%s\", l) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
@@ -416,13 +564,42 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 		pkgLine+fmtImport+roleTypes+"func f(l Level, fld Field) string { return fmt.Sprint(l, fld) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
+	// Self-test: the fmt Append family renders its value arguments too.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level) []byte { return fmt.Appendf(nil, \"%s\", l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level) []byte { return fmt.Append(nil, l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	// Self-test: a flattening verb binds only the argument it consumes. Here
+	// %T consumes the Level and %s the string, so there is no violation; when
+	// %s consumes the Level, there is one.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level, detail string) string { return fmt.Sprintf(\"type %T: %s\", l, detail) }\n")
+	assert.Empty(t, configFlattenedLevelFieldValues(pkg))
+
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level, detail string) string { return fmt.Sprintf(\"type %s: %T\", l, detail) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	// Self-test: a pointer to a Level or Field flattens the value it points at.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%s\", &l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+roleTypes+"func f(l Level) string { return (&l).String() }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
 	// Self-test: an explicit .String() outside the allowed position is reported.
 	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
 		pkgLine+roleTypes+"func f(l Level) string { return l.String() }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
-	// Self-test: the same flattening inside validateVariableName is rejected
-	// too, because only its "%s.%s" expression is allowed.
+	// Self-test: a flattening call inside validateVariableName that is not the
+	// location expression is rejected.
 	pkg = syntheticWrapPackage(t, configFlatteningAllowedFile,
 		pkgLine+fmtImport+roleTypes+"func validateVariableName(l Level) string { return fmt.Sprintf(\"%s\", l) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
