@@ -15,7 +15,7 @@ func TestExpandSingleArg(t *testing.T) {
 		arg          string
 		params       map[string]any
 		templateName string
-		field        string
+		field        Field
 		expected     []string
 		wantErr      bool
 		errType      any
@@ -26,7 +26,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${path}",
 			params:       map[string]any{"path": "/backup/data"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"/backup/data"},
 		},
 		{
@@ -34,7 +34,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${path}",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrRequiredParamMissing{},
 		},
@@ -43,7 +43,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${path}",
 			params:       map[string]any{"path": []any{"a", "b"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrTemplateTypeMismatch{},
 		},
@@ -53,7 +53,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${?verbose}",
 			params:       map[string]any{"verbose": "-v"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-v"},
 		},
 		{
@@ -61,7 +61,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${?verbose}",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -69,7 +69,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${?verbose}",
 			params:       map[string]any{"verbose": ""},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		// Array parameter tests
@@ -78,7 +78,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{"flags": []any{"-v", "--quiet"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-v", "--quiet"},
 		},
 		{
@@ -86,7 +86,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -94,7 +94,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{"flags": []any{}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -102,7 +102,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{"flags": []string{"-a", "-b"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-a", "-b"},
 		},
 		{
@@ -110,7 +110,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{"flags": "not-an-array"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrTemplateTypeMismatch{},
 		},
@@ -119,7 +119,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${@flags}",
 			params:       map[string]any{"flags": []any{"-v", 123}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidArrayElement{},
 		},
@@ -128,7 +128,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "prefix${@flags}",
 			params:       map[string]any{"flags": []any{"-v"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrArrayInMixedContext{},
 		},
@@ -138,7 +138,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "${prefix}/${path}",
 			params:       map[string]any{"prefix": "/backup", "path": "data"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"/backup/data"},
 		},
 		{
@@ -146,7 +146,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "--flag=${?value}",
 			params:       map[string]any{"value": "test"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"--flag=test"},
 		},
 		{
@@ -154,7 +154,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "--flag=${?value}",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"--flag="},
 		},
 		// No placeholders
@@ -163,7 +163,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "backup",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"backup"},
 		},
 		// Escape sequences
@@ -172,7 +172,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "\\$100",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"$100"},
 		},
 		{
@@ -180,7 +180,7 @@ func TestExpandSingleArg(t *testing.T) {
 			arg:          "\\$${value}",
 			params:       map[string]any{"value": "100"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"$100"},
 		},
 	}
@@ -289,7 +289,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 		paramName    string
 		params       map[string]any
 		templateName string
-		field        string
+		field        Field
 		expected     []string
 		wantErr      bool
 		errType      any
@@ -299,7 +299,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{"flags": []any{"-v", "--quiet"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-v", "--quiet"},
 		},
 		{
@@ -307,7 +307,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{"flags": []string{"-a", "-b", "-c"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-a", "-b", "-c"},
 		},
 		{
@@ -315,7 +315,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -323,7 +323,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{"flags": "single"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrTemplateTypeMismatch{},
 		},
@@ -332,7 +332,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{"flags": 123},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrUnsupportedParamType{},
 		},
@@ -341,7 +341,7 @@ func TestExpandArrayPlaceholder(t *testing.T) {
 			paramName:    "flags",
 			params:       map[string]any{"flags": []any{"ok", 42, "also-ok"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 			errType:      &ErrTemplateInvalidArrayElement{},
 		},
@@ -367,7 +367,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 		paramName    string
 		params       map[string]any
 		templateName string
-		field        string
+		field        Field
 		expected     []string
 		wantErr      bool
 	}{
@@ -376,7 +376,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 			paramName:    "verbose",
 			params:       map[string]any{"verbose": "-v"},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{"-v"},
 		},
 		{
@@ -384,7 +384,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 			paramName:    "verbose",
 			params:       map[string]any{"verbose": ""},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -392,7 +392,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 			paramName:    "verbose",
 			params:       map[string]any{},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			expected:     []string{},
 		},
 		{
@@ -400,7 +400,7 @@ func TestExpandOptionalPlaceholder(t *testing.T) {
 			paramName:    "verbose",
 			params:       map[string]any{"verbose": []any{"-v"}},
 			templateName: "test",
-			field:        "args[0]",
+			field:        argsField(0),
 			wantErr:      true,
 		},
 	}

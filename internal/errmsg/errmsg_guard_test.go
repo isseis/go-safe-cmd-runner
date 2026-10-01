@@ -56,21 +56,23 @@ func (p positions) covers(file, fn string) bool {
 // Identifier or Path segment through errmsg.Ident or errmsg.Path. A position
 // is a file and a function in it, never a function name alone.
 var exemptRolePositions = positions{
-	"internal/runner/group_executor.go":          {wholeFile},
-	"internal/runner/group_stage.go":             {wholeFile},
-	"internal/runner/group_errors.go":            {wholeFile},
-	"internal/runner/config/expansion.go":        {wholeFile},
-	"internal/runner/config/errors.go":           {wholeFile},
-	"internal/logging/pre_execution_error.go":    {"PreExecutionError.DetailMessage"},
-	"internal/logging/execution_error.go":        {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
-	"internal/runner/base/privilege/errors.go":   {"Error.StructuredMessage"},
-	"internal/runner/base/executor/executor.go":  {"DefaultExecutor.Validate", "DefaultExecutor.validatePrivilegedCommand", "DefaultExecutor.executeNormal", "DefaultExecutor.executeWithUserGroup"},
-	"internal/runner/base/output/path.go":        {"validatePathSecurity", "DefaultPathValidator.validateRelativePath"},
-	"internal/runner/base/output/manager.go":     {"DefaultOutputCaptureManager.validateAndResolvePath"},
-	"internal/runner/resource/normal_manager.go": {"NormalResourceManager.ExecuteCommand", "NormalResourceManager.ValidateOutputPath"},
-	"internal/runner/resource/dryrun_manager.go": {"DryRunResourceManager.evaluateCommandRisk", "DryRunResourceManager.ValidateOutputPath"},
-	"internal/dynlib/errors.go":                  {"ErrRecursionDepthExceeded.StructuredMessage", "ErrLibraryHashMismatch.StructuredMessage", "ErrEmptyLibraryPath.StructuredMessage", "ErrDynLibDepsRequired.StructuredMessage"},
-	"internal/verification/errors.go":            {"ErrDynLibDepsResolutionChanged.StructuredMessage", "ErrInterpreterRecordNotFound.StructuredMessage", "ErrInterpreterSymlinkRedirected.StructuredMessage", "ErrInterpreterPathMismatch.StructuredMessage"},
+	"internal/runner/group_executor.go":            {wholeFile},
+	"internal/runner/group_stage.go":               {wholeFile},
+	"internal/runner/group_errors.go":              {wholeFile},
+	"internal/runner/config/expansion.go":          {wholeFile},
+	"internal/runner/config/errors.go":             {wholeFile},
+	"internal/runner/config/template_errors.go":    {wholeFile},
+	"internal/runner/config/template_expansion.go": {wholeFile},
+	"internal/logging/pre_execution_error.go":      {"PreExecutionError.DetailMessage"},
+	"internal/logging/execution_error.go":          {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
+	"internal/runner/base/privilege/errors.go":     {"Error.StructuredMessage"},
+	"internal/runner/base/executor/executor.go":    {"DefaultExecutor.Validate", "DefaultExecutor.validatePrivilegedCommand", "DefaultExecutor.executeNormal", "DefaultExecutor.executeWithUserGroup"},
+	"internal/runner/base/output/path.go":          {"validatePathSecurity", "DefaultPathValidator.validateRelativePath"},
+	"internal/runner/base/output/manager.go":       {"DefaultOutputCaptureManager.validateAndResolvePath"},
+	"internal/runner/resource/normal_manager.go":   {"NormalResourceManager.ExecuteCommand", "NormalResourceManager.ValidateOutputPath"},
+	"internal/runner/resource/dryrun_manager.go":   {"DryRunResourceManager.evaluateCommandRisk", "DryRunResourceManager.ValidateOutputPath"},
+	"internal/dynlib/errors.go":                    {"ErrRecursionDepthExceeded.StructuredMessage", "ErrLibraryHashMismatch.StructuredMessage", "ErrEmptyLibraryPath.StructuredMessage", "ErrDynLibDepsRequired.StructuredMessage"},
+	"internal/verification/errors.go":              {"ErrDynLibDepsResolutionChanged.StructuredMessage", "ErrInterpreterRecordNotFound.StructuredMessage", "ErrInterpreterSymlinkRedirected.StructuredMessage", "ErrInterpreterPathMismatch.StructuredMessage"},
 }
 
 // pathErrorCausePositions are the only positions allowed to split a

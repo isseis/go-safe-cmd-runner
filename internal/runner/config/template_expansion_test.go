@@ -3,9 +3,14 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/variable"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParsePlaceholders(t *testing.T) {
@@ -306,6 +311,69 @@ func TestParsePlaceholders_EdgeCases(t *testing.T) {
 				assert.Equal(t, exp.start, got.start, "placeholder[%d] start mismatch", i)
 				assert.Equal(t, exp.end, got.end, "placeholder[%d] end mismatch", i)
 			}
+		})
+	}
+}
+
+// TestTemplateExpansionWrapSites_StructuredMessage drives the wrap sites in
+// template_expansion.go: the template name is a quoted identifier, the field
+// is a quoted typed Field, the rejected reference name is text, and the cause
+// stays reachable. The validateEnvPre key-parse branch is defensive: an entry
+// whose KEY would fail parsePlaceholders also fails the entry parse that runs
+// first, so it is structured but cannot be driven from a caller.
+func TestTemplateExpansionWrapSites_StructuredMessage(t *testing.T) {
+	const nameRaw = "t\"x\\y"
+	const nameBody = "t\\\"x\\\\y"
+
+	// inner is the text variable.DetermineScope produces for the reserved name.
+	const innerText = `variable name "__foo" is reserved (starts with '__')`
+
+	tests := []struct {
+		name     string
+		run      func() error
+		want     string
+		segments errmsg.Segments
+	}{
+		{
+			name: "validateGlobalOnly wraps a rejected reference",
+			run: func() error {
+				return validateGlobalOnly("%{__foo}", nameRaw, cmdField())
+			},
+			want: fmt.Sprintf("template %q field %q: invalid variable name %q: %s", nameRaw, cmdField(), "__foo", innerText),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleIdentifier, Text: nameBody},
+				{Role: errmsg.RoleText, Text: "__foo"},
+				{Role: errmsg.RoleText, Text: innerText},
+			},
+		},
+		{
+			name: "validateFieldVars wraps a rejected reference",
+			run: func() error {
+				return validateFieldVars("%{__foo}", nameRaw, argsField(0), map[string]string{})
+			},
+			want: fmt.Sprintf("template %q field %q: invalid variable name %q: %s", nameRaw, argsField(0), "__foo", innerText),
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleIdentifier, Text: nameBody},
+				{Role: errmsg.RoleText, Text: "0"},
+				{Role: errmsg.RoleText, Text: "__foo"},
+				{Role: errmsg.RoleText, Text: innerText},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			require.Error(t, err)
+			structured, ok := err.(errmsg.Structured)
+			require.Truef(t, ok, "%T must implement errmsg.Structured", err)
+			assert.Equal(t, tt.want, err.Error())
+			assert.Equal(t, tt.segments, nonConstantSegments(structured.StructuredMessage()))
+
+			// The DetermineScope cause must stay reachable through the wrap.
+			target, ok := errors.AsType[*variable.ErrReservedVariableName](err)
+			require.True(t, ok, "the DetermineScope cause must stay reachable")
+			assert.Equal(t, "__foo", target.Name)
 		})
 	}
 }

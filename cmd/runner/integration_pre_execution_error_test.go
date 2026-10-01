@@ -1034,3 +1034,102 @@ cmd = %q
 	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
 		"the whole body must not be replaced")
 }
+
+// TestIntegration_TemplateValidationIdentifiersSurviveRedaction is the
+// template-validation end-to-end scenario: a template named rotate_token
+// references an undefined global variable (TOKEN_FILE) whose name is a
+// whole-value trigger. The ValidateAllTemplates failure reaches Slack with the
+// template name and the referenced variable name intact.
+func TestIntegration_TemplateValidationIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[global.vars]
+PLAIN = "x"
+
+[command_templates.rotate_token]
+cmd = "/bin/echo"
+args = ["%%{TOKEN_FILE}"]
+
+[[groups]]
+name = "unused"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-template-validate-001",
+	})
+	require.Equal(t, 1, run.exitCode, "an undefined template variable fails the run")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+
+	rawBody := stderrDetailsBlock(t, run.stderr)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("rotate_token", "", "TOKEN_FILE", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	for _, want := range []string{"rotate_token", "TOKEN_FILE"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced")
+}
+
+// TestIntegration_CommandTemplateExpansionIdentifiersSurviveRedaction is the
+// command/template-expansion end-to-end scenario: a command in group
+// token_rotate references template rotate_token, whose required parameter
+// secret_file is not provided. The Slack Error Message must keep the template
+// name, the parameter name, the command name and the group name.
+func TestIntegration_CommandTemplateExpansionIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[command_templates.rotate_token]
+cmd = "/bin/echo"
+args = ["${secret_file}"]
+
+[[groups]]
+name = "token_rotate"
+
+[[groups.commands]]
+name = "secret_cmd"
+template = "rotate_token"
+`, slackHost)
+		},
+		runID: "test-command-template-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a missing required template parameter fails the run")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+
+	rawBody := stderrDetailsBlock(t, run.stderr)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("rotate_token", "", "secret_file", "", "token_rotate", "", "secret_cmd", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	for _, want := range []string{"rotate_token", "secret_file", "secret_cmd", "token_rotate"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced")
+}

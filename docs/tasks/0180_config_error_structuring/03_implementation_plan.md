@@ -183,22 +183,22 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 3: テンプレート
 
 **Files**: `internal/runner/config/template_errors.go`・`template_expansion.go`・`expansion.go`（`expandSingleArg` の呼び出し）（変更）、`internal/runner/config/template_errors_test.go`・`template_expansion_test.go`・`template_param_expansion_test.go`・`template_field_constraints_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`（変更）
 
-- [ ] 02 §3.3 のとおり、`template_errors.go` の全型に `StructuredMessage` を加え、`Error()` をそこから作る。部分の並びと役割は 02 付録 A による（AC-02・AC-03・AC-14）。
-- [ ] `template_errors.go` の `Field` 欄を型 `Field` にする。`ErrTemplateFieldConflict`・`ErrMissingRequiredField` の `group[<name>]` は `GroupName` から group の `Level` の `parts()` で描画する（02 §3.2）。
-- [ ] `template_expansion.go` の `template_errors.go` の型の構築箇所で、`Field` を型のまま渡す。`fmt.Sprintf` で欄を組み立てている箇所（`:425`・`:447`・`:810`・`:854`・`:871`）を `Field` の構築関数に置き換える。
-- [ ] `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost` の欄を `Field` で受け渡す。`field == workDirKey` の文字列比較（`:255`）を `Field` のキーで判定する。`expansion.go` の `expandSingleArg` 呼び出し（`:1371`・`:1405`・`:1421`）も欄を `Field` にする。
-- [ ] `template_expansion.go` の 3 か所の `fmt.Errorf` を 02 §3.1・付録 A の役割で構造化する。`:708`・`:1135` の拒否された参照名は `Text`、`:512` はキーと原因を宣言する（AC-06・AC-07・AC-14・AC-15）。
-- [ ] `errmsg_guard_test.go` の `exemptRolePositions` に `template_errors.go`・`template_expansion.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも両ファイルを加える（AC-06・AC-20）。
-- [ ] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
-- [ ] `template_expansion_test.go` に `TestTemplateExpansionWrapSites_StructuredMessage` を加え、`template_expansion.go` の 3 か所のエラー書式を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` の到達性を確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に、`ValidateAllTemplates` の失敗でテンプレート名と変数名が出ることを確かめるテスト（AC-11）と、コマンドの展開でテンプレートの展開が失敗しテンプレート名・パラメータ名・コマンド名・group 名が出ることを確かめるテスト（AC-13）を加える。
+- [x] 02 §3.3 のとおり、`template_errors.go` の全型に `StructuredMessage` を加え、`Error()` をそこから作る。部分の並びと役割は 02 付録 A による（AC-02・AC-03・AC-14）。
+- [x] `template_errors.go` の `Field` 欄を型 `Field` にする。`ErrTemplateFieldConflict`・`ErrMissingRequiredField` の `group[<name>]` は `GroupName` から group の `Level` の `parts()` で描画する（02 §3.2）。
+- [x] `template_expansion.go` の `template_errors.go` の型の構築箇所で、`Field` を型のまま渡す。`fmt.Sprintf` で欄を組み立てている箇所（`:425`・`:447`・`:810`・`:854`・`:871`）を `Field` の構築関数に置き換える。
+- [x] `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost` の欄を `Field` で受け渡す。`field == workDirKey` の文字列比較（`:255`）を `Field` のキーで判定する。`expansion.go` の `expandSingleArg` 呼び出し（`:1371`・`:1405`・`:1421`）も欄を `Field` にする。
+- [x] `template_expansion.go` の 3 か所の `fmt.Errorf` を 02 §3.1・付録 A の役割で構造化する。`:708`・`:1135` の拒否された参照名は `Text`、`:512` はキーと原因を宣言する（AC-06・AC-07・AC-14・AC-15）。`:512` は、それを踏む KEY を持つ入力が先の入力全体のパースで失敗するため到達しない防御的な分岐である（テストのコメントに明記）。
+- [x] `errmsg_guard_test.go` の `exemptRolePositions` に `template_errors.go`・`template_expansion.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも両ファイルを加える（AC-06・AC-20）。
+- [x] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
+- [x] `template_expansion_test.go` に `TestTemplateExpansionWrapSites_StructuredMessage` を加え、`template_expansion.go` の 3 か所のエラー書式を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` の到達性を確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に、`ValidateAllTemplates` の失敗でテンプレート名と変数名が出ることを確かめるテスト（AC-11）と、コマンドの展開でテンプレートの展開が失敗しテンプレート名・パラメータ名・コマンド名・group 名が出ることを確かめるテスト（AC-13）を加える。
 
 **完了条件**: `internal/runner/config`・`cmd/runner` のテストが green。`template_errors.go` の各型の `Error()` の文言が変更前と同じである。AC-11・AC-13 のテストが green。
 
@@ -210,8 +210,8 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 型変更が広く、テンプレートの欄の組み立てを宣言に置き換える判断を伴う
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 

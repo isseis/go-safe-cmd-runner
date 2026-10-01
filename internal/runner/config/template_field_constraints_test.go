@@ -254,14 +254,14 @@ func TestTemplateFieldConstraints(t *testing.T) {
 			var err error
 			switch tt.field {
 			case "cmd":
-				_, err = expandSingleArg(template.Cmd, params, "test_template", "cmd")
+				_, err = expandSingleArg(template.Cmd, params, "test_template", cmdField())
 			case "args":
 				_, err = ExpandTemplateArgs(template.Args, params, "test_template")
 			case "env", "env_element":
 				_, err = ExpandTemplateEnv(template.EnvVars, params, "test_template")
 			case "workdir":
 				if template.WorkDir != nil {
-					_, err = expandSingleArg(*template.WorkDir, params, "test_template", "workdir")
+					_, err = expandSingleArg(*template.WorkDir, params, "test_template", workdirField())
 				}
 			}
 
