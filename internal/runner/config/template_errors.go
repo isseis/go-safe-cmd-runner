@@ -42,13 +42,14 @@ type ErrTemplateFieldConflict struct {
 // StructuredMessage declares the group name through its own level parts and
 // the conflicting field through its own parts. TemplateName is not rendered.
 func (e *ErrTemplateFieldConflict) StructuredMessage() errmsg.Message {
-	parts := []errmsg.Part{}
-	parts = append(parts, groupLevel(e.GroupName).parts()...)
-	parts = append(parts, errmsg.Const(" command["))
-	parts = append(parts, errmsg.Text(strconv.Itoa(e.CommandIndex)))
-	parts = append(parts, errmsg.Const("]: cannot specify both \"template\" and "))
-	parts = append(parts, errmsg.Quoted(e.Field.parts()...))
-	parts = append(parts, errmsg.Const(" fields in command definition"))
+	parts := groupLevel(e.GroupName).parts()
+	parts = append(parts,
+		errmsg.Const(" command["),
+		errmsg.Text(strconv.Itoa(e.CommandIndex)),
+		errmsg.Const("]: cannot specify both \"template\" and "),
+		errmsg.Quoted(e.Field.parts()...),
+		errmsg.Const(" fields in command definition"),
+	)
 	return errmsg.NewMessage(parts...)
 }
 
