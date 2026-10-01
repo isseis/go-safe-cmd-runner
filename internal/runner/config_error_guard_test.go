@@ -15,19 +15,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// configErrorTypesMissingStructured returns the names of the types declared in
-// pkg that have an Error() string method but no StructuredMessage of the
-// structured contract. A type alias is checked as the type it points at.
-func configErrorTypesMissingStructured(pkg *wrapTypedPackage) []string {
-	var missing []string
+// configErrorTypeNames returns the names of the types declared in pkg that have
+// an Error() string method. A type alias is skipped; it is checked as the type
+// it points at.
+func configErrorTypeNames(pkg *wrapTypedPackage) []string {
+	var names []string
 	for _, name := range pkg.pkg.Scope().Names() {
 		tn, ok := pkg.pkg.Scope().Lookup(name).(*types.TypeName)
 		if !ok || tn.IsAlias() {
 			continue
 		}
-		if !declaresErrorString(pkg, tn) {
-			continue
+		if declaresErrorString(pkg, tn) {
+			names = append(names, name)
 		}
+	}
+	return names
+}
+
+// configErrorTypesMissingStructured returns the names among configErrorTypeNames
+// that have no StructuredMessage of the structured contract.
+func configErrorTypesMissingStructured(pkg *wrapTypedPackage) []string {
+	var missing []string
+	for _, name := range configErrorTypeNames(pkg) {
+		tn, _ := pkg.pkg.Scope().Lookup(name).(*types.TypeName)
 		if !declaresStructuredMessage(pkg, tn) {
 			missing = append(missing, name)
 		}
@@ -120,19 +130,20 @@ func configRoleTypes(pkg *wrapTypedPackage) (levelType, fieldType types.Type, pr
 	return levelType, fieldType, true
 }
 
-// configFlatteningAllowedFile is the one file whose single "%s.%s" location
-// string may render a Level and a Field through fmt: the position string
-// validateVariableName passes to variable.ValidateVariableNameForScope.
-const configFlatteningAllowedFile = "internal/runner/config/validation.go"
-
-// configFlatteningAllowedFormat is the only format allowed in that file.
-const configFlatteningAllowedFormat = "%s.%s"
+// configFlatteningAllowedFile and configFlatteningAllowedFormat name the one
+// allowed flattening: the "%s.%s" location string validateVariableName passes
+// to variable.ValidateVariableNameForScope.
+const (
+	configFlatteningAllowedFile   = "internal/runner/config/validation.go"
+	configFlatteningAllowedFormat = "%s.%s"
+	configFlatteningAllowedFunc   = "validateVariableName"
+)
 
 // configFlattenedLevelFieldValues reports every position in pkg where a
 // config.Level or config.Field value is flattened to a string and loses its
-// role: an explicit .String() call, or a fmt.Sprintf/Sprintf/Sprint/Errorf
-// argument rendered with %s, %v or %q. The only allowed position is the
-// "%s.%s" location string in validation.go.
+// role: an explicit .String() call, or a fmt formatting call that renders it
+// (with %s/%v/%q, or the no-format Print/Sprint family). The only allowed
+// position is the location string in validateVariableName's expression.
 func configFlattenedLevelFieldValues(pkg *wrapTypedPackage) []string {
 	levelType, fieldType, present := configRoleTypes(pkg)
 	if !present {
@@ -147,84 +158,150 @@ func configFlattenedLevelFieldValues(pkg *wrapTypedPackage) []string {
 
 	var violations []string
 	for _, file := range pkg.files {
-		ast.Inspect(file.file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
+		for _, decl := range file.file.Decls {
+			funcName := ""
+			if fd, ok := decl.(*ast.FuncDecl); ok {
+				funcName = fd.Name.Name
 			}
-
-			// fmt.Sprintf and friends flatten a Level/Field argument.
-			if format, ok := fmtCallFormat(pkg, call); ok {
-				if isAllowedFlattening(file.path, format) {
+			ast.Inspect(decl, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
 					return true
 				}
-				if containsFlatteningVerb(format) {
-					for _, arg := range call.Args[1:] {
+
+				// A fmt formatting call flattens a Level/Field argument.
+				format, fmtArgs, fmtName, ok := fmtFlatteningCall(pkg, call)
+				if ok {
+					if isAllowedFlattening(file.path, funcName, fmtName, format) {
+						return true
+					}
+					for _, arg := range fmtArgs {
 						if isRoleValue(pkg.info.Types[arg].Type) {
 							violations = append(violations, fmt.Sprintf(
-								"%s: a config.Level/config.Field is rendered through fmt; use its parts() instead",
-								wrapGuardFset.Position(call.Pos())))
+								"%s: a config.Level/config.Field is rendered through fmt.%s; use its parts() instead",
+								wrapGuardFset.Position(call.Pos()), fmtName))
 							break
 						}
 					}
+					return true
+				}
+
+				// An explicit .String() call on a Level/Field value.
+				sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "String" {
+					return true
+				}
+				if isRoleValue(pkg.info.Types[sel.X].Type) {
+					violations = append(violations, fmt.Sprintf(
+						"%s: a config.Level/config.Field is flattened with .String(); use its parts() instead",
+						wrapGuardFset.Position(call.Pos())))
 				}
 				return true
-			}
-
-			// An explicit .String() call on a Level/Field value.
-			sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "String" {
-				return true
-			}
-			if isRoleValue(pkg.info.Types[sel.X].Type) {
-				violations = append(violations, fmt.Sprintf(
-					"%s: a config.Level/config.Field is flattened with .String(); use its parts() instead",
-					wrapGuardFset.Position(call.Pos())))
-			}
-			return true
-		})
+			})
+		}
 	}
 	return violations
 }
 
-// fmtCallFormat returns the constant format string of a call to one of fmt's
-// formatting functions, and whether the call is such a call.
-func fmtCallFormat(pkg *wrapTypedPackage, call *ast.CallExpr) (string, bool) {
+// fmtFlatteningCall reports whether call is a fmt call that would render its
+// value arguments, the arguments that carry values (the format string and the
+// writer excluded), the function name, and the constant format string (empty
+// for the no-format Print/Sprint family).
+func fmtFlatteningCall(pkg *wrapTypedPackage, call *ast.CallExpr) (format string, args []ast.Expr, name string, ok bool) {
 	sel, ok := identitymutationguard.UnwrapParen(call.Fun).(*ast.SelectorExpr)
-	if !ok || len(call.Args) == 0 {
-		return "", false
+	if !ok {
+		return "", nil, "", false
 	}
 	pkgIdent, ok := sel.X.(*ast.Ident)
 	if !ok {
-		return "", false
+		return "", nil, "", false
 	}
 	pkgName, ok := pkg.info.Uses[pkgIdent].(*types.PkgName)
 	if !ok || pkgName.Imported().Path() != "fmt" {
-		return "", false
+		return "", nil, "", false
 	}
-	switch sel.Sel.Name {
-	case "Sprintf", "Sprint", "Sprintln", "Errorf":
+	name = sel.Sel.Name
+	switch name {
+	case "Sprintf", "Errorf", "Printf":
+		format, args, ok = fmtFormatArgs(pkg, call.Args, 0)
+	case "Fprintf":
+		format, args, ok = fmtFormatArgs(pkg, call.Args, 1)
+	case "Sprint", "Sprintln", "Print", "Println":
+		args, ok = call.Args, true
+	case "Fprint", "Fprintln":
+		if len(call.Args) < 1 {
+			return "", nil, name, false
+		}
+		args, ok = call.Args[1:], true
 	default:
-		return "", false
+		return "", nil, name, false
 	}
-	tv, ok := pkg.info.Types[call.Args[0]]
+	return format, args, name, ok
+}
+
+// fmtFormatArgs returns the value arguments of a fmt call whose format string is
+// at index formatIdx, when that format string is constant and renders a value
+// with %s, %v or %q.
+func fmtFormatArgs(pkg *wrapTypedPackage, all []ast.Expr, formatIdx int) (string, []ast.Expr, bool) {
+	if len(all) <= formatIdx {
+		return "", nil, false
+	}
+	tv, ok := pkg.info.Types[all[formatIdx]]
 	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-		return "", false
+		return "", nil, false
 	}
-	return constant.StringVal(tv.Value), true
+	format := constant.StringVal(tv.Value)
+	if !containsFlatteningVerb(format) {
+		return "", nil, false
+	}
+	return format, all[formatIdx+1:], true
 }
 
-// containsFlatteningVerb reports whether format renders a value with %s, %v or
-// %q. Index/width/precision modifiers are ignored; ordinary code does not
-// combine them with a role value.
+// containsFlatteningVerb reports whether format renders a value with a
+// flattening verb: %s, %v or %q, with any flags, argument index, width or
+// precision between the percent sign and the verb (so %+v, %#v, %10v and
+// %[1]v are recognized).
 func containsFlatteningVerb(format string) bool {
-	return strings.Contains(format, "%s") || strings.Contains(format, "%v") || strings.Contains(format, "%q")
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' {
+			continue
+		}
+		j := i + 1
+		if j < len(format) && format[j] == '%' {
+			i = j
+			continue
+		}
+		for j < len(format) && strings.ContainsRune("+#- 0", rune(format[j])) {
+			j++
+		}
+		if j < len(format) && format[j] == '[' {
+			for j < len(format) && format[j] != ']' {
+				j++
+			}
+			j++
+		}
+		for j < len(format) && (format[j] == '.' || (format[j] >= '0' && format[j] <= '9')) {
+			j++
+		}
+		if j < len(format) {
+			switch format[j] {
+			case 's', 'v', 'q':
+				return true
+			}
+		}
+		i = j
+	}
+	return false
 }
 
-// isAllowedFlattening reports whether the position is the one location string
-// that may render a Level and a Field through fmt.
-func isAllowedFlattening(file, format string) bool {
-	return file == configFlatteningAllowedFile && format == configFlatteningAllowedFormat
+// isAllowedFlattening reports whether the position is the one expression that
+// may render a Level and a Field through fmt: the "%s.%s" call inside
+// validateVariableName.
+func isAllowedFlattening(file, funcName, fmtName, format string) bool {
+	return file == configFlatteningAllowedFile &&
+		funcName == configFlatteningAllowedFunc &&
+		fmtName == "Sprintf" &&
+		format == configFlatteningAllowedFormat
 }
 
 // configGuardPackage returns the type-checked config package the guards read.
@@ -240,7 +317,10 @@ func configGuardPackage(t *testing.T) *wrapTypedPackage {
 // StructuredMessage of the structured contract. The type list is not
 // maintained: a new error type is checked automatically.
 func TestConfigErrorTypesDeclareStructuredMessage(t *testing.T) {
-	missing := configErrorTypesMissingStructured(configGuardPackage(t))
+	pkgReal := configGuardPackage(t)
+	require.Positive(t, len(configErrorTypeNames(pkgReal)),
+		"the config package must declare error types, or the scan is vacuous")
+	missing := configErrorTypesMissingStructured(pkgReal)
 	assert.Empty(t, missing,
 		"config types with Error() must declare StructuredMessage: %v", missing)
 
@@ -289,6 +369,13 @@ func TestConfigErrorLevelAndFieldTypesAreTyped(t *testing.T) {
 // flattens a Level or Field to a string, except the one location string in
 // validateVariableName.
 func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
+	// internal/runner/cli is in scope because it builds config errors; it
+	// currently imports config only through runnertypes, so configRoleTypes
+	// reports it as having no Level/Field values and the check is trivially
+	// satisfied there. The config package must be non-vacuous.
+	levelType, _, present := configRoleTypes(configGuardPackage(t))
+	require.True(t, present && levelType != nil, "the config package must expose Level; the guard is broken")
+
 	for _, dir := range []string{"internal/runner/config", "internal/runner/cli"} {
 		pkg := wrapProductionGuardSet(t).pkgs[dir]
 		require.NotNilf(t, pkg, "no type-checked package for %s; the guard is broken", dir)
@@ -302,7 +389,7 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 
 	// Self-test: the allowed location string is accepted.
 	pkg := syntheticWrapPackage(t, configFlatteningAllowedFile,
-		pkgLine+fmtImport+roleTypes+"func f(l Level, fld Field) string { return fmt.Sprintf(\"%s.%s\", l, fld) }\n")
+		pkgLine+fmtImport+roleTypes+"func validateVariableName(l Level, fld Field) string { return fmt.Sprintf(\"%s.%s\", l, fld) }\n")
 	assert.Empty(t, configFlattenedLevelFieldValues(pkg))
 
 	// Self-test: a Level rendered with %s elsewhere is reported.
@@ -310,9 +397,23 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%s\", l) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
-	// Self-test: a Field rendered with %v is reported.
+	// Self-test: a Field rendered with %v and a Level with %q are reported.
 	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
 		pkgLine+fmtImport+roleTypes+"func f(fld Field) string { return fmt.Sprintf(\"%v\", fld) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%q\", l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	// Self-test: a flagged verb (%+v) and the no-format Sprint family are
+	// reported too.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%+v\", l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level, fld Field) string { return fmt.Sprint(l, fld) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
 	// Self-test: an explicit .String() outside the allowed position is reported.

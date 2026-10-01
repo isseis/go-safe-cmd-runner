@@ -49,6 +49,14 @@ func TestNonIdentifierSegmentsMaskValueFormats(t *testing.T) {
 	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(token),
 		"the token must not trip the whole-value layer, or masking proves nothing")
 
+	t.Run("env entry", func(t *testing.T) {
+		err := &ErrInvalidEnvFormatDetail{Level: globalLevel(), Mapping: token, Reason: "bad"}
+		out, redactErr := cfg.RedactMessage(err.StructuredMessage())
+		require.NoError(t, redactErr)
+		assert.NotContains(t, out, token)
+		assert.Contains(t, out, redaction.DefaultPlaceholder)
+	})
+
 	t.Run("template input string", func(t *testing.T) {
 		err := &ErrTemplateInvalidEnvFormat{TemplateName: "tpl", Field: envVarsField(0), Entry: token}
 		out, redactErr := cfg.RedactMessage(err.StructuredMessage())
