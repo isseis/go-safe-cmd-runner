@@ -254,13 +254,20 @@ const (
 	fieldVerifyFiles
 	fieldCmdAllowed
 	fieldVars
+	fieldOutputFile
+	// fieldKeyCount is the number of keys, so tests can range over every key;
+	// it must stay last.
+	fieldKeyCount
 )
 
 // Field is the configuration field being expanded. The zero value is
-// "no field" and renders as the empty string.
+// "no field" and renders as the empty string. The variable name and the index
+// each render only when their presence flag is set, so an empty name still
+// renders as "vars." the way fmt.Sprintf("vars.%s", "") always did.
 type Field struct {
 	key      fieldKey
 	name     string // variable name, for vars fields only
+	hasName  bool
 	index    int
 	hasIndex bool
 }
@@ -268,9 +275,12 @@ type Field struct {
 func cmdField() Field              { return Field{key: fieldCmd} }
 func envField() Field              { return Field{key: fieldEnv} }
 func envVarsField(index int) Field { return Field{key: fieldEnvVars, index: index, hasIndex: true} }
+func envVarsFieldNoIndex() Field   { return Field{key: fieldEnvVars} }
 func envImportField() Field        { return Field{key: fieldEnvImport} }
 func workdirField() Field          { return Field{key: fieldWorkdir} }
+func outputFileField() Field       { return Field{key: fieldOutputFile} }
 func argsField(index int) Field    { return Field{key: fieldArgs, index: index, hasIndex: true} }
+func argsFieldNoIndex() Field      { return Field{key: fieldArgs} }
 func verifyFilesField(index int) Field {
 	return Field{key: fieldVerifyFiles, index: index, hasIndex: true}
 }
@@ -278,78 +288,87 @@ func verifyFilesField(index int) Field {
 func cmdAllowedField(index int) Field {
 	return Field{key: fieldCmdAllowed, index: index, hasIndex: true}
 }
-func varsField() Field           { return Field{key: fieldVars} }
-func varField(name string) Field { return Field{key: fieldVars, name: name} }
+func cmdAllowedFieldNoIndex() Field { return Field{key: fieldCmdAllowed} }
+func varsField() Field              { return Field{key: fieldVars} }
+func varField(name string) Field    { return Field{key: fieldVars, name: name, hasName: true} }
 func varElementField(name string, index int) Field {
-	return Field{key: fieldVars, name: name, index: index, hasIndex: true}
+	return Field{key: fieldVars, name: name, hasName: true, index: index, hasIndex: true}
 }
 
 // String renders the field the way it has always been rendered for error
-// messages. The zero value renders as the empty string.
+// messages: the key, then ".<name>" and "[<index>]" when present. The zero
+// value renders as the empty string.
 func (f Field) String() string {
+	var key string
 	switch f.key {
 	case fieldCmd:
-		return "cmd"
+		key = "cmd"
 	case fieldArgs:
-		return "args[" + strconv.Itoa(f.index) + "]"
+		key = "args"
 	case fieldEnv:
-		return "env"
+		key = "env"
 	case fieldEnvVars:
-		return "env_vars[" + strconv.Itoa(f.index) + "]"
+		key = "env_vars"
 	case fieldEnvImport:
-		return "env_import"
+		key = "env_import"
 	case fieldWorkdir:
-		return "workdir"
+		key = "workdir"
 	case fieldVerifyFiles:
-		return "verify_files[" + strconv.Itoa(f.index) + "]"
+		key = "verify_files"
 	case fieldCmdAllowed:
-		return "cmd_allowed[" + strconv.Itoa(f.index) + "]"
+		key = "cmd_allowed"
 	case fieldVars:
-		base := "vars"
-		if f.name != "" {
-			base += "." + f.name
-		}
-		if f.hasIndex {
-			base += "[" + strconv.Itoa(f.index) + "]"
-		}
-		return base
+		key = "vars"
+	case fieldOutputFile:
+		key = "output_file"
 	default:
 		return ""
 	}
+	if f.hasName {
+		key += "." + f.name
+	}
+	if f.hasIndex {
+		key += "[" + strconv.Itoa(f.index) + "]"
+	}
+	return key
 }
 
-// parts builds the message parts for the field: the key text is constant and
-// the variable name is an identifier. The zero value has no parts.
+// parts builds the message parts for the field: the key text is constant, the
+// variable name is an identifier and the index is text. The zero value has no
+// parts.
 func (f Field) parts() []errmsg.Part {
+	var parts []errmsg.Part
 	switch f.key {
 	case fieldCmd:
-		return []errmsg.Part{errmsg.Const("cmd")}
+		parts = []errmsg.Part{errmsg.Const("cmd")}
 	case fieldArgs:
-		return []errmsg.Part{errmsg.Const("args["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+		parts = []errmsg.Part{errmsg.Const("args")}
 	case fieldEnv:
-		return []errmsg.Part{errmsg.Const("env")}
+		parts = []errmsg.Part{errmsg.Const("env")}
 	case fieldEnvVars:
-		return []errmsg.Part{errmsg.Const("env_vars["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+		parts = []errmsg.Part{errmsg.Const("env_vars")}
 	case fieldEnvImport:
-		return []errmsg.Part{errmsg.Const("env_import")}
+		parts = []errmsg.Part{errmsg.Const("env_import")}
 	case fieldWorkdir:
-		return []errmsg.Part{errmsg.Const("workdir")}
+		parts = []errmsg.Part{errmsg.Const("workdir")}
 	case fieldVerifyFiles:
-		return []errmsg.Part{errmsg.Const("verify_files["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+		parts = []errmsg.Part{errmsg.Const("verify_files")}
 	case fieldCmdAllowed:
-		return []errmsg.Part{errmsg.Const("cmd_allowed["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]")}
+		parts = []errmsg.Part{errmsg.Const("cmd_allowed")}
 	case fieldVars:
-		parts := []errmsg.Part{errmsg.Const("vars")}
-		if f.name != "" {
-			parts = append(parts, errmsg.Const("."), errmsg.Ident(f.name))
-		}
-		if f.hasIndex {
-			parts = append(parts, errmsg.Const("["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]"))
-		}
-		return parts
+		parts = []errmsg.Part{errmsg.Const("vars")}
+	case fieldOutputFile:
+		parts = []errmsg.Part{errmsg.Const("output_file")}
 	default:
 		return nil
 	}
+	if f.hasName {
+		parts = append(parts, errmsg.Const("."), errmsg.Ident(f.name))
+	}
+	if f.hasIndex {
+		parts = append(parts, errmsg.Const("["), errmsg.Text(strconv.Itoa(f.index)), errmsg.Const("]"))
+	}
+	return parts
 }
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
