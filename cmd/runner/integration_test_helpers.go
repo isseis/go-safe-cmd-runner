@@ -189,6 +189,8 @@ type slackRunSpec struct {
 	configBody  func(slackHost string) string
 	hashedFiles []string
 	runID       string
+	// groups is passed as the --groups flag when non-empty.
+	groups string
 	// dryRun requests a dry-run. The zero value keeps the default, which
 	// enforces hash verification.
 	dryRun bool
@@ -281,7 +283,7 @@ func runMainWithSlackMock(t *testing.T, spec slackRunSpec) slackRun {
 	runLogDir := tu.SafeTempDir(t)
 	logDir = runLogDir
 	dryRun = spec.dryRun
-	groups = ""
+	groups = spec.groups
 	runID = ""
 
 	var exitCode int

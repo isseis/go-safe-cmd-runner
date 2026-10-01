@@ -2,8 +2,10 @@ package cli
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 	"github.com/stretchr/testify/require"
 )
@@ -131,4 +133,47 @@ func newTestConfig(names ...string) *runnertypes.ConfigSpec {
 		groups[i] = runnertypes.GroupSpec{Name: name}
 	}
 	return &runnertypes.ConfigSpec{Groups: groups}
+}
+
+// TestFilterGroups_GroupNotFoundStructuredMessage pins that the group-not-found
+// error is a structured message: the requested name and every available group
+// name are identifiers, so a name that looks like a secret still reaches the
+// report, and errors.Is still reaches ErrGroupNotFound.
+func TestFilterGroups_GroupNotFoundStructuredMessage(t *testing.T) {
+	cfg := newTestConfig("common", "token_rotate", "build")
+
+	_, err := FilterGroups([]string{"token_rotat"}, cfg)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrGroupNotFound))
+
+	structured, ok := err.(errmsg.Structured)
+	require.True(t, ok, "%T must implement errmsg.Structured", err)
+
+	var identifiers []string
+	for _, segment := range structured.StructuredMessage().Segments() {
+		if segment.Role == errmsg.RoleIdentifier {
+			identifiers = append(identifiers, segment.Text)
+		}
+	}
+	require.ElementsMatch(t,
+		[]string{"token_rotat", "common", "token_rotate", "build"},
+		identifiers,
+		"the requested and available group names must all be identifiers")
+
+	// The fixed wording is unchanged; only the available-list order varies.
+	message := err.Error()
+	require.True(t,
+		strings.HasPrefix(message, "group not found: group(s) [token_rotat] specified in --groups do not exist in configuration\nAvailable groups: ["),
+		"unexpected message: %q", message)
+	require.True(t, strings.HasSuffix(message, "]"), "unexpected message: %q", message)
+}
+
+// TestFilterGroups_NilConfigUnchanged pins that a nil config still returns
+// ErrNilConfig before any group check runs, the behavior the removed
+// reachable-only branch used to hide.
+func TestFilterGroups_NilConfigUnchanged(t *testing.T) {
+	_, err := FilterGroups([]string{"build"}, nil)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrNilConfig))
+	require.False(t, errors.Is(err, ErrGroupNotFound))
 }

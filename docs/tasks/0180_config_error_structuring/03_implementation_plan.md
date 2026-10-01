@@ -219,12 +219,12 @@
 
 **Files**: `internal/runner/cli/filter.go`・`internal/runner/cli/filter_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`・`cmd/runner/integration_test_helpers.go`（変更）
 
-- [ ] 02 §3.5.3 のとおり、`filter.go` の `checkGroupsExist` の `config == nil` 分岐（`:50-52`）を削除する。
-- [ ] 存在しない group 名のエラー（`:84-85`）を `errmsg.NewError` で作る。センチネルエラー `ErrGroupNotFound` を原因、指定された名前と定義済みの group 名の各要素を `Identifier`、`%v` の括弧・区切り・固定の文言を `Constant` として宣言する。一覧の順序は変えない（AC-08）。
-- [ ] `errmsg_guard_test.go` の `exemptRolePositions` に `cli/filter.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも `cli/filter.go` を加える（AC-06・AC-20）。
-- [ ] `filter_test.go` に `TestFilterGroups_GroupNotFoundStructuredMessage` を加え、存在しない group 名で返すエラーが `errmsg.Structured` を実装し、指定した名前と定義済みの group 名が `Identifier` で、`errors.Is(err, ErrGroupNotFound)` が成り立つことを確かめる。定義済みの group 名の一覧は順序に依らずに確かめる（02 §5.5）。`nil` config の結果が変わらないことを既存のテスト（`:121-125`）で確かめる（AC-08・AC-15）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に、`--groups` に存在しない名前を指定し指定した名前と定義済みの group 名が出ることを確かめるテストを加える（AC-12）。
-- [ ] `cmd/runner/integration_test_helpers.go` のハーネスを拡張し、シナリオが `--groups` を渡せるようにする。`slackRunSpec` に group 名の値（`groups`）を加え、`runMainWithSlackMock` が現在 `groups` を `""` にリセットしている箇所へその値を配線する。これが無いと AC-12 のシナリオは `cli.FilterGroups` に到達せず、テストは主張した理由で失敗できない。
+- [x] 02 §3.5.3 のとおり、`filter.go` の `checkGroupsExist` の `config == nil` 分岐（`:50-52`）を削除する。
+- [x] 存在しない group 名のエラー（`:84-85`）を `errmsg.NewError` で作る。センチネルエラー `ErrGroupNotFound` を原因、指定された名前と定義済みの group 名の各要素を `Identifier`、`%v` の括弧・区切り・固定の文言を `Constant` として宣言する。一覧の順序は変えない（AC-08）。
+- [x] `errmsg_guard_test.go` の `exemptRolePositions` に `cli/filter.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも `cli/filter.go` を加える（AC-06・AC-20）。
+- [x] `filter_test.go` に `TestFilterGroups_GroupNotFoundStructuredMessage` を加え、存在しない group 名で返すエラーが `errmsg.Structured` を実装し、指定した名前と定義済みの group 名が `Identifier` で、`errors.Is(err, ErrGroupNotFound)` が成り立つことを確かめる。定義済みの group 名の一覧は順序に依らずに確かめる（02 §5.5）。`nil` config の結果が変わらないことを既存のテスト（`:121-125`）で確かめる（AC-08・AC-15）。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に、`--groups` に存在しない名前を指定し指定した名前と定義済みの group 名が出ることを確かめるテストを加える（AC-12）。
+- [x] `cmd/runner/integration_test_helpers.go` のハーネスを拡張し、シナリオが `--groups` を渡せるようにする。`slackRunSpec` に group 名の値（`groups`）を加え、`runMainWithSlackMock` が現在 `groups` を `""` にリセットしている箇所へその値を配線する。これが無いと AC-12 のシナリオは `cli.FilterGroups` に到達せず、テストは主張した理由で失敗できない。
 
 **完了条件**: `internal/runner/cli`・`cmd/runner` のテストが green。AC-08・AC-12 のテストが green。
 
