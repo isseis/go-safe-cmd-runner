@@ -1179,6 +1179,8 @@ cmd = %q
 		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
 
 	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Contains(t, errorMessage, "specified in --groups do not exist in configuration",
+		"the group-not-found wording must survive: %q", errorMessage)
 	for _, want := range []string{"token_rotat", "token_rotate", "api_key_rotate"} {
 		assert.Contains(t, errorMessage, want,
 			"the Identifier %q must survive redaction: %q", want, errorMessage)
