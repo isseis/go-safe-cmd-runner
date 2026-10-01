@@ -55,7 +55,7 @@
 | `internal/runner/config/template_errors.go` | `Error() string` を持つ型は 21。`Field` はすべて `string`（例: `"cmd"`・`"args[0]"`・`"env_vars"`） | 全型に `StructuredMessage` を追加。`Field` 欄を型にし、`GroupName` から group の `Level` を組む（02 §3.2・§3.3） |
 | `internal/runner/config/expansion.go` | `fmt.Errorf` は 10 か所（除外 5 関数の `:332`・`:795`・`:1139`・`:1359`・`:1373`・`:1393`・`:1399`・`:1407`・`:1423`・`:1434`）。0178 が前置き全体を `Text` にした `NewError` は 8 か所（`:843`・`:858`・`:931`・`:972`・`:1008`・`:1038`・`:1181`・`:1284`）。`Level`/`Field` を構築する箇所は `error` の欄に `level.String()`・`field.String()` を渡す | 10 か所を 02 §3.1・付録 A の役割で構造化。8 か所を宣言し直す。構築箇所に型をそのまま渡す。`expandCmdAllowed` の `EvalSymlinks` は `PathErrorCause`（02 §3.5.2） |
 | `internal/runner/config/validation.go` | `validateVariableName` が `Level`/`Field` の欄に `level.String()`・`field.String()` を渡す（`:151-152`・`:161-162`・`:178-179`）。位置文字列 `fmt.Sprintf("%s.%s", level, field)` は `variable.ValidateVariableNameForScope` に渡す（`:175`） | 欄に型をそのまま渡す。`:175` は残す（02 §3.2） |
-| `internal/runner/config/template_expansion.go` | `fmt.Errorf` は 3 か所（`:512`・`:708`・`:1135`）。`Field` を文字列で受ける関数群（`expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPost`）と、`field == workDirKey` の文字列比較（`:255`）。`fmt.Sprintf("vars.%s", …)`・`fmt.Sprintf("%s[%d]", …)`・`fmt.Sprintf("env_vars[%d]", …)` で欄を組み立てる（`:810`・`:854`・`:871`・`:447`） | 欄を `Field` で受け渡す。3 か所の書式を構造化。固定のキーは構築関数から作る（02 §3.2・§3.5） |
+| `internal/runner/config/template_expansion.go` | `fmt.Errorf` は 3 か所（`:512`・`:708`・`:1135`）。`Field` を文字列で受ける関数群（`expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPost`）と、`field == workDirKey` の文字列比較（`:255`）。`fmt.Sprintf("args[%d]", …)`・`fmt.Sprintf("vars.%s", …)`・`fmt.Sprintf("%s[%d]", …)`・`fmt.Sprintf("env_vars[%d]", …)` で欄を組み立てる（`:425`・`:810`・`:854`・`:871`・`:447`） | 欄を `Field` で受け渡す。3 か所の書式を構造化。固定のキーは構築関数から作る（02 §3.2・§3.5） |
 | `internal/runner/cli/filter.go` | `errmsg` を import しない。`fmt.Errorf` は 2 か所（`:51`・`:84`）。`checkGroupsExist` の `config == nil` 分岐（`:50-52`）は `%w` を 2 つ持ち、到達しない | `errmsg` を import し、`:84` を構造化。`:50-52` を削除（02 §3.5.3） |
 | `internal/errmsg/errmsg_guard_test.go` | `exemptRolePositions` に `expansion.go` の全体と `errors.go` の 3 関数（`:59-75`）。`inScopeExpansionFile`・`inScopeExpansionExclusions`（`:83-91`）。`pathErrorCausePositions` は tempdir のみ（`:79-81`）。`errmsgPartBuilders` は `rolePart`・`causePart`（`:838`） | 許可位置・対象範囲・構築関数を本タスクに合わせる（02 §3.7） |
 | `internal/runner/wrap_guard_test.go` | `inScopeWholeFiles` は expansion.go ほか（`:43-48`）。`inScopeFunctions` に `errors.go` の 3 関数（`:57-59`）。`expansionExcludedFunctions`（`:92-98`） | 対象ファイルを追加し、除外と関数単位の指定をなくす（02 §3.7） |
@@ -72,7 +72,7 @@
 | 前置き全体が `Text` の `NewError`（expansion.go） | `ExpandGlobal:843`・`:858`・`expandCmdAllowed:931`・`:972`・`ExpandGroup:1008`・`:1038`・`expandCommandEnvImport:1181`・`ExpandCommand:1284` | `Constant`・`Ident`・`Text`・`Path` に分け、原因を保つ |
 | `Level: level.String()` 系（expansion.go・validation.go） | `expansion.go:194`・`:220`・`:236`・`:248`・`:258`・`:300`・`:314`・`:323`・`:339`・`:426`・`:487`・`:496`・`:539`・`:592`・`:594`・`:595`・`:616`・`:636`・`:646`・`:666`・`:676`・`:688`・`:697`・`:777`・`:786`・`:802`・`:915`・`:980`、`validation.go:151`・`:161`・`:178` | `Level`・`Field` の値（または構築関数）をそのまま渡す。`:915`・`:980` は `groupLevel(...).String()` を型に置き換える |
 | `Field: field.String()` 系・文字列リテラルの欄（expansion.go・validation.go・template_expansion.go） | `validation.go:152`・`:162`・`:179`・`expansion.go:195`・`:221`・`:237`・`:249`・`:259`・`:315`・`:324`・`:427`・`:488`・`:803`、`expansion.go:916`・`:981`（`Field: "cmd_allowed"`）、`template_expansion.go:714`・`:1142`・`:1151`・`:572`・`:629`・`:753`・`:765`・`:774`・`:783`・`:887` | 型付き `Field` にする。固定のキーは `cmdField()`・`envField()`・`envImportField()`・`workdirField()`・`varsField()`・`argsFieldNoIndex()`・`envVarsFieldNoIndex()`・`cmdAllowedFieldNoIndex()` から作る |
-| `Field` を文字列で受ける関数 | `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost`（`template_expansion.go:202`・`:247`・`:311`・`:341`・`:487`・`:528`） | 欄を `Field` で受け渡す。呼び出し側（`expansion.go:1371`・`:1405`・`:1421`、`template_expansion.go:426`・`:450`・`:455`・`:820`・`:855`・`:872`）も `Field` を渡す |
+| `Field` を文字列で受ける関数 | `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost`（`template_expansion.go:202`・`:247`・`:311`・`:341`・`:487`・`:528`） | 欄を `Field` で受け渡す。呼び出し側（`expansion.go:1371`・`:1405`・`:1421`、`template_expansion.go:426`・`:450`・`:455`・`:467`・`:820`・`:855`・`:872`）も `Field` を渡す |
 
 #### 更新が必要な既存テスト
 
@@ -81,7 +81,7 @@
 | テスト | 理由 |
 |---|---|
 | `internal/runner/config/errors_test.go` | エラー型を文字列の `Level`・`Field` で作っている（`Level:` 17 か所、`Field:` 10 か所）。`TestLevelAndField_StringMatchesLegacyFormat` は新しい `fieldKey`（`output_file`、添字なしの形、`hasName`）を網羅する形に広げる |
-| `internal/runner/config/template_expansion_validation_test.go` | `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate` を文字列の `Field` で作っている（`:409`・`:421`） |
+| `internal/runner/config/template_expansion_validation_test.go` | `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate`（errors.go の型）を文字列の `Field` で作っている（`:409`・`:421`）。errors.go の `Field` を型にする Phase 2 で更新する |
 | `internal/runner/config/template_param_expansion_test.go` | `expandSingleArg` に文字列の欄を渡している（`:190`） |
 | `internal/runner/config/template_field_constraints_test.go` | `expandSingleArg` に文字列の欄を渡している（`:257`・`:264`） |
 | `internal/errmsg/errmsg_guard_test.go` の `TestExemptRoleCallCheckRecognizesForms` | `expansion.go` の除外（`ProcessEnvImport`）で `Ident` が拒否されるケースがある（`:684-687`）。除外をなくすと許容される |
@@ -156,7 +156,7 @@
 
 ### Phase 2: 変数の展開
 
-**Files**: `internal/runner/config/errors.go`・`expansion.go`・`validation.go`・`template_expansion.go`（変更、後者は 2 型の構築箇所のみ）、`internal/runner/config/errors_test.go`・`expansion_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）
+**Files**: `internal/runner/config/errors.go`・`expansion.go`・`validation.go`・`template_expansion.go`（変更、後者は 2 型の構築箇所のみ）、`internal/runner/config/errors_test.go`・`expansion_test.go`・`template_expansion_validation_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`（変更）
 
 - [ ] 02 §3.3 のとおり、`errors.go` で `Error() string` を持つ型（`ErrUndefinedVariableDetail` を除く）に `StructuredMessage() errmsg.Message` を加え、`Error()` を `return e.StructuredMessage().String()` にする。部分の並びと役割は 02 付録 A による。`Unwrap()`・`Is()` は変えない（AC-02・AC-03・AC-05・AC-14・AC-15）。
 - [ ] `errors.go` のエラー型の `Level`・`Field`・`EnvImportLevel`・`VarsLevel` 欄を、02 §3.2 のとおり型 `Level`・`Field` にする。
@@ -165,7 +165,7 @@
 - [ ] `errors_test.go` に `TestExpandCmdAllowed_ResolvePathCauseKeepsPath` を加え、`EvalSymlinks` の失敗の原因で、パスが `Path` の断片として残ることと、組み立てた `Error()` が変更前と同じであることを確かめる（AC-07・AC-14）。
 - [ ] `errmsg_guard_test.go` を更新する。`exemptRolePositions` に `errors.go` をファイル全体として加え、`inScopeExpansionFile`・`inScopeExpansionExclusions` と `declaresExemptRole` の例外をなくす。`pathErrorCausePositions` に `expansion.go` の `expandCmdAllowed` を加える。`PathErrorCause` の違反の文言を直す。`TestExemptRoleCallCheckRecognizesForms` の除外のケースを、除外が無くなった後の形に直す（AC-20・AC-22）。
 - [ ] `wrap_guard_test.go` を更新する。`inScopeWholeFiles` に `errors.go` を加え、`inScopeFunctions` から `errors.go` の 3 関数を外す。`TestScopeCatalogNamesExist`・`TestWrapCheckRecognizesForms` の関連を直す（AC-06・AC-20）。
-- [ ] `errors_test.go` の 27 か所の文字列の `Level`・`Field` を型付きの値に書き換える。
+- [ ] `errors_test.go` の 27 か所の文字列の `Level`・`Field` を型付きの値に書き換える。`template_expansion_validation_test.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate`（errors.go の型）の文字列の `Field`（`:409`・`:421`）も、本 Phase で型付きの値に書き換える（書き換えないとパッケージのテストがコンパイルできない）。
 - [ ] `expansion_test.go` に `TestExpansionWrapSites_StructuredMessage` を加え、`expansion.go` のエラー書式の各箇所を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、原因が保たれること、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`errmsg.NewError` の panic が起きないこともこの実行で確かめる（AC-07・AC-14・AC-15）。
 - [ ] `errors_test.go` に `TestErrorTypes_StructuredMessageSegments`（各型の `StructuredMessage().Segments()` が 02 付録 A と一致すること）と `TestErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える（AC-02・AC-03・AC-05・AC-14）。
 - [ ] 02 §3.7 に従い、`errmsg_guard_test.go` の `TestExemptRoleCallCheckRecognizesForms` のうち `inScopeExpansionFile` を定数として使うケース（`:680-682`）を、パスを直接書く形に直す（AC-22）。
@@ -188,15 +188,15 @@
 
 ### Phase 3: テンプレート
 
-**Files**: `internal/runner/config/template_errors.go`・`template_expansion.go`・`expansion.go`（`expandSingleArg` の呼び出し）（変更）、`internal/runner/config/template_errors_test.go`・`template_expansion_validation_test.go`・`template_param_expansion_test.go`・`template_field_constraints_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）
+**Files**: `internal/runner/config/template_errors.go`・`template_expansion.go`・`expansion.go`（`expandSingleArg` の呼び出し）（変更）、`internal/runner/config/template_errors_test.go`・`template_expansion_test.go`・`template_param_expansion_test.go`・`template_field_constraints_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`（変更）
 
 - [ ] 02 §3.3 のとおり、`template_errors.go` の全型に `StructuredMessage` を加え、`Error()` をそこから作る。部分の並びと役割は 02 付録 A による（AC-02・AC-03・AC-14）。
 - [ ] `template_errors.go` の `Field` 欄を型 `Field` にする。`ErrTemplateFieldConflict`・`ErrMissingRequiredField` の `group[<name>]` は `GroupName` から group の `Level` の `parts()` で描画する（02 §3.2）。
-- [ ] `template_expansion.go` の `template_errors.go` の型の構築箇所で、`Field` を型のまま渡す。`fmt.Sprintf` で欄を組み立てている箇所（`:447`・`:810`・`:854`・`:871`）を `Field` の構築関数に置き換える。
+- [ ] `template_expansion.go` の `template_errors.go` の型の構築箇所で、`Field` を型のまま渡す。`fmt.Sprintf` で欄を組み立てている箇所（`:425`・`:447`・`:810`・`:854`・`:871`）を `Field` の構築関数に置き換える。
 - [ ] `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost` の欄を `Field` で受け渡す。`field == workDirKey` の文字列比較（`:255`）を `Field` のキーで判定する。`expansion.go` の `expandSingleArg` 呼び出し（`:1371`・`:1405`・`:1421`）も欄を `Field` にする。
 - [ ] `template_expansion.go` の 3 か所の `fmt.Errorf` を 02 §3.1・付録 A の役割で構造化する。`:708`・`:1135` の拒否された参照名は `Text`、`:512` はキーと原因を宣言する（AC-06・AC-07・AC-14・AC-15）。
 - [ ] `errmsg_guard_test.go` の `exemptRolePositions` に `template_errors.go`・`template_expansion.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも両ファイルを加える（AC-06・AC-20）。
-- [ ] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_expansion_validation_test.go` の 2 か所、`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。
+- [ ] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。
 - [ ] `template_expansion_test.go` に `TestTemplateExpansionWrapSites_StructuredMessage` を加え、`template_expansion.go` の 3 か所のエラー書式を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` の到達性を確かめる（AC-07・AC-14・AC-15）。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に、`ValidateAllTemplates` の失敗でテンプレート名と変数名が出ることを確かめるテスト（AC-11）と、コマンドの展開でテンプレートの展開が失敗しテンプレート名・パラメータ名・コマンド名・group 名が出ることを確かめるテスト（AC-13）を加える。
 
@@ -282,7 +282,7 @@
 | M1: 基盤 | Phase 1 | `errmsg.Quoted` と拡張した `Field` のテストが green。`Field` の既存の描画が変わっていない |
 | M2: 変数の展開 | Phase 2 | errors.go と expansion.go の対象が構造化され、`Error()` の文言と到達性が変わらない。AC-09・AC-10 が green |
 | M3: テンプレート | Phase 3 | template_errors.go と template_expansion.go の対象が構造化され、文言と到達性が変わらない。AC-11・AC-13 が green |
-| M4: `--groups` | Phase 4 | `cli.FilterGroups` のエラーが構造化され、`errors.Is` の到達性が変わる。AC-08・AC-12 が green |
+| M4: `--groups` | Phase 4 | `cli.FilterGroups` のエラーが構造化され、`errors.Is` の到達性が変わらない。AC-08・AC-12 が green |
 | M5: 網羅と文書 | Phase 5 | 3 つの新しいガード、保護のテスト、日英の文書、`make verify-docs-checks`・`make test`・`make lint` が green |
 
 ### 3.2 PR 構成
@@ -333,12 +333,12 @@
 | 1 | 断片の境目で分かれる入力の fail-closed を外す | `errmsg_test.go::TestQuoted_SplitRuneFallsBackToText` |
 | 1 | `Field` の添字なしの形が添字を描画するようにする | `errors_test.go::TestLevelAndField_StringMatchesLegacyFormat` |
 | 2 | エラー型の 1 つの `StructuredMessage` の断片の役割を変える | `errors_test.go::TestErrorTypes_StructuredMessageSegments` |
-| 2 | `TestExpansionWrapSites_StructuredMessage` が比べる変更前の文言を 1 文字変える | `expansion_test.go::TestExpansionWrapSites_StructuredMessage` |
+| 2 | `expansion.go` の 1 か所のエラー書式の `Constant` の文言を 1 文字変える | `expansion_test.go::TestExpansionWrapSites_StructuredMessage` |
 | 2 | `expansion.go` の 1 か所に `fmt.Errorf` を戻す | `wrap_guard_test.go::TestInScopeWrapsUseStructuredErrors` |
 | 2 | 許可位置の外で `Ident` を呼ぶ | `errmsg_guard_test.go::TestProductionExemptRoleCallsAreInAllowedPositions` |
 | 2 | `expandCmdAllowed` の原因で `PathErrorCause` を `Cause` にする | `errors_test.go::TestExpandCmdAllowed_ResolvePathCauseKeepsPath` |
 | 3 | template_errors.go の 1 つの `StructuredMessage` の断片の役割を変える | `template_errors_test.go::TestTemplateErrorTypes_StructuredMessageSegments` |
-| 3 | `TestTemplateExpansionWrapSites_StructuredMessage` が比べる変更前の文言を 1 文字変える | `template_expansion_test.go::TestTemplateExpansionWrapSites_StructuredMessage` |
+| 3 | `template_expansion.go` の 1 か所のエラー書式の `Constant` の文言を 1 文字変える | `template_expansion_test.go::TestTemplateExpansionWrapSites_StructuredMessage` |
 | 3 | `expandArrayPlaceholder` の workdir の拒否を外す | `template_field_constraints_test.go::TestTemplateFieldConstraints`（`workdir: ${@param} rejected` のケース） |
 | 4 | `cli.FilterGroups` の存在しない名前を `Text` にする | `filter_test.go::TestFilterGroups_GroupNotFoundStructuredMessage` |
 | 5 | `StructuredMessage` を持たないエラー型を加える | `config_error_guard_test.go::TestConfigErrorTypesDeclareStructuredMessage` |
