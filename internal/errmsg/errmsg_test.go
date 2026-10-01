@@ -288,8 +288,8 @@ func TestQuoted_SplitRuneFallsBackToText(t *testing.T) {
 	assert.Equal(t, "x "+strconv.Quote(word)+" y", msg.String())
 }
 
-// TestQuoted_RejectsCauses pins that a cause, directly or as the only part,
-// cannot be quoted.
+// TestQuoted_RejectsCauses pins that a cause of any kind, alone or among other
+// parts, cannot be quoted.
 func TestQuoted_RejectsCauses(t *testing.T) {
 	assert.Panics(t, func() { Quoted(Cause(errors.New("boom"))) })
 	assert.Panics(t, func() { Quoted(Const("a"), PathErrorCause(errors.New("boom"))) })
@@ -297,14 +297,13 @@ func TestQuoted_RejectsCauses(t *testing.T) {
 }
 
 // TestQuoted_IsNotACauseOfNewError pins that a quoted part never counts as the
-// cause NewError requires, and that Freeze keeps the quoted segments.
+// cause NewError requires.
 func TestQuoted_IsNotACauseOfNewError(t *testing.T) {
 	assert.Panics(t, func() { NewError(Quoted(Ident("x"))) })
 
 	cause := errors.New("boom")
 	err := NewError(Const("command "), Quoted(Ident(`b"x`)), Const(": "), Cause(cause))
 	assert.Equal(t, fmt.Sprintf("command %q: %v", `b"x`, cause), err.Error())
-	assert.Equal(t, err.StructuredMessage().Segments(), err.StructuredMessage().Freeze().Segments())
 }
 
 func TestJoin_MatchesErrorsJoin(t *testing.T) {

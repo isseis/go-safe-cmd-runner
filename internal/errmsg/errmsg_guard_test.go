@@ -835,7 +835,9 @@ func checkPartConstruction(s *guardSet) (partFound bool, violations []string) {
 
 // errmsgPartBuilders are the only functions of errmsg (keyed as funcKey)
 // allowed to build a Part literal. errmsgRoleChoosers fixes the callers of
-// rolePart and causePart; Quoted chooses no role, it keeps those of its parts.
+// rolePart and causePart. Quoted builds a Part holding other parts; the roles
+// its flattening adds (RoleConstant marks, the RoleText fallback) are pinned by
+// the TestQuoted_ tests, since Segment literals inside errmsg are not guarded.
 var errmsgPartBuilders = []string{"rolePart", "causePart", "Quoted"}
 
 // writeTargets returns the expressions n may write through: assigned,

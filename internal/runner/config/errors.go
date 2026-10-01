@@ -266,7 +266,7 @@ const (
 // renders as "vars." the way fmt.Sprintf("vars.%s", "") always did.
 type Field struct {
 	key      fieldKey
-	name     string // variable name, for vars fields only
+	name     string // variable name; only the vars constructors set hasName
 	hasName  bool
 	index    int
 	hasIndex bool

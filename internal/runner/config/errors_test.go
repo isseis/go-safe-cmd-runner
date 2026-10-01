@@ -113,8 +113,10 @@ func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 		})
 	}
 
-	// Every key, with and without a name and an index. The legacy key words
-	// are the only hand-written data; a key missing from them fails the test.
+	// Every key, with and without a name and an index: String(), parts() and
+	// Quoted must agree. Only vars is ever built with a name; the pin against
+	// the legacy call sites is the constructor table below. A key missing from
+	// legacyKeys fails the test.
 	legacyKeys := map[fieldKey]string{
 		fieldCmd:         "cmd",
 		fieldArgs:        "args",
