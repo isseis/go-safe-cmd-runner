@@ -91,7 +91,7 @@
 
 #### 実装への引き継ぎ項目の扱い
 
-- **I-01（レベル・フィールドの値の流入をみるガードの網羅性）**: Phase 5 で、`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が描画済みの文字列に平らにされる形を検出する静的検査を `internal/runner/config_error_guard_test.go` に置く。対象は、(1) 値に対する `.String()` の呼び出し、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数のうち `%s`・`%v`・`%q` で描画される `config.Level`・`config.Field` の値、の 2 つである。`fmt` はメソッドを暗黙に呼ぶため、(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす（02 §7.4 の自己テストの例）。許可位置は `validation.go` の `validateVariableName`（`:175` の位置文字列）だけにする。一時変数へ描画する書き方も、描画の位置で捉える。自己テストで許可位置と拒否（`.String()` と `fmt.Sprintf("%s", level)` の両方）を固定する。
+- **I-01（レベル・フィールドの値の流入をみるガードの網羅性）**: Phase 5 で、`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が描画済みの文字列に平らにされる形を検出する静的検査を `internal/runner/config_error_guard_test.go` に置く。対象は、(1) 値に対する `.String()` の呼び出し、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数のうち `%s`・`%v`・`%q` で描画される `config.Level`・`config.Field` の値、の 2 つである。`fmt` はメソッドを暗黙に呼ぶため、(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす（02 §7.4 の自己テストの例）。許可位置は `validateVariableName` の全体ではなく、`variable.ValidateVariableNameForScope` に渡す位置文字列の式（`validation.go:175` の `fmt.Sprintf("%s.%s", level, field)`）だけに絞る。同関数の他の箇所（`:151-152`・`:161-162`・`:178-179` のエラー型の構築を含む）は許可位置にしない。一時変数へ描画する書き方も、描画の位置で捉える。自己テストで、位置文字列の式は許容し、同じ関数内の他の平ら化（例: 検証の分岐で `errmsg.Text(level.String())` を書く）は拒否することを固定する。
 - **I-02（レベル・フィールドの型のガードが認識する名前）**: Phase 5 の同ファイルで、ガードが認識するのは level/field の意味スロットである。すなわち、正確な名前 `Level`・`Field` と、既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）である。名前が `Field` で終わる欄については、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）を拒否してはならない。ガードに明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する。この規則は `Location` のような別名の欄を捉えない。AC-04 の主たる確認は型ごとのセグメントのテストであり、検査は普通の書き方の誤りを補助的に捉えるものである。
 
 #### ガードの現状と本タスクの変更
@@ -103,7 +103,7 @@
 | wrap guard | `inScopeWholeFiles`・`inScopeFunctions`・`expansionExcludedFunctions`（`wrap_guard_test.go:43-98`） | 対象ファイルを加え、除外と関数単位の指定をなくす |
 | エラー型の網羅 | 無い | 新設。対象パッケージで `Error() string` を持つ型が `StructuredMessage() errmsg.Message` を持つことを確かめる（AC-01） |
 | レベル・フィールドの型 | 無い | 新設。エラー型の `Level`・`Field` 欄が型付きであることを確かめる（AC-04・AC-21） |
-| レベル・フィールドの値の流入 | 無い | 新設。`.String()` と `fmt` の `%s`・`%v`・`%q` で平らにされていないことを確かめる（AC-21） |
+| レベル・フィールドの値の流入 | 無い | 新設。`.String()` と `fmt` の `%s`・`%v`・`%q` で平らにされていないことを確かめる。許可位置は `validateVariableName` の位置文字列の式だけにする（AC-21） |
 
 #### 外部前提の確認
 
@@ -114,7 +114,7 @@
 
 #### 02 との食い違い
 
-- 02 §3.2 は `Level.String()`・`Field.String()` を残す理由に「`validateVariableName` が `variable.ValidateVariableNameForScope` に渡す位置の文字列」と「テンプレートの警告の文言」を挙げる。しかし `6742b265` では、位置の文字列（`validation.go:175`）以外に `Level`・`Field` を描画する本番の警告は無い（`internal`・`cmd` の `_test.go` を除く `*.go` を検索して確認）。決定は変えない。本計画は `String()` を残し、値の流入の検査の許可位置を `validateVariableName` だけにする。
+- 02 §3.2 は `Level.String()`・`Field.String()` を残す理由に「`validateVariableName` が `variable.ValidateVariableNameForScope` に渡す位置の文字列」と「テンプレートの警告の文言」を挙げる。しかし `6742b265` では、位置の文字列（`validation.go:175`）以外に `Level`・`Field` を描画する本番の警告は無い（`internal`・`cmd` の `_test.go` を除く `*.go` を検索して確認）。決定は変えない。本計画は `String()` を残し、値の流入の検査の許可位置を `validateVariableName` の位置文字列の式（`validation.go:175`）だけにする。
 
 ### 1.4 テストヘルパーの方針
 
@@ -247,8 +247,8 @@
 
 - [ ] `internal/runner/config_error_guard_test.go` に、02 §3.7 の「エラー型の網羅」の検査を実装する。対象パッケージ（`internal/runner/config`）で宣言され `Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は指す型として確かめる。対象の型の一覧は保守しない（AC-01）。
 - [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの型」の検査を実装する。level/field の意味スロット、すなわち正確な名前 `Level`・`Field` と既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）が型 `Level`・`Field` であることを確かめる。名前が `Field` で終わる欄でも、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）は拒否しない。明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する（I-02、AC-04・AC-21）。
-- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの値の流入」の検査を実装する。`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が (1) `.String()` で描画される形と、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数で `%s`・`%v`・`%q` として描画される形を検出し、許可位置（`validation.go` の `validateVariableName`）以外を拒否する（I-01、AC-21）。(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす。
-- [ ] 3 つの検査に、対象の実装を壊すと失敗することを示す自己テストを付ける。変異の例: `StructuredMessage` を持たないエラー型を加える、あるいは `Level` 欄を `string` に戻す、`Ident` の引数に `Level.String()` を渡す、`Ident` の引数に `fmt.Sprintf("%s", level)` を渡す、許可位置の外で `.String()` を呼ぶ（AC-22）。
+- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの値の流入」の検査を実装する。`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が (1) `.String()` で描画される形と、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数で `%s`・`%v`・`%q` として描画される形を検出する。許可位置は `validateVariableName` の全体ではなく、`variable.ValidateVariableNameForScope` に渡す位置文字列の式（`validation.go:175`）だけとし、同関数の他の箇所（エラー型の構築を含む）も含めてそれ以外を拒否する（I-01、AC-21）。(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす。
+- [ ] 3 つの検査に、対象の実装を壊すと失敗することを示す自己テストを付ける。変異の例: `StructuredMessage` を持たないエラー型を加える、あるいは `Level` 欄を `string` に戻す、`Ident` の引数に `Level.String()` を渡す、`Ident` の引数に `fmt.Sprintf("%s", level)` を渡す、許可位置の外で `.String()` を呼ぶ。値の流入の検査では、位置文字列の式は許容し、`validateVariableName` の他の分岐で `errmsg.Text(level.String())` を書くと拒否されることも確かめる（AC-22）。
 - [ ] `internal/runner/config/security_redaction_test.go` に、02 §7.3 の保護のテストを置く。`Text` として宣言した部分（拒否された名前・生の設定値）に値全体置換だけが反応する入力を与え、その部分が置換文字列になること（AC-18）。`Identifier` 以外の部分に値形式の検出だけが反応する値（GitHub トークン形式）を含む `env` のエントリやテンプレートの入力文字列が、変更後もマスクされること（AC-19）。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_PreExecutionConfigErrors_OutputContract` を加え、AC-16・AC-17 が名指しする producer をすべて駆動する。Phase 2〜4 で作った config エラーのシナリオ（`ExpandGlobal`・`ExpandGroup`・`ValidateAllTemplates`・`cli.FilterGroups`）に加え、AC-13 の producer であるコマンド・テンプレートの展開（`ExpandCommand`）を対象に含め、次の両方を確かめる。(1) stderr の `  Details:` のブロック全体（`stderrDetailsBlock`。missing-groups の `Available groups:` 行のような継続行を含む）の文言が変更前と同じであること（AC-16）。(2) 通知の件数・Scope・フィールドの構成が変更前と同じであること（`run.payloads`）と、`message_type`・`error_type` が変更前と同じであること（`jsonLogRecords` で読む JSON ログの属性）（AC-17）。
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、01 AC-23 の内容を追記する。システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前・存在しないテンプレートへの参照名・重複して定義されたテンプレート名を `Identifier` とすること、誤って秘密を名前の位置に書いた場合の保護の境界（`ErrTemplateContainsNameField` のテンプレート名を含む）を記す（AC-23）。
@@ -346,6 +346,7 @@
 | 5 | エラー型の `Level` 欄を `string` に戻す | `config_error_guard_test.go::TestConfigErrorLevelAndFieldTypesAreTyped` |
 | 5 | `Ident` の引数に `Level.String()` を渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField` |
 | 5 | `Ident` の引数に `fmt.Sprintf("%s", level)` を渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField` |
+| 5 | `validateVariableName` の位置文字列の式以外（例: 検証の分岐）で `level.String()` を `errmsg.Text` に渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField`（許可位置の自己テスト） |
 | 5 | `Text` の部分にも値全体置換を免除する | `security_redaction_test.go::TestTextSegmentsAreWholeValueReplaced` |
 | 5 | 日英どちらかから必須語を外す | `make verify-docs-checks`（`check_structured_message_redaction_docs.sh`） |
 
