@@ -287,7 +287,8 @@ func TestExpandGlobal_SystemEnvIncludesAllParsableEntries(t *testing.T) {
 // constants, its level/field/names with the right roles, keep the cause
 // reachable through errors.Is, and render the same string as before. Sites
 // whose cause is a not-yet-structured template error assert the outer constant
-// prefix and declared identifiers instead of a full segment list.
+// prefix (and, where the wrapper names something, the declared identifiers)
+// instead of a full segment list.
 func TestExpansionWrapSites_StructuredMessage(t *testing.T) {
 	deploy := groupLevel("deploy")
 
