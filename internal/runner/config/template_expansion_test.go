@@ -371,8 +371,8 @@ func TestTemplateExpansionWrapSites_StructuredMessage(t *testing.T) {
 			assert.Equal(t, tt.segments, nonConstantSegments(structured.StructuredMessage()))
 
 			// The DetermineScope cause must stay reachable through the wrap.
-			var target *variable.ErrReservedVariableName
-			require.True(t, errors.As(err, &target), "the DetermineScope cause must stay reachable")
+			target, ok := errors.AsType[*variable.ErrReservedVariableName](err)
+			require.True(t, ok, "the DetermineScope cause must stay reachable")
 			assert.Equal(t, "__foo", target.Name)
 		})
 	}
