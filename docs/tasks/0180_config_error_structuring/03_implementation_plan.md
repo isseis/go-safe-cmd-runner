@@ -4,10 +4,10 @@
 
 | Item | Value |
 |---|---|
-| Status | `draft` |
+| Status | `approved` |
 | Created | 2026-10-01 |
-| Review date | - |
-| Reviewer | - |
+| Review date | 2026-10-01 |
+| Reviewer | isseis |
 | Comments | - |
 
 ## 関連文書
@@ -132,12 +132,12 @@
 
 **Files**: `internal/errmsg/errmsg.go`・`internal/errmsg/errmsg_test.go`・`internal/errmsg/errmsg_guard_test.go`（変更）、`internal/runner/config/errors.go`・`internal/runner/config/errors_test.go`（変更）
 
-- [ ] 02 §3.4 の `errmsg.Quoted(parts ...Part) Part` を実装する。中の部分の列を持つ新しい部分の種類を加え、`Part.appendSegments`（`:218`）に、引用符を `Constant` の断片に、中の断片を役割を保ったまま `strconv.Quote` の規則でエスケープした断片の列に展開する分岐を加える。エスケープのしかたが全体の `strconv.Quote` と一致しない場合は引用の全体を 1 つの `Text` にする（fail-closed）。中の部分に原因があれば panic する。
-- [ ] `errmsgPartBuilders` に引用の部分を構築する関数（`Quoted` 自身か補助関数）を加える。`Quoted` が引用符のために `rolePart` を呼ぶなら `errmsgRoleChoosers["rolePart"]` にも加える。`TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg`・`TestProductionExemptRoleCallsAreInAllowedPositions` と各自己テストを更新する（AC-20・AC-22）。
-- [ ] `errmsg_test.go` に `Quoted` のテストを置く。`"`・`\`・非 ASCII の文字・不正な UTF-8 のバイト列・断片の境目で分かれる文字を含む入力で、描画が `strconv.Quote` と一致すること。境目で分かれる入力では引用の全体が 1 つの `Text` の断片になること。中の断片の役割が保たれること。原因の部分を渡すと panic すること（AC-14）。
-- [ ] `errors.go` の `Field` に 02 §3.2 の拡張を加える。`output_file` のキー、添字なしの形の `args`・`env_vars`・`cmd_allowed`、`vars` の名前の有無を表す独立の欄。`String()` と `parts()` の両方にキーと形を足し、添字と名前の有無で描画を切り替える。
-- [ ] `errors_test.go` の `TestLevelAndField_StringMatchesLegacyFormat` を、`fieldKey` のすべての値と添字・名前の有無を反復する形に広げる（手で書いたキーの一覧を使わない）。期待値は変更前の `fmt.Sprintf` を再現して組み立て、`parts()` をつないだ文字列が `String()` と一致すること、`errmsg.Quoted(f.parts()...)` の描画が `strconv.Quote(f.String())` と一致することも確かめる（AC-04・AC-14）。
-- [ ] 空文字列の `vars` のキーの扱いを固定する。`varField("")`・`varElementField("", i)` が、変更前の `fmt.Sprintf("vars.%s", "")`・`fmt.Sprintf("vars.%s[%d]", "", i)` と同じ `vars.`・`vars.[i]` を描画することをテストで確かめる（`hasName` を独立に持つ理由。AC-14）。
+- [x] 02 §3.4 の `errmsg.Quoted(parts ...Part) Part` を実装する。中の部分の列を持つ新しい部分の種類を加え、`Part.appendSegments`（`:218`）に、引用符を `Constant` の断片に、中の断片を役割を保ったまま `strconv.Quote` の規則でエスケープした断片の列に展開する分岐を加える。エスケープのしかたが全体の `strconv.Quote` と一致しない場合は引用の全体を 1 つの `Text` にする（fail-closed）。中の部分に原因があれば panic する。
+- [x] `errmsgPartBuilders` に引用の部分を構築する関数（`Quoted` 自身か補助関数）を加える。`Quoted` が引用符のために `rolePart` を呼ぶなら `errmsgRoleChoosers["rolePart"]` にも加える。`TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg`・`TestProductionExemptRoleCallsAreInAllowedPositions` と各自己テストを更新する（AC-20・AC-22）。
+- [x] `errmsg_test.go` に `Quoted` のテストを置く。`"`・`\`・非 ASCII の文字・不正な UTF-8 のバイト列・断片の境目で分かれる文字を含む入力で、描画が `strconv.Quote` と一致すること。境目で分かれる入力では引用の全体が 1 つの `Text` の断片になること。中の断片の役割が保たれること。原因の部分を渡すと panic すること（AC-14）。
+- [x] `errors.go` の `Field` に 02 §3.2 の拡張を加える。`output_file` のキー、添字なしの形の `args`・`env_vars`・`cmd_allowed`、`vars` の名前の有無を表す独立の欄。`String()` と `parts()` の両方にキーと形を足し、添字と名前の有無で描画を切り替える。
+- [x] `errors_test.go` の `TestLevelAndField_StringMatchesLegacyFormat` を、`fieldKey` のすべての値と添字・名前の有無を反復する形に広げる（手で書いたキーの一覧を使わない）。期待値は変更前の `fmt.Sprintf` を再現して組み立て、`parts()` をつないだ文字列が `String()` と一致すること、`errmsg.Quoted(f.parts()...)` の描画が `strconv.Quote(f.String())` と一致することも確かめる（AC-04・AC-14）。
+- [x] 空文字列の `vars` のキーの扱いを固定する。`varField("")`・`varElementField("", i)` が、変更前の `fmt.Sprintf("vars.%s", "")`・`fmt.Sprintf("vars.%s[%d]", "", i)` と同じ `vars.`・`vars.[i]` を描画することをテストで確かめる（`hasName` を独立に持つ理由。AC-14）。
 
 **完了条件**: `go test -tags test ./internal/errmsg/... ./internal/runner/config/...` が green。`errmsg` の本番ファイルが標準ライブラリだけを import する。`Field` の既存の描画（名前が空でない場合、および添字を持つ場合）が変わっていない。
 
@@ -149,8 +149,8 @@
 - **実装モデル要件**: frontier-required
 - **判定理由**: エスケープと断片の境目の扱いが本タスクの文言一致（AC-14）の土台であり、誤ると広範囲のエラー文言が変わる
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 

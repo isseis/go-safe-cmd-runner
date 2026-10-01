@@ -233,6 +233,79 @@ func TestNewError_RejectsInvalidCauses(t *testing.T) {
 	}
 }
 
+// TestQuoted_MatchesStrconvQuote pins Quoted's rendering to fmt's %q of the
+// unquoted text, byte for byte, for inputs whose escaping differs from the
+// raw text, while each inner segment keeps its declared role.
+func TestQuoted_MatchesStrconvQuote(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []Part
+	}{
+		{name: "empty", parts: nil},
+		{name: "plain identifier", parts: []Part{Ident("deploy")}},
+		{name: "quote and backslash", parts: []Part{Ident(`a"b\c`)}},
+		{name: "non-ASCII", parts: []Part{Ident("d\u00e9pl\u00f6y\u65e5")}},
+		{name: "control and non-printable", parts: []Part{Text("tab\there\n\x00\u200b")}},
+		{name: "invalid UTF-8", parts: []Part{Text("bad\xff\xfe")}},
+		{name: "incomplete rune at a boundary stays invalid", parts: []Part{Text("x\xc3"), Const("A")}},
+		{name: "several roles", parts: []Part{Const("group["), Ident(`g"1`), Const("]."), Path(`/p\q`), Text("\u00e9")}},
+		{name: "nested quoted", parts: []Part{Const("a "), Quoted(Ident(`b"c`))}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := NewMessage(tt.parts...)
+			quoted := NewMessage(Quoted(tt.parts...))
+			assert.Equal(t, strconv.Quote(raw.String()), quoted.String())
+			assert.Equal(t, fmt.Sprintf("%q", raw.String()), quoted.String())
+
+			// The marks are constants and the inner segments keep their roles.
+			rawSegments := raw.Segments()
+			got := quoted.Segments()
+			require.Len(t, got, len(rawSegments)+2)
+			assert.Equal(t, Segment{RoleConstant, `"`}, got[0])
+			assert.Equal(t, Segment{RoleConstant, `"`}, got[len(got)-1])
+			for i, s := range rawSegments {
+				q := strconv.Quote(s.Text)
+				assert.Equal(t, Segment{s.Role, q[1 : len(q)-1]}, got[i+1])
+			}
+		})
+	}
+}
+
+// TestQuoted_SplitRuneFallsBackToText pins the fail-closed rendering: a UTF-8
+// character split across two segments cannot be escaped segment by segment,
+// so the whole quoted text becomes one RoleText segment.
+func TestQuoted_SplitRuneFallsBackToText(t *testing.T) {
+	const word = "caf\u00e9"
+	cut := len(word) - 1 // inside the two-byte encoding of U+00E9
+	msg := NewMessage(Const("x "), Quoted(Ident(word[:cut]), Ident(word[cut:])), Const(" y"))
+
+	assert.Equal(t, Segments{
+		{RoleConstant, "x "},
+		{RoleText, strconv.Quote(word)},
+		{RoleConstant, " y"},
+	}, msg.Segments())
+	assert.Equal(t, "x "+strconv.Quote(word)+" y", msg.String())
+}
+
+// TestQuoted_RejectsCauses pins that a cause of any kind, alone or among other
+// parts, cannot be quoted.
+func TestQuoted_RejectsCauses(t *testing.T) {
+	assert.Panics(t, func() { Quoted(Cause(errors.New("boom"))) })
+	assert.Panics(t, func() { Quoted(Const("a"), PathErrorCause(errors.New("boom"))) })
+	assert.Panics(t, func() { Quoted(IndentedCause(errors.New("boom"))) })
+}
+
+// TestQuoted_IsNotACauseOfNewError pins that a quoted part never counts as the
+// cause NewError requires.
+func TestQuoted_IsNotACauseOfNewError(t *testing.T) {
+	assert.Panics(t, func() { NewError(Quoted(Ident("x"))) })
+
+	cause := errors.New("boom")
+	err := NewError(Const("command "), Quoted(Ident(`b"x`)), Const(": "), Cause(cause))
+	assert.Equal(t, fmt.Sprintf("command %q: %v", `b"x`, cause), err.Error())
+}
+
 func TestJoin_MatchesErrorsJoin(t *testing.T) {
 	first := errors.New("first")
 	second := NewError(Const("second "), Ident("g"), Const(": "), Cause(errors.New("boom")))

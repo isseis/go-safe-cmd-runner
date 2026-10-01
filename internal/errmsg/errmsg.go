@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -38,14 +39,19 @@ const (
 	causeIndented
 )
 
-// partKind declares whether a Part carries a role and text, or a cause.
-// The zero value is a role part.
+// partKind declares whether a Part carries a role and text, a cause, or a
+// quoted sequence of parts. The zero value is a role part.
 type partKind int
 
 const (
 	partRole partKind = iota
 	partCause
+	partQuoted
 )
+
+// quoteMark is the quotation mark Quoted renders around its parts, the one
+// strconv.Quote uses.
+const quoteMark = `"`
 
 // continuationIndent is inserted after each newline of an indented cause.
 // It is a constant of this package, so a caller cannot put its own bytes
@@ -60,6 +66,7 @@ type Part struct {
 	text      string
 	cause     error
 	causeKind causeKind
+	quoted    []Part
 }
 
 // Message is an error body as a sequence of parts. The zero value is an
@@ -154,6 +161,23 @@ func IndentedCause(err error) Part {
 	return causePart(causeIndented, err)
 }
 
+// Quoted declares parts rendered the way fmt's %q renders their concatenation.
+// Contract: the flattened text always equals strconv.Quote of the parts'
+// unquoted text. The quotation marks become RoleConstant segments and every
+// inner segment keeps its role with its text escaped by strconv.Quote's rules;
+// when escaping segment by segment would differ from escaping the whole (a
+// UTF-8 character split across segments), the whole quoted text becomes one
+// RoleText segment. A cause cannot be quoted: it would lose its role and stay
+// unreachable through Unwrap, so a cause part panics.
+func Quoted(parts ...Part) Part {
+	for _, p := range parts {
+		if p.kind == partCause {
+			panic("errmsg.Quoted: a cause part cannot be quoted")
+		}
+	}
+	return Part{kind: partQuoted, quoted: slices.Clone(parts)}
+}
+
 func rolePart(role Role, text string) Part {
 	return Part{kind: partRole, role: role, text: text}
 }
@@ -216,6 +240,9 @@ func (m Message) Freeze() Message {
 
 // appendSegments appends the segments of p to out.
 func (p Part) appendSegments(out Segments) Segments {
+	if p.kind == partQuoted {
+		return appendQuotedSegments(out, p.quoted)
+	}
 	if p.kind != partCause {
 		// Any role value, including one outside the declared set, is carried
 		// as is; redaction treats an unknown role as RoleText.
@@ -239,6 +266,30 @@ func (p Part) appendSegments(out Segments) Segments {
 	default:
 		return appendCauseSegments(out, p.cause)
 	}
+}
+
+// appendQuotedSegments appends the segments of a Quoted part (see Quoted for
+// the contract).
+func appendQuotedSegments(out Segments, parts []Part) Segments {
+	var inner Segments
+	for _, p := range parts {
+		inner = p.appendSegments(inner)
+	}
+	var raw, escaped strings.Builder
+	quoted := Segments{{Role: RoleConstant, Text: quoteMark}}
+	for _, s := range inner {
+		q := strconv.Quote(s.Text)
+		body := q[len(quoteMark) : len(q)-len(quoteMark)]
+		raw.WriteString(s.Text)
+		escaped.WriteString(body)
+		quoted = append(quoted, Segment{Role: s.Role, Text: body})
+	}
+	quoted = append(quoted, Segment{Role: RoleConstant, Text: quoteMark})
+	whole := strconv.Quote(raw.String())
+	if quoteMark+escaped.String()+quoteMark != whole {
+		return append(out, Segment{Role: RoleText, Text: whole})
+	}
+	return append(out, quoted...)
 }
 
 // appendCauseSegments appends the segments of one cause. Only the cause's own

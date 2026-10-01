@@ -6,6 +6,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestErrInvalidVariableNameDetail_Unwrap tests the Unwrap() method
@@ -82,10 +83,18 @@ func TestErrUndefinedVariableDetail_Unwrap(t *testing.T) {
 
 // TestLevelAndField_StringMatchesLegacyFormat pins that the typed Level and
 // Field render exactly the strings the old fmt.Sprintf call sites produced.
-// The expected values are rebuilt with the legacy expressions, and each case
-// also checks that String() equals the rendering of parts(), so the two
-// representations cannot drift.
+// The expected values are rebuilt with the legacy expressions. Every case also
+// checks that String() equals the rendering of parts(), so the two
+// representations cannot drift, and that quoting the parts renders what %q
+// rendered for the old string.
 func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
+	assertRendering := func(t *testing.T, want, got string, parts []errmsg.Part) {
+		t.Helper()
+		assert.Equal(t, want, got)
+		assert.Equal(t, got, errmsg.NewMessage(parts...).String())
+		assert.Equal(t, fmt.Sprintf("%q", want), errmsg.NewMessage(errmsg.Quoted(parts...)).String())
+	}
+
 	levelCases := []struct {
 		name string
 		got  Level
@@ -94,16 +103,61 @@ func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 		{"zero", Level{}, ""},
 		{"global", globalLevel(), "global"},
 		{"group", groupLevel("deploy"), fmt.Sprintf("group[%s]", "deploy")},
+		{"group with quote and backslash", groupLevel(`de"p\loy`), fmt.Sprintf("group[%s]", `de"p\loy`)},
 		{"command", commandLevel("build"), fmt.Sprintf("command[%s]", "build")},
 		{"template", templateLevel("tpl"), fmt.Sprintf("template[%s]", "tpl")},
 	}
 	for _, tc := range levelCases {
 		t.Run("level_"+tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.got.String())
-			assert.Equal(t, tc.got.String(), errmsg.NewMessage(tc.got.parts()...).String())
+			assertRendering(t, tc.want, tc.got.String(), tc.got.parts())
 		})
 	}
 
+	// Every key, with and without a name and an index: String(), parts() and
+	// Quoted must agree. Only vars is ever built with a name; the pin against
+	// the legacy call sites is the constructor table below. A key missing from
+	// legacyKeys fails the test.
+	legacyKeys := map[fieldKey]string{
+		fieldCmd:         "cmd",
+		fieldArgs:        "args",
+		fieldEnv:         "env",
+		fieldEnvVars:     "env_vars",
+		fieldEnvImport:   "env_import",
+		fieldWorkdir:     "workdir",
+		fieldVerifyFiles: "verify_files",
+		fieldCmdAllowed:  "cmd_allowed",
+		fieldVars:        "vars",
+		fieldOutputFile:  "output_file",
+	}
+	for key := range fieldKeyCount {
+		for _, name := range []string{"dest", "", "a\"b\\c\u00e9"} {
+			for _, hasName := range []bool{false, true} {
+				for _, hasIndex := range []bool{false, true} {
+					f := Field{key: key, name: name, hasName: hasName, index: 3, hasIndex: hasIndex}
+					var want string
+					if key != fieldNone {
+						word, ok := legacyKeys[key]
+						require.Truef(t, ok, "fieldKey %d has no legacy key word", key)
+						switch {
+						case hasName && hasIndex:
+							want = fmt.Sprintf("%s.%s[%d]", word, name, 3)
+						case hasName:
+							want = fmt.Sprintf("%s.%s", word, name)
+						case hasIndex:
+							want = fmt.Sprintf("%s[%d]", word, 3)
+						default:
+							want = word
+						}
+					}
+					t.Run(fmt.Sprintf("field_%d_%q_name=%t_index=%t", key, name, hasName, hasIndex), func(t *testing.T) {
+						assertRendering(t, want, f.String(), f.parts())
+					})
+				}
+			}
+		}
+	}
+
+	// The constructors build the forms the old call sites rendered.
 	fieldCases := []struct {
 		name string
 		got  Field
@@ -112,20 +166,26 @@ func TestLevelAndField_StringMatchesLegacyFormat(t *testing.T) {
 		{"zero", Field{}, ""},
 		{"cmd", cmdField(), "cmd"},
 		{"args", argsField(2), fmt.Sprintf("args[%d]", 2)},
+		{"args without index", argsFieldNoIndex(), "args"},
 		{"env", envField(), "env"},
 		{"env_vars", envVarsField(1), fmt.Sprintf("env_vars[%d]", 1)},
+		{"env_vars without index", envVarsFieldNoIndex(), "env_vars"},
 		{"env_import", envImportField(), "env_import"},
 		{"workdir", workdirField(), "workdir"},
+		{"output_file", outputFileField(), "output_file"},
 		{"verify_files", verifyFilesField(0), fmt.Sprintf("verify_files[%d]", 0)},
 		{"cmd_allowed", cmdAllowedField(3), fmt.Sprintf("cmd_allowed[%d]", 3)},
+		{"cmd_allowed without index", cmdAllowedFieldNoIndex(), "cmd_allowed"},
 		{"vars", varsField(), "vars"},
 		{"vars name", varField("dest"), fmt.Sprintf("vars.%s", "dest")},
 		{"vars element", varElementField("dest", 1), fmt.Sprintf("vars.%s[%d]", "dest", 1)},
+		// A quoted TOML key may be empty; the name is still present.
+		{"vars empty name", varField(""), fmt.Sprintf("vars.%s", "")},
+		{"vars empty name element", varElementField("", 2), fmt.Sprintf("vars.%s[%d]", "", 2)},
 	}
 	for _, tc := range fieldCases {
 		t.Run("field_"+tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, tc.got.String())
-			assert.Equal(t, tc.got.String(), errmsg.NewMessage(tc.got.parts()...).String())
+			assertRendering(t, tc.want, tc.got.String(), tc.got.parts())
 		})
 	}
 }
