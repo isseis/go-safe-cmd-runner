@@ -92,7 +92,7 @@
 #### 実装への引き継ぎ項目の扱い
 
 - **I-01（レベル・フィールドの値の流入をみるガードの網羅性）**: Phase 5 で、`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が描画済みの文字列に平らにされる形を検出する静的検査を `internal/runner/config_error_guard_test.go` に置く。対象は、(1) 値に対する `.String()` の呼び出し、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数のうち `%s`・`%v`・`%q` で描画される `config.Level`・`config.Field` の値、の 2 つである。`fmt` はメソッドを暗黙に呼ぶため、(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす（02 §7.4 の自己テストの例）。許可位置は `validation.go` の `validateVariableName`（`:175` の位置文字列）だけにする。一時変数へ描画する書き方も、描画の位置で捉える。自己テストで許可位置と拒否（`.String()` と `fmt.Sprintf("%s", level)` の両方）を固定する。
-- **I-02（レベル・フィールドの型のガードが認識する名前）**: Phase 5 の同ファイルで、名前が `Level` で終わる欄を `Level`、名前が `Field` で終わる欄を `Field` とみなす。認識する名前の規則は 1 か所で定義し、自己テストで固定する（`SourceField` のような名前の取りこぼしを防ぐ）。この接尾辞による規則は、`Location` のような別名の欄を捉えない。AC-04 の主たる確認は型ごとのセグメントのテストであり、検査は普通の書き方の誤りを補助的に捉えるものである。
+- **I-02（レベル・フィールドの型のガードが認識する名前）**: Phase 5 の同ファイルで、ガードが認識するのは level/field の意味スロットである。すなわち、正確な名前 `Level`・`Field` と、既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）である。名前が `Field` で終わる欄については、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）を拒否してはならない。ガードに明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する。この規則は `Location` のような別名の欄を捉えない。AC-04 の主たる確認は型ごとのセグメントのテストであり、検査は普通の書き方の誤りを補助的に捉えるものである。
 
 #### ガードの現状と本タスクの変更
 
@@ -166,8 +166,8 @@
 - [ ] `errmsg_guard_test.go` を更新する。`exemptRolePositions` に `errors.go` をファイル全体として加え、`inScopeExpansionFile`・`inScopeExpansionExclusions` と `declaresExemptRole` の例外をなくす。`pathErrorCausePositions` に `expansion.go` の `expandCmdAllowed` を加える。`PathErrorCause` の違反の文言を直す。`TestExemptRoleCallCheckRecognizesForms` の除外のケースを、除外が無くなった後の形に直す（AC-20・AC-22）。
 - [ ] `wrap_guard_test.go` を更新する。`inScopeWholeFiles` に `errors.go` を加え、`inScopeFunctions` から `errors.go` の 3 関数を外す。`TestScopeCatalogNamesExist`・`TestWrapCheckRecognizesForms` の関連を直す（AC-06・AC-20）。
 - [ ] `errors_test.go` の 27 か所の文字列の `Level`・`Field` を型付きの値に書き換える。`template_expansion_validation_test.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate`（errors.go の型）の文字列の `Field`（`:409`・`:421`）も、本 Phase で型付きの値に書き換える（書き換えないとパッケージのテストがコンパイルできない）。
-- [ ] `expansion_test.go` に `TestExpansionWrapSites_StructuredMessage` を加え、`expansion.go` のエラー書式の各箇所を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、原因が保たれること、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`errmsg.NewError` の panic が起きないこともこの実行で確かめる（AC-07・AC-14・AC-15）。
-- [ ] `errors_test.go` に `TestErrorTypes_StructuredMessageSegments`（各型の `StructuredMessage().Segments()` が 02 付録 A と一致すること）と `TestErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える（AC-02・AC-03・AC-05・AC-14）。
+- [ ] `expansion_test.go` に `TestExpansionWrapSites_StructuredMessage` を加え、`expansion.go` のエラー書式の各箇所を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、原因が保たれること、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`errmsg.NewError` の panic が起きないこともこの実行で確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする。これにより、引用・識別子を `errmsg.Quoted` を通さずに描画する実装が、ヘルパ単体のテストだけでなく箇所ごとの比較でも捉えられる（検証の義務であり、テストコードの構造は問わない）。
+- [ ] `errors_test.go` に `TestErrorTypes_StructuredMessageSegments`（各型の `StructuredMessage().Segments()` が 02 付録 A と一致すること）と `TestErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える（AC-02・AC-03・AC-05・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とし、引用・識別子を `errmsg.Quoted` を通さずに描画する実装を捉えられるようにする（検証の義務であり、テストコードの構造は問わない）。
 - [ ] 02 §3.7 に従い、`errmsg_guard_test.go` の `TestExemptRoleCallCheckRecognizesForms` のうち `inScopeExpansionFile` を定数として使うケース（`:680-682`）を、パスを直接書く形に直す（AC-22）。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に、group の展開（`env_import` の allowlist 違反）の Slack の `Error Message` にシステム環境変数の名前・変数名・group 名が出ることを確かめるテストを加える（AC-09）。global の `vars` の循環参照で経路の変数名が出ることを確かめるテストを加える（AC-10）。
 
@@ -196,8 +196,8 @@
 - [ ] `expandSingleArg`・`expandArrayPlaceholder`・`expandOptionalPlaceholder`・`expandStringPlaceholders`・`validateEnvPre`・`validateEnvPost` の欄を `Field` で受け渡す。`field == workDirKey` の文字列比較（`:255`）を `Field` のキーで判定する。`expansion.go` の `expandSingleArg` 呼び出し（`:1371`・`:1405`・`:1421`）も欄を `Field` にする。
 - [ ] `template_expansion.go` の 3 か所の `fmt.Errorf` を 02 §3.1・付録 A の役割で構造化する。`:708`・`:1135` の拒否された参照名は `Text`、`:512` はキーと原因を宣言する（AC-06・AC-07・AC-14・AC-15）。
 - [ ] `errmsg_guard_test.go` の `exemptRolePositions` に `template_errors.go`・`template_expansion.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも両ファイルを加える（AC-06・AC-20）。
-- [ ] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。
-- [ ] `template_expansion_test.go` に `TestTemplateExpansionWrapSites_StructuredMessage` を加え、`template_expansion.go` の 3 か所のエラー書式を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` の到達性を確かめる（AC-07・AC-14・AC-15）。
+- [ ] `template_errors_test.go` に `TestTemplateErrorTypes_StructuredMessageSegments`（各型のセグメントが 02 付録 A と一致すること）と `TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える。`template_param_expansion_test.go`・`template_field_constraints_test.go` の欄を型に合わせる（AC-02・AC-03・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
+- [ ] `template_expansion_test.go` に `TestTemplateExpansionWrapSites_StructuredMessage` を加え、`template_expansion.go` の 3 か所のエラー書式を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` の到達性を確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする（検証の義務であり、テストコードの構造は問わない）。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に、`ValidateAllTemplates` の失敗でテンプレート名と変数名が出ることを確かめるテスト（AC-11）と、コマンドの展開でテンプレートの展開が失敗しテンプレート名・パラメータ名・コマンド名・group 名が出ることを確かめるテスト（AC-13）を加える。
 
 **完了条件**: `internal/runner/config`・`cmd/runner` のテストが green。`template_errors.go` の各型の `Error()` の文言が変更前と同じである。AC-11・AC-13 のテストが green。
@@ -217,13 +217,14 @@
 
 ### Phase 4: `--groups`
 
-**Files**: `internal/runner/cli/filter.go`・`internal/runner/cli/filter_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`（変更）
+**Files**: `internal/runner/cli/filter.go`・`internal/runner/cli/filter_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`・`cmd/runner/integration_test_helpers.go`（変更）
 
 - [ ] 02 §3.5.3 のとおり、`filter.go` の `checkGroupsExist` の `config == nil` 分岐（`:50-52`）を削除する。
 - [ ] 存在しない group 名のエラー（`:84-85`）を `errmsg.NewError` で作る。センチネルエラー `ErrGroupNotFound` を原因、指定された名前と定義済みの group 名の各要素を `Identifier`、`%v` の括弧・区切り・固定の文言を `Constant` として宣言する。一覧の順序は変えない（AC-08）。
 - [ ] `errmsg_guard_test.go` の `exemptRolePositions` に `cli/filter.go` をファイル全体として加える。`wrap_guard_test.go` の `inScopeWholeFiles` にも `cli/filter.go` を加える（AC-06・AC-20）。
 - [ ] `filter_test.go` に `TestFilterGroups_GroupNotFoundStructuredMessage` を加え、存在しない group 名で返すエラーが `errmsg.Structured` を実装し、指定した名前と定義済みの group 名が `Identifier` で、`errors.Is(err, ErrGroupNotFound)` が成り立つことを確かめる。定義済みの group 名の一覧は順序に依らずに確かめる（02 §5.5）。`nil` config の結果が変わらないことを既存のテスト（`:121-125`）で確かめる（AC-08・AC-15）。
 - [ ] `cmd/runner/integration_pre_execution_error_test.go` に、`--groups` に存在しない名前を指定し指定した名前と定義済みの group 名が出ることを確かめるテストを加える（AC-12）。
+- [ ] `cmd/runner/integration_test_helpers.go` のハーネスを拡張し、シナリオが `--groups` を渡せるようにする。`slackRunSpec` に group 名の値（`groups`）を加え、`runMainWithSlackMock` が現在 `groups` を `""` にリセットしている箇所へその値を配線する。これが無いと AC-12 のシナリオは `cli.FilterGroups` に到達せず、テストは主張した理由で失敗できない。
 
 **完了条件**: `internal/runner/cli`・`cmd/runner` のテストが green。AC-08・AC-12 のテストが green。
 
@@ -245,11 +246,11 @@
 **Files**: `internal/runner/config_error_guard_test.go`（新規・`//go:build test`）、`internal/runner/config/security_redaction_test.go`（新規）、`internal/logging`・`internal/runner`・`cmd/runner` の既存テスト（追加）、`docs/dev/architecture_design/security-architecture.ja.md`・`.md`、`docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md`、`scripts/verification/check_structured_message_redaction_docs.sh`・`..._selftest.sh`
 
 - [ ] `internal/runner/config_error_guard_test.go` に、02 §3.7 の「エラー型の網羅」の検査を実装する。対象パッケージ（`internal/runner/config`）で宣言され `Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は指す型として確かめる。対象の型の一覧は保守しない（AC-01）。
-- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの型」の検査を実装する。エラー型の名前が `Level` で終わる欄が型 `Level`、`Field` で終わる欄が型 `Field` であることを確かめる。認識する名前の規則は 1 か所で定義し、自己テストで固定する（I-02、AC-04・AC-21）。
+- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの型」の検査を実装する。level/field の意味スロット、すなわち正確な名前 `Level`・`Field` と既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）が型 `Level`・`Field` であることを確かめる。名前が `Field` で終わる欄でも、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）は拒否しない。明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する（I-02、AC-04・AC-21）。
 - [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの値の流入」の検査を実装する。`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が (1) `.String()` で描画される形と、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数で `%s`・`%v`・`%q` として描画される形を検出し、許可位置（`validation.go` の `validateVariableName`）以外を拒否する（I-01、AC-21）。(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす。
 - [ ] 3 つの検査に、対象の実装を壊すと失敗することを示す自己テストを付ける。変異の例: `StructuredMessage` を持たないエラー型を加える、あるいは `Level` 欄を `string` に戻す、`Ident` の引数に `Level.String()` を渡す、`Ident` の引数に `fmt.Sprintf("%s", level)` を渡す、許可位置の外で `.String()` を呼ぶ（AC-22）。
 - [ ] `internal/runner/config/security_redaction_test.go` に、02 §7.3 の保護のテストを置く。`Text` として宣言した部分（拒否された名前・生の設定値）に値全体置換だけが反応する入力を与え、その部分が置換文字列になること（AC-18）。`Identifier` 以外の部分に値形式の検出だけが反応する値（GitHub トークン形式）を含む `env` のエントリやテンプレートの入力文字列が、変更後もマスクされること（AC-19）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_PreExecutionConfigErrors_OutputContract` を加え、Phase 2〜4 で作った config エラーのシナリオ（`ExpandGlobal`・`ExpandGroup`・`ValidateAllTemplates`・`cli.FilterGroups`）を通して次を確かめる。(1) stderr の `  Details:` の行（`stderrDetailsLine`）の文言が変更前と同じであること（AC-16）。(2) 通知の件数・Scope・フィールドの構成が変更前と同じであること（`run.payloads`）と、`message_type`・`error_type` が変更前と同じであること（`jsonLogRecords` で読む JSON ログの属性）（AC-17）。
+- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_PreExecutionConfigErrors_OutputContract` を加え、AC-16・AC-17 が名指しする producer をすべて駆動する。Phase 2〜4 で作った config エラーのシナリオ（`ExpandGlobal`・`ExpandGroup`・`ValidateAllTemplates`・`cli.FilterGroups`）に加え、AC-13 の producer であるコマンド・テンプレートの展開（`ExpandCommand`）を対象に含め、次の両方を確かめる。(1) stderr の `  Details:` のブロック全体（`stderrDetailsBlock`。missing-groups の `Available groups:` 行のような継続行を含む）の文言が変更前と同じであること（AC-16）。(2) 通知の件数・Scope・フィールドの構成が変更前と同じであること（`run.payloads`）と、`message_type`・`error_type` が変更前と同じであること（`jsonLogRecords` で読む JSON ログの属性）（AC-17）。
 - [ ] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、01 AC-23 の内容を追記する。システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前・存在しないテンプレートへの参照名・重複して定義されたテンプレート名を `Identifier` とすること、誤って秘密を名前の位置に書いた場合の保護の境界（`ErrTemplateContainsNameField` のテンプレート名を含む）を記す（AC-23）。
 - [ ] `docs/dev/architecture_design/security-architecture.md` を `/mktrans` で日本語版と同じ内容に反映する。用語集に不足があれば登録する（AC-23）。
 - [ ] `docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md` の対象の範囲の記述（`expansion.go` の除外、config の `*...Detail` 型を範囲外とする例外）に、本タスクで範囲に入ったことを注記する（02 §3.6）。
@@ -307,10 +308,10 @@
 
 ### 4.1 単体テスト
 
-- エラー型ごと（`errors_test.go`・`template_errors_test.go`）: `StructuredMessage().Segments()` の役割が 02 付録 A と一致すること、`Error()` が変更前の `fmt.Sprintf` の結果と一致すること（AC-02・AC-03・AC-05・AC-14）。変更前の文言はテストの中で再現して比べる。
+- エラー型ごと（`errors_test.go`・`template_errors_test.go`）: `StructuredMessage().Segments()` の役割が 02 付録 A と一致すること、`Error()` が変更前の `fmt.Sprintf` の結果と一致すること（AC-02・AC-03・AC-05・AC-14）。変更前の文言はテストの中で再現して比べる。以前 `%q` を使っていた各エラー型の比較では、`"` と `\` を含む値を少なくとも 1 つ実行し、引用・識別子を `errmsg.Quoted` を通さずに描画する実装を捉える（検証の義務）。
 - `errmsg.Quoted`（`errmsg_test.go`）: 02 §7.1 の入力と契約（AC-14）。
 - `Field`（`errors_test.go`）: `fieldKey` のすべての値と添字・名前の有無を反復し、`String()`・`parts()`・`strconv.Quote` の一致（AC-04・AC-14）。
-- エラー書式（`expansion_test.go`・`template_expansion_test.go`）: `TestExpansionWrapSites_StructuredMessage`・`TestTemplateExpansionWrapSites_StructuredMessage` で各箇所を実行し、固定の文言が `Constant`、名前が 02 §3.1 の役割、組み立てた `Error()` が変更前と同じであること、`errors.Is`・`errors.AsType` が変更前と同じ原因に届くこと（AC-07・AC-14・AC-15）。
+- エラー書式（`expansion_test.go`・`template_expansion_test.go`）: `TestExpansionWrapSites_StructuredMessage`・`TestTemplateExpansionWrapSites_StructuredMessage` で各箇所を実行し、固定の文言が `Constant`、名前が 02 §3.1 の役割、組み立てた `Error()` が変更前と同じであること、`errors.Is`・`errors.AsType` が変更前と同じ原因に届くこと（AC-07・AC-14・AC-15）。以前 `%q` を使っていた各箇所の比較では、`"` と `\` を含む値を少なくとも 1 つ実行する（検証の義務）。
 - `cli.FilterGroups`（`filter_test.go`）: `errmsg.Structured`・役割・`errors.Is`（AC-08）。
 - 保護（`security_redaction_test.go`）: 02 §7.3（AC-18・AC-19）。
 
@@ -397,8 +398,8 @@
 | AC-13 | Phase 3 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_CommandTemplateExpansionIdentifiersSurviveRedaction` |
 | AC-14 | Phase 1・2・3・4 | `test`: `internal/errmsg/errmsg_test.go::TestQuoted_MatchesStrconvQuote`・`internal/runner/config/errors_test.go::TestErrorTypes_ErrorMessageMatchesLegacyFormat`・`internal/runner/config/template_errors_test.go::TestTemplateErrorTypes_ErrorMessageMatchesLegacyFormat`・`TestExpansionWrapSites_StructuredMessage`・`TestTemplateExpansionWrapSites_StructuredMessage`。`--groups` のエラーは定義済み group 名の一覧が map の反復順であり（02 §5.5）、一覧の部分は順序に依らずに確かめる（バイト一致の対象は残りの固定の部分） |
 | AC-15 | Phase 2・3・4 | `test`: `TestExpansionWrapSites_StructuredMessage`・`TestTemplateExpansionWrapSites_StructuredMessage`・`filter_test.go::TestFilterGroups_GroupNotFoundStructuredMessage` の `errors.Is`・`errors.AsType` の確認 |
-| AC-16 | Phase 5 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_PreExecutionConfigErrors_OutputContract`（config エラーのシナリオで `stderrDetailsLine` の文言を比較する） |
-| AC-17 | Phase 5 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_PreExecutionConfigErrors_OutputContract`（config エラーのシナリオで `run.payloads` の件数・Scope・フィールドの構成と、`jsonLogRecords` で読む `message_type`・`error_type` を比較する） |
+| AC-16 | Phase 5 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_PreExecutionConfigErrors_OutputContract`（config エラーのシナリオで `stderrDetailsBlock` により Details ブロック全体の文言を比較する。コマンド・テンプレートの展開のシナリオも含む） |
+| AC-17 | Phase 5 | `test`: `cmd/runner/integration_pre_execution_error_test.go::TestIntegration_PreExecutionConfigErrors_OutputContract`（config エラーのシナリオで `run.payloads` の件数・Scope・フィールドの構成と、`jsonLogRecords` で読む `message_type`・`error_type` を比較する。コマンド・テンプレートの展開のシナリオも含む） |
 | AC-18 | Phase 5 | `test`: `internal/runner/config/security_redaction_test.go::TestTextSegmentsAreWholeValueReplaced` |
 | AC-19 | Phase 5 | `test`: `internal/runner/config/security_redaction_test.go::TestNonIdentifierSegmentsMaskValueFormats` |
 | AC-20 | Phase 2・3・4・5 | `static`: `internal/errmsg/errmsg_guard_test.go::TestProductionExemptRoleCallsAreInAllowedPositions`・`TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg` と `internal/runner/wrap_guard_test.go::TestInScopeWrapsUseStructuredErrors`・`TestInScopeErrorTypesDeclareStructuredMessage` と各自己テスト |
