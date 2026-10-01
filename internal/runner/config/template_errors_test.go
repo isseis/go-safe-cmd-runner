@@ -89,13 +89,18 @@ type templateErrorCase struct {
 func templateErrorCases() []templateErrorCase {
 	const qName = "a\"b\\c"
 	const qBody = "a\\\"b\\\\c"
+	// Distinct values for rows rendering two or more such fields, so a field swap fails.
+	const qName2 = "d\"e\\f"
+	const qBody2 = "d\\\"e\\\\f"
+	const qName3 = "g\"h\\i"
+	const qBody3 = "g\\\"h\\\\i"
 
 	return []templateErrorCase{
 		{
 			name:     "ErrTemplateNotFound",
-			err:      &ErrTemplateNotFound{CommandName: qName, TemplateName: qName},
-			legacy:   fmt.Sprintf("template %q not found (referenced by command %q)", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody}},
+			err:      &ErrTemplateNotFound{CommandName: qName2, TemplateName: qName},
+			legacy:   fmt.Sprintf("template %q not found (referenced by command %q)", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody2}},
 		},
 		{
 			name:   "ErrTemplateFieldConflict",
@@ -153,51 +158,51 @@ func templateErrorCases() []templateErrorCase {
 		},
 		{
 			name:     "ErrRequiredParamMissing",
-			err:      &ErrRequiredParamMissing{TemplateName: qName, Field: argsField(0), ParamName: qName},
-			legacy:   fmt.Sprintf("template %q args[0]: required parameter %q not provided", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleIdentifier, Text: qBody}},
+			err:      &ErrRequiredParamMissing{TemplateName: qName, Field: argsField(0), ParamName: qName2},
+			legacy:   fmt.Sprintf("template %q args[0]: required parameter %q not provided", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleIdentifier, Text: qBody2}},
 		},
 		{
 			name:     "ErrTemplateTypeMismatch",
-			err:      &ErrTemplateTypeMismatch{TemplateName: qName, Field: argsField(1), ParamName: qName, Expected: typeNameString, Actual: typeNameArray},
-			legacy:   fmt.Sprintf("template %q args[1]: parameter %q expected %s, got %s", qName, qName, typeNameString, typeNameArray),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: typeNameString}, {Role: errmsg.RoleText, Text: typeNameArray}},
+			err:      &ErrTemplateTypeMismatch{TemplateName: qName, Field: argsField(1), ParamName: qName2, Expected: typeNameString, Actual: typeNameArray},
+			legacy:   fmt.Sprintf("template %q args[1]: parameter %q expected %s, got %s", qName, qName2, typeNameString, typeNameArray),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleIdentifier, Text: qBody2}, {Role: errmsg.RoleText, Text: typeNameString}, {Role: errmsg.RoleText, Text: typeNameArray}},
 		},
 		{
 			name:     "ErrPlaceholderInEnvKey",
-			err:      &ErrPlaceholderInEnvKey{TemplateName: qName, EnvEntry: qName, Key: qName},
-			legacy:   fmt.Sprintf("template %q env: placeholder in key %q is not allowed (env entry: %q) - only values can contain placeholders", qName, qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: qBody}, {Role: errmsg.RoleText, Text: qBody}},
+			err:      &ErrPlaceholderInEnvKey{TemplateName: qName, EnvEntry: qName3, Key: qName2},
+			legacy:   fmt.Sprintf("template %q env: placeholder in key %q is not allowed (env entry: %q) - only values can contain placeholders", qName, qName2, qName3),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: qBody2}, {Role: errmsg.RoleText, Text: qBody3}},
 		},
 		{
 			name:     "ErrTemplateInvalidEnvFormat",
-			err:      &ErrTemplateInvalidEnvFormat{TemplateName: qName, Field: envVarsField(0), Entry: qName},
-			legacy:   fmt.Sprintf("template %q env_vars[0]: invalid env format: %q (expected KEY=VALUE format)", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: qBody}},
+			err:      &ErrTemplateInvalidEnvFormat{TemplateName: qName, Field: envVarsField(0), Entry: qName2},
+			legacy:   fmt.Sprintf("template %q env_vars[0]: invalid env format: %q (expected KEY=VALUE format)", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: qBody2}},
 		},
 		{
 			name:     "ErrTemplateInvalidEnvFormat expanded",
-			err:      &ErrTemplateInvalidEnvFormat{TemplateName: qName, Field: envVarsField(0), ExpandedIndex: 1, Entry: qName},
-			legacy:   fmt.Sprintf("template %q env_vars[0]: invalid env format in expanded element [1]: %q (expected KEY=VALUE format)", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleText, Text: qBody}},
+			err:      &ErrTemplateInvalidEnvFormat{TemplateName: qName, Field: envVarsField(0), ExpandedIndex: 1, Entry: qName2},
+			legacy:   fmt.Sprintf("template %q env_vars[0]: invalid env format in expanded element [1]: %q (expected KEY=VALUE format)", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleText, Text: qBody2}},
 		},
 		{
 			name:     "ErrArrayInMixedContext",
-			err:      &ErrArrayInMixedContext{TemplateName: qName, Field: cmdField(), ParamName: qName},
-			legacy:   fmt.Sprintf("template %q cmd: array parameter ${@%s} cannot be used in mixed context", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qName}},
+			err:      &ErrArrayInMixedContext{TemplateName: qName, Field: cmdField(), ParamName: qName2},
+			legacy:   fmt.Sprintf("template %q cmd: array parameter ${@%s} cannot be used in mixed context", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qName2}},
 		},
 		{
 			name:     "ErrTemplateInvalidArrayElement",
-			err:      &ErrTemplateInvalidArrayElement{TemplateName: qName, Field: envVarsField(0), ParamName: qName, Index: 1, ActualType: "int"},
-			legacy:   fmt.Sprintf("template %q env_vars[0]: array parameter %q contains non-string element at index %d (type: %s)", qName, qName, 1, "int"),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleText, Text: "int"}},
+			err:      &ErrTemplateInvalidArrayElement{TemplateName: qName, Field: envVarsField(0), ParamName: qName2, Index: 1, ActualType: "int"},
+			legacy:   fmt.Sprintf("template %q env_vars[0]: array parameter %q contains non-string element at index %d (type: %s)", qName, qName2, 1, "int"),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleIdentifier, Text: qBody2}, {Role: errmsg.RoleText, Text: "1"}, {Role: errmsg.RoleText, Text: "int"}},
 		},
 		{
 			name:     "ErrUnsupportedParamType",
-			err:      &ErrUnsupportedParamType{TemplateName: qName, Field: varsField(), ParamName: qName, ActualType: "int"},
-			legacy:   fmt.Sprintf("template %q vars: parameter %q has unsupported type %s (expected string or []string)", qName, qName, "int"),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: "int"}},
+			err:      &ErrUnsupportedParamType{TemplateName: qName, Field: varsField(), ParamName: qName2, ActualType: "int"},
+			legacy:   fmt.Sprintf("template %q vars: parameter %q has unsupported type %s (expected string or []string)", qName, qName2, "int"),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody2}, {Role: errmsg.RoleText, Text: "int"}},
 		},
 		{
 			name:     "ErrEmptyPlaceholderName",
@@ -219,9 +224,9 @@ func templateErrorCases() []templateErrorCase {
 		},
 		{
 			name:     "ErrInvalidPlaceholderName",
-			err:      &ErrInvalidPlaceholderName{Input: qName, Position: 0, Name: qName, Reason: "bad"},
-			legacy:   fmt.Sprintf("invalid placeholder name %q at position %d in %q: %s", qName, 0, qName, "bad"),
-			segments: errmsg.Segments{{Role: errmsg.RoleText, Text: qBody}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: qBody}, {Role: errmsg.RoleText, Text: "bad"}},
+			err:      &ErrInvalidPlaceholderName{Input: qName, Position: 0, Name: qName2, Reason: "bad"},
+			legacy:   fmt.Sprintf("invalid placeholder name %q at position %d in %q: %s", qName2, 0, qName, "bad"),
+			segments: errmsg.Segments{{Role: errmsg.RoleText, Text: qBody2}, {Role: errmsg.RoleText, Text: "0"}, {Role: errmsg.RoleText, Text: qBody}, {Role: errmsg.RoleText, Text: "bad"}},
 		},
 		{
 			name:     "ErrTemplateCmdNotSingleValue zero",
@@ -237,15 +242,15 @@ func templateErrorCases() []templateErrorCase {
 		},
 		{
 			name:     "ErrDuplicateEnvVariableDetail",
-			err:      &ErrDuplicateEnvVariableDetail{TemplateName: qName, Field: envVarsFieldNoIndex(), EnvKey: qName},
-			legacy:   fmt.Sprintf("template %q env_vars: duplicate environment variable key %q", qName, qName),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: qBody}},
+			err:      &ErrDuplicateEnvVariableDetail{TemplateName: qName, Field: envVarsFieldNoIndex(), EnvKey: qName2},
+			legacy:   fmt.Sprintf("template %q env_vars: duplicate environment variable key %q", qName, qName2),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleText, Text: qBody2}},
 		},
 		{
 			name:     "ErrTemplateVarUnexpectedMultipleValues",
-			err:      &ErrTemplateVarUnexpectedMultipleValues{TemplateName: qName, Field: varField(qName)},
-			legacy:   fmt.Sprintf("template %q field %q: unexpected multiple values from expansion", qName, varField(qName)),
-			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody}},
+			err:      &ErrTemplateVarUnexpectedMultipleValues{TemplateName: qName, Field: varField(qName2)},
+			legacy:   fmt.Sprintf("template %q field %q: unexpected multiple values from expansion", qName, varField(qName2)),
+			segments: errmsg.Segments{{Role: errmsg.RoleIdentifier, Text: qBody}, {Role: errmsg.RoleIdentifier, Text: qBody2}},
 		},
 	}
 }
