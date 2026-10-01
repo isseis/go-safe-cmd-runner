@@ -267,7 +267,7 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 3 つの検査の対象の決め方と、層を切り分ける保護のテストの組み立てに設計の理解が要る
 
-- [ ] `make test && make lint` が green であることを確認した
+- [x] `make test && make lint` が green であることを確認した
 - [ ] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
