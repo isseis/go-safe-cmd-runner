@@ -250,7 +250,8 @@ func isValidateVariableNameForScope(pkg *wrapTypedPackage, call *ast.CallExpr) b
 }
 
 // assignedCall returns the call expression that produces the value of expr: the
-// call itself, or the call assigned to the local variable expr names.
+// call itself, or the call bound to the variable expr names by an assignment
+// (location := ...) or a var declaration (var location = ...).
 func assignedCall(pkg *wrapTypedPackage, expr ast.Expr) ast.Expr {
 	expr = identitymutationguard.UnwrapParen(expr)
 	if _, ok := expr.(*ast.CallExpr); ok {
@@ -273,22 +274,33 @@ func assignedCall(pkg *wrapTypedPackage, expr ast.Expr) ast.Expr {
 			if found != nil {
 				return false
 			}
-			assign, ok := n.(*ast.AssignStmt)
-			if !ok || len(assign.Rhs) != 1 {
+			var names, values []ast.Expr
+			switch decl := n.(type) {
+			case *ast.AssignStmt:
+				names, values = decl.Lhs, decl.Rhs
+			case *ast.ValueSpec:
+				for _, name := range decl.Names {
+					names = append(names, name)
+				}
+				values = decl.Values
+			default:
 				return true
 			}
-			rhs := identitymutationguard.UnwrapParen(assign.Rhs[0])
+			if len(values) != 1 {
+				return true
+			}
+			rhs := identitymutationguard.UnwrapParen(values[0])
 			if _, ok := rhs.(*ast.CallExpr); !ok {
 				return true
 			}
-			for _, lhs := range assign.Lhs {
-				lhsIdent, ok := identitymutationguard.UnwrapParen(lhs).(*ast.Ident)
+			for _, name := range names {
+				nameIdent, ok := identitymutationguard.UnwrapParen(name).(*ast.Ident)
 				if !ok {
 					continue
 				}
-				def := pkg.info.Defs[lhsIdent]
+				def := pkg.info.Defs[nameIdent]
 				if def == nil {
-					def = pkg.info.Uses[lhsIdent]
+					def = pkg.info.Uses[nameIdent]
 				}
 				if def == obj {
 					found = rhs
@@ -339,24 +351,29 @@ func fmtFlatteningCall(pkg *wrapTypedPackage, call *ast.CallExpr) (args []ast.Ex
 	return args, name, len(args) > 0
 }
 
-// fmtFlatteningArgs returns the value arguments a constant format string
-// renders with a flattening verb. The format string is at index formatIdx and
-// the value arguments follow it.
+// fmtFlatteningArgs returns the value arguments a format string renders with a
+// flattening verb. The format string is at index formatIdx and the value
+// arguments follow it. When the format argument has no constant string value,
+// every value argument may be rendered by a flattening verb, so all of them are
+// returned: the check fails closed rather than missing a flattening.
 func fmtFlatteningArgs(pkg *wrapTypedPackage, all []ast.Expr, formatIdx int) []ast.Expr {
 	if len(all) <= formatIdx {
 		return nil
 	}
-	tv, ok := pkg.info.Types[all[formatIdx]]
-	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+	values := all[formatIdx+1:]
+	if len(values) == 0 {
 		return nil
 	}
-	format := constant.StringVal(tv.Value)
-	indexes := flatteningVerbArgIndexes(format)
+	tv, ok := pkg.info.Types[all[formatIdx]]
+	if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+		return values
+	}
+	indexes := flatteningVerbArgIndexes(constant.StringVal(tv.Value))
 	if len(indexes) == 0 {
 		return nil
 	}
 	var args []ast.Expr
-	for i, arg := range all[formatIdx+1:] {
+	for i, arg := range values {
 		if indexes[i+1] {
 			args = append(args, arg)
 		}
@@ -366,10 +383,12 @@ func fmtFlatteningArgs(pkg *wrapTypedPackage, all []ast.Expr, formatIdx int) []a
 
 // flatteningVerbArgIndexes returns the 1-based positions of the value arguments
 // that a constant format string renders with a flattening verb (%s, %v or %q).
-// It follows fmt's argument indexing: the implicit sequential counter, an
-// explicit %[n] index, and the arguments consumed by a * width or precision.
-// Non-flattening verbs still advance the counter, so a value used only with one
-// of them is never attributed to a flattening verb.
+// It follows fmt's argument indexing: an explicit [n] index, the implicit
+// sequential counter, and the arguments consumed by a * width or precision. A
+// [n] index may follow a * width or precision, so "%[2]*[1]s" renders argument
+// 1 with %s while argument 2 supplies the width. Non-flattening verbs still
+// advance the counter, so a value used only with one of them is never
+// attributed to a flattening verb.
 func flatteningVerbArgIndexes(format string) map[int]bool {
 	out := map[int]bool{}
 	next := 1
@@ -383,39 +402,53 @@ func flatteningVerbArgIndexes(format string) map[int]bool {
 			i++
 			continue
 		}
+		// Optional explicit argument index.
+		if n, ni, ok := parseArgIndex(format, i); ok {
+			next, i = n, ni
+		}
+		// Flags.
 		for i < len(format) && strings.ContainsRune("+#- 0", rune(format[i])) {
 			i++
 		}
-		if i < len(format) && format[i] == '[' {
-			j := i + 1
-			for j < len(format) && format[j] != ']' {
-				j++
-			}
-			if j < len(format) {
-				if n, err := strconv.Atoi(format[i+1 : j]); err == nil && n > 0 {
-					next = n
-				}
-				i = j + 1
-			}
+		// Optional explicit argument index after the flags.
+		if n, ni, ok := parseArgIndex(format, i); ok {
+			next, i = n, ni
 		}
+		// Width: digits, or a * that consumes an argument and may be followed
+		// by an explicit argument index.
 		if i < len(format) && format[i] == '*' {
-			next++
 			i++
+			next++
+			if n, ni, ok := parseArgIndex(format, i); ok {
+				next, i = n, ni
+			}
 		} else {
 			for i < len(format) && format[i] >= '0' && format[i] <= '9' {
 				i++
 			}
 		}
+		// Precision: digits, or a * that consumes an argument and may be
+		// followed by an explicit argument index.
 		if i < len(format) && format[i] == '.' {
 			i++
+			if n, ni, ok := parseArgIndex(format, i); ok {
+				next, i = n, ni
+			}
 			if i < len(format) && format[i] == '*' {
-				next++
 				i++
+				next++
+				if n, ni, ok := parseArgIndex(format, i); ok {
+					next, i = n, ni
+				}
 			} else {
 				for i < len(format) && format[i] >= '0' && format[i] <= '9' {
 					i++
 				}
 			}
+		}
+		// Optional explicit argument index before the verb.
+		if n, ni, ok := parseArgIndex(format, i); ok {
+			next, i = n, ni
 		}
 		if i >= len(format) {
 			break
@@ -429,6 +462,27 @@ func flatteningVerbArgIndexes(format string) map[int]bool {
 		next++
 	}
 	return out
+}
+
+// parseArgIndex reads an explicit fmt argument index "[n]" at format[i]. It
+// reports whether one was present and returns the 1-based index and the index
+// just past the closing bracket.
+func parseArgIndex(format string, i int) (n, next int, ok bool) {
+	if i >= len(format) || format[i] != '[' {
+		return 0, i, false
+	}
+	j := i + 1
+	for j < len(format) && format[j] != ']' {
+		j++
+	}
+	if j >= len(format) {
+		return 0, i, false
+	}
+	v, err := strconv.Atoi(format[i+1 : j])
+	if err != nil || v <= 0 {
+		return 0, i, false
+	}
+	return v, j + 1, true
 }
 
 // configGuardPackage returns the type-checked config package the guards read.
@@ -540,6 +594,15 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 	secondBody := "func validateVariableName(l Level, fld Field) string {\n\tlocation := fmt.Sprintf(\"%s.%s\", l, fld)\n\t_ = variable.ValidateVariableNameForScope(\"x\", variable.ScopeLocal, location)\n\treturn fmt.Sprintf(\"%s.%s\", l, fld)\n}\n"
 	assert.Len(t, configFlattenedLevelFieldValues(syntheticAllowed(secondBody)), 1)
 
+	// Self-test: a var-declared location expression is accepted too.
+	varAllowedBody := "func validateVariableName(l Level, fld Field) string {\n\tvar location = fmt.Sprintf(\"%s.%s\", l, fld)\n\t_ = variable.ValidateVariableNameForScope(\"x\", variable.ScopeLocal, location)\n\treturn location\n}\n"
+	assert.Empty(t, configFlattenedLevelFieldValues(syntheticAllowed(varAllowedBody)))
+
+	// Self-test: a wrong-position "%s.%s" next to a var-declared location
+	// expression is reported.
+	varSecondBody := "func validateVariableName(l Level, fld Field) string {\n\tvar location = fmt.Sprintf(\"%s.%s\", l, fld)\n\t_ = variable.ValidateVariableNameForScope(\"x\", variable.ScopeLocal, location)\n\treturn fmt.Sprintf(\"%s.%s\", l, fld)\n}\n"
+	assert.Len(t, configFlattenedLevelFieldValues(syntheticAllowed(varSecondBody)), 1)
+
 	// Self-test: a Level rendered with %s elsewhere is reported.
 	pkg := syntheticWrapPackage(t, "internal/runner/config/x.go",
 		pkgLine+fmtImport+roleTypes+"func f(l Level) string { return fmt.Sprintf(\"%s\", l) }\n")
@@ -571,6 +634,18 @@ func TestConfigProductionDoesNotFlattenLevelOrField(t *testing.T) {
 
 	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
 		pkgLine+fmtImport+roleTypes+"func f(l Level) []byte { return fmt.Append(nil, l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	// Self-test: a nonconstant format string fails closed, so a Level that may
+	// be rendered by a flattening verb is reported.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(l Level, format string) string { return fmt.Sprintf(format, l) }\n")
+	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
+
+	// Self-test: an explicit index may follow a * width, so %[2]*[1]s renders
+	// argument 1 (the Level) and argument 2 supplies the width.
+	pkg = syntheticWrapPackage(t, "internal/runner/config/x.go",
+		pkgLine+fmtImport+roleTypes+"func f(level Level, width int) string { return fmt.Sprintf(\"%[2]*[1]s\", level, width) }\n")
 	assert.Len(t, configFlattenedLevelFieldValues(pkg), 1)
 
 	// Self-test: a flattening verb binds only the argument it consumes. Here
