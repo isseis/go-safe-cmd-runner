@@ -839,8 +839,8 @@ func (e *InvalidPathError) Is(target error) bool {
 // ErrDuplicatePathDetail provides detailed information about duplicate paths in cmd_allowed.
 // This error is returned when the same path string appears multiple times in the configuration.
 type ErrDuplicatePathDetail struct {
-	Level      Level  // e.g., "group[mygroup]"
-	Field      Field  // e.g., "cmd_allowed"
+	Level      Level  // The group or command scope
+	Field      Field  // The field being expanded (cmd_allowed)
 	Path       string // The duplicated path string
 	FirstIndex int    // Index of first occurrence
 	DupeIndex  int    // Index of duplicate occurrence
@@ -876,8 +876,8 @@ func (e *ErrDuplicatePathDetail) Unwrap() error {
 // This error is returned when different path strings (potentially after variable expansion)
 // resolve to the same actual file after symlink resolution.
 type ErrDuplicateResolvedPathDetail struct {
-	Level        Level  // e.g., "group[mygroup]"
-	Field        Field  // e.g., "cmd_allowed"
+	Level        Level  // The group or command scope
+	Field        Field  // The field being expanded (cmd_allowed)
 	OriginalPath string // The original path from config
 	ResolvedPath string // The resolved path that is duplicated
 }
@@ -1144,9 +1144,9 @@ type ErrArrayVariableInStringContextDetail struct {
 	Chain        []string // expansion path leading to this error
 }
 
-// StructuredMessage declares the variable name and the expansion path as
-// identifiers, quoted the way fmt's %q rendered them; the level and field carry
-// their own roles.
+// StructuredMessage declares the variable name as a quoted identifier and the
+// names on the expansion path as identifiers (rendered unquoted, as the legacy
+// strings.Join did); the level and field carry their own roles.
 func (e *ErrArrayVariableInStringContextDetail) StructuredMessage() errmsg.Message {
 	parts := []errmsg.Part{errmsg.Const("cannot reference array variable ")}
 	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
@@ -1212,7 +1212,7 @@ func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
 // ErrLocalVariableInTemplate is returned when a template references a local variable
 type ErrLocalVariableInTemplate struct {
 	TemplateName string
-	Field        Field // e.g., "cmd", "args[0]", "env[PATH]"
+	Field        Field // The field being expanded
 	VariableName string
 }
 

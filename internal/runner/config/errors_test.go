@@ -778,3 +778,32 @@ func TestExpandCmdAllowed_ResolvePathCauseKeepsPath(t *testing.T) {
 	legacy := fmt.Sprintf("group[deploy] cmd_allowed[0] '%s': failed to resolve path: %s", raw, pathErr)
 	assert.Equal(t, legacy, err.Error())
 }
+
+// TestErrorType_StructuredCauseIdentifiersSurvive pins that a structured
+// cause's Identifier survives through the outer error's StructuredMessage and
+// stays reachable through errors.As. Both cause-bearing config types carry an
+// unstructured cause in production, so this drives the contract with a
+// structured one.
+func TestErrorType_StructuredCauseIdentifiersSurvive(t *testing.T) {
+	inner := errmsg.NewError(
+		errmsg.Const("inner: "),
+		errmsg.Ident("api_key"),
+		errmsg.Const(": "),
+		errmsg.Cause(errors.New("boom")),
+	)
+	outer := &ErrInvalidVariableScopeDetail{
+		Level:        groupLevel("deploy"),
+		Field:        varsField(),
+		VariableName: "v",
+		Err:          inner,
+	}
+
+	got := nonConstantSegments(outer.StructuredMessage())
+	assert.Contains(t, got, errmsg.Segment{Role: errmsg.RoleIdentifier, Text: "api_key"},
+		"the inner Identifier must survive through the outer error")
+	assert.Contains(t, got, errmsg.Segment{Role: errmsg.RoleIdentifier, Text: "deploy"})
+
+	var reached *errmsg.Error
+	require.True(t, errors.As(outer, &reached), "the structured cause must stay reachable")
+	assert.Equal(t, inner, reached)
+}
