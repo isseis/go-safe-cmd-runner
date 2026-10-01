@@ -14,6 +14,7 @@
 
 - 要件: [01_requirements.md](01_requirements.md)（`approved`、`dc4585de`）。
 - `design_handoff.md` はない。要件のレビューから設計へ送られた懸念はない。
+- 実装レベルの懸念（ガードとそのテストの作り方）は [implementation_handoff.md](implementation_handoff.md) に集める。実装計画（03）が各項目の扱いを記す。
 - 既存コードの挙動についての記述は、特に断らない限りコミット `dc4585de` で確認した。`file:line` はこのコミットの行番号である。
 - 本書は契約・不変条件・対象の範囲を確定する。箇所ごとの部分の並び、構築関数の名前、テストの作り方は実装計画（03）で決める。
 - 仕組みの土台は Task 0178 の `internal/errmsg` である（[0178 02_architecture.md](../0178_structured_error_message_redaction/02_architecture.md)）。本書は 0178 の用語をそのまま使う。
@@ -266,6 +267,7 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 - `Field` に次を加える。どれも既存の描画を変えない。
   - `output_file` のキー（テンプレートの `output_file` の展開で使う）。
   - 添字を持たない形の `args`・`env_vars`・`cmd_allowed`。既存の `String()` は、これらのキーでは常に添字を描画する。これを「添字を持つときだけ描画する」に改めても、既存の結果は変わらない。既存の構築関数は、いずれも常に添字を持たせているからである（`errors.go:268-285`）。
+  - `vars.<name>` の名前の有無を表す欄を、`hasIndex` と同じく独立して持つ。`name == ""` を「名前なし」の意味に使うと、名前が空文字列の `vars` のキー（有効な引用された TOML キー `""`）で `vars.` が `vars` になり、`Error()` のバイトが変わる。名前の有無を別の欄で持つことで、`varField("")` でも `vars.` と描画し、01 AC-14 を満たす。
 - `Field` の `String()` と `parts()` は、キーごとの分岐を 2 つ持つ（`errors.go:289-353`）。加えるキーと形は両方に入れ、両者が一致することを、`fieldKey` のすべての値を反復するテストで確かめる（手で書いたキーの一覧は使わない）。
 - テンプレートの展開の関数（`expandSingleArg` など）は、フィールドを文字列ではなく `Field` で受け取る。`expandArrayPlaceholder` が `field == workDirKey` の文字列比較で作業ディレクトリかを判定している箇所（`template_expansion.go:255`）は、`Field` のキーで判定する。
 - `Level.String()`・`Field.String()` は残す。`validateVariableName` が `variable.ValidateVariableNameForScope` に渡す位置の文字列（`validation.go:175`）と、テンプレートの警告の文言が使う。`Level`・`Field` の値を、`parts()` を通さずに役割付きの部分の材料にはしない（3.7 節のガード）。
@@ -288,7 +290,7 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 - `errmsg.Quoted` の契約: 平らにした結果をつないだ文字列は、中の部分を引用せずに描画した文字列 `s` に対する `strconv.Quote(s)` と、常にバイト単位で一致する。`strconv.Quote` は UTF-8 の文字の単位でエスケープするので、断片ごとにエスケープした結果がこれと一致しないのは、断片の境目で 1 つの文字が分かれている場合だけである。その場合は、引用の全体（引用符を含む）を 1 つの `Text` の断片にする（fail-closed）。
 - エスケープの処理を `errmsg` の中に置くのは、0178 の方針（免除の役割の断片に入るバイトは、宣言された値・定数式・`errmsg` が持つ固定の文字のどれかであり、呼び出し側が整形のために渡すバイトは入らない。0178 02 §1.1・§3.8.2）に合わせるためである。`IndentedCause` の字下げと同じ位置づけであり、エスケープ文字は `errmsg` が決める。
 - `errmsg.Part` は 1 つの断片か 1 つの原因を表す構造なので（`errmsg.go:57-63`）、`errmsg.Quoted` のために、中の部分の列を持つ部分の種類を加える。種類ごとに断片へ展開するのは `Part.appendSegments`（`errmsg.go:218`）であり、`Message.Segments`・`Freeze`・`String` はこれを通る。先頭の `p.kind != partCause` の分岐（`errmsg.go:219-223`）の前に、新しい種類を上の規則で断片の列に展開する分岐を加える。
-- `errmsg.Quoted` の中に原因の部分を置いた場合は、引用の全体を 1 つの `Text` の断片にする（fail-closed）。中の原因は `errmsg.NewError` の「原因はちょうど 1 つ」の数に入らず、`Unwrap` でも届かない。本タスクの箇所では原因を引用しない。
+- `errmsg.Quoted` に原因の部分を渡すと panic する。`errmsg.NewError` が「原因はちょうど 1 つ」の不変条件を満たさない入力を panic で拒否するのと同じく、原因を引用の中に置くと `Unwrap` で届かないまま役割を失うので、黙って平らにせず拒否する。本タスクの箇所では原因を引用しない。
 - 採らない案:
   - 呼び出し側で `strconv.Quote` を適用して `errmsg.Ident` などに渡す案。呼び出し側の整形のバイトが免除の役割の断片に入り、上の 0178 の方針に反する。`Field` のように複数の部分からなる値では、`parts()` と同じ分岐を引用用にもう 1 つ持つことになる。
   - 引用符を含めた全体を 1 つの部分にする案。`Field` のように複数の部分からなる値には使えない。
@@ -341,8 +343,8 @@ Legend: 実線の矢印は呼び出し、破線の矢印は戻り値としての
 | `Const` の定数式の検査 | 変更なし | AC-20 |
 | wrap guard（`fmt.Errorf` などの禁止と、`Unwrap` を持つ型の `StructuredMessage` の要求） | `errors.go`・`template_errors.go`・`template_expansion.go`・`cli/filter.go` をファイル全体の範囲に加える。`expansion.go` の除外と、`errors.go` の関数単位の指定をなくす | AC-06・AC-20 |
 | エラー型の網羅（新規） | 検査の対象に指定したパッケージ（現時点では `internal/runner/config` だけ）で宣言され、`Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は、それが指す型として確かめる | AC-01 |
-| レベル・フィールドの型（新規） | `internal/runner/config` のエラー型に、名前が `Level`・`Field` の欄と、名前が `Level` で終わる欄で、型が `string` のものがないことを確かめる | AC-04・AC-21 |
-| レベル・フィールドの値の流入（新規） | `internal/runner/config` と `internal/runner/cli` で、`errmsg` の役割を宣言する構築関数の引数の式の中に、型が `Level`・`Field` の値が、`parts()` の呼び出しの受け手以外の形で現れないことを確かめる。`Level.String()` の呼び出しも、`fmt.Sprintf("%s", level)` のような書式による暗黙の描画も、この条件で拒否される | AC-21 |
+| レベル・フィールドの型（新規） | `internal/runner/config` のエラー型で、レベル・フィールドを表す欄が、描画済みの文字列（`string`）ではなく型付きの `Level`・`Field` であることを確かめる。欄をどう特定するかは実装計画（03）で決める（[implementation_handoff.md](implementation_handoff.md) I-02） | AC-04・AC-21 |
+| レベル・フィールドの値の流入（新規） | `internal/runner/config` と `internal/runner/cli` で、`Level`・`Field` が描画済みの文字列に平らにされて役割を失わないことを確かめる。どの式の形を拒否するかは実装計画（03）で決める（[implementation_handoff.md](implementation_handoff.md) I-01） | AC-21 |
 
 - 許可位置は、どれもファイル全体にする。関数の単位で指定すると、エラー型の `StructuredMessage` と補助関数の一覧を保守することになり、01 決定事項 5 の方針（一覧を保守しない）に反する。4 つのファイルは、どれもエラー型か設定の展開・`--groups` の検証のエラーを作るファイルである。
 - 許可位置のガードが確かめるのは、`errmsg.Ident`・`errmsg.Path` を直接呼ぶ位置だけである。`Level` の構築関数（`groupLevel` など）と `Field` の構築関数（`varField` など）は、受け取った名前を `parts()` で `Identifier` として宣言するので、許可位置の外（`validation.go` など）から生の値を渡しても、ガードは検出しない。これは 0178 の `Level`・`Field` の設計から引き継いだ制約であり、本タスクでは変えない。本タスクで `Level`・`Field` を欄に持つ型が増える分、生の値を渡す誤りが入りうる箇所も増える。残るリスクとして 5.2 節に記す。
@@ -427,7 +429,7 @@ func Quoted(parts ...Part) Part
 ### 4.2 失敗時の扱い
 
 - `errmsg.NewError` は、原因の部分がちょうど 1 つで、その原因が `nil` でないことを求め、満たさなければ panic する（`errmsg.go` の `NewError`）。設定の展開の経路には `recover` がないので、作る箇所を誤ると、エラーを報告する代わりに実行全体が止まり、Slack の通知も送られない。そのため、エラー書式の各箇所を少なくとも 1 つのテストで実行する（7.1 節）。各箇所の原因は、直前の `if err != nil` の `err` か、`nil` でないセンチネルエラーである。
-- `errmsg.Quoted` は panic しない。エスケープのしかたが一致しない場合は、3.4 節の fail-closed の規則で 1 つの `Text` の断片にする。
+- `errmsg.Quoted` は、中の部分に原因が含まれると panic する（3.4 節）。原因が含まれない場合は panic しない。エスケープのしかたが一致しない場合は、3.4 節の fail-closed の規則で 1 つの `Text` の断片にする。
 - `ErrInvalidVariableScopeDetail.Err` は、`%s` で描画していた。`Err` が `nil` なら、変更前は `%!s(<nil>)`、変更後は `errmsg.Cause` の描画で `<nil>` になる。唯一の構築箇所は `Err` に `nil` でない値だけを入れるので（`validation.go:176-182`、`if err != nil` の中）、この違いは現れない。`ErrTemplateFileInvalidFormat.ParseError` は `%v` で描画していたので、`nil` のときも `<nil>` で変わらない。
 - 構造化メッセージを返さない原因（go-toml のエラー、`variable` パッケージのスコープのエラー、`os` のエラー）は、`Error()` 全体が 1 つの `Text` の断片になり、その断片に変更前と同じ規則を断片の単位で適用する（隣の名前による付随的な置換がなくなる点は 5.1 節で述べ、5.2 節の X4 に挙げる）。
 
@@ -578,7 +580,7 @@ Legend: 2.1 節の Legend と同じ色分けを使う（緑は本タスクで変
 ### 7.1 単体テスト
 
 - エラー型ごと: `StructuredMessage().Segments()` の役割が付録 A と一致すること、`Error()` が変更前の `fmt.Sprintf` の結果と一致すること（01 AC-02・AC-03・AC-14）。変更前の文言は、テストの中に変更前の書式を再現して比べる。
-- `errmsg.Quoted`: `"`・`\`・非 ASCII の文字・不正な UTF-8 のバイト列・断片の境目で分かれる文字を含む入力で、描画が `strconv.Quote` と一致すること。境目で文字が分かれる入力では、引用の全体が 1 つの `Text` の断片になること。中の断片の役割が保たれること（3.4 節）。
+- `errmsg.Quoted`: `"`・`\`・非 ASCII の文字・不正な UTF-8 のバイト列・断片の境目で分かれる文字を含む入力で、描画が `strconv.Quote` と一致すること。境目で文字が分かれる入力では、引用の全体が 1 つの `Text` の断片になること。中の断片の役割が保たれること。原因の部分を渡すと panic すること（3.4 節）。
 - `Field`: `fieldKey` のすべての値と添字の有無を反復し、`parts()` をつないだ文字列が `String()` と一致すること、`errmsg.Quoted(f.parts()...)` の描画が `strconv.Quote(f.String())` と一致すること（3.2 節）。
 - 原因を持つ型: 構造化メッセージを返す原因の `Identifier` の断片が、外側を通しても `Identifier` のまま残ること（01 AC-05）。
 - エラー書式: 各箇所を実行し、固定の文言が `Constant`、名前が 3.1 節の役割であり、`errors.Is`・`errors.AsType` が変更前と同じ原因に届くこと（01 AC-07・AC-15）。`errmsg.NewError` の panic が起きないことも、この実行で確かめられる。
