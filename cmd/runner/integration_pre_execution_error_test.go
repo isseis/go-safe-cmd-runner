@@ -969,9 +969,16 @@ cmd = %q
 		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
 
 	errorMessage := attachmentField(t, fields, "Error Message")
-	for _, want := range []string{"token_rotate", "GITHUB_TOKEN", "gh"} {
+	// Each Identifier is matched with its fixed delimiters, so a bare
+	// substring elsewhere in the message (e.g. "gh" inside another word)
+	// cannot stand in for a redacted Identifier.
+	for _, want := range []string{
+		"system environment variable 'GITHUB_TOKEN' not in allowlist",
+		"(referenced as 'gh' in ",
+		"group[token_rotate]",
+	} {
 		assert.Contains(t, errorMessage, want,
-			"the Identifier %q must survive redaction: %q", want, errorMessage)
+			"the Identifier in %q must survive redaction: %q", want, errorMessage)
 	}
 	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
 		"the whole body must not be replaced; the env_import failure must stay readable")
