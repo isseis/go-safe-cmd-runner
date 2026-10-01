@@ -191,8 +191,8 @@ func processVarRefs(
 	// Check recursion depth to prevent stack overflow
 	if depth >= MaxRecursionDepth {
 		return "", &ErrMaxRecursionDepthExceededDetail{
-			Level:    level.String(),
-			Field:    field.String(),
+			Level:    level,
+			Field:    field,
 			MaxDepth: MaxRecursionDepth,
 			Context:  input,
 		}
@@ -217,8 +217,8 @@ func processVarRefs(
 			default:
 				// Invalid escape sequence
 				return "", &ErrInvalidEscapeSequenceDetail{
-					Level:    level.String(),
-					Field:    field.String(),
+					Level:    level,
+					Field:    field,
 					Sequence: input[i : i+2],
 					Context:  input,
 				}
@@ -233,8 +233,8 @@ func processVarRefs(
 			if closeIdx == -1 {
 				// Unclosed %{ - return unclosed variable reference error
 				return "", &ErrUnclosedVariableReferenceDetail{
-					Level:   level.String(),
-					Field:   field.String(),
+					Level:   level,
+					Field:   field,
 					Context: input,
 				}
 			}
@@ -245,8 +245,8 @@ func processVarRefs(
 			// Validate variable name using existing security validation
 			if err := security.ValidateVariableName(varName); err != nil {
 				return "", &ErrInvalidVariableNameDetail{
-					Level:        level.String(),
-					Field:        field.String(),
+					Level:        level,
+					Field:        field,
 					VariableName: varName,
 					Reason:       err.Error(),
 				}
@@ -255,8 +255,8 @@ func processVarRefs(
 			// Check for circular reference
 			if _, ok := visited[varName]; ok {
 				return "", &ErrCircularReferenceDetail{
-					Level:        level.String(),
-					Field:        field.String(),
+					Level:        level,
+					Field:        field,
 					VariableName: varName,
 					Chain:        append(expansionChain, varName),
 				}
@@ -297,7 +297,7 @@ func ProcessEnvImport(
 		internalName, systemVarName, ok := common.ParseKeyValue(mapping)
 		if !ok {
 			return nil, &ErrInvalidEnvImportFormatDetail{
-				Level:   level.String(),
+				Level:   level,
 				Mapping: mapping,
 				Reason:  "must be in 'internal_name=SYSTEM_VAR' format",
 			}
@@ -311,8 +311,8 @@ func ProcessEnvImport(
 		// Check for duplicate definition
 		if _, exists := result[internalName]; exists {
 			return nil, &ErrDuplicateVariableDefinitionDetail{
-				Level:        level.String(),
-				Field:        envImportField().String(),
+				Level:        level,
+				Field:        envImportField(),
 				VariableName: internalName,
 			}
 		}
@@ -320,8 +320,8 @@ func ProcessEnvImport(
 		// Validate system variable name
 		if err := security.ValidateVariableName(systemVarName); err != nil {
 			return nil, &ErrInvalidSystemVariableNameDetail{
-				Level:              level.String(),
-				Field:              envImportField().String(),
+				Level:              level,
+				Field:              envImportField(),
 				SystemVariableName: systemVarName,
 				Reason:             err.Error(),
 			}
@@ -329,14 +329,21 @@ func ProcessEnvImport(
 
 		// Reject forbidden variables
 		if environment.IsForbiddenEnvVar(systemVarName) {
-			return nil, fmt.Errorf("%w: %s cannot be imported via env_import (level: %s)",
-				ErrForbiddenEnvVar, systemVarName, level.String())
+			parts := []errmsg.Part{
+				errmsg.Cause(ErrForbiddenEnvVar),
+				errmsg.Const(": "),
+				errmsg.Text(systemVarName),
+				errmsg.Const(" cannot be imported via env_import (level: "),
+			}
+			parts = append(parts, level.parts()...)
+			parts = append(parts, errmsg.Const(")"))
+			return nil, errmsg.NewError(parts...)
 		}
 
 		// Check allowlist
 		if _, ok := allowlistMap[systemVarName]; !ok {
 			return nil, &ErrVariableNotInAllowlistDetail{
-				Level:           level.String(),
+				Level:           level,
 				SystemVarName:   systemVarName,
 				InternalVarName: internalName,
 				Allowlist:       envAllowlist,
@@ -423,8 +430,8 @@ func (e *varExpander) resolveVariable(
 	// Check if it's an array variable (cannot be used in string context)
 	if _, ok := e.expandedArrayVars[varName]; ok {
 		return "", &ErrArrayVariableInStringContextDetail{
-			Level:        e.level.String(),
-			Field:        field.String(),
+			Level:        e.level,
+			Field:        field,
 			VariableName: varName,
 			Chain:        append(expansionChain, varName),
 		}
@@ -484,8 +491,8 @@ func (e *varExpander) resolveVariable(
 	case []any:
 		// Array variable referenced in string context
 		return "", &ErrArrayVariableInStringContextDetail{
-			Level:        e.level.String(),
-			Field:        field.String(),
+			Level:        e.level,
+			Field:        field,
 			VariableName: varName,
 			Chain:        append(expansionChain, varName),
 		}
@@ -493,7 +500,7 @@ func (e *varExpander) resolveVariable(
 	default:
 		// This shouldn't happen as we validate types in ProcessVars
 		return "", &ErrUnsupportedTypeDetail{
-			Level:        e.level.String(),
+			Level:        e.level,
 			VariableName: varName,
 			ActualType:   fmt.Sprintf("%T", rawVal),
 		}
@@ -536,7 +543,7 @@ func ProcessVars(
 	// Check total variable count
 	if len(vars) > MaxVarsPerLevel {
 		return nil, nil, &ErrTooManyVariablesDetail{
-			Level:    level.String(),
+			Level:    level,
 			Count:    len(vars),
 			MaxCount: MaxVarsPerLevel,
 		}
@@ -589,10 +596,10 @@ func validateAndClassifyVars(
 		if envImportVars != nil {
 			if _, existsInEnvImport := envImportVars[varName]; existsInEnvImport {
 				return nil, nil, &ErrEnvImportVarsConflictDetail{
-					Level:          level.String(),
+					Level:          level,
 					VariableName:   varName,
-					EnvImportLevel: level.String(), // Same level conflict for now
-					VarsLevel:      level.String(),
+					EnvImportLevel: level, // Same level conflict for now
+					VarsLevel:      level,
 				}
 			}
 		}
@@ -613,7 +620,7 @@ func validateAndClassifyVars(
 
 		default:
 			return nil, nil, &ErrUnsupportedTypeDetail{
-				Level:        level.String(),
+				Level:        level,
 				VariableName: varName,
 				ActualType:   fmt.Sprintf("%T", rawValue),
 			}
@@ -633,7 +640,7 @@ func validateStringVar(
 	// Check if overriding an array variable with a string
 	if _, ok := baseExpandedArrays[varName]; ok {
 		return &ErrTypeMismatchDetail{
-			Level:        level.String(),
+			Level:        level,
 			VariableName: varName,
 			ExpectedType: typeNameArray,
 			ActualType:   typeNameString,
@@ -643,7 +650,7 @@ func validateStringVar(
 	// Check string length
 	if len(value) > MaxStringValueLen {
 		return &ErrValueTooLongDetail{
-			Level:        level.String(),
+			Level:        level,
 			VariableName: varName,
 			Length:       len(value),
 			MaxLength:    MaxStringValueLen,
@@ -663,7 +670,7 @@ func validateArrayVar(
 	// Check if overriding a string variable with an array
 	if _, ok := baseExpandedVars[varName]; ok {
 		return &ErrTypeMismatchDetail{
-			Level:        level.String(),
+			Level:        level,
 			VariableName: varName,
 			ExpectedType: typeNameString,
 			ActualType:   typeNameArray,
@@ -673,7 +680,7 @@ func validateArrayVar(
 	// Check array size
 	if len(value) > MaxArrayElements {
 		return &ErrArrayTooLargeDetail{
-			Level:        level.String(),
+			Level:        level,
 			VariableName: varName,
 			Count:        len(value),
 			MaxCount:     MaxArrayElements,
@@ -685,7 +692,7 @@ func validateArrayVar(
 		str, ok := elem.(string)
 		if !ok {
 			return &ErrInvalidArrayElementDetail{
-				Level:        level.String(),
+				Level:        level,
 				VariableName: varName,
 				Index:        i,
 				ExpectedType: typeNameString,
@@ -694,7 +701,7 @@ func validateArrayVar(
 		}
 		if len(str) > MaxStringValueLen {
 			return &ErrArrayElementTooLongDetail{
-				Level:        level.String(),
+				Level:        level,
 				VariableName: varName,
 				Index:        i,
 				Length:       len(str),
@@ -774,7 +781,7 @@ func ProcessEnv(
 		envVarName, envVarValue, ok := common.ParseKeyValue(mapping)
 		if !ok {
 			return nil, &ErrInvalidEnvFormatDetail{
-				Level:   level.String(),
+				Level:   level,
 				Mapping: mapping,
 				Reason:  "must be in 'VAR=value' format",
 			}
@@ -783,7 +790,7 @@ func ProcessEnv(
 		// Validate environment variable name
 		if err := security.ValidateVariableName(envVarName); err != nil {
 			return nil, &ErrInvalidEnvKeyDetail{
-				Level:   level.String(),
+				Level:   level,
 				Key:     envVarName,
 				Context: mapping,
 				Reason:  err.Error(),
@@ -792,15 +799,22 @@ func ProcessEnv(
 
 		// Reject forbidden variables
 		if environment.IsForbiddenEnvVar(envVarName) {
-			return nil, fmt.Errorf("%w: %s cannot be set via env_vars (level: %s)",
-				ErrForbiddenEnvVar, envVarName, level.String())
+			parts := []errmsg.Part{
+				errmsg.Cause(ErrForbiddenEnvVar),
+				errmsg.Const(": "),
+				errmsg.Text(envVarName),
+				errmsg.Const(" cannot be set via env_vars (level: "),
+			}
+			parts = append(parts, level.parts()...)
+			parts = append(parts, errmsg.Const(")"))
+			return nil, errmsg.NewError(parts...)
 		}
 
 		// Check for duplicate definition
 		if _, exists := expandedEnvVars[envVarName]; exists {
 			return nil, &ErrDuplicateVariableDefinitionDetail{
-				Level:        level.String(),
-				Field:        envField().String(),
+				Level:        level,
+				Field:        envField(),
 				VariableName: envVarName,
 			}
 		}
@@ -840,7 +854,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	// Create RuntimeGlobal using NewRuntimeGlobal to properly initialize timeout field
 	runtime, err := runnertypes.NewRuntimeGlobal(spec)
 	if err != nil {
-		return nil, errmsg.NewError(errmsg.Text("failed to create RuntimeGlobal: "), errmsg.Cause(err))
+		return nil, errmsg.NewError(errmsg.Const("failed to create RuntimeGlobal: "), errmsg.Cause(err))
 	}
 
 	// 0. Parse system environment once and cache it
@@ -855,7 +869,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	// 1. Process EnvImport
 	envImportVars, err := ProcessEnvImport(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, globalLevel())
 	if err != nil {
-		return nil, errmsg.NewError(errmsg.Text("failed to process global env_import: "), errmsg.Cause(err))
+		return nil, errmsg.NewError(errmsg.Const("failed to process global env_import: "), errmsg.Cause(err))
 	}
 	// Store env_import variables for conflict detection
 	runtime.EnvImportVars = envImportVars
@@ -912,8 +926,8 @@ func expandCmdAllowed(
 	for i, rawPath := range rawPaths {
 		if firstIdx, exists := seenRaw[rawPath]; exists {
 			return nil, &ErrDuplicatePathDetail{
-				Level:      groupLevel(groupName).String(),
-				Field:      "cmd_allowed",
+				Level:      groupLevel(groupName),
+				Field:      cmdAllowedFieldNoIndex(),
 				Path:       rawPath,
 				FirstIndex: firstIdx,
 				DupeIndex:  i,
@@ -928,7 +942,11 @@ func expandCmdAllowed(
 		// 2. Empty string check
 		if rawPath == "" {
 			return nil, errmsg.NewError(
-				errmsg.Text(fmt.Sprintf("group[%s] cmd_allowed[%d]: ", groupName, i)),
+				errmsg.Const("group["),
+				errmsg.Ident(groupName),
+				errmsg.Const("] cmd_allowed["),
+				errmsg.Text(strconv.Itoa(i)),
+				errmsg.Const("]: "),
 				errmsg.Cause(ErrEmptyPath),
 			)
 		}
@@ -969,16 +987,22 @@ func expandCmdAllowed(
 		normalized, err := filepath.EvalSymlinks(expanded)
 		if err != nil {
 			return nil, errmsg.NewError(
-				errmsg.Text(fmt.Sprintf("group[%s] cmd_allowed[%d] '%s': failed to resolve path: ", groupName, i, expanded)),
-				errmsg.Cause(err),
+				errmsg.Const("group["),
+				errmsg.Ident(groupName),
+				errmsg.Const("] cmd_allowed["),
+				errmsg.Text(strconv.Itoa(i)),
+				errmsg.Const("] '"),
+				errmsg.Path(expanded),
+				errmsg.Const("': failed to resolve path: "),
+				errmsg.PathErrorCause(err),
 			)
 		}
 
 		// 7. Check for duplicate resolved paths
 		if _, exists := result[normalized]; exists {
 			return nil, &ErrDuplicateResolvedPathDetail{
-				Level:        groupLevel(groupName).String(),
-				Field:        "cmd_allowed",
+				Level:        groupLevel(groupName),
+				Field:        cmdAllowedFieldNoIndex(),
 				OriginalPath: rawPath,
 				ResolvedPath: normalized,
 			}
@@ -1005,7 +1029,7 @@ func expandCmdAllowed(
 func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.RuntimeGlobal) (*runnertypes.RuntimeGroup, error) {
 	runtime, err := runnertypes.NewRuntimeGroup(spec)
 	if err != nil {
-		return nil, errmsg.NewError(errmsg.Text("failed to create RuntimeGroup: "), errmsg.Cause(err))
+		return nil, errmsg.NewError(errmsg.Const("failed to create RuntimeGroup: "), errmsg.Cause(err))
 	}
 
 	// Set the inheritance mode immediately after RuntimeGroup creation
@@ -1035,7 +1059,9 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 		envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, groupLevel(spec.Name))
 		if err != nil {
 			return nil, errmsg.NewError(
-				errmsg.Text(fmt.Sprintf("failed to process group[%s] env_import: ", spec.Name)),
+				errmsg.Const("failed to process group["),
+				errmsg.Ident(spec.Name),
+				errmsg.Const("] env_import: "),
 				errmsg.Cause(err),
 			)
 		}
@@ -1136,7 +1162,14 @@ func resolveAndPrepareCommandSpec(
 	// later by expandCommandFields, maintaining the correct expansion order
 	expandedSpec, warnings, err := expandTemplateToSpec(spec, &template, spec.Template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to expand template %q for command %q: %w", spec.Template, spec.Name, err)
+		return nil, errmsg.NewError(
+			errmsg.Const("failed to expand template "),
+			errmsg.Quoted(errmsg.Ident(spec.Template)),
+			errmsg.Const(" for command "),
+			errmsg.Quoted(errmsg.Ident(spec.Name)),
+			errmsg.Const(": "),
+			errmsg.Cause(err),
+		)
 	}
 
 	// Log warnings about unused parameters
@@ -1178,7 +1211,9 @@ func expandCommandEnvImport(
 	envImportVars, err := ProcessEnvImport(spec.EnvImport, effectiveAllowlist, systemEnv, commandLevel(spec.Name))
 	if err != nil {
 		return errmsg.NewError(
-			errmsg.Text(fmt.Sprintf("failed to process command[%s] env_import: ", spec.Name)),
+			errmsg.Const("failed to process command["),
+			errmsg.Ident(spec.Name),
+			errmsg.Const("] env_import: "),
 			errmsg.Cause(err),
 		)
 	}
@@ -1281,7 +1316,9 @@ func ExpandCommand(spec *runnertypes.CommandSpec, templates map[string]runnertyp
 	runtime, err := runnertypes.NewRuntimeCommand(workingSpec, globalTimeout, globalOutputSizeLimit, groupName)
 	if err != nil {
 		return nil, errmsg.NewError(
-			errmsg.Text(fmt.Sprintf("failed to create RuntimeCommand for command[%s]: ", workingSpec.Name)),
+			errmsg.Const("failed to create RuntimeCommand for command["),
+			errmsg.Ident(workingSpec.Name),
+			errmsg.Const("]: "),
 			errmsg.Cause(err),
 		)
 	}
@@ -1356,7 +1393,12 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Collect used parameters from template
 	usedParams, err := CollectUsedParams(template)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to collect used params from template %q: %w", templateName, err)
+		return nil, warnings, errmsg.NewError(
+			errmsg.Const("failed to collect used params from template "),
+			errmsg.Quoted(errmsg.Ident(templateName)),
+			errmsg.Const(": "),
+			errmsg.Cause(err),
+		)
 	}
 
 	// Check for unused parameters
@@ -1370,7 +1412,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Expand cmd
 	expandedCmd, err := expandSingleArg(template.Cmd, cmdSpec.Params, templateName, "cmd")
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template cmd: %w", err)
+		return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template cmd: "), errmsg.Cause(err))
 	}
 
 	// Validate cmd resolves to exactly one value
@@ -1390,13 +1432,13 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Expand args
 	expandedArgs, err := ExpandTemplateArgs(template.Args, cmdSpec.Params, templateName)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template args: %w", err)
+		return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template args: "), errmsg.Cause(err))
 	}
 
 	// Expand env_vars (supports element-level ${@param} expansion)
 	expandedEnv, err := ExpandTemplateEnv(template.EnvVars, cmdSpec.Params, templateName)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template env_vars: %w", err)
+		return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template env_vars: "), errmsg.Cause(err))
 	}
 
 	// Expand workdir from template (if non-nil)
@@ -1404,7 +1446,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	if template.WorkDir != nil {
 		result, err := expandSingleArg(*template.WorkDir, cmdSpec.Params, templateName, workDirKey)
 		if err != nil {
-			return nil, warnings, fmt.Errorf("failed to expand template workdir: %w", err)
+			return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template workdir: "), errmsg.Cause(err))
 		}
 
 		// Note: Array placeholders (${@param}) are rejected at expansion time
@@ -1420,7 +1462,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	if template.OutputFile != nil {
 		result, err := expandSingleArg(*template.OutputFile, cmdSpec.Params, templateName, "output_file")
 		if err != nil {
-			return nil, warnings, fmt.Errorf("failed to expand template output_file: %w", err)
+			return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template output_file: "), errmsg.Cause(err))
 		}
 		if len(result) > 0 {
 			expanded := result[0]
@@ -1431,7 +1473,7 @@ func expandTemplateToSpec(cmdSpec *runnertypes.CommandSpec, template *runnertype
 	// Expand vars from template
 	expandedVars, err := ExpandTemplateVars(template.Vars, cmdSpec.Params, templateName)
 	if err != nil {
-		return nil, warnings, fmt.Errorf("failed to expand template vars: %w", err)
+		return nil, warnings, errmsg.NewError(errmsg.Const("failed to expand template vars: "), errmsg.Cause(err))
 	}
 
 	// Create expanded spec

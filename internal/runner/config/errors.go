@@ -2,9 +2,7 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 )
@@ -375,14 +373,31 @@ func (f Field) parts() []errmsg.Part {
 // This error type wraps ErrInvalidVariableName and is used for internal variable validation
 // in vars and from_env fields.
 type ErrInvalidVariableNameDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	Reason       string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// rejected name and the reason stay text.
+func (e *ErrInvalidVariableNameDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid variable name in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.VariableName),
+		errmsg.Const("' ("),
+		errmsg.Text(e.Reason),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidVariableNameDetail) Error() string {
-	return fmt.Sprintf("invalid variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.VariableName, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidVariableNameDetail) Unwrap() error {
@@ -391,14 +406,31 @@ func (e *ErrInvalidVariableNameDetail) Unwrap() error {
 
 // ErrInvalidSystemVariableNameDetail provides detailed information about invalid system variable names
 type ErrInvalidSystemVariableNameDetail struct {
-	Level              string
-	Field              string
+	Level              Level
+	Field              Field
 	SystemVariableName string
 	Reason             string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// rejected name and the reason stay text.
+func (e *ErrInvalidSystemVariableNameDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid system variable name in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.SystemVariableName),
+		errmsg.Const("' ("),
+		errmsg.Text(e.Reason),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidSystemVariableNameDetail) Error() string {
-	return fmt.Sprintf("invalid system variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.SystemVariableName, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidSystemVariableNameDetail) Unwrap() error {
@@ -407,14 +439,31 @@ func (e *ErrInvalidSystemVariableNameDetail) Unwrap() error {
 
 // ErrReservedVariablePrefixDetail provides detailed information about reserved prefix errors
 type ErrReservedVariablePrefixDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	Prefix       string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// rejected name and the reserved prefix stay text.
+func (e *ErrReservedVariablePrefixDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("reserved variable prefix in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.VariableName),
+		errmsg.Const("' (prefix '"),
+		errmsg.Text(e.Prefix),
+		errmsg.Const("' is reserved)"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrReservedVariablePrefixDetail) Error() string {
-	return fmt.Sprintf("reserved variable prefix in %s.%s: '%s' (prefix '%s' is reserved)", e.Level, e.Field, e.VariableName, e.Prefix)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrReservedVariablePrefixDetail) Unwrap() error {
@@ -423,14 +472,27 @@ func (e *ErrReservedVariablePrefixDetail) Unwrap() error {
 
 // ErrVariableNotInAllowlistDetail provides detailed information about allowlist violations
 type ErrVariableNotInAllowlistDetail struct {
-	Level           string
+	Level           Level
 	SystemVarName   string
 	InternalVarName string
 	Allowlist       []string
 }
 
+// StructuredMessage declares the system and internal names as identifiers, so a
+// name that looks like a secret still reaches the report.
+func (e *ErrVariableNotInAllowlistDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("system environment variable '")}
+	parts = append(parts, errmsg.Ident(e.SystemVarName))
+	parts = append(parts, errmsg.Const("' not in allowlist (referenced as '"))
+	parts = append(parts, errmsg.Ident(e.InternalVarName))
+	parts = append(parts, errmsg.Const("' in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const(".from_env)"))
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrVariableNotInAllowlistDetail) Error() string {
-	return fmt.Sprintf("system environment variable '%s' not in allowlist (referenced as '%s' in %s.from_env)", e.SystemVarName, e.InternalVarName, e.Level)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrVariableNotInAllowlistDetail) Unwrap() error {
@@ -439,14 +501,34 @@ func (e *ErrVariableNotInAllowlistDetail) Unwrap() error {
 
 // ErrCircularReferenceDetail provides detailed information about circular references
 type ErrCircularReferenceDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	Chain        []string
 }
 
+// StructuredMessage declares the variable name and every name on the cycle as
+// identifiers; the brackets and separators are constants.
+func (e *ErrCircularReferenceDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("circular reference in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts, errmsg.Const(": '"))
+	parts = append(parts, errmsg.Ident(e.VariableName))
+	parts = append(parts, errmsg.Const("' (chain: ["))
+	for i, name := range e.Chain {
+		if i > 0 {
+			parts = append(parts, errmsg.Const(" "))
+		}
+		parts = append(parts, errmsg.Ident(name))
+	}
+	parts = append(parts, errmsg.Const("])"))
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrCircularReferenceDetail) Error() string {
-	return fmt.Sprintf("circular reference in %s.%s: '%s' (chain: %v)", e.Level, e.Field, e.VariableName, e.Chain)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrCircularReferenceDetail) Unwrap() error {
@@ -499,14 +581,31 @@ func (e *ErrUndefinedVariableDetail) Unwrap() error {
 
 // ErrInvalidEscapeSequenceDetail provides detailed information about invalid escape sequences
 type ErrInvalidEscapeSequenceDetail struct {
-	Level    string
-	Field    string
+	Level    Level
+	Field    Field
 	Sequence string
 	Context  string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// sequence and the raw context stay text.
+func (e *ErrInvalidEscapeSequenceDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid escape sequence in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.Sequence),
+		errmsg.Const("' (context: "),
+		errmsg.Text(e.Context),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidEscapeSequenceDetail) Error() string {
-	return fmt.Sprintf("invalid escape sequence in %s.%s: '%s' (context: %s)", e.Level, e.Field, e.Sequence, e.Context)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidEscapeSequenceDetail) Unwrap() error {
@@ -515,13 +614,28 @@ func (e *ErrInvalidEscapeSequenceDetail) Unwrap() error {
 
 // ErrUnclosedVariableReferenceDetail provides detailed information about unclosed variable references
 type ErrUnclosedVariableReferenceDetail struct {
-	Level   string
-	Field   string
+	Level   Level
+	Field   Field
 	Context string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// raw context stays text.
+func (e *ErrUnclosedVariableReferenceDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("unclosed variable reference in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": missing closing '}' (context: "),
+		errmsg.Text(e.Context),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrUnclosedVariableReferenceDetail) Error() string {
-	return fmt.Sprintf("unclosed variable reference in %s.%s: missing closing '}' (context: %s)", e.Level, e.Field, e.Context)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrUnclosedVariableReferenceDetail) Unwrap() error {
@@ -530,14 +644,31 @@ func (e *ErrUnclosedVariableReferenceDetail) Unwrap() error {
 
 // ErrMaxRecursionDepthExceededDetail provides detailed information about recursion depth limit
 type ErrMaxRecursionDepthExceededDetail struct {
-	Level    string
-	Field    string
+	Level    Level
+	Field    Field
 	MaxDepth int
 	Context  string
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// limit and the raw context stay text.
+func (e *ErrMaxRecursionDepthExceededDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("maximum recursion depth exceeded in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": limit "),
+		errmsg.Text(strconv.Itoa(e.MaxDepth)),
+		errmsg.Const(" (context: "),
+		errmsg.Text(e.Context),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrMaxRecursionDepthExceededDetail) Error() string {
-	return fmt.Sprintf("maximum recursion depth exceeded in %s.%s: limit %d (context: %s)", e.Level, e.Field, e.MaxDepth, e.Context)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
@@ -550,13 +681,28 @@ type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
 
 // ErrInvalidEnvImportFormatDetail provides detailed information about invalid env_import format
 type ErrInvalidEnvImportFormatDetail struct {
-	Level   string
+	Level   Level
 	Mapping string
 	Reason  string
 }
 
+// StructuredMessage declares the level through its own parts; the raw mapping
+// and the reason stay text.
+func (e *ErrInvalidEnvImportFormatDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid env_import format in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.Mapping),
+		errmsg.Const("' ("),
+		errmsg.Text(e.Reason),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidEnvImportFormatDetail) Error() string {
-	return fmt.Sprintf("invalid env_import format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidEnvImportFormatDetail) Unwrap() error {
@@ -565,13 +711,28 @@ func (e *ErrInvalidEnvImportFormatDetail) Unwrap() error {
 
 // ErrInvalidEnvFormatDetail provides detailed information about invalid env format
 type ErrInvalidEnvFormatDetail struct {
-	Level   string
+	Level   Level
 	Mapping string
 	Reason  string
 }
 
+// StructuredMessage declares the level through its own parts; the raw mapping
+// and the reason stay text.
+func (e *ErrInvalidEnvFormatDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid env format in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.Mapping),
+		errmsg.Const("' ("),
+		errmsg.Text(e.Reason),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidEnvFormatDetail) Error() string {
-	return fmt.Sprintf("invalid env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidEnvFormatDetail) Unwrap() error {
@@ -580,14 +741,31 @@ func (e *ErrInvalidEnvFormatDetail) Unwrap() error {
 
 // ErrInvalidEnvKeyDetail provides detailed information about invalid environment variable key
 type ErrInvalidEnvKeyDetail struct {
-	Level   string
+	Level   Level
 	Key     string
 	Context string
 	Reason  string
 }
 
+// StructuredMessage declares the level through its own parts; the rejected key
+// and the raw entry stay text because the key's origin cannot be proven.
+func (e *ErrInvalidEnvKeyDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid environment variable key in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.Key),
+		errmsg.Const("' (context: "),
+		errmsg.Text(e.Context),
+		errmsg.Const(", reason: "),
+		errmsg.Text(e.Reason),
+		errmsg.Const(")"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidEnvKeyDetail) Error() string {
-	return fmt.Sprintf("invalid environment variable key in %s: '%s' (context: %s, reason: %s)", e.Level, e.Key, e.Context, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidEnvKeyDetail) Unwrap() error {
@@ -596,13 +774,28 @@ func (e *ErrInvalidEnvKeyDetail) Unwrap() error {
 
 // ErrDuplicateVariableDefinitionDetail provides detailed information about duplicate variable definitions
 type ErrDuplicateVariableDefinitionDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 }
 
+// StructuredMessage declares the variable name as an identifier; the level and
+// field carry their own declared roles.
+func (e *ErrDuplicateVariableDefinitionDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("duplicate variable definition in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Ident(e.VariableName),
+		errmsg.Const("' is defined multiple times"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrDuplicateVariableDefinitionDetail) Error() string {
-	return fmt.Sprintf("duplicate variable definition in %s.%s: '%s' is defined multiple times", e.Level, e.Field, e.VariableName)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrDuplicateVariableDefinitionDetail) Unwrap() error {
@@ -617,8 +810,20 @@ type InvalidPathError struct {
 	Reason string // Reason why the path is invalid
 }
 
+// StructuredMessage declares the rejected path and the reason as text: the
+// value may still hold expanded variable values, so it is not treated as an
+// accepted path.
+func (e *InvalidPathError) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("invalid path '"),
+		errmsg.Text(e.Path),
+		errmsg.Const("': "),
+		errmsg.Text(e.Reason),
+	)
+}
+
 func (e *InvalidPathError) Error() string {
-	return fmt.Sprintf("invalid path '%s': %s", e.Path, e.Reason)
+	return e.StructuredMessage().String()
 }
 
 func (e *InvalidPathError) Unwrap() error {
@@ -634,15 +839,33 @@ func (e *InvalidPathError) Is(target error) bool {
 // ErrDuplicatePathDetail provides detailed information about duplicate paths in cmd_allowed.
 // This error is returned when the same path string appears multiple times in the configuration.
 type ErrDuplicatePathDetail struct {
-	Level      string // e.g., "group[mygroup]"
-	Field      string // e.g., "cmd_allowed"
+	Level      Level  // e.g., "group[mygroup]"
+	Field      Field  // e.g., "cmd_allowed"
 	Path       string // The duplicated path string
 	FirstIndex int    // Index of first occurrence
 	DupeIndex  int    // Index of duplicate occurrence
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// raw path string and the indices stay text.
+func (e *ErrDuplicatePathDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("duplicate path in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.Path),
+		errmsg.Const("' appears at index "),
+		errmsg.Text(strconv.Itoa(e.FirstIndex)),
+		errmsg.Const(" and "),
+		errmsg.Text(strconv.Itoa(e.DupeIndex)),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrDuplicatePathDetail) Error() string {
-	return fmt.Sprintf("duplicate path in %s.%s: '%s' appears at index %d and %d", e.Level, e.Field, e.Path, e.FirstIndex, e.DupeIndex)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrDuplicatePathDetail) Unwrap() error {
@@ -653,14 +876,31 @@ func (e *ErrDuplicatePathDetail) Unwrap() error {
 // This error is returned when different path strings (potentially after variable expansion)
 // resolve to the same actual file after symlink resolution.
 type ErrDuplicateResolvedPathDetail struct {
-	Level        string // e.g., "group[mygroup]"
-	Field        string // e.g., "cmd_allowed"
+	Level        Level  // e.g., "group[mygroup]"
+	Field        Field  // e.g., "cmd_allowed"
 	OriginalPath string // The original path from config
 	ResolvedPath string // The resolved path that is duplicated
 }
 
+// StructuredMessage declares the level and field through their own parts; the
+// original pre-expansion path stays text and the resolved path is a path.
+func (e *ErrDuplicateResolvedPathDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("duplicate resolved path in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": '"),
+		errmsg.Text(e.OriginalPath),
+		errmsg.Const("' resolves to '"),
+		errmsg.Path(e.ResolvedPath),
+		errmsg.Const("' which is already in the list"),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrDuplicateResolvedPathDetail) Error() string {
-	return fmt.Sprintf("duplicate resolved path in %s.%s: '%s' resolves to '%s' which is already in the list", e.Level, e.Field, e.OriginalPath, e.ResolvedPath)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrDuplicateResolvedPathDetail) Unwrap() error {
@@ -673,13 +913,27 @@ func (e *ErrDuplicateResolvedPathDetail) Unwrap() error {
 
 // ErrTooManyVariablesDetail is returned when the number of variables exceeds MaxVarsPerLevel.
 type ErrTooManyVariablesDetail struct {
-	Level    string
+	Level    Level
 	Count    int
 	MaxCount int
 }
 
+// StructuredMessage declares the level through its own parts; the counts stay
+// text.
+func (e *ErrTooManyVariablesDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("too many variables in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": got "),
+		errmsg.Text(strconv.Itoa(e.Count)),
+		errmsg.Const(", max "),
+		errmsg.Text(strconv.Itoa(e.MaxCount)),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrTooManyVariablesDetail) Error() string {
-	return fmt.Sprintf("too many variables in %s: got %d, max %d", e.Level, e.Count, e.MaxCount)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrTooManyVariablesDetail) Unwrap() error {
@@ -688,15 +942,30 @@ func (e *ErrTooManyVariablesDetail) Unwrap() error {
 
 // ErrTypeMismatchDetail is returned when a variable is redefined with a different type (string vs array).
 type ErrTypeMismatchDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	ExpectedType string
 	ActualType   string
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level and the type names carry their own roles.
+func (e *ErrTypeMismatchDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" type mismatch in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": already defined as "),
+		errmsg.Text(e.ExpectedType),
+		errmsg.Const(", cannot redefine as "),
+		errmsg.Text(e.ActualType),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrTypeMismatchDetail) Error() string {
-	return fmt.Sprintf("variable %q type mismatch in %s: already defined as %s, cannot redefine as %s",
-		e.VariableName, e.Level, e.ExpectedType, e.ActualType)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrTypeMismatchDetail) Unwrap() error {
@@ -705,15 +974,30 @@ func (e *ErrTypeMismatchDetail) Unwrap() error {
 
 // ErrValueTooLongDetail is returned when a string value exceeds MaxStringValueLen.
 type ErrValueTooLongDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	Length       int
 	MaxLength    int
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level and the byte counts carry their own roles.
+func (e *ErrValueTooLongDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" value too long in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": got "),
+		errmsg.Text(strconv.Itoa(e.Length)),
+		errmsg.Const(" bytes, max "),
+		errmsg.Text(strconv.Itoa(e.MaxLength)),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrValueTooLongDetail) Error() string {
-	return fmt.Sprintf("variable %q value too long in %s: got %d bytes, max %d",
-		e.VariableName, e.Level, e.Length, e.MaxLength)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrValueTooLongDetail) Unwrap() error {
@@ -722,15 +1006,30 @@ func (e *ErrValueTooLongDetail) Unwrap() error {
 
 // ErrArrayTooLargeDetail is returned when an array variable exceeds MaxArrayElements.
 type ErrArrayTooLargeDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	Count        int
 	MaxCount     int
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level and the counts carry their own roles.
+func (e *ErrArrayTooLargeDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" array too large in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": got "),
+		errmsg.Text(strconv.Itoa(e.Count)),
+		errmsg.Const(" elements, max "),
+		errmsg.Text(strconv.Itoa(e.MaxCount)),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrArrayTooLargeDetail) Error() string {
-	return fmt.Sprintf("variable %q array too large in %s: got %d elements, max %d",
-		e.VariableName, e.Level, e.Count, e.MaxCount)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrArrayTooLargeDetail) Unwrap() error {
@@ -739,16 +1038,34 @@ func (e *ErrArrayTooLargeDetail) Unwrap() error {
 
 // ErrInvalidArrayElementDetail is returned when an array element is not a string.
 type ErrInvalidArrayElementDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	Index        int
 	ExpectedType string
 	ActualType   string
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level, the index and the type names carry their own
+// roles.
+func (e *ErrInvalidArrayElementDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" has invalid array element at index "))
+	parts = append(parts, errmsg.Text(strconv.Itoa(e.Index)))
+	parts = append(parts, errmsg.Const(" in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": expected "),
+		errmsg.Text(e.ExpectedType),
+		errmsg.Const(", got "),
+		errmsg.Text(e.ActualType),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrInvalidArrayElementDetail) Error() string {
-	return fmt.Sprintf("variable %q has invalid array element at index %d in %s: expected %s, got %s",
-		e.VariableName, e.Index, e.Level, e.ExpectedType, e.ActualType)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrInvalidArrayElementDetail) Unwrap() error {
@@ -757,16 +1074,33 @@ func (e *ErrInvalidArrayElementDetail) Unwrap() error {
 
 // ErrArrayElementTooLongDetail is returned when an array element exceeds MaxStringValueLen.
 type ErrArrayElementTooLongDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	Index        int
 	Length       int
 	MaxLength    int
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level and the counts carry their own roles.
+func (e *ErrArrayElementTooLongDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" array element "))
+	parts = append(parts, errmsg.Text(strconv.Itoa(e.Index)))
+	parts = append(parts, errmsg.Const(" too long in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts,
+		errmsg.Const(": got "),
+		errmsg.Text(strconv.Itoa(e.Length)),
+		errmsg.Const(" bytes, max "),
+		errmsg.Text(strconv.Itoa(e.MaxLength)),
+	)
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrArrayElementTooLongDetail) Error() string {
-	return fmt.Sprintf("variable %q array element %d too long in %s: got %d bytes, max %d",
-		e.VariableName, e.Index, e.Level, e.Length, e.MaxLength)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrArrayElementTooLongDetail) Unwrap() error {
@@ -775,14 +1109,26 @@ func (e *ErrArrayElementTooLongDetail) Unwrap() error {
 
 // ErrUnsupportedTypeDetail is returned when a variable value has an unsupported type.
 type ErrUnsupportedTypeDetail struct {
-	Level        string
+	Level        Level
 	VariableName string
 	ActualType   string
 }
 
+// StructuredMessage declares the variable name as an identifier, quoted the way
+// fmt's %q rendered it; the level and the type name carry their own roles.
+func (e *ErrUnsupportedTypeDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" has unsupported type "))
+	parts = append(parts, errmsg.Text(e.ActualType))
+	parts = append(parts, errmsg.Const(" in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const(": only string and []string are supported"))
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrUnsupportedTypeDetail) Error() string {
-	return fmt.Sprintf("variable %q has unsupported type %s in %s: only string and []string are supported",
-		e.VariableName, e.ActualType, e.Level)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrUnsupportedTypeDetail) Unwrap() error {
@@ -792,20 +1138,38 @@ func (e *ErrUnsupportedTypeDetail) Unwrap() error {
 // ErrArrayVariableInStringContextDetail is returned when an array variable
 // is referenced in a string context (e.g., "%{array_var}" in a string value).
 type ErrArrayVariableInStringContextDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	Chain        []string // expansion path leading to this error
 }
 
-func (e *ErrArrayVariableInStringContextDetail) Error() string {
-	msg := fmt.Sprintf("cannot reference array variable %q in string context at %s.%s: "+
-		"array variables can only be used where array values are expected",
-		e.VariableName, e.Level, e.Field)
+// StructuredMessage declares the variable name and the expansion path as
+// identifiers, quoted the way fmt's %q rendered them; the level and field carry
+// their own roles.
+func (e *ErrArrayVariableInStringContextDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("cannot reference array variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" in string context at "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts, errmsg.Const(": array variables can only be used where array values are expected"))
 	if len(e.Chain) > 0 {
-		msg += fmt.Sprintf(" (expansion path: %s)", strings.Join(e.Chain, " -> "))
+		parts = append(parts, errmsg.Const(" (expansion path: "))
+		for i, name := range e.Chain {
+			if i > 0 {
+				parts = append(parts, errmsg.Const(" -> "))
+			}
+			parts = append(parts, errmsg.Ident(name))
+		}
+		parts = append(parts, errmsg.Const(")"))
 	}
-	return msg
+	return errmsg.NewMessage(parts...)
+}
+
+func (e *ErrArrayVariableInStringContextDetail) Error() string {
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrArrayVariableInStringContextDetail) Unwrap() error {
@@ -817,16 +1181,28 @@ func (e *ErrArrayVariableInStringContextDetail) Unwrap() error {
 // This error is returned when the same variable name is defined in both env_import
 // and vars, either at the same level or across different levels (global/group/command).
 type ErrEnvImportVarsConflictDetail struct {
-	Level          string // Current level (e.g., "global", "group[deploy]", "command[build]")
+	Level          Level  // Current level (e.g., "global", "group[deploy]", "command[build]")
 	VariableName   string // The conflicting variable name
-	EnvImportLevel string // Level where env_import defined this variable
-	VarsLevel      string // Level where vars defined this variable
+	EnvImportLevel Level  // Level where env_import defined this variable
+	VarsLevel      Level  // Level where vars defined this variable
+}
+
+// StructuredMessage declares the conflicting variable name as an identifier,
+// quoted the way fmt's %q rendered it; the three levels carry their own roles.
+func (e *ErrEnvImportVarsConflictDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("variable ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" conflicts between env_import and vars in "))
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const(": defined in env_import at "))
+	parts = append(parts, e.EnvImportLevel.parts()...)
+	parts = append(parts, errmsg.Const(" and vars at "))
+	parts = append(parts, e.VarsLevel.parts()...)
+	return errmsg.NewMessage(parts...)
 }
 
 func (e *ErrEnvImportVarsConflictDetail) Error() string {
-	return fmt.Sprintf("variable %q conflicts between env_import and vars in %s: "+
-		"defined in env_import at %s and vars at %s",
-		e.VariableName, e.Level, e.EnvImportLevel, e.VarsLevel)
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
@@ -836,39 +1212,55 @@ func (e *ErrEnvImportVarsConflictDetail) Unwrap() error {
 // ErrLocalVariableInTemplate is returned when a template references a local variable
 type ErrLocalVariableInTemplate struct {
 	TemplateName string
-	Field        string // e.g., "cmd", "args[0]", "env[PATH]"
+	Field        Field // e.g., "cmd", "args[0]", "env[PATH]"
 	VariableName string
 }
 
+// StructuredMessage declares the template name, the field and the variable name
+// as quoted parts, so the middle dot of the field keeps its own roles.
+func (e *ErrLocalVariableInTemplate) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("template ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.TemplateName)))
+	parts = append(parts, errmsg.Const(" field "))
+	parts = append(parts, errmsg.Quoted(e.Field.parts()...))
+	parts = append(parts, errmsg.Const(": cannot reference local variable "))
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" (templates can only reference global variables starting with uppercase)"))
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrLocalVariableInTemplate) Error() string {
-	return fmt.Sprintf(
-		"template %q field %q: cannot reference local variable %q (templates can only reference global variables starting with uppercase)",
-		e.TemplateName,
-		e.Field,
-		e.VariableName,
-	)
+	return e.StructuredMessage().String()
 }
 
 // ErrUndefinedGlobalVariableInTemplate is returned when a template references an undefined global variable
 type ErrUndefinedGlobalVariableInTemplate struct {
 	TemplateName string
-	Field        string
+	Field        Field
 	VariableName string
 }
 
+// StructuredMessage declares the template name, the field and the variable name
+// as quoted parts, so the middle dot of the field keeps its own roles.
+func (e *ErrUndefinedGlobalVariableInTemplate) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("template ")}
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.TemplateName)))
+	parts = append(parts, errmsg.Const(" field "))
+	parts = append(parts, errmsg.Quoted(e.Field.parts()...))
+	parts = append(parts, errmsg.Const(": global variable "))
+	parts = append(parts, errmsg.Quoted(errmsg.Ident(e.VariableName)))
+	parts = append(parts, errmsg.Const(" is not defined in [global.vars]"))
+	return errmsg.NewMessage(parts...)
+}
+
 func (e *ErrUndefinedGlobalVariableInTemplate) Error() string {
-	return fmt.Sprintf(
-		"template %q field %q: global variable %q is not defined in [global.vars]",
-		e.TemplateName,
-		e.Field,
-		e.VariableName,
-	)
+	return e.StructuredMessage().String()
 }
 
 // ErrInvalidVariableScopeDetail is returned when a variable name doesn't match the expected scope
 type ErrInvalidVariableScopeDetail struct {
-	Level        string
-	Field        string
+	Level        Level
+	Field        Field
 	VariableName string
 	// Err is the underlying scope-validation failure. It is kept as an error
 	// rather than flattened into text so callers can tell the reasons apart
@@ -876,14 +1268,24 @@ type ErrInvalidVariableScopeDetail struct {
 	Err error
 }
 
-func (e *ErrInvalidVariableScopeDetail) Error() string {
-	return fmt.Sprintf(
-		"invalid variable scope in %s.%s: variable %q - %s",
-		e.Level,
-		e.Field,
-		e.VariableName,
-		e.Err,
+// StructuredMessage declares the variable name as quoted text and keeps the
+// underlying scope failure as a cause, so errors.Is and errors.AsType reach it.
+func (e *ErrInvalidVariableScopeDetail) StructuredMessage() errmsg.Message {
+	parts := []errmsg.Part{errmsg.Const("invalid variable scope in ")}
+	parts = append(parts, e.Level.parts()...)
+	parts = append(parts, errmsg.Const("."))
+	parts = append(parts, e.Field.parts()...)
+	parts = append(parts,
+		errmsg.Const(": variable "),
+		errmsg.Quoted(errmsg.Text(e.VariableName)),
+		errmsg.Const(" - "),
+		errmsg.Cause(e.Err),
 	)
+	return errmsg.NewMessage(parts...)
+}
+
+func (e *ErrInvalidVariableScopeDetail) Error() string {
+	return e.StructuredMessage().String()
 }
 
 // Unwrap returns the underlying scope-validation failure.
@@ -901,16 +1303,21 @@ type ErrIncludedFileNotFound struct {
 	ReferencedFrom string
 }
 
-func (e *ErrIncludedFileNotFound) Error() string {
-	return fmt.Sprintf(
-		"included file not found\n"+
-			"  Include path: %s (as written)\n"+
-			"  Resolved path: %s\n"+
-			"  Referenced from: %s",
-		e.IncludePath,
-		e.ResolvedPath,
-		e.ReferencedFrom,
+// StructuredMessage declares the three paths as paths; the fixed lines and
+// indentation are constants.
+func (e *ErrIncludedFileNotFound) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("included file not found\n  Include path: "),
+		errmsg.Path(e.IncludePath),
+		errmsg.Const(" (as written)\n  Resolved path: "),
+		errmsg.Path(e.ResolvedPath),
+		errmsg.Const("\n  Referenced from: "),
+		errmsg.Path(e.ReferencedFrom),
 	)
+}
+
+func (e *ErrIncludedFileNotFound) Error() string {
+	return e.StructuredMessage().String()
 }
 
 // ErrTemplateFileInvalidFormat is returned when a template file contains
@@ -923,15 +1330,19 @@ type ErrTemplateFileInvalidFormat struct {
 	ParseError error
 }
 
-func (e *ErrTemplateFileInvalidFormat) Error() string {
-	return fmt.Sprintf(
-		"template file contains invalid fields or sections\n"+
-			"  File: %s\n"+
-			"  Template files can only contain 'version' and 'command_templates'\n"+
-			"  Detail: %v",
-		e.TemplateFile,
-		e.ParseError,
+// StructuredMessage declares the template file as a path and keeps the parser
+// error as a cause, so its structure is preserved when it has one.
+func (e *ErrTemplateFileInvalidFormat) StructuredMessage() errmsg.Message {
+	return errmsg.NewMessage(
+		errmsg.Const("template file contains invalid fields or sections\n  File: "),
+		errmsg.Path(e.TemplateFile),
+		errmsg.Const("\n  Template files can only contain 'version' and 'command_templates'\n  Detail: "),
+		errmsg.Cause(e.ParseError),
 	)
+}
+
+func (e *ErrTemplateFileInvalidFormat) Error() string {
+	return e.StructuredMessage().String()
 }
 
 func (e *ErrTemplateFileInvalidFormat) Unwrap() error {

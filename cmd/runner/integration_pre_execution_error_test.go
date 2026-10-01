@@ -924,3 +924,106 @@ func countLinesWithPrefix(text, prefix string) int {
 	}
 	return count
 }
+
+// TestIntegration_GroupEnvImportAllowlistIdentifiersSurviveRedaction is the
+// group env_import end-to-end scenario: a group name (token_rotate)
+// and a referenced system environment variable (GITHUB_TOKEN) both contain
+// whole-value trigger words, and the variable is not in the (empty) allowlist.
+// The group fails during preparation, and the Slack Error Message must keep the
+// system variable name, the internal variable name and the group name instead
+// of becoming the whole-value placeholder.
+func TestIntegration_GroupEnvImportAllowlistIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[[groups]]
+name = "token_rotate"
+env_allowed = []
+env_import = ["gh=GITHUB_TOKEN"]
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-group-envimport-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a rejected env_import fails the run")
+
+	message, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "[go-safe-cmd-runner] ❌ *ERROR* — group=token_rotate : group_preparation_failed", message.Text)
+	assert.Equal(t, "group=token_rotate", attachmentField(t, fields, "Scope"))
+
+	// Layer isolation: the raw body is a whole-value trigger only because of
+	// the identifiers; removing them leaves no trigger.
+	rawBody := stderrDetailsBlock(t, run.stderr)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("token_rotate", "", "GITHUB_TOKEN", "", "gh", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	for _, want := range []string{"token_rotate", "GITHUB_TOKEN", "gh"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced; the env_import failure must stay readable")
+}
+
+// TestIntegration_GlobalCircularReferenceIdentifiersSurviveRedaction is the
+// global circular-reference end-to-end scenario: two global variables
+// whose names contain a whole-value trigger word reference each other. The
+// global expansion failure reaches Slack with the constant summary and the
+// variable names on the cycle intact.
+func TestIntegration_GlobalCircularReferenceIdentifiersSurviveRedaction(t *testing.T) {
+	run := runMainWithSlackMock(t, slackRunSpec{
+		configBody: func(slackHost string) string {
+			return fmt.Sprintf(`
+version = "1.0"
+
+[global]
+slack_allowed_host = %q
+
+[global.vars]
+API_KEY = "%%{API_TOKEN}"
+API_TOKEN = "%%{API_KEY}"
+
+[[groups]]
+name = "unused"
+
+[[groups.commands]]
+name = "noop"
+cmd = %q
+`, slackHost, trueCmdPath())
+		},
+		runID: "test-global-circular-001",
+	})
+	require.Equal(t, 1, run.exitCode, "a circular global reference fails the run")
+
+	_, fields := requireSinglePreExecutionError(t, run)
+	assert.Equal(t, "(global)", attachmentField(t, fields, "Scope"))
+
+	rawBody := stderrDetailsBlock(t, run.stderr)
+	require.True(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(rawBody),
+		"the raw body must trip the whole-value layer, or surviving it proves nothing: %q", rawBody)
+	withoutIdentifiers := strings.NewReplacer("API_KEY", "", "API_TOKEN", "").Replace(rawBody)
+	require.False(t, redaction.DefaultSensitivePatterns().IsSensitiveValue(withoutIdentifiers),
+		"the body without the identifiers must not trip the whole-value layer: %q", withoutIdentifiers)
+
+	errorMessage := attachmentField(t, fields, "Error Message")
+	assert.Contains(t, errorMessage, "Failed to expand global configuration",
+		"the constant summary must survive: %q", errorMessage)
+	for _, want := range []string{"API_KEY", "API_TOKEN"} {
+		assert.Contains(t, errorMessage, want,
+			"the Identifier %q on the cycle must survive redaction: %q", want, errorMessage)
+	}
+	assert.NotEqual(t, redaction.RedactionFailurePlaceholder, errorMessage,
+		"the whole body must not be replaced")
+}

@@ -5,6 +5,7 @@ package config
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/errmsg"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/base/runnertypes"
 
@@ -277,4 +278,95 @@ func TestExpandGlobal_SystemEnvIncludesAllParsableEntries(t *testing.T) {
 
 	directEnv := environment.ParseSystemEnvironment()
 	assert.Equal(t, directEnv["TEST_NOT_IN_ALLOWLIST"], runtime.SystemEnv["TEST_NOT_IN_ALLOWLIST"])
+}
+
+// TestExpansionWrapSites_StructuredMessage drives the wrap sites in
+// expansion.go that add wording to a cause. Each must declare its fixed text as
+// constants, its level/field/names with the right roles, keep the cause
+// reachable through errors.Is, and render the same string as before.
+func TestExpansionWrapSites_StructuredMessage(t *testing.T) {
+	deploy := groupLevel("deploy")
+
+	tests := []struct {
+		name     string
+		run      func() error
+		want     string
+		wantIs   error
+		segments errmsg.Segments
+	}{
+		{
+			name: "ProcessEnvImport rejects a forbidden system variable",
+			run: func() error {
+				_, err := ProcessEnvImport([]string{"x=LD_PRELOAD"}, []string{"LD_PRELOAD"}, map[string]string{}, deploy)
+				return err
+			},
+			want:   "environment variable is forbidden: LD_PRELOAD cannot be imported via env_import (level: group[deploy])",
+			wantIs: ErrForbiddenEnvVar,
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleText, Text: "environment variable is forbidden"},
+				{Role: errmsg.RoleText, Text: "LD_PRELOAD"},
+				{Role: errmsg.RoleIdentifier, Text: "deploy"},
+			},
+		},
+		{
+			name: "ProcessEnv rejects a forbidden key",
+			run: func() error {
+				_, err := ProcessEnv([]string{"LD_PRELOAD=x"}, nil, globalLevel())
+				return err
+			},
+			want:   "environment variable is forbidden: LD_PRELOAD cannot be set via env_vars (level: global)",
+			wantIs: ErrForbiddenEnvVar,
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleText, Text: "environment variable is forbidden"},
+				{Role: errmsg.RoleText, Text: "LD_PRELOAD"},
+			},
+		},
+		{
+			name: "expandCmdAllowed rejects an empty path",
+			run: func() error {
+				_, err := expandCmdAllowed([]string{""}, map[string]string{}, "deploy")
+				return err
+			},
+			want:   "group[deploy] cmd_allowed[0]: path cannot be empty",
+			wantIs: ErrEmptyPath,
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleIdentifier, Text: "deploy"},
+				{Role: errmsg.RoleText, Text: "0"},
+				{Role: errmsg.RoleText, Text: "path cannot be empty"},
+			},
+		},
+		{
+			name: "ExpandGroup names the group whose env_import failed",
+			run: func() error {
+				_, err := ExpandGroup(&runnertypes.GroupSpec{
+					Name:       "deploy",
+					EnvAllowed: []string{"LD_PRELOAD"},
+					EnvImport:  []string{"x=LD_PRELOAD"},
+				}, nil)
+				return err
+			},
+			want:   "failed to process group[deploy] env_import: environment variable is forbidden: LD_PRELOAD cannot be imported via env_import (level: group[deploy])",
+			wantIs: ErrForbiddenEnvVar,
+			segments: errmsg.Segments{
+				{Role: errmsg.RoleIdentifier, Text: "deploy"},
+				{Role: errmsg.RoleText, Text: "environment variable is forbidden"},
+				{Role: errmsg.RoleText, Text: "LD_PRELOAD"},
+				{Role: errmsg.RoleIdentifier, Text: "deploy"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			require.Error(t, err)
+			structured, ok := err.(errmsg.Structured)
+			require.Truef(t, ok, "%T must implement errmsg.Structured", err)
+			assert.Equal(t, tt.want, err.Error())
+			assert.Equal(t, tt.segments, nonConstantSegments(structured.StructuredMessage()))
+			if tt.wantIs != nil {
+				assert.ErrorIs(t, err, tt.wantIs)
+			}
+		})
+	}
 }

@@ -148,8 +148,8 @@ func validateVariableName(varName string, level Level, field Field) error {
 	if err := security.ValidateVariableName(varName); err != nil {
 		// POSIX validation error from security.ValidateVariableName
 		return &ErrInvalidVariableNameDetail{
-			Level:        level.String(),
-			Field:        field.String(),
+			Level:        level,
+			Field:        field,
 			VariableName: varName,
 			Reason:       err.Error(),
 		}
@@ -158,8 +158,8 @@ func validateVariableName(varName string, level Level, field Field) error {
 	// Then, check for reserved prefix (additional check specific to internal variables)
 	if strings.HasPrefix(varName, reservedVariablePrefix) {
 		return &ErrReservedVariablePrefixDetail{
-			Level:        level.String(),
-			Field:        field.String(),
+			Level:        level,
+			Field:        field,
 			VariableName: varName,
 			Prefix:       reservedVariablePrefix,
 		}
@@ -175,8 +175,8 @@ func validateVariableName(varName string, level Level, field Field) error {
 	location := fmt.Sprintf("%s.%s", level, field)
 	if err := variable.ValidateVariableNameForScope(varName, expectedScope, location); err != nil {
 		return &ErrInvalidVariableScopeDetail{
-			Level:        level.String(),
-			Field:        field.String(),
+			Level:        level,
+			Field:        field,
 			VariableName: varName,
 			Err:          err,
 		}
