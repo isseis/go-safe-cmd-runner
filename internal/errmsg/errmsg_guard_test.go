@@ -55,13 +55,12 @@ func (p positions) covers(file, fn string) bool {
 // exemptRolePositions are the only positions allowed to declare an
 // Identifier or Path segment through errmsg.Ident or errmsg.Path. A position
 // is a file and a function in it, never a function name alone.
-// inScopeExpansionExclusions are removed from the expansion file.
 var exemptRolePositions = positions{
 	"internal/runner/group_executor.go":          {wholeFile},
 	"internal/runner/group_stage.go":             {wholeFile},
 	"internal/runner/group_errors.go":            {wholeFile},
 	"internal/runner/config/expansion.go":        {wholeFile},
-	"internal/runner/config/errors.go":           {"ErrUndefinedVariableDetail.StructuredMessage", "Level.parts", "Field.parts"},
+	"internal/runner/config/errors.go":           {wholeFile},
 	"internal/logging/pre_execution_error.go":    {"PreExecutionError.DetailMessage"},
 	"internal/logging/execution_error.go":        {"ExecutionError.ReportMessage", "ExecutionError.contextParts"},
 	"internal/runner/base/privilege/errors.go":   {"Error.StructuredMessage"},
@@ -78,16 +77,7 @@ var exemptRolePositions = positions{
 // *fs.PathError through errmsg.PathErrorCause.
 var pathErrorCausePositions = positions{
 	"internal/runner/base/executor/tempdir_manager.go": {"DefaultTempDirManager.Create"},
-}
-
-// inScopeExpansionFile is an exempt-role position as a whole file except for
-// the functions in inScopeExpansionExclusions.
-const inScopeExpansionFile = "internal/runner/config/expansion.go"
-
-// inScopeExpansionExclusions are the functions of inScopeExpansionFile that
-// build errors outside the scope of structured messages.
-var inScopeExpansionExclusions = []string{
-	"ProcessEnvImport", "ProcessEnv", "resolveAndPrepareCommandSpec", "ApplyTemplateInheritance", "expandTemplateToSpec",
+	"internal/runner/config/expansion.go":              {"expandCmdAllowed"},
 }
 
 // supportedBuilds are the builds the project ships (release.yml) and tests
@@ -580,7 +570,7 @@ var errmsgRoleChoosers = map[string][]string{
 // declaresExemptRole reports whether the function keyed fn in file may
 // declare an Identifier or Path segment.
 func declaresExemptRole(file, fn string) bool {
-	return exemptRolePositions.covers(file, fn) && (file != inScopeExpansionFile || !slices.Contains(inScopeExpansionExclusions, fn))
+	return exemptRolePositions.covers(file, fn)
 }
 
 // checkExemptRoleCalls reports calls of errmsg.Ident and errmsg.Path outside
@@ -615,7 +605,7 @@ func checkExemptRoleCalls(s *guardSet) []string {
 				}
 			default:
 				if !pathErrorCausePositions.covers(ref.file.path, ref.fnKey()) {
-					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the temporary directory creation", position(ref.call.Pos())))
+					violations = append(violations, fmt.Sprintf("%s: errmsg.PathErrorCause is called outside the positions allowed to split a *fs.PathError", position(ref.call.Pos())))
 				}
 			}
 		}
@@ -678,12 +668,11 @@ func TestExemptRoleCallCheckRecognizesForms(t *testing.T) {
 		{name: "Path in a verification error StructuredMessage", files: []guardFile{{"internal/verification/errors.go", "package verification\n\nimport \"" + errmsgImportPath + "\"\n\ntype ErrInterpreterRecordNotFound struct{ Path string }\n\nfunc (e *ErrInterpreterRecordNotFound) StructuredMessage() errmsg.Message { return errmsg.NewMessage(errmsg.Path(e.Path)) }\n"}}},
 		{
 			name:  "Ident in the expansion file",
-			files: []guardFile{{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"}},
+			files: []guardFile{{"internal/runner/config/expansion.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc expandVars() { _ = errmsg.Ident(\"v\") }\n"}},
 		},
 		{
-			name:  "Ident in a function excluded from the expansion file",
-			files: []guardFile{{inScopeExpansionFile, "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"}},
-			want:  1,
+			name:  "Ident in an expansion-file function that used to be excluded",
+			files: []guardFile{{"internal/runner/config/expansion.go", "package config\n\nimport \"" + errmsgImportPath + "\"\n\nfunc ProcessEnvImport() { _ = errmsg.Ident(\"v\") }\n"}},
 		},
 		{name: "errmsg's own calls of its role-choosing functions", files: nil},
 		{name: "Path called inside errmsg", files: []guardFile{{errmsgDir + "/y.go", "package errmsg\n\nfunc QuotedPath(s string) Part { return Path(s) }\n"}}, want: 1},

@@ -151,25 +151,25 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 2: 変数の展開
 
 **Files**: `internal/runner/config/errors.go`・`expansion.go`・`validation.go`・`template_expansion.go`（変更、後者は 2 型の構築箇所のみ）、`internal/runner/config/errors_test.go`・`expansion_test.go`・`template_expansion_validation_test.go`（変更）、`internal/errmsg/errmsg_guard_test.go`・`internal/runner/wrap_guard_test.go`（変更）、`cmd/runner/integration_pre_execution_error_test.go`（変更）
 
-- [ ] 02 §3.3 のとおり、`errors.go` で `Error() string` を持つ型（`ErrUndefinedVariableDetail` を除く）に `StructuredMessage() errmsg.Message` を加え、`Error()` を `return e.StructuredMessage().String()` にする。部分の並びと役割は 02 付録 A による。`Unwrap()`・`Is()` は変えない（AC-02・AC-03・AC-05・AC-14・AC-15）。
-- [ ] `errors.go` のエラー型の `Level`・`Field`・`EnvImportLevel`・`VarsLevel` 欄を、02 §3.2 のとおり型 `Level`・`Field` にする。
-- [ ] `expansion.go`・`validation.go` の構築箇所で、`Level`・`Field` を型のまま（または構築関数から）渡す。`:175` の位置文字列は残す。`template_expansion.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate` の `Field` の欄も型にする（`:714`・`:1142`・`:1151`）。
-- [ ] `expansion.go` の 10 か所の `fmt.Errorf` を 02 §3.5.2 と付録 A の役割で構造化する。8 か所の前置き全体が `Text` の `NewError` を宣言し直す。`expandCmdAllowed` の `EvalSymlinks` の失敗は `errmsg.PathErrorCause` にする。`ErrForbiddenEnvVar` などのセンチネルエラーは `errmsg.Cause` として同じ位置に置く（AC-06・AC-07・AC-14・AC-15）。
-- [ ] `errors_test.go` に `TestExpandCmdAllowed_ResolvePathCauseKeepsPath` を加え、`EvalSymlinks` の失敗の原因で、パスが `Path` の断片として残ることと、組み立てた `Error()` が変更前と同じであることを確かめる（AC-07・AC-14）。
-- [ ] `errmsg_guard_test.go` を更新する。`exemptRolePositions` に `errors.go` をファイル全体として加え、`inScopeExpansionFile`・`inScopeExpansionExclusions` と `declaresExemptRole` の例外をなくす。`pathErrorCausePositions` に `expansion.go` の `expandCmdAllowed` を加える。`PathErrorCause` の違反の文言を直す。`TestExemptRoleCallCheckRecognizesForms` の除外のケースを、除外が無くなった後の形に直す（AC-20・AC-22）。
-- [ ] `wrap_guard_test.go` を更新する。`inScopeWholeFiles` に `errors.go` を加え、`inScopeFunctions` から `errors.go` の 3 関数を外す。`TestScopeCatalogNamesExist`・`TestWrapCheckRecognizesForms` の関連を直す（AC-06・AC-20）。
-- [ ] `errors_test.go` の 27 か所の文字列の `Level`・`Field` を型付きの値に書き換える。`template_expansion_validation_test.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate`（errors.go の型）の文字列の `Field`（`:409`・`:421`）も、本 Phase で型付きの値に書き換える（書き換えないとパッケージのテストがコンパイルできない）。
-- [ ] `expansion_test.go` に `TestExpansionWrapSites_StructuredMessage` を加え、`expansion.go` のエラー書式の各箇所を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、原因が保たれること、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`errmsg.NewError` の panic が起きないこともこの実行で確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする。これにより、引用・識別子を `errmsg.Quoted` を通さずに描画する実装が、ヘルパ単体のテストだけでなく箇所ごとの比較でも捉えられる（検証の義務であり、テストコードの構造は問わない）。
-- [ ] `errors_test.go` に `TestErrorTypes_StructuredMessageSegments`（各型の `StructuredMessage().Segments()` が 02 付録 A と一致すること）と `TestErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える（AC-02・AC-03・AC-05・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とし、引用・識別子を `errmsg.Quoted` を通さずに描画する実装を捉えられるようにする（検証の義務であり、テストコードの構造は問わない）。
-- [ ] 02 §3.7 に従い、`errmsg_guard_test.go` の `TestExemptRoleCallCheckRecognizesForms` のうち `inScopeExpansionFile` を定数として使うケース（`:680-682`）を、パスを直接書く形に直す（AC-22）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に、group の展開（`env_import` の allowlist 違反）の Slack の `Error Message` にシステム環境変数の名前・変数名・group 名が出ることを確かめるテストを加える（AC-09）。global の `vars` の循環参照で経路の変数名が出ることを確かめるテストを加える（AC-10）。
+- [x] 02 §3.3 のとおり、`errors.go` で `Error() string` を持つ型（`ErrUndefinedVariableDetail` を除く）に `StructuredMessage() errmsg.Message` を加え、`Error()` を `return e.StructuredMessage().String()` にする。部分の並びと役割は 02 付録 A による。`Unwrap()`・`Is()` は変えない（AC-02・AC-03・AC-05・AC-14・AC-15）。
+- [x] `errors.go` のエラー型の `Level`・`Field`・`EnvImportLevel`・`VarsLevel` 欄を、02 §3.2 のとおり型 `Level`・`Field` にする。
+- [x] `expansion.go`・`validation.go` の構築箇所で、`Level`・`Field` を型のまま（または構築関数から）渡す。`:175` の位置文字列は残す。`template_expansion.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate` の `Field` の欄も型にする（`:714`・`:1142`・`:1151`）。
+- [x] `expansion.go` の 10 か所の `fmt.Errorf` を 02 §3.5.2 と付録 A の役割で構造化する。8 か所の前置き全体が `Text` の `NewError` を宣言し直す。`expandCmdAllowed` の `EvalSymlinks` の失敗は `errmsg.PathErrorCause` にする。`ErrForbiddenEnvVar` などのセンチネルエラーは `errmsg.Cause` として同じ位置に置く（AC-06・AC-07・AC-14・AC-15）。
+- [x] `errors_test.go` に `TestExpandCmdAllowed_ResolvePathCauseKeepsPath` を加え、`EvalSymlinks` の失敗の原因で、パスが `Path` の断片として残ることと、組み立てた `Error()` が変更前と同じであることを確かめる（AC-07・AC-14）。
+- [x] `errmsg_guard_test.go` を更新する。`exemptRolePositions` に `errors.go` をファイル全体として加え、`inScopeExpansionFile`・`inScopeExpansionExclusions` と `declaresExemptRole` の例外をなくす。`pathErrorCausePositions` に `expansion.go` の `expandCmdAllowed` を加える。`PathErrorCause` の違反の文言を直す。`TestExemptRoleCallCheckRecognizesForms` の除外のケースを、除外が無くなった後の形に直す（AC-20・AC-22）。
+- [x] `wrap_guard_test.go` を更新する。`inScopeWholeFiles` に `errors.go` を加え、`inScopeFunctions` から `errors.go` の 3 関数を外す。`TestScopeCatalogNamesExist`・`TestWrapCheckRecognizesForms` の関連を直す（AC-06・AC-20）。
+- [x] `errors_test.go` の 27 か所の文字列の `Level`・`Field` を型付きの値に書き換える。`template_expansion_validation_test.go` の `ErrLocalVariableInTemplate`・`ErrUndefinedGlobalVariableInTemplate`（errors.go の型）の文字列の `Field`（`:409`・`:421`）も、本 Phase で型付きの値に書き換える（書き換えないとパッケージのテストがコンパイルできない）。
+- [x] `expansion_test.go` に `TestExpansionWrapSites_StructuredMessage` を加え、`expansion.go` のエラー書式の各箇所を実行する。固定の文言が `Constant`、名前が 02 §3.1 の役割、原因が保たれること、**組み立てた `Error()` が変更前の `fmt.Sprintf` を再現した文字列と一致すること**、`errors.Is`・`errors.AsType` が変更前と同じ対象に届くことを確かめる。`errmsg.NewError` の panic が起きないこともこの実行で確かめる（AC-07・AC-14・AC-15）。変更前の文言の比較では、以前 `%q` を使っていた各箇所について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とする。これにより、引用・識別子を `errmsg.Quoted` を通さずに描画する実装が、ヘルパ単体のテストだけでなく箇所ごとの比較でも捉えられる（検証の義務であり、テストコードの構造は問わない）。
+- [x] `errors_test.go` に `TestErrorTypes_StructuredMessageSegments`（各型の `StructuredMessage().Segments()` が 02 付録 A と一致すること）と `TestErrorTypes_ErrorMessageMatchesLegacyFormat`（各型の `Error()` が変更前の `fmt.Sprintf` の結果と一致すること）を加える（AC-02・AC-03・AC-05・AC-14）。変更前の文言の比較では、以前 `%q` を使っていた各エラー型について、少なくとも 1 つは `"` と `\` を含む値を実行することを義務とし、引用・識別子を `errmsg.Quoted` を通さずに描画する実装を捉えられるようにする（検証の義務であり、テストコードの構造は問わない）。
+- [x] 02 §3.7 に従い、`errmsg_guard_test.go` の `TestExemptRoleCallCheckRecognizesForms` のうち `inScopeExpansionFile` を定数として使うケース（`:680-682`）を、パスを直接書く形に直す（AC-22）。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に、group の展開（`env_import` の allowlist 違反）の Slack の `Error Message` にシステム環境変数の名前・変数名・group 名が出ることを確かめるテストを加える（AC-09）。global の `vars` の循環参照で経路の変数名が出ることを確かめるテストを加える（AC-10）。
 
 **完了条件**: `internal/runner/config`・`internal/runner`・`cmd/runner` のテストが green。`ErrUndefinedVariableDetail` を含む errors.go の各型の `Error()` の文言が変更前と同じである。AC-09・AC-10 のテストが green。
 
@@ -181,8 +181,8 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 変更範囲が広い機械的な型変更だが、原因の到達性と役割の割り当ての網羅が正しさを決める
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 

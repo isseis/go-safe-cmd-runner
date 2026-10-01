@@ -711,7 +711,7 @@ func validateGlobalOnly(input, templateName string, field Field) error {
 		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        field.String(),
+				Field:        field,
 				VariableName: varName,
 			}
 		}
@@ -1139,7 +1139,7 @@ func validateFieldVars(
 		if scope != variable.ScopeGlobal {
 			return &ErrLocalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        fieldName.String(),
+				Field:        fieldName,
 				VariableName: varName,
 			}
 		}
@@ -1148,7 +1148,7 @@ func validateFieldVars(
 		if _, exists := globalVars[varName]; !exists {
 			return &ErrUndefinedGlobalVariableInTemplate{
 				TemplateName: templateName,
-				Field:        fieldName.String(),
+				Field:        fieldName,
 				VariableName: varName,
 			}
 		}

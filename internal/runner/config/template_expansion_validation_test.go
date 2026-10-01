@@ -406,7 +406,7 @@ func TestErrorMessages(t *testing.T) {
 	t.Run("ErrLocalVariableInTemplate", func(t *testing.T) {
 		err := &ErrLocalVariableInTemplate{
 			TemplateName: "test_template",
-			Field:        "cmd",
+			Field:        cmdField(),
 			VariableName: "local_var",
 		}
 		msg := err.Error()
@@ -418,7 +418,7 @@ func TestErrorMessages(t *testing.T) {
 	t.Run("ErrUndefinedGlobalVariableInTemplate", func(t *testing.T) {
 		err := &ErrUndefinedGlobalVariableInTemplate{
 			TemplateName: "test_template",
-			Field:        "args[0]",
+			Field:        argsField(0),
 			VariableName: "UNDEFINED_VAR",
 		}
 		msg := err.Error()

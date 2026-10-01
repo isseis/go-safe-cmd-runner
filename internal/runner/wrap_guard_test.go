@@ -45,6 +45,7 @@ var inScopeWholeFiles = []string{
 	"internal/runner/group_stage.go",
 	"internal/runner/group_errors.go",
 	"internal/runner/config/expansion.go",
+	"internal/runner/config/errors.go",
 }
 
 // inScopeFunctions are the functions and methods that are in scope for the guard
@@ -54,9 +55,6 @@ var inScopeFunctions = []scopedFunc{
 	{"internal/runner/runner.go", "(*Runner).Execute"},
 	{"internal/runner/runner.go", "(*Runner).ExecuteGroup"},
 	{"internal/runner/runner.go", "(*Runner).executeGroups"},
-	{"internal/runner/config/errors.go", "(*ErrUndefinedVariableDetail).StructuredMessage"},
-	{"internal/runner/config/errors.go", "(Level).parts"},
-	{"internal/runner/config/errors.go", "(Field).parts"},
 	{"internal/runner/resource/normal_manager.go", "(*NormalResourceManager).ExecuteCommand"},
 	{"internal/runner/resource/normal_manager.go", "(*NormalResourceManager).executeCommandWithOutput"},
 	{"internal/runner/resource/normal_manager.go", "(*NormalResourceManager).ValidateOutputPath"},
@@ -85,18 +83,6 @@ var inScopeFunctions = []scopedFunc{
 	{"internal/logging/execution_error.go", "(*ExecutionError).contextParts"},
 }
 
-// expansionExcludedFunctions are the functions in expansion.go that build the
-// errors of issue #1197, out of the task's scope. The whole-file scope of
-// expansion.go excludes their bodies. The guard confirms each name still
-// exists, so a rename cannot quietly drop the exclusion (or the function).
-var expansionExcludedFunctions = []string{
-	"ProcessEnvImport",
-	"ProcessEnv",
-	"resolveAndPrepareCommandSpec",
-	"ApplyTemplateInheritance",
-	"expandTemplateToSpec",
-}
-
 // inScopeErrorTypes are the types whose StructuredMessage declaration the
 // guard pins explicitly. They wrap causes reachable from the in-scope
 // functions but are declared in files that are only partly in scope, so the
@@ -109,8 +95,7 @@ var inScopeErrorTypes = []typeRef{
 
 // unwrapWithoutStructuredExceptions are the types allowed to declare Unwrap
 // without StructuredMessage: the two logging report types build their message
-// from DetailMessage/ReportMessage, and the config *...Detail types are out of
-// scope (issue #1197).
+// from DetailMessage/ReportMessage instead.
 var unwrapWithoutStructuredExceptions = []typeRef{
 	{"internal/logging/pre_execution_error.go", "PreExecutionError"},
 	{"internal/logging/execution_error.go", "ExecutionError"},
@@ -327,9 +312,6 @@ func buildWrapScope(set *wrapGuardSet) wrapScope {
 	}
 	for _, file := range inScopeWholeFiles {
 		scope.wholeFiles[file] = make(map[string]bool)
-	}
-	for _, fn := range expansionExcludedFunctions {
-		scope.wholeFiles["internal/runner/config/expansion.go"][fn] = true
 	}
 	for _, sf := range inScopeFunctions {
 		if scope.functions[sf.file] == nil {
@@ -667,7 +649,6 @@ func TestScopeCatalogNamesExist(t *testing.T) {
 	for _, sf := range inScopeFunctions {
 		byFile[sf.file] = append(byFile[sf.file], sf.fn)
 	}
-	byFile["internal/runner/config/expansion.go"] = append(byFile["internal/runner/config/expansion.go"], expansionExcludedFunctions...)
 
 	for file, keys := range byFile {
 		require.Truef(t, present[file], "scope file %s is missing; the scope is stale", file)
