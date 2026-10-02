@@ -91,7 +91,9 @@ else
     status=1
 fi
 
-# Drop one expected word from one file; the check must notice.
+# Drop one expected word from one file; the check must notice. Every other
+# expected word, including the AC-23 terms, stays in the fixture, so the
+# negative case fails for the removed word rather than for an unrelated gap.
 cat > "$ARCH_JA" <<'EOF'
 役割
 値全体置換
@@ -100,6 +102,12 @@ cat > "$ARCH_JA" <<'EOF'
 Path
 Text
 構造を持たない
+システム環境変数の名前
+テンプレート名
+パラメータ名
+--groups
+拒否された名前
+保護の境界
 EOF
 if STRUCTURED_MSG_DOCS_ROOT="$TMP" sh "$CHECK" >/dev/null 2>&1; then
     echo "FAIL: a missing word must fail the check"
