@@ -1366,7 +1366,8 @@ func TestPartFlowCheckRecognizesForms(t *testing.T) {
 }
 
 // checkStructuredErrorRendering reports every type of the checked packages,
-// including an alias of an unnamed struct, that has a `StructuredMessage()
+// including an alias of an unnamed struct and an unnamed struct type written
+// in place, such as a composite literal's, that has a `StructuredMessage()
 // errmsg.Message`, declared or promoted, and whose `Error() string` is neither
 // declared on the type as exactly
 // `return <receiver>.StructuredMessage().String()` nor selected through the
@@ -1385,16 +1386,18 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 				}
 			}
 		}
-		// Every type the package declares, including those inside functions.
-		var typeNames []*types.TypeName
-		for _, obj := range p.info.Defs {
-			if tn, ok := obj.(*types.TypeName); ok && tn.Parent() != nil {
-				typeNames = append(typeNames, tn)
-			}
+		type subject struct {
+			name string
+			pos  token.Pos
+			typ  types.Type
 		}
-		slices.SortFunc(typeNames, func(a, b *types.TypeName) int { return int(a.Pos() - b.Pos()) })
-		for _, tn := range typeNames {
-			name := tn.Name()
+		// Every type the package declares, including those inside functions.
+		var subjects []subject
+		for _, obj := range p.info.Defs {
+			tn, ok := obj.(*types.TypeName)
+			if !ok || tn.Parent() == nil {
+				continue
+			}
 			if _, named := types.Unalias(tn.Type()).(*types.Named); tn.IsAlias() && named {
 				// Checked as the named type it denotes.
 				continue
@@ -1405,7 +1408,29 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 				// pointer type has no methods.
 				continue
 			}
-			recv := types.NewPointer(tn.Type())
+			subjects = append(subjects, subject{tn.Name(), tn.Pos(), tn.Type()})
+		}
+		// Every unnamed struct type written elsewhere than as a declared
+		// type, such as the type of a composite literal, which promotes
+		// methods from its embedded fields as a declared type does.
+		for _, f := range p.files {
+			declared := map[ast.Expr]struct{}{}
+			ast.Inspect(f.file, func(n ast.Node) bool {
+				switch n := n.(type) {
+				case *ast.TypeSpec:
+					declared[n.Type] = struct{}{}
+				case *ast.StructType:
+					if _, ok := declared[n]; !ok {
+						subjects = append(subjects, subject{"an unnamed struct type", n.Pos(), p.info.Types[n].Type})
+					}
+				}
+				return true
+			})
+		}
+		slices.SortFunc(subjects, func(a, b subject) int { return int(a.pos - b.pos) })
+		for _, sub := range subjects {
+			name := sub.name
+			recv := types.NewPointer(sub.typ)
 			smObj, smPath, _ := types.LookupFieldOrMethod(recv, false, p.pkg, "StructuredMessage")
 			sm, ok := smObj.(*types.Func)
 			if !ok || !hasSignature(sm, message) {
@@ -1427,11 +1452,11 @@ func checkStructuredErrorRendering(s *guardSet) (accepted int, violations []stri
 			case errFn != nil && slices.Equal(errPath[:len(errPath)-1], smPath[:len(smPath)-1]):
 				// Both methods come from the same embedded value.
 			case errFn == nil && len(smPath) == 1:
-				violations = append(violations, fmt.Sprintf("%s: %s declares StructuredMessage but not Error; Error must render StructuredMessage", position(tn.Pos()), name))
+				violations = append(violations, fmt.Sprintf("%s: %s declares StructuredMessage but not Error; Error must render StructuredMessage", position(sub.pos), name))
 			case errFn == nil:
 				// A promoted StructuredMessage without Error is not an error.
 			default:
-				violations = append(violations, fmt.Sprintf("%s: %s gets Error through another embedding path than its StructuredMessage", position(tn.Pos()), name))
+				violations = append(violations, fmt.Sprintf("%s: %s gets Error through another embedding path than its StructuredMessage", position(sub.pos), name))
 			}
 		}
 	}
@@ -1578,6 +1603,22 @@ func TestStructuredErrorRenderCheckRecognizesForms(t *testing.T) {
 			src: imp + "type messageOnly interface{ StructuredMessage() errmsg.Message }\n\n" +
 				"func f(m messageOnly, err error) error {\n\ttype combined struct {\n\t\tmessageOnly\n\t\terror\n\t}\n\treturn combined{m, err}\n}\n",
 			want: 1,
+		},
+		{
+			name: "a composite literal of an unnamed struct getting its methods through different fields",
+			src: imp + "type messageOnly interface{ StructuredMessage() errmsg.Message }\n\n" +
+				"func f(m messageOnly, err error) error {\n\treturn struct {\n\t\tmessageOnly\n\t\terror\n\t}{m, err}\n}\n",
+			want: 1,
+		},
+		{
+			name: "a variable of an unnamed struct getting its methods through different fields",
+			src: imp + "type messageOnly interface{ StructuredMessage() errmsg.Message }\n\n" +
+				"var v struct {\n\tmessageOnly\n\terror\n}\n",
+			want: 1,
+		},
+		{
+			name: "a composite literal of an unnamed struct promoting both methods from one field",
+			src:  imp + "func f(err errmsg.Structured) error { return struct{ errmsg.Structured }{err} }\n",
 		},
 		{
 			name: "a StructuredMessage taking a parameter is not the structured contract",
