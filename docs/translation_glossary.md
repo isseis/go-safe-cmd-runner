@@ -288,6 +288,7 @@
 |--------|---------|------|
 | 受理形式 | accepted format | ユーザー入力として受け付ける値の形式。Task 0162 では run ID の受理形式を `^[A-Za-z0-9_-]{1,64}$` と定めた |
 | 実行前段 | pre-execution stage | group のコマンドが 1 件も実行される前の処理段階。Task 0176 はこの段階の失敗を `pre_execution_error` として通知する |
+| 実行全体の中断 | interruption of the whole run | SIGINT・SIGTERM で実行全体の context が取り消されること。コマンド自身の `timeout` による期限切れとは区別する（Task 0177） |
 
 ### K
 
