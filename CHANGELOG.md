@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+N/A
+
+## [1.2.0] - 2026-10-02
+
 ### Breaking Changes
 
 #### `runner`: `--run-id` accepted format limited to `^[A-Za-z0-9_-]{1,64}$`
