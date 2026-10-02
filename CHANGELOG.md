@@ -217,6 +217,51 @@ Group and command identifiers are now validated at startup (before hash verifica
 
 **Affected scenarios:** A TOML file is rejected at startup if any identifier hits one of the following: an empty command name, a name containing a control or format-control character, a name with no displayable character left (such as one made only of ASCII spaces), a name longer than 128 bytes, or a duplicate command name within one group. The character-set check for group names (`^[A-Za-z_][A-Za-z0-9_]*$`) is unchanged.
 
+#### Subsequent groups run even after a command times out
+
+Previously, when a command exceeded its `timeout`, the whole run stopped at that point: subsequent groups were not run, and the failures of groups that had failed earlier were not reported either. Now, just as when a command fails with a non-zero exit code, the group containing that command is recorded as failed and subsequent groups are run. The final report lists every group that failed, including those that timed out.
+
+An interruption of the whole run by SIGINT or SIGTERM ends the run at that point without running the remaining groups, as before.
+
+**Affected scenarios:**
+
+- Because subsequent groups run after a timeout, a single run can take longer. Slack notifications (`command_group_summary` and pre-execution-stage failure notifications) also increase by the notifications for the subsequent groups.
+- Grandchild processes started by a command that timed out can remain and can run concurrently with subsequent groups. This is because runner terminates only the direct child process, not the whole process group. Take care with configurations in which a subsequent group assumes that an earlier group has completed. For details, see "4.1 timeout" in [Global Level Configuration](docs/user/toml_config/04_global_level.md).
+- The timeout report text is now prefixed with `failed to execute group <group name>: `.
+
+#### A negative `output_size_limit` is rejected when the configuration is loaded
+
+A configuration that specifies a negative value for `output_size_limit` is now rejected when it is loaded, at any of the global, template, and command levels. It is also detected in dry-run. Previously such a value passed loading and failed as a size overrun on the first write to the output file.
+
+**Affected scenarios:** A configuration that contains a negative value can no longer start. To set no limit, specify `0` (as described under "Fixed" below, `0` now works as unlimited).
+
+### Added
+
+#### Failures before a group's execution are notified to Slack
+
+When a group fails at a stage before it starts running commands, a `pre_execution_error` notification is now sent to Slack. Previously, nothing reached Slack except for group file verification failures and command execution failures, and when a group ended without running a single command, neither a success notification nor a failure notification arrived.
+
+The stage can be distinguished by the notification's `error_type`.
+
+| `error_type` | Stage that failed | Scope |
+|---|---|---|
+| `group_preparation_failed` | Group expansion and working directory resolution | group |
+| `group_preparation_failed` | Command expansion and working directory resolution | command |
+| `group_dir_permission_violation` | Group directory permission audit | group |
+| `group_file_verification_failed` | Group file verification failures other than verification errors | group |
+| `command_verification_failed` | Re-resolution of the command path after verification, and verification of library dependencies and shebang interpreters | command |
+| `group_pre_execution_failed` | Failures that match none of the above | group |
+
+There is one notification per failure. This notification does not add `RUN_SUMMARY` lines to stdout or reports to stderr; those are output only once at the end of the process, as before.
+
+**Affected scenarios:** Slack notifications are now sent for the failures above. If you have monitoring rules that route notifications by `error_type`, add the new values.
+
+#### Group verification error notifications list the files that failed
+
+The `Error Message` of the Slack notification sent when group file verification fails now lists the files that failed verification. Previously, only global verification errors showed file paths, and group verification errors did not. When command path resolution fails at the stage of collecting the verification targets, the commands that could not be resolved are listed. The list is sorted in ascending order.
+
+Global and group verification errors carry the list in the same structured attribute, `failed_file_paths`, and display it in the same format.
+
 ### Changed
 
 #### Log file name timestamps are now UTC
@@ -242,11 +287,70 @@ The rules that determine a violation, the log levels, and the exit codes are unc
 
 **Affected scenarios:** Monitoring rules and scripts that search or match logs by the above text are affected. Update them to the new text. Note that the procedure for assessing impact before upgrading, described in "`verify`: fail-closed on hash directory permission violations" in this release, is run on the version **before** the upgrade, so it works correctly with the old text written there.
 
+#### Group and command names are no longer subject to redaction
+
+Group names and command names are now exempt from value-based redaction at every output destination of logs and Slack notifications. Previously, a name containing a word that suggests a secret (such as `key` or `token`), like `monkey` or `token-rotate`, was replaced with `[REDACTED]`, and it was sometimes impossible to tell from the notification's Scope which group the failure occurred in. The reason is that names are literals written in the TOML and are not a channel that carries secrets.
+
+Redaction of free-form strings, such as stdout and stderr, command lines, arguments, environment variable values, and message bodies, has not been weakened.
+
+#### Error messages are redacted part by part
+
+The error messages recorded in logs and Slack notifications (`error_message`) were single strings containing group names, command names, paths, variable names, and so on. As a result, merely because a name or path contained a word that suggests a secret (such as `key`, `token`, or `secret`), the whole message was replaced with `[REDACTED]`. When multiple groups failed, the name of one group could also wipe out the causes of all groups at once.
+
+Now an error message is handled as a sequence of parts — fixed text, names, paths, and other strings — and redaction is applied to each part.
+
+- Fixed text and names such as group names and command names are not replaced.
+- Paths are not subject to whole-value replacement. Detection of the key=value format and token formats still applies.
+- The other parts receive the same redaction as before. When such a part contains one of these words, only that part becomes `[REDACTED]`.
+
+This covers failures in a group's pre-execution stage, the final execution error, configuration expansion and validation errors (the `env_import` allowlist, circular variable references, template parameters, mistakes in `--groups`, and so on), and verification errors for library dependencies and shebang interpreters. The checks that hide secrets (key=value, the word after `Bearer ` or `Basic `, token and key formats, and attribute names) have not been weakened. The stderr `Details:` does not pass through redaction, as before, and its text is unchanged.
+
+**Affected scenarios:** Part or all of error messages that used to be `[REDACTED]` now appear in logs and Slack notifications.
+
+#### When multiple groups fail, the report shows which group each line belongs to
+
+In the final report when multiple groups fail (the stderr `Details:` and the structured log's `error_message`), each line now begins with `failed to execute group <group name>: `. Previously, only the line for an output size overrun was replaced with a short text, and it was not possible to tell which group and command had failed. The cause text is no longer replaced, and all information about the cause remains in the report. When a cause spans multiple lines, the second and later lines are indented more deeply than the group's line.
+
+The text for an output size overrun has also changed.
+
+- Before: `output size limit exceeded for '<path>'` (the report line)
+- After: `output capture error during execution phase: output size limit exceeded for '<path>' (limit: <limit> bytes)`
+
+**Affected scenarios:** If you have monitoring rules or scripts that match logs by the above text, update them to the new text.
+
+#### Command output retained in memory is now capped
+
+The stdout and stderr of a command that runner retains in memory are now limited to the first 64 KiB, regardless of whether an output file is specified and of the value of `output_size_limit`. When the limit is exceeded, the first 64 KiB is kept up to its last complete line, followed by the omission marker `... omitting N bytes ...`. Previously, there was no limit on, for example, the stdout of a command that specifies no output file, and a command producing a large amount of output could exhaust runner's memory. The content written to the output file is unchanged.
+
+**Affected scenarios:**
+
+- For output that exceeds the limit, the content of the logs (the `output` of `command_group_summary` and the `stderr` of `Command failed`), the audit log, and the output field of Slack notifications changes. The tail is not kept.
+- When the stderr of a failed command exceeds the limit, its last line (in many cases the reason for the failure) is not kept anywhere. This is because no output file is created when the command fails.
+- If you need the whole output, specify an output file for the command. However, the output file remains only when the command succeeds and its output fits within `output_size_limit` (or when the limit is `0`).
+
+### Fixed
+
+#### Failures of `run_as_user` / `run_as_group` commands are now recorded in the audit log and notified
+
+When a command with `run_as_user` or `run_as_group` failed after it had started (including a non-zero exit code and forced termination by a timeout or signal), previously no `user_group_execution` record was written to the audit log and no `user_group_command_failure` Slack notification was sent. Only successes remained in the audit log. Now the failure audit record is written and the notification is sent. A failure in which the command never started (a refused privilege escalation, a failure to start, and so on) is not recorded as an execution failure.
+
+#### `output_size_limit = 0` now works as unlimited
+
+`output_size_limit = 0` means unlimited, but previously it failed as a size overrun on the first write to the output file. Now it writes without a limit.
+
+#### An interruption of the whole run is no longer reported as a success
+
+When the whole run was interrupted by SIGINT or SIGTERM, depending on how failures overlapped, it was sometimes reported with exit code 0 and a successful `RUN_SUMMARY` line (for example, when group file verification had failed just before the interruption). Now an interrupted run always ends with exit code 1, the `RUN_SUMMARY` line reports a failure, and a `context canceled` line is added to the stderr `Details:`. An interruption that arrives after the last group has completed is reported as a success, as before.
+
 ### Security
 
 #### `groupmembership`: malformed `/etc/group` / `/etc/passwd` lines are now logged
 
 The non-CGO fallback implementation (`internal/groupmembership`) previously skipped malformed lines in `/etc/group` and `/etc/passwd` silently. It now emits a `slog.Warn` with the file name and line number attached, so a corrupted or hand-edited entry that hides group members can be detected in the logs (previously it silently degraded to a "zero members" verdict).
+
+#### Truncated private key blocks are also hidden
+
+When redaction finds a `BEGIN ... PRIVATE KEY` line with no corresponding `END` line, it now hides everything from that line to the end of the text. This is because, with the upper limit on output retained in memory, the latter part of a private key block can be omitted. This applies to all of the logs, the audit log, and Slack notifications.
 
 ## [1.1.1] - 2026-08-03
 
