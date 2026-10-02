@@ -269,8 +269,8 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ---
 
@@ -344,9 +344,9 @@
 | 4 | `cli.FilterGroups` の存在しない名前を `Text` にする | `filter_test.go::TestFilterGroups_GroupNotFoundStructuredMessage` |
 | 5 | `StructuredMessage` を持たないエラー型を加える | `config_error_guard_test.go::TestConfigErrorTypesDeclareStructuredMessage` |
 | 5 | エラー型の `Level` 欄を `string` に戻す | `config_error_guard_test.go::TestConfigErrorLevelAndFieldTypesAreTyped` |
-| 5 | `Ident` の引数に `Level.String()` を渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField` |
-| 5 | `Ident` の引数に `fmt.Sprintf("%s", level)` を渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField` |
-| 5 | `validateVariableName` の位置文字列の式以外（例: 検証の分岐）で `level.String()` を `errmsg.Text` に渡す | `config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField`（許可位置の自己テスト） |
+| 5 | `Ident` の引数に `Level.String()` を渡す | `config_error_guard_test.go::TestConfigProductionDoesNotFlattenLevelOrField` |
+| 5 | `Ident` の引数に `fmt.Sprintf("%s", level)` を渡す | `config_error_guard_test.go::TestConfigProductionDoesNotFlattenLevelOrField` |
+| 5 | `validateVariableName` の位置文字列の式以外（例: 検証の分岐）で `level.String()` を `errmsg.Text` に渡す | `config_error_guard_test.go::TestConfigProductionDoesNotFlattenLevelOrField`（許可位置の自己テスト） |
 | 5 | `Text` の部分にも値全体置換を免除する | `security_redaction_test.go::TestTextSegmentsAreWholeValueReplaced` |
 | 5 | 日英どちらかから必須語を外す | `make verify-docs-checks`（`check_structured_message_redaction_docs.sh`） |
 
@@ -368,13 +368,13 @@
 
 ## 6. 実装チェックリスト
 
-- [ ] PR-1 マージ済み（対象ステップ: Phase 1。`errmsg.Quoted` と `Field` の拡張が green）
-- [ ] PR-2 マージ済み（対象ステップ: Phase 2。errors.go と expansion.go のエラーが構造化され、文言と到達性が不変）
-- [ ] PR-3 マージ済み（対象ステップ: Phase 3。template_errors.go と template_expansion.go のエラーが構造化）
-- [ ] PR-4 マージ済み（対象ステップ: Phase 4。`cli.FilterGroups` が構造化）
-- [ ] PR-5 マージ済み（対象ステップ: Phase 5。3 つのガード・保護のテスト・日英の文書・`make verify-docs-checks` が green）
-- [ ] すべての AC が §7 の検証で green
-- [ ] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録
+- [x] PR-1 マージ済み（対象ステップ: Phase 1。`errmsg.Quoted` と `Field` の拡張が green）
+- [x] PR-2 マージ済み（対象ステップ: Phase 2。errors.go と expansion.go のエラーが構造化され、文言と到達性が不変）
+- [x] PR-3 マージ済み（対象ステップ: Phase 3。template_errors.go と template_expansion.go のエラーが構造化）
+- [x] PR-4 マージ済み（対象ステップ: Phase 4。`cli.FilterGroups` が構造化）
+- [x] PR-5 マージ済み（対象ステップ: Phase 5。3 つのガード・保護のテスト・日英の文書・`make verify-docs-checks` が green）
+- [x] すべての AC が §7 の検証で green
+- [x] §4.4 の変異確認をすべて実施し、各コミットメッセージに記録
 
 ---
 
@@ -404,7 +404,7 @@
 | AC-18 | Phase 5 | `test`: `internal/runner/config/security_redaction_test.go::TestTextSegmentsAreWholeValueReplaced` |
 | AC-19 | Phase 5 | `test`: `internal/runner/config/security_redaction_test.go::TestNonIdentifierSegmentsMaskValueFormats` |
 | AC-20 | Phase 2・3・4・5 | `static`: `internal/errmsg/errmsg_guard_test.go::TestProductionExemptRoleCallsAreInAllowedPositions`・`TestProductionPartFieldsAreUnexportedAndUnbuiltOutsideErrmsg` と `internal/runner/wrap_guard_test.go::TestInScopeWrapsUseStructuredErrors`・`TestInScopeErrorTypesDeclareStructuredMessage` と各自己テスト |
-| AC-21 | Phase 5 | `static`: `internal/runner/config_error_guard_test.go::TestProductionDoesNotFlattenLevelOrField`・`TestConfigErrorLevelAndFieldTypesAreTyped` と各自己テスト |
+| AC-21 | Phase 5 | `static`: `internal/runner/config_error_guard_test.go::TestConfigProductionDoesNotFlattenLevelOrField`・`TestConfigErrorLevelAndFieldTypesAreTyped` と各自己テスト |
 | AC-22 | Phase 5 | `static`: 3 つの新しいガードと更新したガードの各自己テスト（§4.3） |
 | AC-23 | Phase 5 | `static`: `make verify-docs-checks`（`scripts/verification/check_structured_message_redaction_docs.sh` と `..._selftest.sh`）。`manual`: 日英の内容を突き合わせてレビューする |
 | AC-24 | 各 Phase | `static`: 各 Phase の `make fmt`（Go を変更した場合）・`make test`・`make lint` |
@@ -415,9 +415,9 @@
 
 `make test`・`make lint` が検出できない残存参照・用語の整合だけを挙げる。§7 の表と重複する項目は置かない。
 
-- [ ] 削除・改名したガードの一覧に載る名前（`inScopeExpansionFile`・`inScopeExpansionExclusions`・`expansionExcludedFunctions`）が、コメントを含めて本番コード・テストに残っていないこと（`rg -n "inScopeExpansion|expansionExcludedFunctions" internal cmd`）。
-- [ ] `docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md` の `expansion.go` の除外と config の `*...Detail` 型を範囲外とする記述に、本タスクで範囲に入ったことを示す注記があること。
-- [ ] `docs/translation_glossary.md` に、Phase 5 で新しく使う用語の対訳があること。既存の「構造化メッセージ」「断片」「役割」「値全体置換」「識別子」「免除」で足りる見込みである。`/mktrans` の結果を確認する。
+- [x] 削除・改名したガードの一覧に載る名前（`inScopeExpansionFile`・`inScopeExpansionExclusions`・`expansionExcludedFunctions`）が、コメントを含めて本番コード・テストに残っていないこと（`rg -n "inScopeExpansion|expansionExcludedFunctions" internal cmd`）。
+- [x] `docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md` の `expansion.go` の除外と config の `*...Detail` 型を範囲外とする記述に、本タスクで範囲に入ったことを示す注記があること。
+- [x] `docs/translation_glossary.md` に、Phase 5 で新しく使う用語の対訳があること。既存の「構造化メッセージ」「断片」「役割」「値全体置換」「識別子」「免除」で足りる見込みである。`/mktrans` の結果を確認する。
 
 ---
 
