@@ -223,13 +223,13 @@ Group and command identifiers are now validated at startup (before hash verifica
 
 #### Subsequent groups run even after a command times out
 
-Previously, when a command exceeded its `timeout`, the whole run stopped at that point: subsequent groups were not run, and the failures of groups that had failed earlier were not reported either. Now, just as when a command fails with a non-zero exit code, the group containing that command is recorded as failed and subsequent groups are run. The final report lists every group that failed, including those that timed out.
+Previously, when a command exceeded its `timeout`, the whole run stopped at that point: subsequent groups were not run, and the failures of groups that had failed earlier were not reported either. Now, just as when a command fails with a non-zero exit code, the group containing that command is recorded as failed and subsequent groups are run. The final report also lists the groups that timed out. A group file verification failure, however, is not listed in the final report; it is notified separately when it occurs.
 
 An interruption of the whole run by SIGINT or SIGTERM ends the run at that point without running the remaining groups, as before.
 
 **Affected scenarios:**
 
-- Because subsequent groups run after a timeout, a single run can take longer. Slack notifications (`command_group_summary` and pre-execution-stage failure notifications) also increase by the notifications for the subsequent groups.
+- Because subsequent groups run after a timeout, a single run can take longer. Slack notifications (`command_group_summary`, `user_group_command_failure`, and pre-execution-stage failure notifications) also increase by the notifications for the subsequent groups.
 - Grandchild processes started by a command that timed out can remain and can run concurrently with subsequent groups. This is because runner terminates only the direct child process, not the whole process group. Take care with configurations in which a subsequent group assumes that an earlier group has completed. For details, see "4.1 timeout" in [Global Level Configuration](docs/user/toml_config/04_global_level.md).
 - The timeout report text is now prefixed with `failed to execute group <group name>: `.
 
@@ -293,7 +293,7 @@ The rules that determine a violation, the log levels, and the exit codes are unc
 
 #### Group and command names are no longer subject to redaction
 
-Group names and command names are now exempt from value-based redaction at every output destination of logs and Slack notifications. Previously, a name containing a word that suggests a secret (such as `key` or `token`), like `monkey` or `token-rotate`, was replaced with `[REDACTED]`, and it was sometimes impossible to tell from the notification's Scope which group the failure occurred in. The reason is that names are literals written in the TOML and are not a channel that carries secrets.
+In logs and Slack notifications, attributes whose value is a group name or command name (the notification's Scope, the `group` and `command` log attributes, and so on) and the name parts of `error_message` are now exempt from value-based redaction. A name concatenated into a message or error string (such as the `error` attribute) is not exempt, and the whole string can become `[REDACTED]`. Previously, a name containing a word that suggests a secret (such as `key` or `token`), like `monkey` or `token-rotate`, was replaced with `[REDACTED]`, and it was sometimes impossible to tell from the notification's Scope which group the failure occurred in. The reason is that names are literals written in the TOML and are not a channel that carries secrets.
 
 Redaction of free-form strings, such as stdout and stderr, command lines, arguments, environment variable values, and message bodies, has not been weakened.
 
@@ -307,7 +307,7 @@ Now an error message is handled as a sequence of parts — fixed text, names, pa
 - Paths are not subject to whole-value replacement. Detection of the key=value format and token formats still applies.
 - The other parts receive the same redaction as before. When such a part contains one of these words, only that part becomes `[REDACTED]`.
 
-This covers failures in a group's pre-execution stage, the final execution error, configuration expansion and validation errors (the `env_import` allowlist, circular variable references, template parameters, mistakes in `--groups`, and so on), and verification errors for library dependencies and shebang interpreters. The checks that hide secrets (key=value, the word after `Bearer ` or `Basic `, token and key formats, and attribute names) have not been weakened. The stderr `Details:` does not pass through redaction, as before, and its text is unchanged.
+This covers failures in a group's pre-execution stage, the final execution error, configuration expansion and validation errors (the `env_import` allowlist, circular variable references, template parameters, mistakes in `--groups`, and so on), and verification errors for library dependencies and shebang interpreters. The checks that hide secrets (key=value, the word after `Bearer ` or `Basic `, token and key formats, and attribute names) have not been weakened. The stderr `Details:` does not pass through redaction, as before.
 
 **Affected scenarios:** Part or all of error messages that used to be `[REDACTED]` now appear in logs and Slack notifications.
 
