@@ -235,9 +235,9 @@ An interruption of the whole run by SIGINT or SIGTERM ends the run at that point
 
 #### A negative `output_size_limit` is rejected when the configuration is loaded
 
-A configuration that specifies a negative value for `output_size_limit` is now rejected when it is loaded, at any of the global, template, and command levels. It is also detected in dry-run. Previously such a value passed loading and failed as a size overrun on the first write to the output file.
+A configuration that specifies a negative value for `output_size_limit` is now rejected when it is loaded, at any of the global, template, and command levels. It is also detected in dry-run. Previously such a value passed loading and failed as a size overrun on the first write, only for commands that specify an output file.
 
-**Affected scenarios:** A configuration that contains a negative value can no longer start. To set no limit, specify `0` (as described under "Fixed" below, `0` now works as unlimited).
+**Affected scenarios:** A configuration that contains a negative value can no longer start. This includes configurations that previously ran without problems, such as ones that do not use output files or that have a negative value in an unused template. To set no limit, specify `0` (as described under "Fixed" below, `0` now works as unlimited).
 
 ### Added
 
