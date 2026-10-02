@@ -238,24 +238,24 @@
 
 - [x] `make test && make lint` が green であることを確認した
 - [x] PR を作成した
-- [ ] PR がマージされた
-- [ ] 次のブランチへ切り替えた
+- [x] PR がマージされた
+- [x] 次のブランチへ切り替えた
 
 ### Phase 5: 仕上げ（ガードの新設、保護のテスト、文書）
 
 **Files**: `internal/runner/config_error_guard_test.go`（新規・`//go:build test`）、`internal/runner/config/security_redaction_test.go`（新規）、`internal/logging`・`internal/runner`・`cmd/runner` の既存テスト（追加）、`docs/dev/architecture_design/security-architecture.ja.md`・`.md`、`docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md`、`scripts/verification/check_structured_message_redaction_docs.sh`・`..._selftest.sh`
 
-- [ ] `internal/runner/config_error_guard_test.go` に、02 §3.7 の「エラー型の網羅」の検査を実装する。対象パッケージ（`internal/runner/config`）で宣言され `Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は指す型として確かめる。対象の型の一覧は保守しない（AC-01）。
-- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの型」の検査を実装する。level/field の意味スロット、すなわち正確な名前 `Level`・`Field` と既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）が型 `Level`・`Field` であることを確かめる。名前が `Field` で終わる欄でも、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）は拒否しない。明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する（I-02、AC-04・AC-21）。
-- [ ] 同ファイルに、02 §3.7 の「レベル・フィールドの値の流入」の検査を実装する。`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が (1) `.String()` で描画される形と、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数で `%s`・`%v`・`%q` として描画される形を検出する。許可位置は `validateVariableName` の全体ではなく、`variable.ValidateVariableNameForScope` に渡す位置文字列の式（`validation.go:175`）だけとし、同関数の他の箇所（エラー型の構築を含む）も含めてそれ以外を拒否する（I-01、AC-21）。(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす。
-- [ ] 3 つの検査に、対象の実装を壊すと失敗することを示す自己テストを付ける。変異の例: `StructuredMessage` を持たないエラー型を加える、あるいは `Level` 欄を `string` に戻す、`Ident` の引数に `Level.String()` を渡す、`Ident` の引数に `fmt.Sprintf("%s", level)` を渡す、許可位置の外で `.String()` を呼ぶ。値の流入の検査では、位置文字列の式は許容し、`validateVariableName` の他の分岐で `errmsg.Text(level.String())` を書くと拒否されることも確かめる（AC-22）。
-- [ ] `internal/runner/config/security_redaction_test.go` に、02 §7.3 の保護のテストを置く。`Text` として宣言した部分（拒否された名前・生の設定値）に値全体置換だけが反応する入力を与え、その部分が置換文字列になること（AC-18）。`Identifier` 以外の部分に値形式の検出だけが反応する値（GitHub トークン形式）を含む `env` のエントリやテンプレートの入力文字列が、変更後もマスクされること（AC-19）。
-- [ ] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_PreExecutionConfigErrors_OutputContract` を加え、AC-16・AC-17 が名指しする producer をすべて駆動する。Phase 2〜4 で作った config エラーのシナリオ（`ExpandGlobal`・`ExpandGroup`・`ValidateAllTemplates`・`cli.FilterGroups`）に加え、AC-13 の producer であるコマンド・テンプレートの展開（`ExpandCommand`）を対象に含め、次の両方を確かめる。(1) stderr の `  Details:` のブロック全体（`stderrDetailsBlock`。missing-groups の `Available groups:` 行のような継続行を含む）の文言が変更前と同じであること（AC-16）。(2) 通知の件数・Scope・フィールドの構成が変更前と同じであること（`run.payloads`）と、`message_type`・`error_type` が変更前と同じであること（`jsonLogRecords` で読む JSON ログの属性）（AC-17）。
-- [ ] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、01 AC-23 の内容を追記する。システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前・存在しないテンプレートへの参照名・重複して定義されたテンプレート名を `Identifier` とすること、誤って秘密を名前の位置に書いた場合の保護の境界（`ErrTemplateContainsNameField` のテンプレート名を含む）を記す（AC-23）。
-- [ ] `docs/dev/architecture_design/security-architecture.md` を `/mktrans` で日本語版と同じ内容に反映する。用語集に不足があれば登録する（AC-23）。
-- [ ] `docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md` の対象の範囲の記述（`expansion.go` の除外、config の `*...Detail` 型を範囲外とする例外）に、本タスクで範囲に入ったことを注記する（02 §3.6）。
-- [ ] `scripts/verification/check_structured_message_redaction_docs.sh` に、追記した語（システム環境変数の名前・テンプレート名・パラメータ名・`--groups`・拒否された名前・保護の境界）を日英それぞれの必須語として加え、`check_structured_message_redaction_docs_selftest.sh` のフィクスチャを更新する。`make verify-docs-checks` を実行して green を確かめる（AC-23）。
-- [ ] 最終の `make test`・`make lint` を通す（AC-24）。
+- [x] `internal/runner/config_error_guard_test.go` に、02 §3.7 の「エラー型の網羅」の検査を実装する。対象パッケージ（`internal/runner/config`）で宣言され `Error() string` を持つすべての型が、`StructuredMessage() errmsg.Message` を持つことを確かめる。型の別名は指す型として確かめる。対象の型の一覧は保守しない（AC-01）。
+- [x] 同ファイルに、02 §3.7 の「レベル・フィールドの型」の検査を実装する。level/field の意味スロット、すなわち正確な名前 `Level`・`Field` と既に使われている `...Level` の規則（`EnvImportLevel`・`VarsLevel`）が型 `Level`・`Field` であることを確かめる。名前が `Field` で終わる欄でも、検証されていない名前を保持して `Text` に属する生の値の `string` の欄（`UnknownField string` など）は拒否しない。明示的な例外集合を設けて自己テストで固定するか、規則を実際の level/field の位置スロットに限る。認識する名前の規則は 1 か所で定義し、自己テストで固定する（I-02、AC-04・AC-21）。
+- [x] 同ファイルに、02 §3.7 の「レベル・フィールドの値の流入」の検査を実装する。`internal/runner/config` と `internal/runner/cli` の本番コードで、`config.Level`・`config.Field` の値が (1) `.String()` で描画される形と、(2) `fmt.Sprintf`・`fmt.Errorf`・`fmt.Sprint` 系の引数で `%s`・`%v`・`%q` として描画される形を検出する。許可位置は `validateVariableName` の全体ではなく、`variable.ValidateVariableNameForScope` に渡す位置文字列の式（`validation.go:175`）だけとし、同関数の他の箇所（エラー型の構築を含む）も含めてそれ以外を拒否する（I-01、AC-21）。(1) だけでは `fmt.Sprintf("%s", level)` を取りこぼす。
+- [x] 3 つの検査に、対象の実装を壊すと失敗することを示す自己テストを付ける。変異の例: `StructuredMessage` を持たないエラー型を加える、あるいは `Level` 欄を `string` に戻す、`Ident` の引数に `Level.String()` を渡す、`Ident` の引数に `fmt.Sprintf("%s", level)` を渡す、許可位置の外で `.String()` を呼ぶ。値の流入の検査では、位置文字列の式は許容し、`validateVariableName` の他の分岐で `errmsg.Text(level.String())` を書くと拒否されることも確かめる（AC-22）。
+- [x] `internal/runner/config/security_redaction_test.go` に、02 §7.3 の保護のテストを置く。`Text` として宣言した部分（拒否された名前・生の設定値）に値全体置換だけが反応する入力を与え、その部分が置換文字列になること（AC-18）。`Identifier` 以外の部分に値形式の検出だけが反応する値（GitHub トークン形式）を含む `env` のエントリやテンプレートの入力文字列が、変更後もマスクされること（AC-19）。
+- [x] `cmd/runner/integration_pre_execution_error_test.go` に `TestIntegration_PreExecutionConfigErrors_OutputContract` を加え、AC-16・AC-17 が名指しする producer をすべて駆動する。Phase 2〜4 で作った config エラーのシナリオ（`ExpandGlobal`・`ExpandGroup`・`ValidateAllTemplates`・`cli.FilterGroups`）に加え、AC-13 の producer であるコマンド・テンプレートの展開（`ExpandCommand`）を対象に含め、次の両方を確かめる。(1) stderr の `  Details:` のブロック全体（`stderrDetailsBlock`。missing-groups の `Available groups:` 行のような継続行を含む）の文言が変更前と同じであること（AC-16）。(2) 通知の件数・Scope・フィールドの構成が変更前と同じであること（`run.payloads`）と、`message_type`・`error_type` が変更前と同じであること（`jsonLogRecords` で読む JSON ログの属性）（AC-17）。
+- [x] `docs/dev/architecture_design/security-architecture.ja.md` の「識別子の型宣言による免除」に、01 AC-23 の内容を追記する。システム環境変数の名前・テンプレート名・パラメータ名を `Identifier` とすること、名前の検証で拒否された名前を `Text` とすること、`--groups` で指定された名前・存在しないテンプレートへの参照名・重複して定義されたテンプレート名を `Identifier` とすること、誤って秘密を名前の位置に書いた場合の保護の境界（`ErrTemplateContainsNameField` のテンプレート名を含む）を記す（AC-23）。
+- [x] `docs/dev/architecture_design/security-architecture.md` を `/mktrans` で日本語版と同じ内容に反映する。用語集に不足があれば登録する（AC-23）。
+- [x] `docs/tasks/0178_structured_error_message_redaction/03_detailed_specification.md` の対象の範囲の記述（`expansion.go` の除外、config の `*...Detail` 型を範囲外とする例外）に、本タスクで範囲に入ったことを注記する（02 §3.6）。
+- [x] `scripts/verification/check_structured_message_redaction_docs.sh` に、追記した語（システム環境変数の名前・テンプレート名・パラメータ名・`--groups`・拒否された名前・保護の境界）を日英それぞれの必須語として加え、`check_structured_message_redaction_docs_selftest.sh` のフィクスチャを更新する。`make verify-docs-checks` を実行して green を確かめる（AC-23）。
+- [x] 最終の `make test`・`make lint` を通す（AC-24）。
 
 **完了条件**: 3 つの新しいガードと自己テストが green。保護のテストが green。`make verify-docs-checks`・`make test`・`make lint` が green。日英の文書が同じ内容である。
 
@@ -267,8 +267,8 @@
 - **実装モデル要件**: frontier-recommended
 - **判定理由**: 3 つの検査の対象の決め方と、層を切り分ける保護のテストの組み立てに設計の理解が要る
 
-- [ ] `make test && make lint` が green であることを確認した
-- [ ] PR を作成した
+- [x] `make test && make lint` が green であることを確認した
+- [x] PR を作成した
 - [ ] PR がマージされた
 - [ ] 次のブランチへ切り替えた
 
