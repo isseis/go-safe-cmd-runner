@@ -47,7 +47,7 @@
 4. **SA-04** `env_import` で取り込んだ環境変数の値が `%{...}` テンプレートとして再展開される
 5. **SA-05** グループの `env_allowed`（reject モードを含む）が子プロセス環境に適用されない。`PATH` が起動ユーザの値のまま特権子プロセスへ渡る
 6. **SA-31** 相対 `DT_RUNPATH` の解決が record 時と runner 時で異なる CWD に依存し、探索順シャドーイングを検出できない
-7. **SA-37 / SA-38** CI の gosec SARIF ステップが v1 フラグで無言失敗しており、リリースバイナリは Makefile の本番ビルドと異なるフラグで作られチェックサム・来歴を持たない
+7. **SA-37 / SA-38** CI の gosec SARIF ステップが v1 フラグでサイレントに失敗しており、リリースバイナリは Makefile の本番ビルドと異なるフラグで作られチェックサム・来歴を持たない
 
 ---
 
@@ -136,7 +136,7 @@
 | SA-34 | Low | shebang | env 形式インタプリタ解決が `execvp` の EACCES スキップ挙動と異なる | - |
 | SA-35 | Info | libccache | libc/libSystem キャッシュが自己認証されない（ディレクトリ権限のみに依存） | - |
 | SA-36 | Info | 検証 | レコードの `Path` フィールドを再検証なしで open する | - |
-| SA-37 | Medium | CI | Security Scan ジョブの gosec/SARIF ステップが v1 フラグで無言失敗している | - |
+| SA-37 | Medium | CI | Security Scan ジョブの gosec/SARIF ステップが v1 フラグでサイレントに失敗している | - |
 | SA-38 | Medium | リリース | リリースバイナリが Makefile の本番ビルドと異なるフラグで作られ、チェックサム・来歴がない | - |
 | SA-39 | Low | CI | 可変参照のサードパーティ action/ツール（`trivy-action@master`, `gofumpt@latest`）と広い `security-events: write` | - |
 | SA-40 | Low | CI | `release.yml` の `run:` に `github.ref_name` を直接展開 | タグ push 権限者 |
@@ -146,7 +146,7 @@
 | SA-44 | Low | CI | `govulncheck` が CI にない。Trivy は非ブロッキング | - |
 | SA-45 | Low | record | sudo 経由の `record` が起動ユーザの読み取り権限を確認しない（限定的なハッシュオラクル面） | 運用 |
 | SA-46 | Low | サンプル | サンプル設定が `/tmp` 直下の固定 `workdir` と `run_as_user = "root"` を併用。設定済み workdir の所有者監査がない | A |
-| SA-47 | Info | scripts | 本番バイナリの「テスト成果物」検査が文字列 grep の弱いヒューリスティック | - |
+| SA-47 | Info | scripts | 本番バイナリの「テスト成果物」検査が文字列 grep の弱いヒューリスティックにとどまる | - |
 
 SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナリ解析領域）は §4.5 に、SA-37〜SA-47（サプライチェーン・CI・運用領域）は §4.6 に記載する。
 
@@ -269,7 +269,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 
 - **重大度**: Medium（B は引数経由で同じ効果を得られるため主に多層防御。A が allowlist 名経由で到達し得る）　**攻撃者**: A/B　**確度**: 確認済み
 - **該当箇所**: `internal/runner/base/environment/denylist.go:25-68`
-- **内容**: `GIT_SSH*`/`GIT_EXTERNAL_DIFF` は既に拒否されているが、同等の `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`（`GIT_SSH_COMMAND` と等価）、`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`、`GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR`、`GIT_PROXY_COMMAND`、`GIT_EDITOR`/`GIT_SEQUENCE_EDITOR`/`EDITOR`/`VISUAL`、`RSYNC_RSH`、`JAVA_TOOL_OPTIONS`/`_JAVA_OPTIONS`/`JDK_JAVA_OPTIONS`、`PYTHONUSERBASE` が欠けている。`HOME`/`XDG_CONFIG_HOME` はドットファイルを読む全プログラム（git, ssh）をリダイレクトするが正当に必要なため、denylist ではなく文書化された警告が適切である。
+- **内容**: `GIT_SSH`/`GIT_SSH_COMMAND`/`GIT_EXTERNAL_DIFF` は既に拒否されているが、同等の `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*`（`GIT_SSH_COMMAND` と等価）、`GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM`、`GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR`、`GIT_PROXY_COMMAND`、`GIT_EDITOR`/`GIT_SEQUENCE_EDITOR`/`EDITOR`/`VISUAL`、`RSYNC_RSH`、`JAVA_TOOL_OPTIONS`/`_JAVA_OPTIONS`/`JDK_JAVA_OPTIONS`、`PYTHONUSERBASE` が欠けている。`HOME`/`XDG_CONFIG_HOME` はドットファイルを読む全プログラム（git, ssh）をリダイレクトするが正当に必要なため、denylist ではなく文書化された警告が適切である。
 - **推奨対策**: `forbiddenEnvVarExact` を拡張する（`GIT_CONFIG_` プレフィックスで counted 形式をまとめて覆える）。4 つの適用点（`ProcessEnvImport`, `ProcessEnv`, `BuildProcessEnvironment`, `checkEnvAssignment`）はすべて `IsForbiddenEnvVar` を経由するため、変更は 1 箇所で済む。
 
 ### 4.3 Low
@@ -355,7 +355,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 
 #### SA-28: テストスイートが root で実行されると権限期待テストが失敗する
 
-本監査環境（uid 0）で `go test -tags test ./...` を実行したところ、`cmd/runner`, `internal/filevalidator`, `internal/libccache`, `internal/runner`, `internal/runner/base/executor`, `internal/runner/base/security`, `internal/runner/bootstrap` の 7 パッケージで 10 テストが失敗した。いずれも「書き込み不可ディレクトリでエラーになること」を期待するテストで、root では書き込みが成功するため失敗する。`internal/filevalidator/validator_error_test.go:144` はエラーが nil の場合に `os.IsPermission(nil)` で panic する。`TestDropStartupPrivileges_*` のように `Geteuid()==0` で `t.Skip` する流儀を他の権限期待テストにも揃えることを推奨する。コードの欠陥ではない。
+本監査環境（uid 0）で `go test -tags test ./...` を実行したところ、`cmd/runner`, `internal/filevalidator`, `internal/libccache`, `internal/runner`, `internal/runner/base/executor`, `internal/runner/base/security`, `internal/runner/bootstrap` の 7 パッケージで 10 テストが失敗した。いずれも「書き込み不可ディレクトリでエラーになること」を期待するテストで、root では書き込みが成功するため失敗する。`internal/filevalidator/validator_error_test.go:144` では、`Verify` が nil を返すと `assert.ErrorAs` が型付き nil の `*os.PathError` を残し、`os.IsPermission(perr)` がそれを参照して panic する（`os.IsPermission(nil)` 自体は false を返す）。`TestDropStartupPrivileges_*` のように `Geteuid()==0` で `t.Skip` する流儀を他の権限期待テストにも揃えることを推奨する。コードの欠陥ではない。
 
 #### SA-29: 利用者向け文書の記述がコードと一致しない
 
@@ -414,11 +414,11 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 
 ### 4.6 サプライチェーン・CI・運用領域
 
-#### SA-37: Security Scan ジョブの gosec/SARIF ステップが v1 フラグで無言失敗している
+#### SA-37: Security Scan ジョブの gosec/SARIF ステップが v1 フラグでサイレントに失敗している
 
 - **重大度**: Medium　**確度**: 確認済み（ローカルの golangci-lint v2 で同じフラグを実行し `unknown flag: --disable-all` を確認）
 - **該当箇所**: `.github/workflows/ci.yml:76-96`, `:285`
-- **内容**: `golangci-lint/v2@v2.11.4` をインストールした後に `--disable-all` と `--out-format sarif:…` という v1 のフラグで実行している。`|| true` と `continue-on-error: true` がエラーを飲み込み、`if: hashFiles('golangci-security.sarif') != ''` によりアップロードは静かにスキップされる。その後 `deployment-validation` ジョブはセキュリティレポートに "Security Scans: Gosec + Trivy completed" と書く。gosec SARIF が Code Scanning に届いたことは一度もなく、存在しないゲートがあると信じられている。緩和要因として、`gosec` は `.golangci.yml:19` でも有効で `lint` ジョブ経由で PR をブロックしている（本監査の `make lint` でも実行された）。失われているのは Code Scanning での可視性とレポートの真実性である。
+- **内容**: `golangci-lint/v2@v2.11.4` をインストールした後に `--disable-all` と `--out-format sarif:…` という v1 のフラグで実行している。`|| true` と `continue-on-error: true` がエラーを飲み込み、`if: hashFiles('golangci-security.sarif') != ''` によりアップロードはサイレントにスキップされる。その後 `deployment-validation` ジョブはセキュリティレポートに "Security Scans: Gosec + Trivy completed" と書く。gosec SARIF が Code Scanning に届いたことは一度もなく、存在しないゲートがあると信じられている。緩和要因として、`gosec` は `.golangci.yml:19` でも有効で `lint` ジョブ経由で PR をブロックしている（本監査の `make lint` でも実行された）。失われているのは Code Scanning での可視性とレポートの真実性である。
 - **推奨対策**: `golangci-lint run --default=none --enable=gosec --build-tags test --output.sarif.path=golangci-security.sarif --timeout=5m ./...` に修正し、`|| true` を外し、SARIF が無ければジョブを失敗させる。
 
 #### SA-38: リリースバイナリが Makefile の本番ビルドと異なるフラグで作られ、チェックサム・来歴がない
@@ -484,7 +484,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 - **内容**: 設定済み `workdir` について所有者や world-writable の監査は見つからなかった（`verify_files`/`commands`/ハッシュディレクトリには監査がある）。`/tmp` は sticky だが、任意のローカルユーザが runner より先に `/tmp/custom-workdir-test` のような*新しい*名前を作成でき、以後、相対パスを使うコマンドは攻撃者所有のディレクトリ内で動作する。サンプルは運用者がコピーする対象である（SA-07 と同じクラス）。
 - **推奨対策**: サンプルでは自動一時 workdir または `/var/lib/…` 配下の root 所有パスを使い、コメントで注意する。設定済み workdir を既存の `security.AuditDirectoryPermissions` で監査することを検討する。
 
-#### SA-47: 本番バイナリの「テスト成果物」検査が弱いヒューリスティック
+#### SA-47: 本番バイナリの「テスト成果物」検査が文字列 grep の弱いヒューリスティックにとどまる
 
 - **重大度**: Info　**該当箇所**: `scripts/security_checker.py:103-146`
 - **内容**: バイナリ文字列を `NewManagerForTest`、`testing.T`、`_test.go` で grep する。`-s -w` でほとんどのシンボル名は消えるため不在は何も証明せず、例外時は `True` を返す。実際の保証はビルドタグ設計（§5.3）から来ている。`go version -m`/ビルドタグ検査に置き換えるか、主張を取り下げることを検討する。
@@ -532,7 +532,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 
 ### 5.3 実行環境
 
-- 子プロセスの環境は allowlist 済みシステム環境 + 設定変数のみから構築され、親環境は継承されない。`LD_*`/`DYLD_*`/`BASH_FUNC_*`/`GLIBC_TUNABLES`/`GCONV_PATH`/`BASH_ENV`/`ENV`/`PYTHON*`/`PERL5*`/`NODE_*`/`RUBY*`/`GIT_SSH*`/`LESSOPEN` 等の広い denylist が**全マージの後**に適用されるため、`vars`/`env_import`/テンプレート経由でバイパスできない
+- 子プロセスの環境は allowlist 済みシステム環境 + 設定変数のみから構築され、親環境は継承されない。プレフィックス一致の `LD_*`/`DYLD_*`/`BASH_FUNC_*` と、完全一致の `GLIBC_TUNABLES`/`GCONV_PATH`/`BASH_ENV`/`ENV`/`PYTHONPATH`/`PYTHONSTARTUP`/`PYTHONHOME`/`PERL5LIB`/`PERLLIB`/`PERL5OPT`/`PERL5DB`/`NODE_OPTIONS`/`NODE_PATH`/`RUBYOPT`/`RUBYLIB`/`GIT_SSH`/`GIT_SSH_COMMAND`/`LESSOPEN` 等からなる広い denylist が**全マージの後**に適用されるため、`vars`/`env_import`/テンプレート経由でバイパスできない（`PYTHONUSERBASE` は拒否されない。SA-13 参照）
 - `__*` 名は予約され設定ロード時に拒否。stdin は `/dev/null`
 - 検証→exec の TOCTOU は Linux で閉じている: パスを 1 回だけ解決し、識別を `O_RDONLY|O_CLOEXEC|O_NONBLOCK` で再 open、`fstat` で通常ファイル確認、`pread` で再ハッシュ、サイズ再確認、`/proc/self/fd/3` として exec。コマンドは固定 `SecurePathEnv` のみで解決し相対結果を拒否。特権コマンドは絶対パスの cmd と workdir を要求
 - 出力キャプチャは非特権で安全に行われる: 宛先ディレクトリ内に `os.CreateTemp`（O_EXCL, 0600）→ `safefileio.AtomicMoveFile`（dirfd ベース、ユーザ所有 symlink を拒否）、最終 mode 0600、*実 UID* での書き込み権限検証、パストラバーサル/メタ文字拒否、既定 10 MB 上限、メモリ保持 64 KiB 上限
@@ -545,7 +545,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 - 秘匿 `Config` は `NewConfig` 経由の構築を強制（非公開フィールド + `validated` フラグ）、パターンは配線時に検証・コンパイル、PEM ブロック（未終端含む）・AWS/GitHub/Slack/JWT/URL 資格情報の形式を検出、webhook パスは許可ホスト確定後にマスク
 - `errmsg` の役割と `identifier.Identifier` により、秘匿判定を内容検査ではなく宣言された型で行う（「Declare, don't infer」の実践）
 - Slack: 完全一致ホスト allowlist、HTTPS のみ、有界な非同期配送（送信 40 秒/フラッシュ 15 秒、実行をブロックしない）、自由テキストと識別子は表示安全な補間契約（制御/書式文字、`<>&`、500 バイト上限）を通り、予約済みエンベロープフィールドで Scope/Hostname/Run ID の偽装を防ぐ
-- 監査エントリは実 UID・euid・pid・終了コード・所要時間・操作ごとの特権窓・解決済みパス・内容ハッシュを記録し、失敗経路でも書かれる
+- 監査エントリは実 UID・euid・pid・終了コード・所要時間・操作ごとの特権窓・解決済みパス・内容ハッシュを記録する。失敗経路では子プロセスの起動後に限り記録され（起動前の失敗と `AuditLogger` が nil の場合は記録されない）、ファイルに残るかどうかは `--log-dir` とログレベルに依存する（SA-02）
 
 ### 5.5 バイナリ解析
 
@@ -579,7 +579,7 @@ SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナ�
 | パッケージ | テスト |
 |---|---|
 | `cmd/runner` | `TestSetupLoggerWithConfig_IntegrationWithNewHandlers/invalid_log_directory`, `TestErrorHandling/nonexistent_log_directory` |
-| `internal/filevalidator` | `TestErrorCases/permission_denied`, `TestFilesystemEdgeCases/unreadable_directory`（nil エラーに対する `os.IsPermission` で panic） |
+| `internal/filevalidator` | `TestErrorCases/permission_denied`, `TestFilesystemEdgeCases/unreadable_directory`（後者は型付き nil の `*os.PathError` に対する `os.IsPermission(perr)` で panic。SA-28 参照） |
 | `internal/libccache` | `TestLibcCacheManager_WriteFailure` |
 | `internal/runner` | `TestRunner_OutputCaptureErrorScenarios` |
 | `internal/runner/base/executor` | `TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging` |
