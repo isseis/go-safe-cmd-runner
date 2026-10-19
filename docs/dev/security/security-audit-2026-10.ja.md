@@ -8,6 +8,7 @@
 | 対象コミット | `59f0e7f` (`main`、v1.2.0 リリースマージ直後) |
 | 監査方法 | ソースコードの静的レビュー（読み取り専用、コード修正なし）、および静的解析ツール・テストスイートの実行 |
 | 対象読者 | プロジェクトメンテナ、セキュリティレビュア |
+| Issue 起票 | 2026-10-19（§3 の Issue 列を参照） |
 | 前回監査 | [Task 0149 セキュリティクリティカル部 code smell 監査](../../tasks/0149_security_code_smell_audit_fable/99_summary.md)（2026-07） |
 
 本レポートは、go-safe-cmd-runner のコードベース全体を対象に、設計上の脅威モデルに照らして実装を監査した結果をまとめたものである。各所見は、該当コードを実際に読み、必要に応じて小さな再現テストで確認したうえで記載している。コードから裏付けの取れなかった推測は含めていない。
@@ -98,55 +99,57 @@
 
 ## 3. 所見一覧
 
-| ID | 重大度 | 領域 | タイトル | 攻撃者 |
-|---|---|---|---|---|
-| SA-01 | High | リスク評価 | プロセス生成機能を持つ一般ツールが Low リスクで実行される | B |
-| SA-02 | High | 監査 | 監査証跡の有無とレベルを起動ユーザが決定できる | A |
-| SA-03 | Medium | safefileio | `openat2` 可用性プローブが `$TMPDIR` に依存し、フォールバック経路へ降格可能 | A |
-| SA-04 | Medium | 変数展開 | `env_import` 値が `%{...}` テンプレートとして再展開される | A |
-| SA-05 | Medium | 環境変数 | グループ `env_allowed` が子プロセス環境に適用されず、`PATH` も固定されない | A |
-| SA-06 | Medium | 実行 | ステージングコピー実行（非 Linux フォールバック）が `$TMPDIR` 配下でパス指定の chmod/chown/exec を行う | A |
-| SA-07 | Medium | 実行 | グループ一時ディレクトリが起動ユーザ所有・`$TMPDIR` 配下で、特権子プロセスの cwd になる | A |
-| SA-08 | Medium | 実行 | タイムアウト時に直接の子プロセスしか kill されない | A/B |
-| SA-09 | Medium | 実行 | umask・rlimit・余剰 fd・シグナル処理が起動ユーザから特権子プロセスへ継承される | A |
-| SA-10 | Medium | dry-run | `environment` パラメータが `--show-sensitive` なしでも全値を平文出力する | C |
-| SA-11 | Medium | 秘匿 | argv 要素として渡された秘密値が要素単位では秘匿されない | C |
-| SA-12 | Medium | 端末 | 対話モードのコンソール出力が制御文字をエスケープしない（端末エスケープ注入） | A |
-| SA-13 | Medium | 環境変数 | denylist に git/rsync/JVM 系のコード実行変数が欠けている | A/B |
-| SA-14 | Low | safefileio | `SafeOpenFile` が通常ファイルであることを確認せず、FIFO で無期限ブロックし得る | A |
-| SA-15 | Low | 権限監査 | ディレクトリ所有者チェックが owner-write ビットに条件付けられている | A |
-| SA-16 | Low | ハッシュストア | レコード読み取りポリシーが所有者を検査しない | 運用 |
-| SA-17 | Low | 秘匿 | 値全体の秘匿判定が一般語（`key`, `basic`）に過剰一致し、監査情報を消す | - |
-| SA-18 | Low | 秘匿 | 実行前エラーの stderr 出力が秘匿処理を経由しない | C |
-| SA-19 | Low | Slack | 一括出力フィールドのコードフェンスが脱出可能（mrkdwn 注入） | A |
-| SA-20 | Low | Slack | HTTP クライアントがリダイレクトを追従し、プロキシ/CA を起動ユーザの環境から取る | A |
-| SA-21 | Low | ログ | 1 レコードのサイズが上限なし（最大 10 MiB × 100 コマンド） | B |
-| SA-22 | Low | 実行 | グループ一時ディレクトリの削除が起動ユーザ権限で行われ、root 所有物が残留する | - |
-| SA-23 | Low | 検証 | `verifyDynLibDeps` が旧スキーマ/レコード不在で skip する（呼び出し順序に依存） | - |
-| SA-24 | Low | 実行 | 特権中のパス指定 `os.Chown`/`os.Chmod`（SA-06 の一般化） | A |
-| SA-25 | Info | 設計 | `risk_level` に配備レベルの上限がない | B |
-| SA-26 | Info | 設計 | native root（`sudo runner`）が非サポート宣言にもかかわらず受理される | 運用 |
-| SA-27 | Info | ハッシュストア | 解析キャッシュが safefileio を経由しない raw `os.*` I/O | - |
-| SA-28 | Info | テスト | テストスイートが root で実行されると権限期待テストが失敗する | - |
-| SA-29 | Info | 文書 | 利用者向け文書の「syslog 記録」「全出力先をカバー」がコードと一致しない | - |
-| SA-30 | Info | 特権 | 緊急終了経路で euid 0 のままログ出力が行われ得る（文書化済み・許容） | - |
-| SA-31 | Medium | dynlib | 相対 `DT_RUNPATH` が record 時と runner 時で異なる CWD に対して解決される | バイナリ提供者 |
-| SA-32 | Low | バイナリ解析 | `debug/elf`/`debug/macho`/`debug/gosym` を root で `recover` なしに実行 | バイナリ提供者 |
-| SA-33 | Low | バイナリ解析 | x86_64 の後方スキャンが syscall サイトごとに超線形コスト | バイナリ提供者 |
-| SA-34 | Low | shebang | env 形式インタプリタ解決が `execvp` の EACCES スキップ挙動と異なる | - |
-| SA-35 | Info | libccache | libc/libSystem キャッシュが自己認証されない（ディレクトリ権限のみに依存） | - |
-| SA-36 | Info | 検証 | レコードの `Path` フィールドを再検証なしで open する | - |
-| SA-37 | Medium | CI | Security Scan ジョブの gosec/SARIF ステップが v1 フラグでサイレントに失敗している | - |
-| SA-38 | Medium | リリース | リリースバイナリが Makefile の本番ビルドと異なるフラグで作られ、チェックサム・来歴がない | - |
-| SA-39 | Low | CI | 可変参照のサードパーティ action/ツール（`trivy-action@master`, `gofumpt@latest`）と広い `security-events: write` | - |
-| SA-40 | Low | CI | `release.yml` の `run:` に `github.ref_name` を直接展開 | タグ push 権限者 |
-| SA-41 | Low | scripts | `verify_links.go` の DNS リバインディング対策が名目的で、IP ブロックリストが不完全 | - |
-| SA-42 | Low | lint | `.golangci-security.yml` が参照されない死に設定（forbidigo 規則が未適用） | - |
-| SA-43 | Low | 文書 | README/利用者文書のビルド・インストール手順が Makefile・コードと不一致 | - |
-| SA-44 | Low | CI | `govulncheck` が CI にない。Trivy は非ブロッキング | - |
-| SA-45 | Low | record | sudo 経由の `record` が起動ユーザの読み取り権限を確認しない（限定的なハッシュオラクル面） | 運用 |
-| SA-46 | Low | サンプル | サンプル設定が `/tmp` 直下の固定 `workdir` と `run_as_user = "root"` を併用。設定済み workdir の所有者監査がない | A |
-| SA-47 | Info | scripts | 本番バイナリの「テスト成果物」検査が文字列 grep の弱いヒューリスティックにとどまる | - |
+Issue 列は各所見を追跡する GitHub Issue を示す。修正単位が同じ所見は 1 件の issue にまとめ、前回監査（Task 0149）の残件 issue が同じ論点を扱っている場合はその issue を再利用した。
+
+| ID | 重大度 | 領域 | タイトル | 攻撃者 | Issue |
+|---|---|---|---|---|---|
+| SA-01 | High | リスク評価 | プロセス生成機能を持つ一般ツールが Low リスクで実行される | B | [#1228](https://github.com/isseis/go-safe-cmd-runner/issues/1228) |
+| SA-02 | High | 監査 | 監査証跡の有無とレベルを起動ユーザが決定できる | A | [#1229](https://github.com/isseis/go-safe-cmd-runner/issues/1229) |
+| SA-03 | Medium | safefileio | `openat2` 可用性プローブが `$TMPDIR` に依存し、フォールバック経路へ降格可能 | A | [#1230](https://github.com/isseis/go-safe-cmd-runner/issues/1230) |
+| SA-04 | Medium | 変数展開 | `env_import` 値が `%{...}` テンプレートとして再展開される | A | [#1231](https://github.com/isseis/go-safe-cmd-runner/issues/1231) |
+| SA-05 | Medium | 環境変数 | グループ `env_allowed` が子プロセス環境に適用されず、`PATH` も固定されない | A | [#1232](https://github.com/isseis/go-safe-cmd-runner/issues/1232) |
+| SA-06 | Medium | 実行 | ステージングコピー実行（非 Linux フォールバック）が `$TMPDIR` 配下でパス指定の chmod/chown/exec を行う | A | [#1234](https://github.com/isseis/go-safe-cmd-runner/issues/1234) |
+| SA-07 | Medium | 実行 | グループ一時ディレクトリが起動ユーザ所有・`$TMPDIR` 配下で、特権子プロセスの cwd になる | A | [#1235](https://github.com/isseis/go-safe-cmd-runner/issues/1235) |
+| SA-08 | Medium | 実行 | タイムアウト時に直接の子プロセスしか kill されない | A/B | [#1236](https://github.com/isseis/go-safe-cmd-runner/issues/1236) |
+| SA-09 | Medium | 実行 | umask・rlimit・余剰 fd・シグナル処理が起動ユーザから特権子プロセスへ継承される | A | [#1237](https://github.com/isseis/go-safe-cmd-runner/issues/1237) |
+| SA-10 | Medium | dry-run | `environment` パラメータが `--show-sensitive` なしでも全値を平文出力する | C | [#1238](https://github.com/isseis/go-safe-cmd-runner/issues/1238) |
+| SA-11 | Medium | 秘匿 | argv 要素として渡された秘密値が要素単位では秘匿されない | C | [#1239](https://github.com/isseis/go-safe-cmd-runner/issues/1239) |
+| SA-12 | Medium | 端末 | 対話モードのコンソール出力が制御文字をエスケープしない（端末エスケープ注入） | A | [#1240](https://github.com/isseis/go-safe-cmd-runner/issues/1240) |
+| SA-13 | Medium | 環境変数 | denylist に git/rsync/JVM 系のコード実行変数が欠けている | A/B | [#1241](https://github.com/isseis/go-safe-cmd-runner/issues/1241) |
+| SA-14 | Low | safefileio | `SafeOpenFile` が通常ファイルであることを確認せず、FIFO で無期限ブロックし得る | A | [#1244](https://github.com/isseis/go-safe-cmd-runner/issues/1244) |
+| SA-15 | Low | 権限監査 | ディレクトリ所有者チェックが owner-write ビットに条件付けられている | A | [#1245](https://github.com/isseis/go-safe-cmd-runner/issues/1245) |
+| SA-16 | Low | ハッシュストア | レコード読み取りポリシーが所有者を検査しない | 運用 | [#1246](https://github.com/isseis/go-safe-cmd-runner/issues/1246) |
+| SA-17 | Low | 秘匿 | 値全体の秘匿判定が一般語（`key`, `basic`）に過剰一致し、監査情報を消す | - | [#1239](https://github.com/isseis/go-safe-cmd-runner/issues/1239) |
+| SA-18 | Low | 秘匿 | 実行前エラーの stderr 出力が秘匿処理を経由しない | C | [#1239](https://github.com/isseis/go-safe-cmd-runner/issues/1239) |
+| SA-19 | Low | Slack | 一括出力フィールドのコードフェンスが脱出可能（mrkdwn 注入） | A | [#1240](https://github.com/isseis/go-safe-cmd-runner/issues/1240) |
+| SA-20 | Low | Slack | HTTP クライアントがリダイレクトを追従し、プロキシ/CA を起動ユーザの環境から取る | A | [#1247](https://github.com/isseis/go-safe-cmd-runner/issues/1247) |
+| SA-21 | Low | ログ | 1 レコードのサイズが上限なし（最大 10 MiB × 100 コマンド） | B | [#1247](https://github.com/isseis/go-safe-cmd-runner/issues/1247) |
+| SA-22 | Low | 実行 | グループ一時ディレクトリの削除が起動ユーザ権限で行われ、root 所有物が残留する | - | [#1235](https://github.com/isseis/go-safe-cmd-runner/issues/1235) |
+| SA-23 | Low | 検証 | `verifyDynLibDeps` が旧スキーマ/レコード不在で skip する（呼び出し順序に依存） | - | [#1248](https://github.com/isseis/go-safe-cmd-runner/issues/1248), [#979](https://github.com/isseis/go-safe-cmd-runner/issues/979), [#983](https://github.com/isseis/go-safe-cmd-runner/issues/983) |
+| SA-24 | Low | 実行 | 特権中のパス指定 `os.Chown`/`os.Chmod`（SA-06 の一般化） | A | [#1234](https://github.com/isseis/go-safe-cmd-runner/issues/1234) |
+| SA-25 | Info | 設計 | `risk_level` に配備レベルの上限がない | B | [#1254](https://github.com/isseis/go-safe-cmd-runner/issues/1254) |
+| SA-26 | Info | 設計 | native root（`sudo runner`）が非サポート宣言にもかかわらず受理される | 運用 | [#921](https://github.com/isseis/go-safe-cmd-runner/issues/921)（実施しないと決定済み） |
+| SA-27 | Info | ハッシュストア | 解析キャッシュが safefileio を経由しない raw `os.*` I/O | - | [#982](https://github.com/isseis/go-safe-cmd-runner/issues/982) |
+| SA-28 | Info | テスト | テストスイートが root で実行されると権限期待テストが失敗する | - | [#1255](https://github.com/isseis/go-safe-cmd-runner/issues/1255) |
+| SA-29 | Info | 文書 | 利用者向け文書の「syslog 記録」「全出力先をカバー」がコードと一致しない | - | [#1253](https://github.com/isseis/go-safe-cmd-runner/issues/1253) |
+| SA-30 | Info | 特権 | 緊急終了経路で euid 0 のままログ出力が行われ得る（文書化済み・許容） | - | なし（許容済み） |
+| SA-31 | Medium | dynlib | 相対 `DT_RUNPATH` が record 時と runner 時で異なる CWD に対して解決される | バイナリ提供者 | [#1233](https://github.com/isseis/go-safe-cmd-runner/issues/1233) |
+| SA-32 | Low | バイナリ解析 | `debug/elf`/`debug/macho`/`debug/gosym` を root で `recover` なしに実行 | バイナリ提供者 | [#981](https://github.com/isseis/go-safe-cmd-runner/issues/981) |
+| SA-33 | Low | バイナリ解析 | x86_64 の後方スキャンが syscall サイトごとに超線形コスト | バイナリ提供者 | [#981](https://github.com/isseis/go-safe-cmd-runner/issues/981) |
+| SA-34 | Low | shebang | env 形式インタプリタ解決が `execvp` の EACCES スキップ挙動と異なる | - | [#983](https://github.com/isseis/go-safe-cmd-runner/issues/983) |
+| SA-35 | Info | libccache | libc/libSystem キャッシュが自己認証されない（ディレクトリ権限のみに依存） | - | [#982](https://github.com/isseis/go-safe-cmd-runner/issues/982) |
+| SA-36 | Info | 検証 | レコードの `Path` フィールドを再検証なしで open する | - | [#1233](https://github.com/isseis/go-safe-cmd-runner/issues/1233) |
+| SA-37 | Medium | CI | Security Scan ジョブの gosec/SARIF ステップが v1 フラグでサイレントに失敗している | - | [#1242](https://github.com/isseis/go-safe-cmd-runner/issues/1242) |
+| SA-38 | Medium | リリース | リリースバイナリが Makefile の本番ビルドと異なるフラグで作られ、チェックサム・来歴がない | - | [#1243](https://github.com/isseis/go-safe-cmd-runner/issues/1243) |
+| SA-39 | Low | CI | 可変参照のサードパーティ action/ツール（`trivy-action@master`, `gofumpt@latest`）と広い `security-events: write` | - | [#1249](https://github.com/isseis/go-safe-cmd-runner/issues/1249) |
+| SA-40 | Low | CI | `release.yml` の `run:` に `github.ref_name` を直接展開 | タグ push 権限者 | [#1249](https://github.com/isseis/go-safe-cmd-runner/issues/1249) |
+| SA-41 | Low | scripts | `verify_links.go` の DNS リバインディング対策が名目的で、IP ブロックリストが不完全 | - | [#1250](https://github.com/isseis/go-safe-cmd-runner/issues/1250) |
+| SA-42 | Low | lint | `.golangci-security.yml` が参照されない死に設定（forbidigo 規則が未適用） | - | [#1242](https://github.com/isseis/go-safe-cmd-runner/issues/1242) |
+| SA-43 | Low | 文書 | README/利用者文書のビルド・インストール手順が Makefile・コードと不一致 | - | [#1253](https://github.com/isseis/go-safe-cmd-runner/issues/1253) |
+| SA-44 | Low | CI | `govulncheck` が CI にない。Trivy は非ブロッキング | - | [#1242](https://github.com/isseis/go-safe-cmd-runner/issues/1242) |
+| SA-45 | Low | record | sudo 経由の `record` が起動ユーザの読み取り権限を確認しない（限定的なハッシュオラクル面） | 運用 | [#1251](https://github.com/isseis/go-safe-cmd-runner/issues/1251) |
+| SA-46 | Low | サンプル | サンプル設定が `/tmp` 直下の固定 `workdir` と `run_as_user = "root"` を併用。設定済み workdir の所有者監査がない | A | [#1252](https://github.com/isseis/go-safe-cmd-runner/issues/1252) |
+| SA-47 | Info | scripts | 本番バイナリの「テスト成果物」検査が文字列 grep の弱いヒューリスティックにとどまる | - | [#1243](https://github.com/isseis/go-safe-cmd-runner/issues/1243) |
 
 SA-01〜SA-30 は §4.1〜§4.4 に重大度順で、SA-31〜SA-36（バイナリ解析領域）は §4.5 に、SA-37〜SA-47（サプライチェーン・CI・運用領域）は §4.6 に記載する。
 
