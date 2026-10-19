@@ -2,6 +2,12 @@
 
 This directory contains security advisories, vulnerability reports, and mitigation documentation for the go-safe-cmd-runner project.
 
+## Security Audits
+
+- [Security Audit Report, October 2026 (Japanese)](security-audit-2026-10.ja.md) — full-codebase
+  audit against commit `59f0e7f` (v1.2.0): 47 findings (0 Critical, 2 High, 14 Medium, 22 Low,
+  9 Info), positive controls, and a prioritised remediation order.
+
 ## Security Advisories
 
 ### Active Advisories
