@@ -93,7 +93,7 @@
 
 前回監査の残件一覧（[98_remaining_issues.md](../../tasks/0149_security_code_smell_audit_fable/98_remaining_issues.md)）のうち、Medium とされていたエントリポイントの 3 件（E1 M-1 `--run-id` 未検証、E1 M-2 起動時降格が euid のみ、E1 M-3 verify の fail-open）は、現行コードで解消されていることを確認した（`cmd/runner/main.go` の `resolveRunID`/`dropStartupPrivileges`、`cmd/verify/main.go` の `causeHashDirPermissionViolation`）。
 
-一方、D2（logging/redaction）の M-2「key=value 形式以外の秘匿カバレッジ不足」は、本監査の SA-13 として引き続き現存する。本監査の所見は、前回監査が「code smell」を主眼としていたのに対し、攻撃者の能力から出発した攻撃経路の観点で洗い直したものであり、SA-01〜SA-05 を含む大半は前回監査に含まれていない新規所見である。
+一方、D2（logging/redaction）の M-2「key=value 形式以外の秘匿カバレッジ不足」は、本監査の SA-11 として引き続き現存する。本監査の所見は、前回監査が「code smell」を主眼としていたのに対し、攻撃者の能力から出発した攻撃経路の観点で洗い直したものであり、SA-01〜SA-05 を含む大半は前回監査に含まれていない新規所見である。
 
 ---
 

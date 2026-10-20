@@ -20,7 +20,7 @@
 
 ### 現在の流れ
 
-runner はコマンドごとに算出リスクを求め、設定の `risk_level`（省略時は `low`）を超えるコマンドを実行しない。算出リスクは、次の次元の最大値である（`internal/runner/base/risk/evaluator.go` の `EvaluateRisk`）。
+runner はコマンドごとに算出リスクを求め、設定の `risk_level`（省略時は `low`）を超えるコマンドを実行しない。算出リスクは、各次元の最大値である（`internal/runner/base/risk/evaluator.go` の `EvaluateRisk`）。本タスクに関係する主な次元は次のとおりである。このほかに、破壊的なファイル操作、危険な引数パターン、コマンドのプロファイル（ネットワークなど）、ネットワーク形式の引数、coreutils の分類、宛先パスの信頼区分の次元がある（`evaluateDimensions`）。
 
 | 次元 | 根拠 | 主な定義 |
 |---|---|---|
@@ -30,7 +30,7 @@ runner はコマンドごとに算出リスクを求め、設定の `risk_level`
 | 任意コード実行 | コマンド名 | `arbitrary_code.go` の `arbitraryCodeExecutionRunners` |
 | バイナリ解析 | record 時の静的解析の結果 | `network_analyzer.go` の `classifyRecordSignals` |
 
-名前による分類は、設定のパスから symlink を辿って得た名前の集合（設定のパスの basename と各 symlink の先の basename）に対して行う。
+名前による分類は、評価するパスから symlink を辿って得た名前の集合（そのパスの basename と各 symlink の先の basename）に対して行う。ただし runner は、評価の前に設定のパスを `filepath.EvalSymlinks` で解決し（`internal/runner/group_executor.go` の `cmd.ExpandedCmd = resolvedPath`、dry-run は `resource/dryrun_manager.go`）、解決後のパスを評価し、子プロセスの argv[0] としても渡す（`executor/command_lifecycle.go`）。このため、トップレベルのコマンドの名前集合は実体のパスの basename だけになり、設定のパスの basename（symlink の名前）は含まれない。ラッパーのインナーと shebang のインタプリタは解決されないまま評価されるので、symlink の名前も含まれる。
 
 間接実行の次元は、形態に応じて次の 3 通りの結果を返す。
 
@@ -80,7 +80,7 @@ runner はコマンドごとに算出リスクを求め、設定の `risk_level`
 
 ## 用語
 
-- **名前集合:** 設定のパスから symlink を辿って得た名前の集合。設定のパスの basename と、各 symlink の先の basename からなる。既存の名前による分類と同じものを使う。
+- **名前集合:** 評価するパスから symlink を辿って得た名前の集合。そのパスの basename と、各 symlink の先の basename からなる。既存の名前による分類と同じものを使う。トップレベルのコマンドでは、runner が評価の前に symlink を解決するので、実体のパスの basename だけになる（「現在の流れ」を参照）。
 - **設定の basename:** 設定のパス（symlink を辿る前）の basename。
 - **最初のオペランド:** コマンドの引数を先頭から読んだとき、オプションでもオプションの値でもない最初のトークン。`--` より後のトークンはすべてオペランドである。
 - **ヘルパーコマンドの評価:** 既存の `ssh -o ProxyCommand`・`rsync -e` と同じ評価。オプションの値からコマンドを取り出し、特権昇格のトークンがあれば Critical、安全に分割できなければ Reject、それ以外は High 下限とする。
@@ -104,6 +104,7 @@ runner はコマンドごとに算出リスクを求め、設定の `risk_level`
 - **プロセス生成のインポートによる引き上げ:** 監査が中長期の対策として挙げた「プロファイルのないバイナリが `execve`/`posix_spawn`/`system` をインポートしていれば少なくとも Medium」とする規則。record はインポートしたシンボルを保持しているので実装はできるが、`tar`・`newgrp`・`git` など多くのツールの分類が変わる。影響を実際の設定で測ってから、別タスクで判断する（決定事項 8）。
 - **`git -c` の設定キーの解析:** `git` は名前だけで High にする。実行ファイルを指す設定キーを解析して Reject にする方式は採らない（決定事項 5）。
 - **`GIT_CONFIG_*` などの環境変数:** SA-13（[#1241](https://github.com/isseis/go-safe-cmd-runner/issues/1241)）で扱う。
+- **`TAR_OPTIONS`:** GNU tar は環境変数 `TAR_OPTIONS` の内容をコマンドラインの先頭に挿入する。`env_vars` で `TAR_OPTIONS=--use-compress-program=/tmp/evil` を与えると、引数を見る F-008 の判定を迂回できる。`TAR_OPTIONS` は現行の denylist にも SA-13 の監査の列挙にもないので、SA-13（[#1241](https://github.com/isseis/go-safe-cmd-runner/issues/1241)）に追記して denylist で扱う。
 - **子プロセスの `PATH`:** `tar -z` が `gzip` を `PATH` から探すような経路は、SA-05（[#1232](https://github.com/isseis/go-safe-cmd-runner/issues/1232)）で扱う。
 - **`gawk --sandbox`・`mawk -W sandbox` の例外:** `awk` 系は例外なく High とする（決定事項 2）。
 - **`busybox` の applet の安全リスト:** `coreutils` のような applet ごとの Low の分類は設けない（決定事項 3）。
@@ -197,7 +198,7 @@ applet ごとの安全リスト（`coreutils` の方式）は設けない。入�
 
 **提案:**
 
-- `ssh` 系: `scp -S <program>`、`sftp -S <program>`、`sftp -D <command>`、`ssh`/`scp`/`sftp` の `-o KnownHostsCommand=<command>` を、ヘルパーコマンドの評価の対象とする。既存の `-o ProxyCommand`/`LocalCommand` と同じく、該当するオプションがすべて評価され、最も厳しい結果を採る。
+- `ssh` 系: `scp -S <program>`、`sftp -S <program>`、`sftp -D <command>`、`ssh`/`scp`/`sftp` の `-o KnownHostsCommand=<command>` を、ヘルパーコマンドの評価の対象とする。既存の `-o ProxyCommand`/`LocalCommand` と同じく、該当するオプションがすべて評価され、最も厳しい結果を採る。`scp`・`sftp` は `getopt` で引数を解析するので、`-S`・`-D` は分離（`-S X`）・連結（`-SX`）・束ね（`-qS X`・`-qSX`）のいずれの綴りでも認識する。
 - `tar`: `-I`/`--use-compress-program`、`-F`/`--info-script`/`--new-volume-script`、`--rsh-command`、`--rmt-command` を、既存の `--to-command`/`--checkpoint-action` と同じく Reject とする。認識する綴りは次のとおり。既存の 2 つにも適用する。
   - 正式な綴り（`--use-compress-program=X`・`--use-compress-program X`）
   - 短いオプションの分離・連結・束ね（`-I X`・`-IX`・`-cI X`）
@@ -255,7 +256,7 @@ applet ごとの安全リスト（`coreutils` の方式）は設けない。入�
 #### F-007: `ssh` 系のヘルパー起動オプション
 
 **Acceptance Criteria**:
-- **AC-13**: `scp -S <value>`、`sftp -S <value>`、`sftp -D <value>`、および `ssh`/`scp`/`sftp` の `-o KnownHostsCommand=<value>`（`-o KnownHostsCommand <value>`・`-oKnownHostsCommand=<value>`・大文字と小文字の違いを含む）は、ヘルパーコマンドの評価を受ける。値が特権昇格のトークンなら Critical、安全に分割できなければ Reject、それ以外は High 以上と評価される。
+- **AC-13**: `scp -S <value>`、`sftp -S <value>`、`sftp -D <value>`（`-S<value>` の連結、`-qS <value>`・`-qS<value>` の束ねを含む）、および `ssh`/`scp`/`sftp` の `-o KnownHostsCommand=<value>`（`-o KnownHostsCommand <value>`・`-oKnownHostsCommand=<value>`・大文字と小文字の違いを含む）は、ヘルパーコマンドの評価を受ける。値が特権昇格のトークンなら Critical、安全に分割できなければ Reject、それ以外は High 以上と評価される。
 - **AC-14**: 1 つのコマンドに AC-13 のオプションや既存の `-o ProxyCommand`/`LocalCommand` が複数あるとき、すべてが評価され、最も厳しい結果が採られる。無害な値の後に特権昇格のトークンを含む値を置いても Critical になる。
 - **AC-15**: AC-13 のオプションも既存の `-o ProxyCommand`/`LocalCommand` もない `scp`・`sftp` の評価は、変更前と同じである。
 
@@ -269,7 +270,7 @@ applet ごとの安全リスト（`coreutils` の方式）は設けない。入�
 #### F-009: 経路の一貫性
 
 **Acceptance Criteria**:
-- **AC-19**: F-001〜F-003、F-006 の規則は、shebang のインタプリタとして現れたコマンドにも適用される。少なくとも次が High 以上になる: `#!/usr/bin/awk -f` のスクリプト、`#!/bin/sed -f` のスクリプト（`--sandbox` がない）。
+- **AC-19**: F-001〜F-004、F-006 の規則は、shebang のインタプリタとして現れたコマンドにも適用される。少なくとも次が High 以上になる: `#!/usr/bin/awk -f` のスクリプト、`#!/bin/sed -f` のスクリプト（`--sandbox` がない）、`#!/bin/busybox sh` のスクリプト。
 - **AC-20**: 名前による規則（F-001〜F-003、F-005、F-006、AC-09）は、設定のパスが symlink（例: `/usr/bin/awk` → `/etc/alternatives/awk` → `/usr/bin/mawk`、`/usr/bin/sg` → `newgrp`）の場合も、symlink の先の実体のパスの場合も、同じ結果になる。
 
 #### F-010: 文書
@@ -307,7 +308,7 @@ applet ごとの安全リスト（`coreutils` の方式）は設けない。入�
 
 `vi`、`vim`、`view`、`ex`、`rvim`、`rview`、`vimdiff`、`gvim`、`gview`、`gvimdiff`、`evim`、`eview`、`nvim`、`nvi`、`nex`、`nview`、`vim.basic`、`vim.tiny`、`vim.nox`、`vim.gtk`、`vim.gtk3`、`vim.athena`、`vim.motif`
 
-`vim.*` は Debian/Ubuntu の alternatives の実体の名前である。設定が `/usr/bin/vi` などの symlink を指す場合は、名前集合に `vi` が含まれるので、実体の名前が一覧になくても High になる。実体の名前は、実体のパスを直接設定した場合のために挙げる。
+`vim.*` は Debian/Ubuntu の alternatives の実体の名前である。runner は評価の前に設定のパスの symlink を解決するので、設定が `/usr/bin/vi` などの symlink を指していても、トップレベルのコマンドの名前集合には実体の名前（`vim.basic` など）しか含まれない。実体の名前が一覧にないと High にならないため、実体の名前を挙げる。
 
 ## 付録 B: 同種の候補（本タスクの対象外）
 
